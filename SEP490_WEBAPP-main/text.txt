@@ -1,0 +1,344 @@
+================================================================================
+          ĐẶC TẢ CHI TIẾT LUỒNG NGHIỆP VỤ HỆ THỐNG CŨ VS HỆ THỐNG CẢI TIẾN
+                    (Tài liệu phục vụ nghiệm thu đồ án SEP490)
+================================================================================
+
+--------------------------------------------------------------------------------
+LUỒNG 1: ĐĂNG NHẬP, PHÂN QUYỀN & ĐIỀU HƯỚNG NGƯỜI DÙNG (Steps 1.1, 1.2, 1.3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Người dùng đã có tài khoản lưu trong database.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng truy cập trang Login, nhập Email và Password.
+     + Bước 2: Hệ thống gửi thông tin đăng nhập lên Backend kiểm tra bằng Bcrypt.
+     + Bước 3: Nếu đúng, Backend trả về JWT Token và thông tin User. Client lưu Token vào Session Storage.
+     + Bước 4: Hệ thống tự động chuyển hướng người dùng vào màn hình chính của ứng dụng (chung một giao diện cho mọi tài khoản).
+   - Hạn chế của luồng cũ:
+     + Hệ thống không phân quyền (Role-based Access Control). Mọi tài khoản sau khi đăng nhập đều truy cập được các chức năng giống nhau.
+     + Khi đăng xuất (Logout), hệ thống chỉ xóa token ở phía Client. Token cũ vẫn khả dụng và có hiệu lực gửi request ở Backend cho tới khi tự hết hạn (thiếu Blacklist Token bảo mật).
+     + Người dùng chưa đăng nhập nếu cố tình gõ trực tiếp URL các trang nội bộ thì hệ thống chưa chặn triệt để.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Người dùng (Admin / Supervisor / Staff).
+   - Tiền điều kiện: Người dùng có tài khoản đã được cấp vai trò (Role) tương ứng và được Admin duyệt kích hoạt.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng truy cập trang Login, nhập Email và Password.
+     + Bước 2: Hệ thống kiểm tra thông tin và kiểm tra trạng thái kích hoạt tài khoản của Admin. Nếu chưa kích hoạt, thông báo lỗi.
+     + Bước 3: Đăng nhập thành công, Backend sinh Token JWT chứa thông tin vai trò (role) và gửi về Client.
+     + Bước 4: Hệ thống Client đọc thông tin role từ Token và tự động chuyển hướng:
+       * Nếu là Admin: Chuyển hướng sang trang Quản trị người dùng & Phê duyệt tài khoản.
+       * Nếu là Supervisor: Chuyển hướng sang trang Quản lý Dataset, chia Batch, giao Task và Giải quyết conflict.
+       * Nếu là Staff: Chuyển hướng sang giao diện gán nhãn các Task được phân công.
+     + Bước 5 (Luồng chặn truy cập): Nếu người dùng gõ trực tiếp URL của vai trò khác (hoặc chưa đăng nhập), Router Client và Middleware Backend đối chiếu JWT và trả về trang Login hoặc lỗi 403 Forbidden.
+     + Bước 6 (Luồng Đăng xuất): Khi người dùng bấm Logout, hệ thống gửi request hủy token lên Backend. Backend lưu token cũ vào bộ nhớ Blacklist để vô hiệu hóa ngay lập tức. Client xóa session và vô hiệu hóa nút Back của trình duyệt.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 2: TIỀN XỬ LÝ & LÀM SẠCH DỮ LIỆU - LỌC THẺ NGHĨ <think> (Steps 2.1, 2.2.1)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Tập dữ liệu thô (.docx/.pdf) đã được tải lên và convert sang JSON.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng chọn tùy chọn làm sạch thẻ nghĩ `<think>` ngay trong lúc tải file lên.
+     + Bước 2: Hệ thống chạy hàm xóa các đoạn text nằm trong thẻ `<think>` rồi lưu trực tiếp kết quả vào file JSON.
+   - Hạn chế của luồng cũ:
+     + Việc loại bỏ thẻ `<think>` diễn ra quá sớm ngay khi tải file khiến dữ liệu thô gốc bị sửa đổi trực tiếp, người dùng không có cơ hội đối chiếu Before/After hoặc khôi phục dữ liệu bị xóa nhầm.
+     + Chưa xử lý tốt các thẻ `<think>` bị lỗi (như thiếu thẻ đóng `</think>` hoặc thiếu thẻ mở).
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Supervisor.
+   - Tiền điều kiện: Tập dữ liệu gốc đã được tải lên và convert thành công dưới dạng JSON nguyên bản.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Hệ thống bỏ tính năng xóa thẻ tại bước upload. File dữ liệu được giữ nguyên bản gốc.
+     + Bước 2: Tại bước **Cleaning**, hệ thống cung cấp các bộ cấu hình làm sạch: xóa thẻ `<think>` hoàn chỉnh, tự động vá và xóa thẻ `<think>` bị lỗi/mất thẻ đóng, lọc độ dài hội thoại, lọc từ khóa lỗi.
+     + Bước 3: Người dùng cấu hình xong bấm **Preview**. Hệ thống chạy làm sạch giả lập và hiển thị báo cáo thống kê: số lượng bản ghi bị lọc, tỷ lệ % bị loại bỏ trực quan.
+     + Bước 4: Hệ thống hiển thị giao diện đối chiếu song song: Cột bên trái hiển thị nội dung gốc (Before), cột bên phải hiển thị nội dung sau khi làm sạch (After - đã loại bỏ thẻ nghĩ).
+     + Bước 5: Người dùng có thể click chọn thủ công từng bản ghi bị lọc sai và bấm **Restore** để giữ lại nội dung gốc.
+     + Bước 6: Người dùng nhấn **Apply** để xác nhận phiên bản dữ liệu làm sạch chính thức dùng cho các bước sau.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 3: TRỰC QUAN HÓA THUẬT TOÁN FIND K & PHÂN CỤM DỮ LIỆU (Steps 2.2.2, 2.2.3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Dataset đã được tiền xử lý và sẵn sàng phân cụm.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng nhấn chạy thuật toán tìm số cụm tối ưu K và phân cụm K-means/DBSCAN thông qua GPU Service.
+     + Bước 2: Kết quả trả về dưới dạng bảng danh sách cụm thô sơ. Người dùng chỉ biết được số lượng phần tử mỗi cụm.
+   - Hạn chế của luồng cũ:
+     + Đồ thị Elbow (WCSS) và Silhouette không được trực quan hóa, người dùng phải tự nhập thủ công giá trị K theo cảm tính.
+     + Phân bố cụm dữ liệu hiển thị dạng bảng khô khan, không thể đánh giá được các cụm có bị chồng chéo hay không.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Supervisor.
+   - Tiền điều kiện: Dataset đã được làm sạch thành công.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng mở màn hình Find K, GPU Service chạy tính toán vector embedding và tính chỉ số Elbow/Silhouette.
+     + Bước 2: Hệ thống vẽ đồ thị tương tác Elbow và Silhouette Score. Điểm gãy khúc tối ưu được hệ thống đánh dấu nổi bật.
+     + Bước 3: Người dùng click trực tiếp vào điểm K mong muốn trên đồ thị để thiết lập tham số K cho bước phân cụm.
+     + Bước 4: Chuyển sang bước K-means, hệ thống gọi thuật toán phân cụm cùng DBSCAN lọc nhiễu, sau đó chạy giảm chiều dữ liệu (PCA/t-SNE).
+     + Bước 5: Trực quan hóa dữ liệu phân cụm lên bản đồ phân tán 2D/3D (Scatter Plot) với các màu sắc đại diện cho từng cụm. Người dùng hover chuột vào một điểm để xem trước tóm tắt hội thoại, click chuột để chuyển đến chi tiết dữ liệu.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 4: TỰ ĐỘNG GÁN NHÃN MÔN HỌC & ĐIỀU PHỐI PHÂN CÔNG TASK (Steps 2.3.1, 2.3.2)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Tập dữ liệu đã qua tiền xử lý.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Hệ thống gọi các API AI (Gemini, OpenAI) để tự động phân tích và gán nhãn môn học (Subject Label) cho từng cụm dữ liệu (Cluster-level).
+     + Bước 2: Người dùng thực hiện phân chia dải dữ liệu thủ công (Assign Range) bằng cách gõ chỉ số index (ví dụ: gán từ dòng 1 đến dòng 100 cho Staff A).
+     + Bước 3: Staff mở danh sách dữ liệu chung và tự gán nhãn dựa trên khoảng index được giao.
+   - Hạn chế của luồng cũ:
+     + AI chỉ gán nhãn ở mức độ cụm lớn, dễ bị sai lệch nếu cụm chứa dữ liệu hỗn hợp nhiều môn học; không hiển thị điểm tin cậy của AI.
+     + Việc chia dải dữ liệu (Assign Range) thô sơ bằng số index rất dễ bị trùng lặp chéo, sót bản ghi và khó quản lý.
+     + Chưa quản lý công việc theo mô hình "Task" chuyên nghiệp (không có tên task, deadline, quy tắc gán nhãn, độ ưu tiên).
+     + Không hỗ trợ cơ chế gán nhãn độc lập (Double Review) để kiểm tra chéo độ chính xác giữa các nhân viên.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (XÂY MỚI)
+   - Tác nhân (Actor): Supervisor (Người giám sát) và Staff (Nhân viên gán nhãn).
+   - Tiền điều kiện: Tập dữ liệu đã qua tiền xử lý, danh sách môn học đã được định nghĩa.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1 (Auto Labeling): Hệ thống tự động phân tích ngữ nghĩa và gán môn học cho từng bản ghi riêng lẻ (Sample-level). Nếu độ tin cậy của AI >= 85% và tập dữ liệu chỉ chứa một môn học đơn nhất, hệ thống tự động gán nhãn nhanh. Nếu độ tin cậy thấp hoặc đa môn, chuyển sang gán thủ công.
+     + Bước 2 (Task Creation): Supervisor chọn tập dữ liệu, chia nhỏ thành các Batch dữ liệu (mỗi batch 30-40 hội thoại). Supervisor bấm tạo Task gán nhãn mới, điền các thông tin: Tên task, Batch, Staff thực hiện, Deadline, Mức độ ưu tiên, Chế độ review (Single / Double Review) và Quy tắc gán nhãn (Guideline).
+     + Bước 3 (Double Review Allocation): Nếu chọn chế độ Double Review, Supervisor phân công cùng một Batch cho 2 Staff gán nhãn độc lập (ví dụ Staff A và Staff B).
+     + Bước 4 (Conflict Detection): Sau khi cả 2 Staff nhấn Submit, hệ thống tự động đối chiếu nhãn của 2 người.
+       * Nếu trùng khớp 100%: Hệ thống tự động duyệt nhãn cuối cùng (Approved).
+       * Nếu xuất hiện bất kỳ điểm lệch nhãn nào: Hệ thống chuyển trạng thái task thành "Conflict Detected" và đẩy các bản ghi lệch nhãn vào hàng chờ giải quyết xung đột của Supervisor.
+     + Bước 5 (Conflict Adjudication): Supervisor mở màn hình giải quyết conflict, xem so sánh song song side-by-side kết quả gán nhãn của Staff A và Staff B, đọc ghi chú giải trình của họ. Supervisor chọn kết quả đúng hơn hoặc tự nhập nhãn chính xác để lưu lại nhãn phê duyệt cuối cùng (Final Approved Label).
+
+
+--------------------------------------------------------------------------------
+LUỒNG 5: KHÔNG GIAN GÁN NHÃN ĐA MỤC TIÊU CỦA STAFF (Step 2.3.3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Staff.
+   - Tiền điều kiện: Được phân công khoảng dòng dữ liệu.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Staff mở trang dữ liệu tổng, kéo đến khoảng index được giao.
+     + Bước 2: Staff gán nhãn môn học (Subject) và Intent cho từng tin nhắn trực tiếp lên lưới dữ liệu (Data Grid).
+   - Hạn chế của luồng cũ:
+     + Không thể lưu nháp, nếu tắt trình duyệt hoặc mất mạng sẽ mất toàn bộ tiến trình gán nhãn.
+     + Thiếu các nhãn đánh giá chất lượng hội thoại học tập (Completion Status, Training Quality) và các cờ đánh dấu lỗi học thuật.
+     + Trợ lý AI tự động đề xuất nhãn luôn bật, dễ làm Staff bị ảnh hưởng chủ quan khi gán nhãn.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Staff.
+   - Tiền điều kiện: Được phân công Task cụ thể bởi Supervisor.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Staff truy cập giao diện Task cá nhân, xem Guideline gán nhãn đính kèm. Nhấn "Start Labeling".
+     + Bước 2: Giao diện hiển thị cuộc hội thoại đầy đủ dạng chat bong bóng.
+     + Bước 3: Supervisor có quyền cấu hình Bật/Tắt trợ lý AI gợi ý nhãn (AI-assisted suggestion) ở cấu hình Task để đảm bảo tính khách quan. Nếu bật, hệ thống hiển thị nhãn gợi ý nhạt dưới ô chọn.
+     + Bước 4: Staff thực hiện gán nhãn đa mục tiêu:
+       * Xác nhận/Sửa đổi môn học (Subject Label).
+       * Chọn Intent Label cho từng tin nhắn của học sinh (Ask for Explanation, Clarification, Off-topic...).
+       * Đánh giá Completion Status (Completed, Incomplete...) và Training Quality Label (Good, Medium, Poor).
+       * Gắn các cờ lỗi nếu có (Factual Error, Direct Answer Issue...).
+     + Bước 5: Staff có thể nhấn "Save Draft" bất cứ lúc nào để lưu tạm tiến độ lên Server. Khi hoàn tất toàn bộ batch, nhấn "Submit" để gửi kết quả.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 6: DUYỆT CHẤT LƯỢNG HỘI THOẠI & PHÁT HIỆN XUNG ĐỘT PHÂN LOẠI (Step 2.4.1)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Không có (Chạy tự động bằng AI).
+   - Tiền điều kiện: Kết thúc gán nhãn.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Hệ thống tự động phân loại hội thoại thành Gold, Rewrite, Reject dựa trên thuật toán AI 100%.
+   - Hạn chế của luồng cũ:
+     + Thiếu sự kiểm duyệt và đánh giá từ con người (Reviewer/Supervisor), hệ thống dễ chấp nhận các mẫu hội thoại có kiến thức sai lệch hoặc vi phạm định hướng Socratic.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Reviewer, Supervisor.
+   - Tiền điều kiện: Task gán nhãn đã được nộp.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Reviewer truy cập trang **Conversation Quality Review**, sử dụng bộ lọc nâng cao để tìm các hội thoại cần duyệt.
+     + Bước 2: Reviewer mở popup đọc toàn bộ hội thoại và tiến hành phân loại chất lượng thủ công thành: Gold (Đạt chuẩn), Rewrite (Cần sửa), Bad (Không dùng), Incomplete (Chưa hoàn chỉnh) kèm lý do chi tiết.
+     + Bước 3: Nếu nhiều Reviewer cùng tham gia đánh giá một hội thoại và đưa ra kết quả phân loại khác nhau, hệ thống tự động phát hiện và đánh dấu trạng thái "Classification Conflict".
+     + Bước 4: Supervisor mở danh sách Conflict, đối chiếu đánh giá và ghi chú của các Reviewer để đưa ra kết luận phân loại cuối cùng. Dữ liệu Gold được phê duyệt chuyển sang trạng thái "Ready for Training".
+
+
+--------------------------------------------------------------------------------
+LUỒNG 7: PHÂN TÍCH PHÂN PHỐI & XUẤT BÁO CÁO NGHIỆM THU (Step 2.4.2)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng.
+   - Tiền điều kiện: Phân loại dữ liệu hoàn tất.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Xem biểu đồ tròn phân phối môn học và chất lượng tĩnh trên màn hình Dashboard.
+   - Hạn chế của luồng cũ:
+     + Biểu đồ chỉ để xem tổng quan, không có khả năng tương tác để khoanh vùng dữ liệu lỗi.
+     + Không hỗ trợ xuất file báo cáo nghiệm thu sản phẩm để trình hội đồng.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Supervisor.
+   - Tiền điều kiện: Các hội thoại đã được phân loại chất lượng.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Supervisor truy cập Dashboard phân phối chất lượng dữ liệu.
+     + Bước 2: Khi thấy cột "Wrong Intent-Action Pairs" (Hành động phản hồi của AI không khớp với ý định của học sinh), Supervisor click chuột vào biểu đồ.
+     + Bước 3: Hệ thống lập tức mở danh sách chi tiết các hội thoại bị lỗi này để Supervisor kiểm tra nhanh và chuyển sang luồng Rewrite.
+     + Bước 4: Supervisor bấm nút **Export Quality Report**, cấu hình phạm vi dataset/version. Hệ thống xuất ra file PDF hoặc Excel chứa đầy đủ các biểu đồ phân bổ, số lượng mẫu đạt chuẩn Gold và tiến độ công việc để phục vụ báo cáo nghiệm thu đồ án.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 8: VIẾT LẠI HỘI THOẠI TỐI ƯU NGỮ CẢNH - CONTEXT-AWARE REWRITE (Step 2.4.3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Dữ liệu cần viết lại được chọn.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng nhấn chọn tin nhắn trợ lý bị lỗi.
+     + Bước 2: Nhấn gọi AI viết lại. AI chỉ nhận vào duy nhất tin nhắn đó để sinh phiên bản mới.
+   - Hạn chế của luồng cũ:
+     + AI đề xuất viết lại chỉ xử lý đơn lẻ từng tin nhắn một, không đọc được mạch ngữ cảnh các câu trước và sau, dẫn đến nội dung sửa bị gượng gạo, mất tự nhiên và phá vỡ mạch hội thoại.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Reviewer / Supervisor.
+   - Tiền điều kiện: Hội thoại ở trạng thái "Rewrite".
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng mở giao diện viết lại hội thoại, chọn tin nhắn của trợ lý cần sửa tại vị trí câu thứ `n`.
+     + Bước 2: Hệ thống tự động thu thập tối đa 2 tin nhắn liền trước (`n-1`, `n-2`) và 2 tin nhắn liền sau (`n+1`, `n+2`) để làm ngữ cảnh đầu vào (Context Window) cho AI.
+     + Bước 3: Gửi API request lên AI. AI đề xuất câu trả lời mới tối ưu dựa trên ngữ cảnh được cung cấp mà không làm thay đổi các tin nhắn của User.
+     + Bước 4: Giao diện hiển thị màn hình đối chiếu Before/After: Tô màu đỏ phần văn bản cũ và tô màu xanh phần văn bản AI đề xuất. Người dùng có thể chấp nhận bản AI viết lại hoặc chỉnh sửa thủ công trực tiếp trên khung soạn thảo.
+     + Bước 5: Lưu phiên bản chỉnh sửa mới vào DB (giữ nguyên bản gốc để phục vụ audit log).
+
+
+--------------------------------------------------------------------------------
+LUỒNG 9: ĐÁNH GIÁ ĐA MÔ HÌNH - MULTI-MODEL EVALUATION (Step 2.5.1)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Tập dữ liệu mẫu đã được chọn.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Chọn một mô hình AI duy nhất (OpenAI hoặc Alpaca).
+     + Bước 2: Chạy đánh giá tuyến tính toàn bộ file dữ liệu và nhận về điểm số trung bình.
+   - Hạn chế của luồng cũ:
+     + Chỉ sử dụng duy nhất một model AI tại một thời điểm, kết quả chấm điểm dễ bị thiên lệch.
+     + Không hỗ trợ phát hiện xung đột chấm điểm (Evaluation Conflict) giữa các mô hình.
+     + Gửi toàn bộ hội thoại cho AI chấm điểm gây tốn token và tốn thời gian xử lý.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (XÂY MỚI)
+   - Tác nhân (Actor): Supervisor.
+   - Tiền điều kiện: Dữ liệu đã hoàn tất bước Rewrite.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Supervisor truy cập màn hình Multi-model Evaluation, chọn dataset/version cần đánh giá lại.
+     + Bước 2: Supervisor thiết lập từ 1 đến 3 AI Judge Model (ví dụ: GPT-4, Gemini Pro, Claude 3) chạy đánh giá độc lập.
+     + Bước 3: Cấu hình Context Window để đánh giá đúng tiêu điểm tin nhắn vừa được viết lại (ví dụ chỉ gửi tin nhắn n và 4 tin nhắn xung quanh thay vì gửi toàn bộ hội thoại).
+     + Bước 4: Hệ thống chạy job đánh giá song song, chấm điểm theo các tiêu chí (Factuality, Socratic Pedagogical, Vietnamese Quality...).
+     + Bước 5: Hệ thống tự động so sánh bảng điểm của các model. Nếu có sự chênh lệch điểm vượt ngưỡng hoặc một model đánh giá Pass nhưng model khác đánh giá Reject, hệ thống tự động tạo **Evaluation Conflict**.
+     + Bước 6: Supervisor xem so sánh bảng điểm side-by-side, giải quyết conflict để đưa ra quyết định duyệt cuối cùng (Pass chuyển sang Ready for Training, Fail trả về bước Rewrite).
+
+
+--------------------------------------------------------------------------------
+LUỒNG 10: QUẢN LÝ SYSTEM PROMPT, CHỐNG RÒ RỈ DỮ LIỆU & XUẤT CLOUD (Steps 2.6.1, 2.6.2, 2.6.3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng.
+   - Tiền điều kiện: Dữ liệu đạt chuẩn, chuẩn bị đóng gói.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng soạn thảo System Prompt mới và nhấn lưu.
+     + Bước 2: Chạy thuật toán chia tập train/test tự động trên GPU Service.
+     + Bước 3: Xuất file zip tải về máy hoặc upload trực tiếp lên Hugging Face.
+   - Hạn chế của luồng cũ:
+     + Không thể kiểm tra thử phản hồi của System Prompt mới soạn thảo trước khi lưu (phải đợi train xong mới biết prompt có lỗi hay không).
+     + Không phát hiện trực quan được các mẫu dữ liệu trùng lặp ngữ nghĩa giữa tập train/test, dễ gây rò rỉ dữ liệu (data leakage) ảnh hưởng kết quả đánh giá.
+     + Chưa hỗ trợ lưu trữ đám mây trực tiếp.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Supervisor.
+   - Tiền điều kiện: Dữ liệu Gold đạt chuẩn.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1 (System Prompt & Trial Run): Supervisor soạn thảo System Prompt. Trước khi lưu, sử dụng tính năng **Trial Run**: nhập câu hỏi mẫu và nhấn gửi, hệ thống gọi mô hình thử nghiệm chạy trực tiếp để kiểm tra cấu trúc phản hồi JSON. Đồng thời hỗ trợ xem Diff lịch sử prompt.
+     + Bước 2 (Split Guard): Chạy thuật toán lọc tương đồng ngữ nghĩa. Hệ thống vẽ biểu đồ Venn hiển thị tỷ lệ trùng lặp. Đưa ra danh sách các cặp câu hỏi gần giống nhau ở hai tập train/test. Supervisor có thể tick chọn để loại bỏ thủ công các mẫu trùng lặp này ra khỏi tập test.
+     + Bước 3 (Cloud Export): Khi xuất tập dữ liệu đã khóa (Locked Dataset), người dùng có thêm tùy chọn kết nối với tài khoản Google Cloud Storage hoặc Azure Blob. Nhập cấu hình và nhấn Export, hệ thống tự động tải file nén lên Cloud Storage của người dùng.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 11: HUẤN LUYỆT TỰ ĐỘNG & QUẢN LÝ PRESETS THAM SỐ (Step 3)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Kỹ sư AI / Người dùng (User).
+   - Tiền điều kiện: Tập dữ liệu huấn luyện đã được export và sẵn sàng.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng truy cập trang Auto Train, chọn base model từ danh sách cố định cứng.
+     + Bước 2: Người dùng nhập các siêu tham số LoRA (batch size, epochs, learning rate...) dạng text thủ công.
+     + Bước 3: Người dùng cấu hình repo Hugging Face và bấm nút bắt đầu huấn luyện. Hệ thống kết nối và vẽ đường cong loss.
+   - Hạn chế của luồng cũ:
+     + Người dùng không thể xem trước mẫu dữ liệu (Preview dataset) trước khi nhấn nút bắt đầu train.
+     + Danh sách base model bị giới hạn cứng (hardcoded), không thể tìm kiếm các model khác từ Hugging Face Hub.
+     + Mỗi lần chạy train mới đều phải gõ lại toàn bộ siêu tham số LoRA từ đầu, chưa hỗ trợ lưu lại cấu hình mẫu (Preset).
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (XÂY MỚI)
+   - Tác nhân (Actor): Kỹ sư AI / Supervisor.
+   - Tiền điều kiện: Tập dữ liệu train đã được khóa và phê duyệt sang Ready for Training.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng mở màn hình Auto Train. Hệ thống hiển thị bảng Preview một vài dòng dữ liệu mẫu để người dùng đối chiếu trước khi huấn luyện.
+     + Bước 2: Tích hợp thanh tìm kiếm trực tuyến gọi API của Hugging Face Hub, cho phép người dùng tìm kiếm và chọn bất kỳ base model ID công khai nào trên HF.
+     + Bước 3: Người dùng tùy chỉnh các thông số LoRA. Sau đó bấm nút **Save Preset** để lưu bộ cấu hình tham số hiện tại vào cơ sở dữ liệu với tên gọi tự chọn (ví dụ: "LoRA Qwen 8B Standard"). Các lần train sau chỉ cần bấm **Load Preset** để áp dụng nhanh cấu hình này.
+     + Bước 4: Nhấn nút Train, Backend kích hoạt GPU Service chạy tiến trình huấn luyện. Hệ thống đẩy dòng log chi tiết thời gian thực và vẽ đường cong Loss Curve qua kết nối SSE.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 12: QUẢN LÝ LỊCH SỬ HUẤN LUYỆT & SO SÁNH CHÉO ĐƯỜNG LOSS (Step 4)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng.
+   - Tiền điều kiện: Đã từng chạy các run huấn luyện.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Xem danh sách các run huấn luyện kèm thông số LoRA cơ bản.
+     + Bước 2: Click vào từng dòng để xem biểu đồ Loss Curve riêng lẻ của run đó.
+   - Hạn chế của luồng cũ:
+     + Không hiển thị số lượng mẫu dữ liệu (sample size) và số lượng token thực tế đã huấn luyện của run đó.
+     + Chỉ hiển thị biểu đồ loss riêng biệt, không có chức năng so sánh trực quan chéo giữa nhiều đợt huấn luyện khác nhau.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (NÂNG CẤP)
+   - Tác nhân (Actor): Kỹ sư AI / Supervisor.
+   - Tiền điều kiện: Có ít nhất 2 run huấn luyện được ghi nhận trong lịch sử.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng truy cập màn hình **Training History**, click xem chi tiết một run huấn luyện để đọc các thông số bổ sung (Số lượng sample dữ liệu thực tế dùng để train, số lượng token, thời gian huấn luyện...).
+     + Bước 2: Trên bảng danh sách các run, người dùng tích chọn tối thiểu 2 run huấn luyện (ví dụ: Run LoRA Qwen Epoch 3 và Run LoRA Qwen Epoch 5).
+     + Bước 3: Nhấn nút **Compare Runs**. Hệ thống vẽ một biểu đồ đường cong loss tổng hợp (Overlay Chart), chồng các đường loss và eval loss của 2 run lên nhau bằng các màu sắc khác nhau, giúp đánh giá nhanh tốc độ hội tụ và hiện tượng overfitting giữa các bộ tham số.
+
+
+--------------------------------------------------------------------------------
+LUỒNG 13: KIỂM THỬ BATCH TESTING & ĐỐI CHIẾU MÔ HÌNH GEMINI (Steps 5.1, 5.2)
+--------------------------------------------------------------------------------
+
+1. ĐẶC TẢ LUỒNG HỆ THỐNG CŨ
+   - Tác nhân (Actor): Người dùng (User).
+   - Tiền điều kiện: Mô hình đã được load thành công vào GPU slot phục vụ inference.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1: Người dùng mở trang Chatbot, chọn model nguồn (Local hoặc Registry).
+     + Bước 2: Người dùng gõ câu hỏi thủ công vào ô input và nhận về câu trả lời.
+     + Bước 3: Tại màn hình Compare Model, người dùng mở song song 2 GPU slots để gõ cùng một câu hỏi và đối chiếu kết quả trả về của 2 model.
+   - Hạn chế của luồng cũ:
+     + Chỉ hỗ trợ chat thủ công từng câu hỏi một. Để kiểm thử chất lượng mô hình trên tập câu hỏi lớn (ví dụ 50-100 câu), người dùng mất rất nhiều công sức gõ tay.
+     + Khi so sánh mô hình, hệ thống chỉ hỗ trợ so sánh mô hình nội bộ đang chạy trên GPU và các mô hình tích hợp qua OpenRouter, chưa hỗ trợ kết nối trực tiếp đến các mô hình lớn như Google Gemini API chính thức.
+
+2. ĐẶC TẢ LUỒNG HỆ THỐNG CẢI TIẾN (XÂY MỚI)
+   - Tác nhân (Actor): Kỹ sư AI / Supervisor.
+   - Tiền điều kiện: Mô hình cần kiểm thử đã được tải (load) sẵn sàng.
+   - Luồng nghiệp vụ chi tiết:
+     + Bước 1 (Batch Testing): Tại màn hình Chatbot, người dùng chọn chức năng **Upload Test Case**. Tải lên một file JSON hoặc CSV chứa danh sách các câu hỏi mẫu cần kiểm tra hàng loạt.
+     + Bước 2: Nhấn bắt đầu kiểm thử. Backend tự động chạy vòng lặp gửi hàng loạt câu hỏi lên mô hình đang load và ghi nhận câu trả lời tương ứng một cách tự động (Batch Inference).
+     + Bước 3: Sau khi chạy xong, hệ thống xuất ra một file kết quả (.json/.csv) chứa đầy đủ các cột Câu hỏi - Câu trả lời để người dùng tải về máy phân tích.
+       * *Chỉ số kỳ vọng:* Thời gian xử lý hàng loạt 50 câu hỏi phải **dưới 2 phút**.
+     + Bước 4 (Gemini API Integration): Trong phần cấu hình mô hình so sánh (Compare Model), người dùng chọn nhà cung cấp **Google Gemini API** chính thức. Hệ thống hiển thị ô nhập Gemini API Key để người dùng lưu vào cấu hình.
+     + Bước 5: Khi chat so sánh, request được gửi trực tiếp đến API Google Gemini để sinh câu trả lời song song cùng mô hình nội bộ, giúp đối chiếu chất lượng Socratic trực quan và nhanh chóng nhất.
+================================================================================
