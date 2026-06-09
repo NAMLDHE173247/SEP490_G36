@@ -15,7 +15,7 @@ import { LabelAssignment } from '../models/LabelAssignment';
 import { GeminiProvider } from '../services/providers/GeminiProvider';
 import { OpenAIProvider } from '../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../services/providers/DeepseekProvider';
-import { getAuthUserId } from '../utils/auth';
+import { getAuthUserId, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
 import { EvalFormat, inferFormatFromRow } from '../utils/evalUtils';
 import { versionService, type DatasetOperationType } from '../modules/dataprep/versions/version.service';
@@ -1157,8 +1157,9 @@ export class EvaluationController {
         return;
       }
 
+      const versionQuery = isManager(req) ? { _id: id } : { _id: id, ownerId };
       const updated = await DatasetVersion.findOneAndUpdate(
-        { _id: id, ownerId },
+        versionQuery,
         { $set: { prepareResumeStep } },
         { returnDocument: 'after' }
       ).lean();
@@ -1169,8 +1170,9 @@ export class EvaluationController {
       }
 
       if (updated.projectId) {
+        const projectQuery = isManager(req) ? { _id: updated.projectId } : { _id: updated.projectId, ownerId };
         await DataPrepProject.updateOne(
-          { _id: updated.projectId, ownerId },
+          projectQuery,
           { $set: { latestVersionId: updated._id } }
         );
       }
@@ -1214,8 +1216,9 @@ export class EvaluationController {
         return;
       }
 
+      const query = isManager(req) ? { _id: id } : { _id: id, ownerId };
       const updated = await DatasetVersion.findOneAndUpdate(
-        { _id: id, ownerId },
+        query,
         { $set: { isPublic } },
         { returnDocument: 'after' }
       ).lean();
@@ -1279,8 +1282,9 @@ export class EvaluationController {
       }
 
       const sharedWithUserIds = userId ? [new mongoose.Types.ObjectId(userId)] : [];
+      const query = isManager(req) ? { _id: id } : { _id: id, ownerId };
       const updated = await DatasetVersion.findOneAndUpdate(
-        { _id: id, ownerId },
+        query,
         { $set: { sharedWithUserIds } },
         { returnDocument: 'after' }
       ).lean();
@@ -1323,7 +1327,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1480,7 +1484,7 @@ export class EvaluationController {
       }
 
       const [version, assignee] = await Promise.all([
-        DatasetVersion.findOne({ _id: id, ownerId }).lean(),
+        DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean(),
         User.findById(userId).select('_id name email').lean(),
       ]);
       if (!version) {
@@ -1569,7 +1573,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1600,7 +1604,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1643,7 +1647,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1674,7 +1678,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1734,7 +1738,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1791,7 +1795,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1842,7 +1846,7 @@ export class EvaluationController {
       }
 
       const [version, assignee] = await Promise.all([
-        DatasetVersion.findOne({ _id: id, ownerId }).lean(),
+        DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean(),
         User.findById(assigneeId).select('_id').lean(),
       ]);
       if (!version) {
@@ -1921,7 +1925,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1963,7 +1967,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -2126,7 +2130,7 @@ export class EvaluationController {
         return;
       }
 
-      const version = await DatasetVersion.findOne({ _id: item.datasetVersionId, ownerId }).select('_id').lean();
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: item.datasetVersionId } : { _id: item.datasetVersionId, ownerId }).select('_id').lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy mẫu cần xóa.' });
         return;

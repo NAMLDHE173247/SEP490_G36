@@ -4,6 +4,8 @@ services:
     image: mongo:7
     container_name: sep490_mongo
     restart: unless-stopped
+    ports:
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     networks:

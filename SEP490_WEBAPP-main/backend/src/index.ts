@@ -14,9 +14,38 @@ const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_training';
 
 // Connect to MongoDB
+import { User } from './models/User';
+import bcrypt from 'bcryptjs';
+
+async function seedDefaultUsers() {
+  try {
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash('1', salt);
+
+    const demoUsers = [
+      { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const },
+      { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const },
+      { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const },
+    ];
+
+    for (const demo of demoUsers) {
+      const existing = await User.findOne({ email: demo.email });
+      if (!existing) {
+        await User.create(demo);
+        console.log(`🌱 Seeded demo account: ${demo.email} (password: 1, role: ${demo.role})`);
+      }
+    }
+  } catch (err: any) {
+    console.error('❌ Seeding error:', err.message);
+  }
+}
+
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log('✅ MongoDB connected:', MONGO_URI))
+  .then(async () => {
+    console.log('✅ MongoDB connected:', MONGO_URI);
+    await seedDefaultUsers();
+  })
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 
 // Middleware

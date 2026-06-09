@@ -22,6 +22,7 @@ function attachUserFromToken(req: Request, token: string): boolean {
     userId?: string;
     _id?: string;
     id?: string;
+    role?: string;
   };
 
   const userId = decoded.userId || decoded._id || decoded.id;
@@ -34,6 +35,7 @@ function attachUserFromToken(req: Request, token: string): boolean {
     id: String(userId),
     _id: String(userId),
     userId: String(userId),
+    role: decoded.role || 'staff',
   };
   return true;
 }

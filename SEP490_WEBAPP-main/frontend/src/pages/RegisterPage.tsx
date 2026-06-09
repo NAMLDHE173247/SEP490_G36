@@ -9,6 +9,7 @@ export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState('staff');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
@@ -17,7 +18,7 @@ export const RegisterPage: React.FC = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      const res = await axios.post('/api/auth/register', { name, email, password });
+      const res = await axios.post('/api/auth/register', { name, email, password, role });
       clearUserScopedQueryCache();
       setAuth(res.data.user, res.data.token);
       toast.success('Registration successful!');
@@ -82,6 +83,21 @@ export const RegisterPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="appearance-none block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-slate-800 focus:border-slate-800 sm:text-sm"
                 />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700">Role</label>
+              <div className="mt-1">
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm bg-white focus:outline-none focus:ring-slate-800 focus:border-slate-800 sm:text-sm"
+                >
+                  <option value="staff">Staff</option>
+                  <option value="supervisor">Supervisor</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
             </div>
 

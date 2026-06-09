@@ -14,3 +14,8 @@ export function getAuthUserId(req: Request): string | null {
   }
   return normalized;
 }
+
+export function isManager(req: Request): boolean {
+  const role = (req as any).user?.role;
+  return role === 'admin' || role === 'supervisor';
+}

@@ -11,6 +11,7 @@ interface User {
   id: string;
   name: string;
   email: string;
+  role: string;
 }
 
 interface AuthState {
@@ -33,6 +34,7 @@ function normalizeUser(user: AuthSessionUser | null): User | null {
     id,
     name: String(user.name || ''),
     email: String(user.email || ''),
+    role: String(user.role || 'staff'),
   };
 }
 

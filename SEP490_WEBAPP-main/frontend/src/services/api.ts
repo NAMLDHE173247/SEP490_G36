@@ -1633,4 +1633,14 @@ export const apiService = {
     const response = await api.patch(`/dataprep/versions/${versionId}/quality/incomplete-bucket`, { bucket });
     return response.data;
   },
+
+  updateUserRole: async (id: string, role: string): Promise<any> => {
+    const response = await api.patch(`/auth/users/${id}/role`, { role });
+    return response.data;
+  },
+
+  deleteUser: async (id: string): Promise<any> => {
+    const response = await api.delete(`/auth/users/${id}`);
+    return response.data;
+  },
 };

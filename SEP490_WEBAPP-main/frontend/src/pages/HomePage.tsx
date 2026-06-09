@@ -110,6 +110,7 @@ const TAG_COLORS: Record<string, string> = {
   Registry: 'bg-blue-50 text-blue-600 border-blue-200',
   Inference: 'bg-amber-50 text-amber-600 border-amber-200',
   Community: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  Admin: 'bg-rose-50 text-rose-600 border-rose-200',
 };
 
 export const HomePage: React.FC = () => {
@@ -121,6 +122,34 @@ export const HomePage: React.FC = () => {
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [urlHistory, setUrlHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  const role = user?.role || 'staff';
+
+  // Base tools list
+  let displayTools = [...tools];
+
+  // Add Admin page tool if admin
+  if (role === 'admin') {
+    displayTools.push({
+      title: 'User Management',
+      description: 'Manage system users, delete accounts, and update role assignments (Admin, Supervisor, Staff)',
+      path: '/admin',
+      tag: 'Admin',
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+            d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      ),
+    });
+  }
+
+  // Filter tools based on role
+  if (role === 'staff') {
+    displayTools = displayTools.filter(
+      (t) => t.path === '/chat' || t.path === '/community-hub'
+    );
+  }
 
 
   React.useEffect(() => {
@@ -222,99 +251,112 @@ export const HomePage: React.FC = () => {
             <span className="text-sm font-bold text-slate-800 tracking-tight whitespace-nowrap">Chatbot Training Toolkit</span>
           </div>
           
-          {/* GPU Connection widget */}
-          <div className="flex-1 max-w-sm mx-6 hidden md:block relative">
-            {connectionStatus === 'connected' ? (
-              /* ── Compact connected badge ── */
-              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-                <span
-                  className="text-xs text-emerald-700 font-mono truncate flex-1 min-w-0"
-                  title={connectedUrl}
-                >
-                  {connectedUrl}
-                </span>
-                <button
-                  onClick={handleDisconnect}
-                  className="flex-shrink-0 text-xs text-slate-400 hover:text-red-500 transition-colors ml-1 whitespace-nowrap"
-                  title="Ngắt kết nối GPU"
-                >
-                  Ngắt
-                </button>
-              </div>
-            ) : (
-              /* ── Input mode when idle / error / connecting ── */
-              <div className="flex items-center gap-2">
-                <span
-                  title={connectionStatus === 'connecting' ? 'Đang kết nối...' : connectionStatus === 'error' ? 'Kết nối thất bại' : 'Chưa kết nối GPU'}
-                  className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
-                    connectionStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
-                    connectionStatus === 'error'      ? 'bg-red-400' :
-                                                        'bg-slate-300'
-                  }`}
-                />
-                <div className="relative flex-1 min-w-0">
-                  <input
-                    type="text"
-                    value={inputUrl}
-                    onChange={(e) => { setInputUrl(e.target.value); if (connectionStatus === 'error') setConnectionStatus('idle'); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
-                    disabled={connectionStatus === 'connecting'}
-                    className="w-full bg-slate-50 border border-slate-200 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all placeholder:text-slate-400 disabled:opacity-50 font-mono pr-6"
-                    placeholder="https://xyz.ngrok-free.app"
-                  />
-                  {/* History button inside input */}
-                  {urlHistory.length > 0 && connectionStatus !== 'connecting' && (
-                    <button
-                      onClick={() => setShowHistory(v => !v)}
-                      title="Lịch sử kết nối"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs leading-none transition-colors"
-                    >▾</button>
-                  )}
+          {/* GPU Connection widget - Only for Admin / Supervisor */}
+          {user && (user.role === 'admin' || user.role === 'supervisor') ? (
+            <div className="flex-1 max-w-sm mx-6 hidden md:block relative">
+              {connectionStatus === 'connected' ? (
+                /* ── Compact connected badge ── */
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                  <span
+                    className="text-xs text-emerald-700 font-mono truncate flex-1 min-w-0"
+                    title={connectedUrl}
+                  >
+                    {connectedUrl}
+                  </span>
+                  <button
+                    onClick={handleDisconnect}
+                    className="flex-shrink-0 text-xs text-slate-400 hover:text-red-500 transition-colors ml-1 whitespace-nowrap"
+                    title="Ngắt kết nối GPU"
+                  >
+                    Ngắt
+                  </button>
                 </div>
-                {/* History dropdown */}
-                {showHistory && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
-                    <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 w-full overflow-hidden">
-                      <div className="px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                        Lịch sử kết nối
+              ) : (
+                /* ── Input mode when idle / error / connecting ── */
+                <div className="flex items-center gap-2">
+                  <span
+                    title={connectionStatus === 'connecting' ? 'Đang kết nối...' : connectionStatus === 'error' ? 'Kết nối thất bại' : 'Chưa kết nối GPU'}
+                    className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors ${
+                      connectionStatus === 'connecting' ? 'bg-amber-400 animate-pulse' :
+                      connectionStatus === 'error'      ? 'bg-red-400' :
+                                                          'bg-slate-300'
+                    }`}
+                  />
+                  <div className="relative flex-1 min-w-0">
+                    <input
+                      type="text"
+                      value={inputUrl}
+                      onChange={(e) => { setInputUrl(e.target.value); if (connectionStatus === 'error') setConnectionStatus('idle'); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleConnect(); }}
+                      disabled={connectionStatus === 'connecting'}
+                      className="w-full bg-slate-50 border border-slate-200 text-xs px-3 py-1.5 rounded-md focus:outline-none focus:ring-2 focus:ring-slate-800/20 focus:border-slate-800 transition-all placeholder:text-slate-400 disabled:opacity-50 font-mono pr-6"
+                      placeholder="https://xyz.ngrok-free.app"
+                    />
+                    {/* History button inside input */}
+                    {urlHistory.length > 0 && connectionStatus !== 'connecting' && (
+                      <button
+                        onClick={() => setShowHistory(v => !v)}
+                        title="Lịch sử kết nối"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs leading-none transition-colors"
+                      >▾</button>
+                    )}
+                  </div>
+                  {/* History dropdown */}
+                  {showHistory && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
+                      <div className="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 w-full overflow-hidden">
+                        <div className="px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                          Lịch sử kết nối
+                        </div>
+                        {urlHistory.map((url, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { setInputUrl(url); setShowHistory(false); setConnectionStatus('idle'); }}
+                            className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 font-mono truncate block transition-colors"
+                            title={url}
+                          >
+                            {url}
+                          </button>
+                        ))}
                       </div>
-                      {urlHistory.map((url, i) => (
-                        <button
-                          key={i}
-                          onClick={() => { setInputUrl(url); setShowHistory(false); setConnectionStatus('idle'); }}
-                          className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 font-mono truncate block transition-colors"
-                          title={url}
-                        >
-                          {url}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <button
-                  onClick={handleConnect}
-                  disabled={!inputUrl.trim() || connectionStatus === 'connecting'}
-                  className="flex-shrink-0 text-xs font-semibold bg-slate-800 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
-                >
-                  {connectionStatus === 'connecting' ? '…' : 'Kết nối'}
-                </button>
-              </div>
-            )}
-          </div>
+                    </>
+                  )}
+                  <button
+                    onClick={handleConnect}
+                    disabled={!inputUrl.trim() || connectionStatus === 'connecting'}
+                    className="flex-shrink-0 text-xs font-semibold bg-slate-800 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                  >
+                    {connectionStatus === 'connecting' ? '…' : 'Kết nối'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex-1 max-w-sm mx-6 hidden md:block" />
+          )}
 
           <div className="flex items-center gap-4">
             {user ? (
               <div className="flex items-center gap-4">
-                <span className="text-sm font-medium text-slate-700">Hello, {user.name}</span>
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-semibold text-slate-800">{user.name}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border leading-none mt-0.5 uppercase ${
+                    user.role === 'admin' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                    user.role === 'supervisor' ? 'bg-indigo-50 text-indigo-600 border-indigo-200' :
+                    'bg-blue-50 text-blue-600 border-blue-200'
+                  }`}>
+                    {user.role || 'staff'}
+                  </span>
+                </div>
                 <button
                   onClick={() => {
                     logout();
                     clearUserScopedQueryCache();
                     navigate('/login');
                   }}
-                  className="text-sm font-medium text-red-600 hover:text-red-800"
+                  className="text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100/70 px-3 py-1.5 rounded-md transition-colors"
                 >
                   Logout
                 </button>
@@ -349,7 +391,7 @@ export const HomePage: React.FC = () => {
       {/* Tool grid */}
       <div className="max-w-5xl mx-auto px-6 pb-16">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tools.map((tool) => {
+          {displayTools.map((tool) => {
             const isHovered = hovered === tool.path;
             return (
               <button
@@ -390,6 +432,31 @@ export const HomePage: React.FC = () => {
             );
           })}
         </div>
+
+        {/* Staff Notice Banner */}
+        {role === 'staff' && (
+          <div className="mt-8 bg-blue-50 border border-blue-100 rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-9 h-9 rounded-xl bg-blue-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm shadow-blue-500/10">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-blue-950">Giao diện Nhân viên Gán nhãn (Staff Mode)</h3>
+                <p className="text-xs text-blue-700/90 leading-relaxed mt-0.5 max-w-2xl">
+                  Chào mừng bạn! Với vai trò là Staff, bạn có nhiệm vụ thực hiện gán nhãn các cuộc hội thoại được phân công. Hãy vào mục <strong>Community Hub</strong> để xem danh sách dự án và thực hiện gán nhãn. Sử dụng <strong>AI Chatbot</strong> để thử nghiệm, thảo luận với các mô hình AI.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/community-hub')}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-colors whitespace-nowrap"
+            >
+              Xem Dự án Gán nhãn
+            </button>
+          </div>
+        )}
       </div>
 
     </div>
