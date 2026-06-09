@@ -11,6 +11,7 @@ import {
   stopTraining,
   getSystemResources,
   resumeTraining,
+  getDashboardStats,
 } from '../controllers/trainController';
 import {
   saveTrainingHistory,
@@ -158,6 +159,7 @@ router.get('/train/stream/:jobId', streamTrainingStatus);
 router.post('/train/stop/:jobId', stopTraining);
 router.post('/train/resume/:jobId', resumeTraining);
 router.get('/system/resources', getSystemResources);
+router.get('/system/dashboard-stats', authMiddleware, getDashboardStats);
 
 // Training History Routes  (⚠️ /models MUST come before /:jobId)
 router.get('/train/history/models', getDistinctBaseModels);

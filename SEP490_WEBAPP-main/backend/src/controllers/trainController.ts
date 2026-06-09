@@ -8,6 +8,13 @@ const fetch = async (url: any, init?: any) => {
 };
 import dotenv from 'dotenv';
 import { TrainingHistory } from '../models/TrainingHistory';
+import { ChatSession } from '../models/ChatSession';
+import { ModelRegistry } from '../models/ModelRegistry';
+import { ModelEvaluation } from '../models/Evaluation';
+import { DatasetSampleAssignment } from '../models/DatasetSampleAssignment';
+import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
+import { User } from '../models/User';
+import { DataPrepProject } from '../models/DataPrepProject';
 import path from 'path';
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 import { getAuthUserId } from '../utils/auth';
@@ -823,5 +830,79 @@ export const resumeTraining = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Backend] resumeTraining error:', err);
     return res.status(500).json({ error: err.message || 'Failed to resume training' });
+  }
+};
+
+export const getDashboardStats = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const userId = user.userId;
+    const role = user.role;
+
+    // Chat sessions count (user-specific)
+    const chatSessionsCount = await ChatSession.countDocuments({ ownerId: userId });
+
+    // Model registry count (total)
+    const modelRegistryCount = await ModelRegistry.countDocuments({});
+
+    // Model evaluation count (total COMPLETED)
+    const modelEvaluationCount = await ModelEvaluation.countDocuments({ status: 'COMPLETED' });
+
+    let extraStats: any = {};
+
+    if (role === 'admin' || role === 'supervisor') {
+      // 1. Total datasets (projects) count
+      const datasetCount = await DataPrepProject.countDocuments({});
+      // 2. Active training jobs count
+      const activeJobsCount = await TrainingHistory.countDocuments({
+        status: { $in: ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'] }
+      });
+      // 3. Staff count
+      const staffCount = await User.countDocuments({ role: 'staff' });
+      // 4. Submissions status
+      const needsReview = await DatasetAssignmentSubmission.countDocuments({ status: 'submitted' });
+      const completed = await DatasetAssignmentSubmission.countDocuments({ status: 'approved' });
+
+      extraStats = {
+        datasetCount,
+        activeJobsCount,
+        staffCount,
+        needsReview,
+        completed
+      };
+    } else if (role === 'staff') {
+      // For staff, count tasks they are assigned
+      // Distinct dataset versions assigned to this staff member
+      const assignedVersions = await DatasetSampleAssignment.distinct('datasetVersionId', { assigneeId: userId });
+      const totalTasks = assignedVersions.length;
+
+      // Submitted or approved tasks
+      const submitted = await DatasetAssignmentSubmission.countDocuments({
+        assigneeId: userId,
+        status: { $in: ['submitted', 'approved'] }
+      });
+
+      // Tasks in progress (assigned versions that have not been submitted/approved)
+      const inProgress = Math.max(0, totalTasks - submitted);
+
+      extraStats = {
+        totalTasks,
+        inProgress,
+        submitted
+      };
+    }
+
+    return res.json({
+      chatSessionsCount,
+      modelRegistryCount,
+      modelEvaluationCount,
+      ...extraStats
+    });
+  } catch (err: any) {
+    console.error('[Backend] getDashboardStats error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to get dashboard stats' });
   }
 };

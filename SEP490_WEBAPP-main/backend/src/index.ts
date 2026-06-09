@@ -23,16 +23,18 @@ async function seedDefaultUsers() {
     const passwordHash = await bcrypt.hash('1', salt);
 
     const demoUsers = [
-      { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const },
-      { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const },
-      { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const },
+      { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const, status: 'active' as const },
+      { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const, status: 'active' as const },
+      { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const, status: 'active' as const },
+      { name: 'System Pending', email: 'pending', passwordHash, role: 'staff' as const, status: 'pending' as const },
+      { name: 'System Disabled', email: 'disabled', passwordHash, role: 'staff' as const, status: 'inactive' as const },
     ];
 
     for (const demo of demoUsers) {
       const existing = await User.findOne({ email: demo.email });
       if (!existing) {
         await User.create(demo);
-        console.log(`🌱 Seeded demo account: ${demo.email} (password: 1, role: ${demo.role})`);
+        console.log(`🌱 Seeded demo account: ${demo.email} (password: 1, role: ${demo.role}, status: ${demo.status})`);
       }
     }
   } catch (err: any) {

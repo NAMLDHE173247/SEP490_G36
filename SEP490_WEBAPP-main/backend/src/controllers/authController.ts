@@ -27,8 +27,12 @@ export const register = async (req: Request, res: Response) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Validate role
-    const assignedRole = ['admin', 'supervisor', 'staff'].includes(role) ? role : 'staff';
+    // If caller is Admin, allow setting role and status: active.
+    // Otherwise, force role: staff, status: pending.
+    const callingUser = (req as any).user;
+    const isAdmin = callingUser && callingUser.role === 'admin';
+    const assignedRole = isAdmin && ['admin', 'supervisor', 'staff'].includes(role) ? role : 'staff';
+    const assignedStatus = isAdmin ? (req.body.status || 'active') : 'pending';
 
     // Create user
     const user = new User({
@@ -36,6 +40,7 @@ export const register = async (req: Request, res: Response) => {
       email,
       passwordHash,
       role: assignedRole,
+      status: assignedStatus,
     });
     await user.save();
 
@@ -50,6 +55,7 @@ export const register = async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        status: user.status,
       },
     });
   } catch (error: any) {
@@ -81,6 +87,20 @@ export const login = async (req: Request, res: Response) => {
       return;
     }
 
+    // Check approval/activation status
+    if (user.status === 'pending') {
+      res.status(403).json({ error: 'Tài khoản của bạn đang chờ phê duyệt.' });
+      return;
+    }
+    if (user.status === 'banned' || user.status === 'inactive') {
+      res.status(403).json({ error: 'Tài khoản của bạn đã bị vô hiệu hóa.' });
+      return;
+    }
+
+    // Update lastLogin time
+    user.lastLogin = new Date();
+    await user.save();
+
     // Create token with role
     const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
@@ -92,6 +112,8 @@ export const login = async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        status: user.status,
+        lastLogin: user.lastLogin,
       },
     });
   } catch (error: any) {
@@ -120,7 +142,7 @@ export const listUsers = async (req: Request, res: Response) => {
     const currentUserId = String((req as any).user?.userId || (req as any).user?.id || '');
     const query = currentUserId ? { _id: { $ne: currentUserId } } : {};
     const users = await User.find(query)
-      .select('_id name email role')
+      .select('_id name email role status createdAt lastLogin')
       .sort({ name: 1, email: 1 })
       .lean();
 
@@ -130,6 +152,9 @@ export const listUsers = async (req: Request, res: Response) => {
         name: String(user.name || ''),
         email: String(user.email || ''),
         role: String(user.role || 'staff'),
+        status: String(user.status || 'active'),
+        createdAt: user.createdAt,
+        lastLogin: user.lastLogin || null,
       })),
     });
   } catch (error: any) {
@@ -222,7 +247,7 @@ export const googleRedirect = (_req: Request, res: Response) => {
     return;
   }
 
-  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=email%20profile&state=google`;
+  const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(GOOGLE_REDIRECT_URI)}&response_type=code&scope=email%20profile&state=google&prompt=select_account`;
   res.redirect(googleAuthUrl);
 };
 
@@ -232,7 +257,7 @@ export const outlookRedirect = (_req: Request, res: Response) => {
     return;
   }
 
-  const outlookAuthUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${OUTLOOK_CLIENT_ID}&redirect_uri=${encodeURIComponent(OUTLOOK_REDIRECT_URI)}&response_type=code&scope=user.read&state=outlook`;
+  const outlookAuthUrl = `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${OUTLOOK_CLIENT_ID}&redirect_uri=${encodeURIComponent(OUTLOOK_REDIRECT_URI)}&response_type=code&scope=user.read&state=outlook&prompt=select_account`;
   res.redirect(outlookAuthUrl);
 };
 
@@ -338,10 +363,23 @@ const handleSocialCallbackUser = async (email: string, name: string) => {
       email,
       passwordHash,
       role: 'staff',
+      status: 'active',
     });
     await user.save();
     console.log(`🌱 Created new social user via Redirect OAuth: ${email}`);
+  } else if (user.status === 'pending') {
+    user.status = 'active';
+    await user.save();
+    console.log(`🔓 Auto-approved existing pending user via Redirect OAuth: ${email}`);
   }
+
+  if (user.status === 'banned' || user.status === 'inactive') {
+    throw new Error('Tài khoản của bạn đã bị vô hiệu hóa.');
+  }
+
+  user.lastLogin = new Date();
+  await user.save();
+
   const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   return {
     token,
@@ -350,6 +388,8 @@ const handleSocialCallbackUser = async (email: string, name: string) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      status: user.status,
+      lastLogin: user.lastLogin,
     }
   };
 };
@@ -380,11 +420,15 @@ export const googleCallback = async (req: Request, res: Response) => {
         const profileResponse = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        email = profileResponse.data.email;
+        email = profileResponse.data.email || '';
+        if (!email) {
+          throw new Error('Không thể lấy thông tin email từ tài khoản Google.');
+        }
         name = profileResponse.data.name || email.split('@')[0];
       } catch (err: any) {
-        console.error('Google OAuth Exchange failed:', err.response?.data || err.message);
-        res.redirect(`${FRONTEND_URL}/login?error=google_auth_failed`);
+        const detail = err.response?.data?.error_description || err.response?.data?.error || err.message;
+        console.error('Google OAuth Exchange failed:', detail);
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Đăng nhập Google thất bại: ' + detail)}`);
         return;
       }
     } else {
@@ -394,9 +438,9 @@ export const googleCallback = async (req: Request, res: Response) => {
 
     const authData = await handleSocialCallbackUser(email, name);
     res.redirect(`${FRONTEND_URL}/login?token=${authData.token}&user=${encodeURIComponent(JSON.stringify(authData.user))}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Google callback error:', error);
-    res.redirect(`${FRONTEND_URL}/login?error=internal_server_error`);
+    res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent(error.message || 'google_auth_failed')}`);
   }
 };
 
@@ -428,11 +472,15 @@ export const outlookCallback = async (req: Request, res: Response) => {
         const profileResponse = await axios.get('https://graph.microsoft.com/v1.0/me', {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        email = profileResponse.data.mail || profileResponse.data.userPrincipalName;
+        email = profileResponse.data.mail || profileResponse.data.userPrincipalName || '';
+        if (!email) {
+          throw new Error('Không thể lấy thông tin email từ tài khoản Microsoft.');
+        }
         name = profileResponse.data.displayName || email.split('@')[0];
       } catch (err: any) {
-        console.error('Outlook OAuth Exchange failed:', err.response?.data || err.message);
-        res.redirect(`${FRONTEND_URL}/login?error=outlook_auth_failed`);
+        const detail = err.response?.data?.error_description || err.response?.data?.error || err.message;
+        console.error('Outlook OAuth Exchange failed:', detail);
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Đăng nhập Outlook thất bại: ' + detail)}`);
         return;
       }
     } else {
@@ -442,8 +490,51 @@ export const outlookCallback = async (req: Request, res: Response) => {
 
     const authData = await handleSocialCallbackUser(email, name);
     res.redirect(`${FRONTEND_URL}/login?token=${authData.token}&user=${encodeURIComponent(JSON.stringify(authData.user))}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Outlook callback error:', error);
-    res.redirect(`${FRONTEND_URL}/login?error=internal_server_error`);
+    res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent(error.message || 'outlook_auth_failed')}`);
+  }
+};
+
+export const updateUserStatus = async (req: Request, res: Response) => {
+  try {
+    const callingUser = (req as any).user;
+    if (callingUser?.role !== 'admin') {
+      res.status(403).json({ error: 'Quyền truy cập bị từ chối. Chỉ dành cho Admin.' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'pending', 'banned', 'inactive'].includes(status)) {
+      res.status(400).json({ error: 'Trạng thái không hợp lệ. Chỉ chấp nhận active, pending, banned, inactive.' });
+      return;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: { status } },
+      { new: true }
+    ).select('-passwordHash');
+
+    if (!updatedUser) {
+      res.status(404).json({ error: 'Không tìm thấy người dùng.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Cập nhật trạng thái thành công.',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        status: updatedUser.status,
+      },
+    });
+  } catch (error: any) {
+    console.error('Update user status error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
   }
 };
