@@ -9,6 +9,86 @@ import {
 import { apiService } from '../services/api';
 import '../admin.css';
 
+const formatDateTime = (dateStr: any) => {
+  if (!dateStr || dateStr === '-') return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const pad = (num: number) => String(num).padStart(2, '0');
+    const dd = pad(d.getDate());
+    const MM = pad(d.getMonth() + 1);
+    const yyyy = d.getFullYear();
+    const HH = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${dd}/${MM}/${yyyy} ${HH}:${mm}:${ss}`;
+  } catch {
+    return dateStr;
+  }
+};
+
+interface DropdownProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string; icon?: React.ReactNode }[];
+  icon: React.ReactNode;
+}
+
+const CustomDropdown: React.FC<DropdownProps> = ({ value, onChange, options, icon }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+  return (
+    <div className="custom-dropdown-container">
+      <button 
+        type="button" 
+        className="custom-dropdown-trigger" 
+        onClick={() => setIsOpen(!isOpen)}
+      >
+        <span className="custom-dropdown-icon">{selectedOption.icon || icon}</span>
+        <span className="custom-dropdown-label">{selectedOption.label}</span>
+        <ChevronDown size={14} className={`custom-dropdown-arrow ${isOpen ? 'open' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="custom-dropdown-backdrop" onClick={() => setIsOpen(false)} />
+          <ul className="custom-dropdown-menu">
+            {options.map((option) => (
+              <li 
+                key={option.value} 
+                className={`custom-dropdown-item ${option.value === value ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+              >
+                {option.icon && <span className="item-icon">{option.icon}</span>}
+                <span>{option.label}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+};
+
+const statusOptions = [
+  { value: 'all', label: 'All Status', icon: <Filter size={14} /> },
+  { value: 'active', label: 'Active', icon: <CheckCircle2 size={14} style={{ color: '#16a34a' }} /> },
+  { value: 'pending', label: 'Pending', icon: <Clock size={14} style={{ color: '#d97706' }} /> },
+  { value: 'banned', label: 'Banned', icon: <Ban size={14} style={{ color: '#dc2626' }} /> },
+  { value: 'inactive', label: 'Inactive', icon: <XCircle size={14} style={{ color: '#64748b' }} /> }
+];
+
+const roleOptions = [
+  { value: 'all', label: 'All Roles', icon: <Shield size={14} /> },
+  { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={14} style={{ color: '#d97706' }} /> },
+  { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={14} style={{ color: '#10b981' }} /> },
+  { value: 'Staff', label: 'Staff', icon: <Shield size={14} style={{ color: '#6366f1' }} /> }
+];
+
 function AdminAccountView() {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +103,7 @@ function AdminAccountView() {
   const [showPassword, setShowPassword] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-
+ 
   const fetchAccounts = async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -36,9 +116,9 @@ function AdminAccountView() {
           name: u.name || '',
           email: u.email || '',
           role: u.role ? u.role.charAt(0).toUpperCase() + u.role.slice(1) : 'Staff',
-          status: 'active',
-          joinDate: u.createdAt ? new Date(u.createdAt).toISOString().split('T')[0] : '2026-06-02',
-          lastLogin: '-',
+          status: u.status || 'active',
+          joinDate: u.createdAt ? formatDateTime(u.createdAt) : '-',
+          lastLogin: u.lastLogin ? formatDateTime(u.lastLogin) : '-',
           avatar: initials
         };
       });
@@ -96,24 +176,44 @@ function AdminAccountView() {
   };
 
   // Actions
-  const handleApprove = (id: string) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'active' } : a));
-    setActionMenuId(null);
+  const handleApprove = async (id: string) => {
+    try {
+      await apiService.updateUserStatus(id, 'active');
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'active' } : a));
+      setActionMenuId(null);
+    } catch (err: any) {
+      alert('Lỗi khi phê duyệt tài khoản: ' + (err.response?.data?.error || err.message));
+    }
   };
 
-  const handleBan = (id: string) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'banned' } : a));
-    setActionMenuId(null);
+  const handleBan = async (id: string) => {
+    try {
+      await apiService.updateUserStatus(id, 'banned');
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'banned' } : a));
+      setActionMenuId(null);
+    } catch (err: any) {
+      alert('Lỗi khi ban tài khoản: ' + (err.response?.data?.error || err.message));
+    }
   };
 
-  const handleActivate = (id: string) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'active' } : a));
-    setActionMenuId(null);
+  const handleActivate = async (id: string) => {
+    try {
+      await apiService.updateUserStatus(id, 'active');
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'active' } : a));
+      setActionMenuId(null);
+    } catch (err: any) {
+      alert('Lỗi khi kích hoạt tài khoản: ' + (err.response?.data?.error || err.message));
+    }
   };
 
-  const handleDeactivate = (id: string) => {
-    setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'inactive' } : a));
-    setActionMenuId(null);
+  const handleDeactivate = async (id: string) => {
+    try {
+      await apiService.updateUserStatus(id, 'inactive');
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, status: 'inactive' } : a));
+      setActionMenuId(null);
+    } catch (err: any) {
+      alert('Lỗi khi hủy kích hoạt tài khoản: ' + (err.response?.data?.error || err.message));
+    }
   };
 
   const handleReject = async (id: string) => {
@@ -275,27 +375,18 @@ function AdminAccountView() {
           )}
         </div>
         <div className="admin-filters">
-          <div className="admin-filter-group">
-            <Filter size={14} />
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
-              <option value="all">All Status</option>
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="banned">Banned</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            <ChevronDown size={14} className="select-arrow" />
-          </div>
-          <div className="admin-filter-group">
-            <Shield size={14} />
-            <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)}>
-              <option value="all">All Roles</option>
-              <option value="Admin">Admin</option>
-              <option value="Supervisor">Supervisor</option>
-              <option value="Staff">Staff</option>
-            </select>
-            <ChevronDown size={14} className="select-arrow" />
-          </div>
+          <CustomDropdown 
+            value={filterStatus} 
+            onChange={setFilterStatus} 
+            options={statusOptions} 
+            icon={<Filter size={14} />} 
+          />
+          <CustomDropdown 
+            value={filterRole} 
+            onChange={setFilterRole} 
+            options={roleOptions} 
+            icon={<Shield size={14} />} 
+          />
           <button className="admin-btn-refresh" onClick={() => { setFilterStatus('all'); setFilterRole('all'); setSearchTerm(''); }}>
             <RefreshCw size={14} />
             <span>Reset</span>

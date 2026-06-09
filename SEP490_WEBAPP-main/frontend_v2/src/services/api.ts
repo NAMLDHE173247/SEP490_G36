@@ -23,6 +23,7 @@ export interface User {
   name: string;
   email: string;
   role: 'admin' | 'supervisor' | 'staff';
+  status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
 export const apiService = {
@@ -32,6 +33,10 @@ export const apiService = {
   },
   updateUserRole: async (id: string, role: string): Promise<any> => {
     const response = await api.patch(`/auth/users/${id}/role`, { role });
+    return response.data;
+  },
+  updateUserStatus: async (id: string, status: string): Promise<any> => {
+    const response = await api.patch(`/auth/users/${id}/status`, { status });
     return response.data;
   },
   deleteUser: async (id: string): Promise<any> => {

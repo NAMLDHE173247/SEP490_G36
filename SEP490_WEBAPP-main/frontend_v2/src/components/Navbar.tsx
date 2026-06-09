@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Activity, User, Settings, CreditCard, Shield, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -23,6 +24,11 @@ function Navbar() {
     logout();
     navigate('/login');
   };
+
+  // Hide header on intro, login, and register pages
+  if (['/', '/login', '/register'].includes(location.pathname)) {
+    return null;
+  }
 
   return (
     <header className="header" style={{ position: 'sticky', top: 0, zIndex: 50, width: '100%' }}>

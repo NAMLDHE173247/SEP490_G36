@@ -24,6 +24,13 @@ function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // Redirect to login if user is not authenticated
+  React.useEffect(() => {
+    if (!user) {
+      navigate('/login', { replace: true });
+    }
+  }, [user, navigate]);
+
   // Default tab per role
   const getDefaultTab = () => {
     if (!user) return 'Dashboard';
@@ -41,7 +48,6 @@ function Dashboard() {
   const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
 
   if (!user) {
-    navigate('/login');
     return null;
   }
 
