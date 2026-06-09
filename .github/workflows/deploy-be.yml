@@ -11,7 +11,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: 'sep490-be' # Đổi thành tên App Service BE của bạn trên Azure
-  DOCKER_IMAGE_NAME: 'dothang2504/sep490-be:lastest' # Đổi thành tên image Docker Hub của bạn (ví dụ: username/repo:tag)
+  DOCKER_IMAGE_NAME: 'dothang2504/sep490-be:latest' # Đổi thành tên image Docker Hub của bạn (ví dụ: username/repo:tag)
 
 jobs:
   docker-build-push:
