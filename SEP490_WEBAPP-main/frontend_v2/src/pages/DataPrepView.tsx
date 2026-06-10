@@ -251,7 +251,7 @@ function DataPrepView() {
 
   /* Stage 3 state */
   const SUB_STEPS_STAGE3 = [
-    { num: 5, label: 'Auto Labeling' },
+    { num: 5, label: 'Clustering & Labeling' },
     { num: 6, label: 'Save & Assign' },
     { num: 7, label: 'Intent-Action' }
   ];
@@ -265,6 +265,40 @@ function DataPrepView() {
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [selectedGroup3, setSelectedGroup3] = useState(null);
   const [selectedConv3, setSelectedConv3] = useState(null);
+  const [stage3Convs, setStage3Convs] = useState<any[]>(() => {
+    const INITIAL_GROUP_DATA = [
+      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' },
+      { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
+      { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
+      { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
+      { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
+      { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
+      { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
+      { id: 12, label: 'NOISE (Outliers)', color: '#e11d48', bg: '#fff1f2' },
+      { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
+      { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
+      { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
+    ];
+    const multipliedConvs = [...CONVERSATIONS, ...CONVERSATIONS, ...CONVERSATIONS, ...CONVERSATIONS];
+    return multipliedConvs.map((conv, idx) => {
+      const gIdx = idx % INITIAL_GROUP_DATA.length;
+      const group = INITIAL_GROUP_DATA[gIdx];
+      return {
+        ...conv,
+        id: `conv_${String(idx + 1).padStart(3, '0')}`,
+        groupId: group.id,
+        groupLabel: group.label,
+        groupColor: group.color,
+        groupBg: group.bg,
+        confidence: Math.floor(Math.random() * 10 + 90),
+      };
+    });
+  });
+  const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
   const [selectedIaMsgId, setSelectedIaMsgId] = useState(null);
   const [iaMessages, setIaMessages] = useState<any[]>([
     {
@@ -879,23 +913,36 @@ function DataPrepView() {
               </div>
             </div>
 
-            <div className="cleaning-report-title">CLEANING REPORT</div>
-            <div className="post-stats-grid">
+            <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
+            <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
               <div className="post-stat-item">
                 <div className="post-stat-label">Error keywords</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">-28</div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Length</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">-14</div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Unclosed &lt;think&gt;</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">-5</div>
               </div>
               <div className="post-stat-item highlight">
                 <div className="post-stat-label">Final Count</div>
-                <div className="post-stat-value cleaning-green">120</div>
+                <div className="post-stat-value cleaning-green">539</div>
+              </div>
+            </div>
+            
+            {/* Hardcoded Data Loss Chart */}
+            <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Source: 586 (100%)</span>
+                <span>Filtered: 47 (8%)</span>
+                <span>Final: 539 (92%)</span>
+              </div>
+              <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
+                <div style={{ width: '92%', backgroundColor: '#22c55e', transition: 'width 0.5s' }} title="Clean Data (92%)"></div>
+                <div style={{ width: '8%', backgroundColor: '#ef4444', transition: 'width 0.5s' }} title="Removed (8%)"></div>
               </div>
             </div>
           </div>
@@ -1777,28 +1824,30 @@ function DataPrepView() {
 
   const renderStage3 = () => {
     /* Group data with distinct colors */
-    const GROUP_DATA = [
-      { id: 7, label: 'MATH', count: 8, color: '#6366f1', bg: '#eef2ff' },
-      { id: 8, label: 'CODING', count: 9, color: '#0891b2', bg: '#ecfeff' },
-      { id: 9, label: 'PHYSICAL', count: 4, color: '#059669', bg: '#ecfdf5' },
-      { id: 10, label: 'MATH', count: 8, color: '#d97706', bg: '#fffbeb' },
-      { id: 11, label: 'MATH', count: 5, color: '#dc2626', bg: '#fef2f2' },
-      { id: 12, label: 'PHYSICAL', count: 9, color: '#7c3aed', bg: '#f5f3ff' },
+    const INITIAL_GROUP_DATA = [
+      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' },
+      { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
+      { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
+      { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
+      { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
+      { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
+      { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
+      { id: 12, label: 'NOISE (Outliers)', color: '#e11d48', bg: '#fff1f2' },
+      { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
+      { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
+      { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
     ];
 
-    /* Build conversation list from CONVERSATIONS with group assignment */
-    const allConvRows = CONVERSATIONS.map((conv, idx) => {
-      const gIdx = idx % GROUP_DATA.length;
-      const group = GROUP_DATA[gIdx];
-      return {
-        ...conv,
-        groupId: group.id,
-        groupLabel: group.label,
-        groupColor: group.color,
-        groupBg: group.bg,
-        confidence: Math.floor(Math.random() * 10 + 90),
-      };
-    });
+    const GROUP_DATA = INITIAL_GROUP_DATA.map(g => ({
+      ...g,
+      count: stage3Convs.filter(c => c.groupId === g.id).length
+    }));
+
+    const allConvRows = stage3Convs;
 
     const filteredRows = allConvRows
       .filter(r => !selectedGroup3 || r.groupId === selectedGroup3)
@@ -1848,6 +1897,36 @@ function DataPrepView() {
                 </span>
               </div>
 
+              {/* Bulk Label & Split Toolbar */}
+              <div className="preview-toolbar" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="toolbar-label" style={{ fontWeight: 600 }}>Bulk Actions:</span>
+                <select className="toolbar-select" style={{ minWidth: '150px' }}>
+                  <option value="">-- Select Subject --</option>
+                  <option value="MATH">Toán học (MATH)</option>
+                  <option value="CODING">Lập trình (CODING)</option>
+                  <option value="PHYSICS">Vật lý (PHYSICS)</option>
+                </select>
+                <button style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: '#0ea5e9', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  Apply Bulk Label
+                </button>
+                <div style={{ flex: 1 }}></div>
+                <button 
+                  style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }} 
+                  title="Tách các dòng được chọn sang cụm nhiễu (Group B)"
+                  disabled={checkedConvIds.length === 0}
+                  onClick={() => {
+                    setStage3Convs(prev => prev.map(c => 
+                      checkedConvIds.includes(c.id) 
+                        ? { ...c, groupId: 5, groupLabel: 'NOISE (Outliers)', groupColor: '#dc2626', groupBg: '#fef2f2' }
+                        : c
+                    ));
+                    setCheckedConvIds([]);
+                  }}
+                >
+                  Split to Noise Group {checkedConvIds.length > 0 ? `(${checkedConvIds.length})` : ''}
+                </button>
+              </div>
+
               {/* Toolbar */}
               <div className="preview-toolbar">
                 <span className="toolbar-label">Conversations / page:</span>
@@ -1870,17 +1949,34 @@ function DataPrepView() {
                 />
               </div>
 
-              <div className="preview-table-wrapper" style={{ maxHeight: '620px', overflowX: 'hidden' }}>
-                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <div className="preview-table-wrapper" style={{ maxHeight: '620px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', minWidth: '1100px', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: '3%', textAlign: 'center' }}>STT</th>
-                      <th style={{ width: '9%', textAlign: 'center' }}>Conv ID</th>
-                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
-                      <th style={{ width: '22%' }}>User</th>
-                      <th style={{ width: '42%' }}>Assistant</th>
-                      <th style={{ width: '10%', textAlign: 'center' }}>Label</th>
-                      <th style={{ width: '7%', textAlign: 'center' }}></th>
+                      <th style={{ width: '4%', textAlign: 'center' }} title="Select to move to noise group">
+                        <input 
+                          type="checkbox" 
+                          checked={stage3PageRows.length > 0 && stage3PageRows.every(r => checkedConvIds.includes(r.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const newIds = [...checkedConvIds];
+                              stage3PageRows.forEach(r => {
+                                if (!newIds.includes(r.id)) newIds.push(r.id);
+                              });
+                              setCheckedConvIds(newIds);
+                            } else {
+                              const pageIds = stage3PageRows.map(r => r.id);
+                              setCheckedConvIds(prev => prev.filter(id => !pageIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </th>
+                      <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
+                      <th style={{ width: '10%', textAlign: 'center' }}>Conv ID</th>
+                      <th style={{ width: '27%' }}>User</th>
+                      <th style={{ width: '35%' }}>Assistant</th>
+                      <th style={{ width: '12%', textAlign: 'center' }}>Subject Label</th>
+                      <th style={{ width: '8%', textAlign: 'center' }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1893,23 +1989,53 @@ function DataPrepView() {
                     )}
                     {stage3PageRows.map((conv, idx) => (
                       <tr key={conv.id} className="conv-row conv-first conv-last">
-                        <td className="col-conv-num-cell">{(stage3Page - 1) * stage3PerPage + idx + 1}</td>
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={checkedConvIds.includes(conv.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setCheckedConvIds(prev => [...prev, conv.id]);
+                              } else {
+                                setCheckedConvIds(prev => prev.filter(id => id !== conv.id));
+                              }
+                            }}
+                          />
+                        </td>
+                        <td className="col-conv-num-cell" style={{ verticalAlign: 'middle' }}>{(stage3Page - 1) * stage3PerPage + idx + 1}</td>
                         <td className="col-conv-id-cell">
                           <span className="conv-id-badge">{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} msgs</span>
                         </td>
-                        <td className="col-msg-num-cell">{conv.messages.length}</td>
-                        <td className="cell-text-col"><div className="cell-truncate">{conv.messages[0].user}</div></td>
-                        <td className="cell-text-col"><div className="cell-truncate">{conv.messages[0].assistant}</div></td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span
-                            className="auto-label-pill-colored"
-                            style={{ background: conv.groupBg, color: conv.groupColor, borderColor: conv.groupColor }}
+                        <td className="cell-text-col" style={{ verticalAlign: 'middle' }}><div className="cell-truncate">{conv.messages[0].user}</div></td>
+                        <td className="cell-text-col" style={{ verticalAlign: 'middle' }}><div className="cell-truncate">{conv.messages[0].assistant}</div></td>
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <select
+                            className="toolbar-select"
+                            style={{
+                              background: conv.groupBg,
+                              color: conv.groupColor,
+                              borderColor: conv.groupColor,
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '8px',
+                              fontSize: '12px',
+                              height: 'auto',
+                              minWidth: '90px',
+                              cursor: 'pointer'
+                            }}
+                            defaultValue={conv.groupLabel}
                           >
-                            {conv.groupLabel} {conv.confidence}%
-                          </span>
+                            <option value="MATH">MATH</option>
+                            <option value="CODING">CODING</option>
+                            <option value="PHYSICS">PHYSICS</option>
+                            <option value="NOISE">NOISE</option>
+                            <option value="HISTORY">HISTORY</option>
+                            <option value="BIOLOGY">BIOLOGY</option>
+                            <option value="CHEMISTRY">CHEMISTRY</option>
+                          </select>
                         </td>
-                        <td className="col-action-cell">
+                        <td className="col-action-cell" style={{ verticalAlign: 'middle' }}>
                           <button className="view-detail-btn" onClick={() => setSelectedConv3(conv)}>
                             <Eye size={14} />
                             Detail
@@ -1944,21 +2070,16 @@ function DataPrepView() {
             {/* Right: Sidebar */}
             <div className="stage2-sidebar">
               <div className="cleaning-pipeline-card">
-                <div className="auto-labeling-header">
-                  <h3 className="cluster-card-title">Auto Labeling</h3>
-                  <div className="auto-labeling-actions">
-                    <select className="label-model-select">
+                <div className="auto-labeling-header" style={{ paddingBottom: '0', borderBottom: 'none' }}>
+                  <div className="auto-labeling-actions" style={{ width: '100%', display: 'flex', gap: '8px' }}>
+                    <select className="label-model-select" style={{ flex: 1 }}>
                       <option>Deepseek</option>
+                      <option>ChatGPT</option>
                     </select>
-                    <button className="label-ai-btn">
+                    <button className="label-ai-btn" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
                       <Sparkles size={14} /> Label with AI
                     </button>
                   </div>
-                </div>
-
-                <div className="label-summary">
-                  <h4>Suggestion Summary</h4>
-                  <p>Generated Labels: <strong>{allConvRows.length} / {allConvRows.length}</strong></p>
                 </div>
 
                 {/* Group Cards */}
@@ -1972,6 +2093,14 @@ function DataPrepView() {
                     <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
                     <div className="group-card-count">{allConvRows.length}</div>
                   </div>
+                  
+                  {/* Legend Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 16px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    <div style={{ flex: 1 }}>Group Name</div>
+                    <div style={{ width: '24px', textAlign: 'center', marginRight: '24px' }}>Count</div>
+                    <div style={{ width: '90px', textAlign: 'left', paddingLeft: '4px' }}>Label</div>
+                  </div>
+
                   {GROUP_DATA.map(g => (
                     <div
                       key={g.id}
@@ -1979,8 +2108,7 @@ function DataPrepView() {
                       style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
                       onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
                     >
-                      <div className="group-card-color-dot" style={{ background: g.color }} />
-                      <div className="group-card-name" style={{ color: g.color }}>Group {g.id}</div>
+                      <div className="group-card-name" style={{ color: g.color, fontWeight: 700 }}>Group {g.id}</div>
                       <div className="group-card-count">{g.count}</div>
                       <div className="group-card-label">
                         <select className="inline-label-select" onClick={e => e.stopPropagation()} defaultValue={g.label}>
