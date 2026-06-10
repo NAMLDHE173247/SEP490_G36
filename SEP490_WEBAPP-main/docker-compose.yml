@@ -60,7 +60,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: hoanglam51/sep490-backend:latest
+    image: dothang2504/sep490-be:latest
     container_name: sep490_backend
     restart: unless-stopped
     env_file:
@@ -87,11 +87,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: hoanglam51/sep490-frontend:latest
+    image: dothang2504/sep490-fe:latest
     container_name: sep490_frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:80"
       # Port 443 chỉ dùng trên production server (có SSL cert)
       # - "443:443"
     networks:
