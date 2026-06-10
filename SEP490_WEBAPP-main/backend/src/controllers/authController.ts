@@ -231,15 +231,15 @@ export const deleteUser = async (req: Request, res: Response) => {
   }
 };
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '532813664770-l2n2ipsiigon66dn0ps079j2u4fdrobn.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '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';
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/auth/google/callback';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || '';
 
-const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || '26fb54d6-fc14-4be4-ac3a-1d551738d18a';
-const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || '07dc0b23-8821-4ab7-951c-03e55fe2e36a';
-const OUTLOOK_REDIRECT_URI = process.env.OUTLOOK_REDIRECT_URI || 'http://localhost:3000/api/auth/outlook/callback';
+const OUTLOOK_CLIENT_ID = process.env.OUTLOOK_CLIENT_ID || '';
+const OUTLOOK_CLIENT_SECRET = process.env.OUTLOOK_CLIENT_SECRET || '';
+const OUTLOOK_REDIRECT_URI = process.env.OUTLOOK_REDIRECT_URI || '';
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const FRONTEND_URL = process.env.FRONTEND_URL || '';
 
 export const googleRedirect = (_req: Request, res: Response) => {
   if (!GOOGLE_CLIENT_ID) {

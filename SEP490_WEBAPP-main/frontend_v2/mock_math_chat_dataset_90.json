@@ -1,0 +1,1082 @@
+[
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình bậc hai x^2 - 5x + 6 = 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Để giải phương trình x^2 - 5x + 6 = 0, ta phân tích thành (x-2)(x-3) = 0. Suy ra nghiệm x = 2 hoặc x = 3."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm nghiệm của phương trình bậc hai x^2 - 5x + 6 = 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình x^2 - 5x + 6 = 0 có các hệ số a=1, b=-5, c=6. Tính delta = 25 - 24 = 1. Nghiệm là x = 2 hoặc x = 3."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hãy giải phương trình bậc hai sau đây: x^2 - 5x + 6 = 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Chào bạn, phương trình này có thể giải nhanh bằng cách nhẩm nghiệm theo hệ thức Vi-ét: x1 + x2 = 5 và x1 * x2 = 6. Vậy nghiệm là x = 2 và x = 3."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình bậc hai có chứa tham số m."
+            },
+            {
+                "role": "assistant",
+                "content": "Để giải và biện luận phương trình bậc hai chứa tham số m, ta cần tính biệt thức Delta theo m, sau đó xét các trường hợp Delta > 0, Delta = 0, và Delta < 0."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cách tính biệt thức delta và delta phẩy của phương trình bậc hai."
+            },
+            {
+                "role": "assistant",
+                "content": "Biệt thức Delta được tính bằng công thức b^2 - 4ac. Nếu hệ số b chẵn (b = 2b'), ta có thể tính Delta phẩy = (b')^2 - ac."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Phương trình bậc hai có hai nghiệm phân biệt khi nào?"
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình bậc hai ax^2 + bx + c = 0 (a != 0) có hai nghiệm phân biệt khi và chỉ khi biệt thức Delta = b^2 - 4ac > 0."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm điều kiện của m để phương trình có nghiệm duy nhất."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình bậc hai có nghiệm duy nhất (nghiệm kép) khi biệt thức Delta bằng 0, hoặc nếu hệ số a chứa tham số thì xét trường hợp a = 0 để đưa về phương trình bậc nhất."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Áp dụng định lý Vi-ét để tính tổng và tích các nghiệm của phương trình."
+            },
+            {
+                "role": "assistant",
+                "content": "Theo định lý Vi-ét, nếu phương trình bậc hai có nghiệm thì tổng hai nghiệm S = -b/a và tích hai nghiệm P = c/a."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải hệ phương trình tuyến tính hai ẩn bằng phương pháp thế."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương pháp thế gồm hai bước: từ một phương trình biểu diễn một ẩn theo ẩn kia, rồi thế vào phương trình còn lại để được phương trình một ẩn."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải hệ phương trình hai ẩn bằng phương pháp cộng đại số."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương pháp cộng đại số nhân các vế của hai phương trình với số thích hợp sao cho hệ số của một ẩn đối nhau hoặc bằng nhau, rồi cộng hoặc trừ hai phương trình."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm x biết phân thức đại số bằng 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Để một phân thức đại số bằng 0, điều kiện đầu tiên là mẫu thức phải khác 0, sau đó ta giải phương trình cho tử thức bằng 0."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Rút gọn biểu thức đại số chứa căn thức bậc hai."
+            },
+            {
+                "role": "assistant",
+                "content": "Để rút gọn, ta cần thực hiện các phép biến đổi như đưa thừa số ra ngoài/vào trong dấu căn, trục căn thức ở mẫu, và quy đồng mẫu thức."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm giá trị lớn nhất của biểu thức bậc hai bằng cách lập bình phương sút."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta biến đổi biểu thức về dạng A - (x - k)^2. Khi đó giá trị lớn nhất của biểu thức chính là A, đạt được khi x = k."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình chứa ẩn ở mẫu thức lớp 9."
+            },
+            {
+                "role": "assistant",
+                "content": "Các bước giải: 1. Tìm điều kiện xác định. 2. Quy đồng mẫu thức hai vế rồi khử mẫu. 3. Giải phương trình vừa tìm được. 4. Đối chiếu điều kiện."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Phân tích đa thức thành nhân tử bằng phương pháp đặt nhân tử chung."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta tìm các thừa số chung của tất cả các hạng tử trong đa thức rồi đưa ra ngoài dấu ngoặc theo công thức: ab + ac = a(b + c)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính thể tích của hình chóp tứ giác đều có tất cả các cạnh bằng a."
+            },
+            {
+                "role": "assistant",
+                "content": "Thể tích hình chóp tứ giác đều có tất cả các cạnh bằng a được tính bằng công thức V = (a^3 * sqrt(2)) / 6."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức tính thể tích hình chóp tứ giác đều là gì?"
+            },
+            {
+                "role": "assistant",
+                "content": "Công thức tổng quát là V = 1/3 * S_đáy * h, trong đó S_đáy là diện tích hình vuông đáy và h là chiều cao tính từ đỉnh đến tâm đáy."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cho hình chóp tứ giác đều, hãy tính thể tích của nó khi biết cạnh đáy."
+            },
+            {
+                "role": "assistant",
+                "content": "Khi biết cạnh đáy và chiều cao (hoặc cạnh bên), ta tìm diện tích đáy, dùng định lý Pitago tìm chiều cao h, rồi áp dụng V = 1/3 * S * h."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức tính diện tích toàn phần của hình nón tròn xoay."
+            },
+            {
+                "role": "assistant",
+                "content": "Diện tích toàn phần hình nón bằng diện tích xung quanh cộng diện tích đáy: S_tp = pi * r * l + pi * r^2 (với r là bán kính đáy, l là đường sinh)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính diện tích xung quanh của hình trụ có bán kính r và chiều cao h."
+            },
+            {
+                "role": "assistant",
+                "content": "Diện tích xung quanh của hình trụ được tính bằng công thức: S_xq = 2 * pi * r * h."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cho tam giác ABC vuông tại A, tính độ dài cạnh huyền BC theo định lý Pitago."
+            },
+            {
+                "role": "assistant",
+                "content": "Theo định lý Pitago trong tam giác vuông ABC tại A, ta có BC^2 = AB^2 + AC^2. Do đó BC = sqrt(AB^2 + AC^2)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Chứng minh hai đường thẳng vuông góc với nhau trong không gian."
+            },
+            {
+                "role": "assistant",
+                "content": "Để chứng minh hai đường thẳng vuông góc, ta có thể chứng minh góc giữa chúng bằng 90 độ, hoặc chứng minh đường này vuông góc với mặt phẳng chứa đường kia."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Chứng minh đường thẳng vuông góc với mặt phẳng trong hình học không gian."
+            },
+            {
+                "role": "assistant",
+                "content": "Một đường thẳng vuông góc với một mặt phẳng khi và chỉ khi nó vuông góc với hai đường thẳng cắt nhau nằm trong mặt phẳng đó."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính khoảng cách từ một điểm đến một mặt phẳng trong không gian Oxyz."
+            },
+            {
+                "role": "assistant",
+                "content": "Khoảng cách từ điểm M(x0, y0, z0) đến mặt phẳng Ax + By + Cz + D = 0 được tính bằng: d = |A x0 + B y0 + C z0 + D| / sqrt(A^2 + B^2 + C^2)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Viết phương trình mặt phẳng đi qua ba điểm cho trước."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta tìm hai vectơ chỉ phương bằng cách lấy hiệu tọa độ các điểm, tính tích có hướng của chúng để được vectơ pháp tuyến n, rồi viết phương trình mặt phẳng."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính thể tích khối lăng trụ đứng tam giác."
+            },
+            {
+                "role": "assistant",
+                "content": "Thể tích khối lăng trụ đứng tam giác bằng diện tích đáy tam giác nhân với chiều cao (độ dài cạnh bên): V = S_đáy * h."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cho hình lập phương có cạnh bằng a, tính độ dài đường chéo của hình lập phương."
+            },
+            {
+                "role": "assistant",
+                "content": "Độ dài đường chéo của hình lập phương cạnh a được tính bằng công thức d = a * sqrt(3)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính góc giữa hai mặt phẳng trong không gian lớp 11."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta xác định giao tuyến của hai mặt phẳng, tìm hai đường thẳng lần lượt nằm trong hai mặt phẳng và cùng vuông góc với giao tuyến tại một điểm. Góc giữa hai đường thẳng đó là góc cần tìm."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm tâm và bán kính của mặt cầu có phương trình cho trước."
+            },
+            {
+                "role": "assistant",
+                "content": "Dạng tổng quát x^2+y^2+z^2-2ax-2by-2cz+d=0 có tâm I(a,b,c) và bán kính R = sqrt(a^2+b^2+c^2-d) với điều kiện a^2+b^2+c^2-d > 0."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Chứng minh tứ giác nội tiếp đường tròn bằng dấu hiệu tổng hai góc đối."
+            },
+            {
+                "role": "assistant",
+                "content": "Nếu một tứ giác có tổng hai góc đối diện bằng 180 độ thì tứ giác đó nội tiếp được trong một đường tròn."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình lượng giác cơ bản sin(x) = 1/2."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình sin(x) = 1/2 có nghiệm là x = pi/6 + k2pi hoặc x = 5pi/6 + k2pi (với k thuộc Z)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm nghiệm của phương trình lượng giác sin(x) = 0.5."
+            },
+            {
+                "role": "assistant",
+                "content": "Tương tự, sin(x) = 0.5 dẫn đến x = pi/6 + k2pi hoặc x = 5pi/6 + k2pi với k là số nguyên."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Hướng dẫn giải phương trình lượng giác sin(x) - 1/2 = 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Chuyển vế ta được sin(x) = 1/2. Đây là phương trình lượng giác cơ bản, nghiệm là x = pi/6 + k2pi và x = 5pi/6 + k2pi."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức biến đổi tích thành tổng và tổng thành tích trong lượng giác."
+            },
+            {
+                "role": "assistant",
+                "content": "Ví dụ tích thành tổng: cos(a)cos(b) = 1/2[cos(a-b) + cos(a+b)]. Tổng thành tích: cos(a)+cos(b) = 2cos((a+b)/2)cos((a-b)/2)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính giá trị của biểu thức lượng giác P = sin^2(x) + cos^2(x)."
+            },
+            {
+                "role": "assistant",
+                "content": "Theo hệ thức lượng giác cơ bản, với mọi góc x ta luôn có sin^2(x) + cos^2(x) = 1. Vậy P = 1."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Rút gọn biểu thức lượng giác chứa tan(x) và cotan(x)."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta sử dụng mối quan hệ tan(x) = sin(x)/cos(x) và cotan(x) = cos(x)/sin(x) cùng với tan(x)*cotan(x) = 1 để rút gọn."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình lượng giác bậc hai đối với một hàm số lượng giác."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta đặt ẩn phụ t bằng hàm số lượng giác đó (ví dụ t = sin(x), điều kiện |t| <= 1) để đưa về phương trình đại số bậc hai thông thường."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức nhân đôi và công thức cộng trong lượng giác lớp 11."
+            },
+            {
+                "role": "assistant",
+                "content": "Công thức cộng: sin(a+b) = sin(a)cos(b) + cos(a)sin(b). Công thức nhân đôi: sin(2a) = 2sin(a)cos(a), cos(2a) = cos^2(a) - sin^2(a)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính giá trị lượng giác của một góc bất kỳ bằng đường tròn lượng giác."
+            },
+            {
+                "role": "assistant",
+                "content": "Trên đường tròn lượng giác, hoành độ của điểm biểu diễn góc chính là giá trị cos, tung độ là giá trị sin, tan bằng tung chia hoành."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình lượng giác chứa cả sin(x) và cos(x) dạng thuần nhất."
+            },
+            {
+                "role": "assistant",
+                "content": "Dạng asin(x) + bcos(x) = c. Chia cả hai vế cho sqrt(a^2 + b^2) để đưa về dạng sin(x + alpha) = c / sqrt(a^2 + b^2)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm tập xác định của hàm số lượng giác y = tan(2x)."
+            },
+            {
+                "role": "assistant",
+                "content": "Hàm số y = tan(2x) xác định khi cos(2x) != 0, tương đương 2x != pi/2 + kpi, hay x != pi/4 + kpi/2 (k thuộc Z)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm giá trị lớn nhất và nhỏ nhất của hàm số y = 3sin(x) + 4."
+            },
+            {
+                "role": "assistant",
+                "content": "Vì -1 <= sin(x) <= 1 nên -3 <= 3sin(x) <= 3. Suy ra 1 <= y <= 7. Giá trị lớn nhất là 7, nhỏ nhất là 1."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Chứng minh đẳng thức lượng giác cơ bản."
+            },
+            {
+                "role": "assistant",
+                "content": "Để chứng minh, ta thường biến đổi vế phức tạp thành vế đơn giản bằng cách áp dụng các công thức lượng giác nền tảng."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Chu kỳ tuần hoàn của hàm số sin(x) và tan(x) là bao nhiêu?"
+            },
+            {
+                "role": "assistant",
+                "content": "Hàm số y = sin(x) và y = cos(x) tuần hoàn với chu kỳ 2pi. Hàm số y = tan(x) và y = cotan(x) tuần hoàn với chu kỳ pi."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình lượng giác sin(2x) = cos(x)."
+            },
+            {
+                "role": "assistant",
+                "content": "Biến đổi cos(x) thành sin(pi/2 - x). Phương trình trở thành sin(2x) = sin(pi/2 - x), từ đó giải ra hai họ nghiệm theo công thức cơ bản."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính xác suất để gieo hai con xúc xắc cân đối và đồng chất được tổng số chấm bằng 7."
+            },
+            {
+                "role": "assistant",
+                "content": "Không gian mẫu có 36 phần tử. Các cặp có tổng bằng 7 là (1,6), (2,5), (3,4), (4,3), (5,2), (6,1) -> 6 phần tử. Xác suất P = 6/36 = 1/6."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính xác suất khi gieo 2 con xúc xắc có tổng số chấm xuất hiện bằng 7."
+            },
+            {
+                "role": "assistant",
+                "content": "Số trường hợp thuận lợi là 6, tổng số trường hợp là 36. Vậy xác suất là 6/36 = 1/6."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Gieo hai con xúc xắc, xác suất để tổng số chấm thu được bằng 7 là bao nhiêu?"
+            },
+            {
+                "role": "assistant",
+                "content": "Kết quả thu được là 1/6 (xấp xỉ 16.67%) dựa trên việc đếm số cặp thỏa mãn chia cho tổng số khả năng xảy ra."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Một hộp chứa 5 bi đỏ và 3 bi xanh, lấy ngẫu nhiên 2 bi. Tính xác suất lấy được 2 bi đỏ."
+            },
+            {
+                "role": "assistant",
+                "content": "Tổng số bi là 8. Số cách chọn 2 bi bất kỳ là C(8,2) = 28. Số cách chọn 2 bi đỏ là C(5,2) = 10. Xác suất P = 10/28 = 5/14."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức tính số tổ hợp chập k của n phần tử."
+            },
+            {
+                "role": "assistant",
+                "content": "Tổ hợp chập k của n phần tử được tính bằng công thức: C(n, k) = n! / (k! * (n - k)!)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Phân biệt sự khác nhau giữa chỉnh hợp và tổ hợp trong toán đại số tổ hợp."
+            },
+            {
+                "role": "assistant",
+                "content": "Chỉnh hợp có quan tâm đến thứ tự sắp xếp của các phần tử được chọn, còn tổ hợp thì chỉ chọn ra phần tử mà không quan tâm đến thứ tự."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính số cách xếp 5 người ngồi vào một bàn tròn có 5 ghế."
+            },
+            {
+                "role": "assistant",
+                "content": "Số cách xếp n người vào một bàn tròn là (n-1)!. Với 5 người, số cách xếp là (5-1)! = 4! = 24 cách."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Áp dụng quy tắc cộng và quy tắc nhân trong bài toán đếm."
+            },
+            {
+                "role": "assistant",
+                "content": "Quy tắc cộng dùng khi các phương án thực hiện hành động là độc lập nhau. Quy tắc nhân dùng khi hành động gồm nhiều công đoạn liên tiếp nhau."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Khai triển nhị thức Newton của biểu thức (x + y)^5."
+            },
+            {
+                "role": "assistant",
+                "content": "Khai triển là: x^5 + 5x^4y + 10x^3y^2 + 10x^2y^3 + 5xy^4 + y^5 dựa vào các hệ số trong tam giác Pascal."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm số hạng không chứa x trong khai triển nhị thức Newton."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta viết số hạng tổng quát Tk+1 = C(n, k) * x^(n-k) * (hằng số)^k. Cho số mũ của x bằng 0 để tìm k, từ đó tính số hạng cần tìm."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính xác suất thực nghiệm của một biến cố sau 100 lần thử."
+            },
+            {
+                "role": "assistant",
+                "content": "Xác suất thực nghiệm bằng số lần biến cố đó xuất hiện chia cho tổng số lần thử nghiệm (ở đây là chia cho 100)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Công thức tính xác suất có điều kiện và xác suất độc lập."
+            },
+            {
+                "role": "assistant",
+                "content": "Xác suất biến cố A với điều kiện B là P(A|B) = P(A giao B) / P(B). Nếu hai biến cố độc lập thì P(A giao B) = P(A) * P(B)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính số trung vị và số trung bình của một mẫu số liệu thống kê."
+            },
+            {
+                "role": "assistant",
+                "content": "Số trung bình bằng tổng các giá trị chia cho số lượng. Số trung vị là giá trị nằm ở chính giữa chuỗi số liệu sau khi đã sắp xếp thứ tự."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cách tính phương sai và độ lệch chuẩn của bảng số liệu."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương sai là trung bình cộng của các bình phương độ lệch từ số trung bình. Độ lệch chuẩn bằng căn bậc hai của phương sai."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Một tổ có 10 học sinh, chọn ra 3 học sinh đi trực nhật. Hỏi có bao nhiêu cách?"
+            },
+            {
+                "role": "assistant",
+                "content": "Số cách chọn 3 học sinh từ 10 học sinh mà không phân biệt thứ tự chức vụ là số tổ hợp chập 3 của 10: C(10, 3) = 120 cách."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính giới hạn của hàm số (x^2 - 1)/(x - 1) khi x tiến tới 1."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta phân tích tử thức thành (x-1)(x+1) rồi rút gọn với mẫu. Giới hạn trở thành lim (x+1) khi x tiến tới 1, kết quả bằng 2."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm giới hạn lim khi x tiến đến 1 của biểu thức (x^2 - 1)/(x - 1)."
+            },
+            {
+                "role": "assistant",
+                "content": "Triệt tiêu lượng vô định (x-1), ta được kết quả của giới hạn này bằng 2."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính đạo hàm của hàm số bậc ba y = x^3 - 3x^2 + 2x tại điểm x = 1."
+            },
+            {
+                "role": "assistant",
+                "content": "Đạo hàm tổng quát y' = 3x^2 - 6x + 2. Thay x = 1 vào ta được y'(1) = 3(1)^2 - 6(1) + 2 = -1."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm đạo hàm của hàm số y = ln(x) + e^x."
+            },
+            {
+                "role": "assistant",
+                "content": "Áp dụng quy tắc tính đạo hàm cơ bản, ta có y' = (ln x)' + (e^x)' = 1/x + e^x."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính tích phân từ 0 đến pi/2 của hàm số f(x) = sin(x) dx."
+            },
+            {
+                "role": "assistant",
+                "content": "Nguyên hàm của sin(x) là -cos(x). Thế cận từ 0 đến pi/2: -cos(pi/2) - (-cos(0)) = 0 + 1 = 1."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm nguyên hàm của hàm số f(x) = 1/x trên khoảng dương."
+            },
+            {
+                "role": "assistant",
+                "content": "Nguyên hàm của hàm số f(x) = 1/x trên khoảng (0, +vô cùng) là ln(x) + C."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm các điểm cực trị (cực đại, cực tiểu) của hàm số bậc ba."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta giải phương trình y' = 0 để tìm các nghiệm cơ sở, sau đó lập bảng biến thiên hoặc dùng đạo hàm cấp hai y'' để xét cực đại, cực tiểu."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Khảo sát sự biến thiên và vẽ đồ thị của hàm số phân thức bậc nhất."
+            },
+            {
+                "role": "assistant",
+                "content": "Các bước gồm: Tìm tập xác định, tính đạo hàm (xét tính đồng biến/nghịch biến), tìm các tiệm cận, lập bảng biến thiên và vẽ đồ thị."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Viết phương trình tiếp tuyến của đồ thị hàm số tại điểm có hoành độ cho trước."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình tiếp tuyến có dạng y = f'(x0)*(x - x0) + y0, trong đó x0 là hoành độ tiếp điểm, y0 = f(x0)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm giá trị lớn nhất và giá trị nhỏ nhất của hàm số trên một đoạn cho trước."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta tính đạo hàm, tìm các nghiệm thuộc đoạn, tính giá trị hàm số tại các nghiệm đó và tại hai đầu mút của đoạn, rồi so sánh."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính diện tích hình phẳng giới hạn bởi đồ thị hàm số và trục hoành."
+            },
+            {
+                "role": "assistant",
+                "content": "Diện tích S được tính bằng tích phân từ a đến b của hàm |f(x)| dx, với a và b là các nghiệm của phương trình f(x) = 0."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính thể tích khối tròn xoay khi quay hình phẳng quanh trục Ox."
+            },
+            {
+                "role": "assistant",
+                "content": "Thể tích khối tròn xoay được tính bằng công thức: V = pi * tích phân từ a đến b của [f(x)]^2 dx."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm tiệm cận đứng và tiệm cận ngang của hàm số phân thức."
+            },
+            {
+                "role": "assistant",
+                "content": "Tiệm cận đứng là nghiệm của mẫu số khiến tử số khác 0. Tiệm cận ngang thu được bằng cách tính giới hạn của hàm số khi x tiến ra vô cùng."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Xét tính liên tục của hàm số tại một điểm cho trước."
+            },
+            {
+                "role": "assistant",
+                "content": "Hàm số liên tục tại x0 khi và chỉ khi hàm số có xác định tại x0, có giới hạn khi x tiến tới x0, và lim f(x) = f(x0)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Ứng dụng đạo hàm để giải bài toán tối ưu hóa trong thực tế."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta thiết lập hàm mục tiêu biến thiên theo một ẩn số, tìm điều kiện, sau đó tìm cực trị của hàm số đó để thu được giá trị tối ưu lớn nhất hoặc nhỏ nhất."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm phần thực và phần ảo của số phức z = 3 + 4i."
+            },
+            {
+                "role": "assistant",
+                "content": "Số phức z = 3 + 4i có phần thực là 3 và phần ảo là 4 (chú ý phần ảo là hệ số của i, không bao gồm i)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Cho số phức z = 3 + 4i, hãy xác định phần thực và phần ảo của nó."
+            },
+            {
+                "role": "assistant",
+                "content": "Phần thực bằng 3, phần ảo bằng 4 theo định nghĩa chuẩn của số phức dạng a + bi."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính môđun của số phức z = (1 + i)/(1 - i)."
+            },
+            {
+                "role": "assistant",
+                "content": "Ta có thể rút gọn z = i. Khi đó môđun |z| = sqrt(0^2 + 1^2) = 1. Hoặc tính bằng |1+i|/|1-i| = sqrt(2)/sqrt(2) = 1."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm số phức liên hợp của số phức z = 2 - 3i."
+            },
+            {
+                "role": "assistant",
+                "content": "Số phức liên hợp của z = a + bi là z_bar = a - bi. Vậy số phức liên hợp của z = 2 - 3i là 2 + 3i."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm tập hợp các điểm biểu diễn số phức thỏa mãn điều kiện |z| = 2 trên mặt phẳng tọa độ."
+            },
+            {
+                "role": "assistant",
+                "content": "Gọi z = x + yi. Điều kiện |z| = 2 tương đương x^2 + y^2 = 4. Vậy tập hợp điểm là đường tròn tâm O(0,0) bán kính R = 2."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải phương trình bậc hai trên tập số phức: x^2 + 4 = 0."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương trình tương đương x^2 = -4 = 4i^2. Vậy nghiệm của phương trình là x = 2i hoặc x = -2i."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Thực hiện phép tính cộng, trừ, nhân, chia hai số phức."
+            },
+            {
+                "role": "assistant",
+                "content": "Cộng/trừ bằng cách cộng/trừ phần thực với thực, ảo với ảo. Nhân áp dụng phân phối và i^2=-1. Chia bằng cách nhân cả tử và mẫu với số phức liên hợp của mẫu."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm căn bậc hai của một số phức âm."
+            },
+            {
+                "role": "assistant",
+                "content": "Căn bậc hai của số thực âm -a (a > 0) là hai số phức đối nhau: i*sqrt(a) và -i*sqrt(a)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính định thức của ma trận vuông cấp 2 và cấp 3."
+            },
+            {
+                "role": "assistant",
+                "content": "Cấp 2: det = ad - bc. Cấp 3: sử dụng quy tắc Sarrus hoặc khai triển theo dòng/cột bất kỳ để tính toán."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm ma trận nghịch đảo của một ma trận cho trước nếu có."
+            },
+            {
+                "role": "assistant",
+                "content": "Ma trận vuông A có ma trận nghịch đảo khi det(A) != 0. Công thức tính A^(-1) = (1/det(A)) * A_adj (ma trận phụ hợp chuyển vị)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Thực hiện phép nhân hai ma trận kích thước 2x2."
+            },
+            {
+                "role": "assistant",
+                "content": "Phần tử dòng i cột j của ma trận tích bằng tổng các tích của các phần tử dòng i ma trận thứ nhất với các phần tử cột j ma trận thứ hai."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Giải hệ phương trình tuyến tính bằng phương pháp Cramer."
+            },
+            {
+                "role": "assistant",
+                "content": "Phương pháp Cramer dùng định thức: tìm định thức tổng quát D và các định thức ẩn Dx, Dy, Dz. Nghiệm hệ là x = Dx/D, y = Dy/D, z = Dz/D (với D != 0)."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tìm hạng của ma trận bằng các phép biến đổi sơ cấp theo hàng."
+            },
+            {
+                "role": "assistant",
+                "content": "Sử dụng các phép biến đổi hàng để đưa ma trận về dạng bậc thang. Hạng của ma trận chính là số hàng khác 0 của ma trận bậc thang đó."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Biểu diễn số phức dưới dạng lượng giác."
+            },
+            {
+                "role": "assistant",
+                "content": "Số phức z = a + bi được viết dưới dạng lượng giác là z = r*(cos alpha + i*sin alpha), với r là môđun và alpha là argument của z."
+            }
+        ]
+    },
+    {
+        "messages": [
+            {
+                "role": "user",
+                "content": "Tính lũy thừa của số phức bằng công thức Moivre."
+            },
+            {
+                "role": "assistant",
+                "content": "Công thức Moivre phát biểu: [r(cos alpha + i sin alpha)]^n = r^n * (cos(n*alpha) + i*sin(n*alpha))."
+            }
+        ]
+    }
+]
