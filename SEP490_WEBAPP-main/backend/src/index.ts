@@ -1,13 +1,11 @@
+import './dotenv';
 import express, { Express } from 'express';
 import cors from 'cors';
 import compression from 'compression';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import routes from './routes';
 import fs from 'fs';
 import path from 'path';
-
-dotenv.config();
 
 console.log('=== APP STARTING ===');
 console.log('PORT:', process.env.PORT);

@@ -1,6 +1,8 @@
 import { OpenRouterProvider } from './src/services/providers/OpenRouterProvider';
 import dotenv from 'dotenv';
+import path from 'path';
 
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
 async function testOpenRouter() {
