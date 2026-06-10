@@ -146,7 +146,10 @@ export class ConversionService {
         }
       });
 
-      return { messages };
+      return {
+        conversation_id: conv.conversation_id,
+        messages
+      };
     });
   }
 
@@ -181,6 +184,7 @@ export class ConversionService {
 
           if (userContent && assistantContent) {
             results.push({
+              conversation_id: conv.conversation_id,
               prompt: `Human: ${userContent}\n\nAssistant:`,
               completion: ` ${assistantContent}`,
             });
@@ -223,6 +227,7 @@ export class ConversionService {
 
           if (instruction && output) {
             results.push({
+              conversation_id: conv.conversation_id,
               instruction,
               input: '',
               output,
@@ -363,7 +368,7 @@ export class ConversionService {
     options: ConversionOptions
   ): ShareGPTFormat[] {
     return conversations.map((conv) => {
-      const conversations: ShareGPTFormat['conversations'] = [];
+      const conversationsList: ShareGPTFormat['conversations'] = [];
 
       conv.messages.forEach((msg) => {
         const content = this.cleanContent(
@@ -372,14 +377,17 @@ export class ConversionService {
         );
 
         if (content) {
-          conversations.push({
+          conversationsList.push({
             from: msg.role === 'user' ? 'human' : 'gpt',
             value: content,
           });
         }
       });
 
-      return { conversations };
+      return {
+        conversation_id: conv.conversation_id,
+        conversations: conversationsList
+      };
     });
   }
 
@@ -415,6 +423,7 @@ export class ConversionService {
     // --- BƯỚC 1: NORMALIZATION ---
     // Chuẩn hóa whitespace, xóa kí tự lạ
     let cleaned = data.map((item) => ({
+      conversation_id: item.conversation_id,
       instruction: this.normalizeText(item.instruction),
       input: this.normalizeText(item.input),
       output: this.normalizeText(item.output),

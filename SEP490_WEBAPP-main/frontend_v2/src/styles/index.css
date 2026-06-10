@@ -386,3 +386,85 @@ body {
   color: var(--text-muted);
   margin-bottom: 24px;
 }
+
+/* ==========================================================================
+   TABLES FONT SIZE ENHANCEMENT (Nâng font chữ hiển thị dữ liệu trong bảng)
+   ========================================================================== */
+table,
+.preview-table,
+.preview-modal-table,
+.td-table,
+.ss-table,
+.ms-task-table,
+.eval-table,
+.cluster-table,
+.ex-table,
+.cl-table,
+.compare-table {
+  font-size: 14px !important;
+}
+
+/* Table Cells */
+table td,
+table th,
+.preview-table td,
+.preview-table th,
+.preview-modal-table td,
+.preview-modal-table th,
+.td-table td,
+.td-table th,
+.ss-table td,
+.ss-table th,
+.ms-task-table td,
+.ms-task-table th,
+.eval-table td,
+.eval-table th,
+.cluster-table td,
+.cluster-table th,
+.ex-table td,
+.ex-table th,
+.cl-table td,
+.cl-table th,
+.compare-table td,
+.compare-table th {
+  font-size: 14.5px !important;
+}
+
+/* Table Headers (slightly larger & bold) */
+table th,
+.preview-table th,
+.preview-modal-table th,
+.td-table th,
+.ss-table th,
+.ms-task-table th,
+.eval-table th,
+.cluster-table th,
+.ex-table th,
+.cl-table th,
+.compare-table th {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+}
+
+/* Elements inside tables (pre, code, div, spans, cell-truncate) */
+table td pre,
+table td code,
+table td span,
+table td div,
+table td a,
+table td button,
+.cell-truncate,
+.cell-text-col,
+.conv-id-badge,
+.conv-msg-count,
+.status-badge {
+  font-size: 14px !important;
+}
+
+/* Badges/small details inside tables can be slightly smaller but still readable */
+table .conv-msg-count,
+table .status-badge,
+table .conv-id-badge {
+  font-size: 12.5px !important;
+}
+

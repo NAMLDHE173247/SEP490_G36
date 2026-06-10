@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { apiService } from '../services/api';
 import {
   Upload,
   X,
@@ -194,14 +195,29 @@ function DataPrepView() {
   const [currentStage, setCurrentStage] = useState(1);
   const [currentSubStep, setCurrentSubStep] = useState(1);
   const [file, setFile] = useState(null);
-  const [projectName, setProjectName] = useState('Project_01/06_16:14');
+  const [rawPreviewText, setRawPreviewText] = useState('');
+  const [sampleOutputText, setSampleOutputText] = useState('');
+  const [projectName, setProjectName] = useState(() => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    return `Project Dataset ${dd}/${mm}/${yyyy}`;
+  });
   const [rawPreviewOpen, setRawPreviewOpen] = useState(false);
+  const [conversationsList, setConversationsList] = useState<any[]>(CONVERSATIONS);
   const [selectedFormat, setSelectedFormat] = useState('openai');
   const [removeThinkTags, setRemoveThinkTags] = useState(true);
   const [cleaningEnabled, setCleaningEnabled] = useState(false);
   const [cleaningApplied, setCleaningApplied] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTab, setPreviewTab] = useState('before');
+  const [conversionStats, setConversionStats] = useState<any>(null);
+  const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
+  const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
+  const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [isCleaningLoading, setIsCleaningLoading] = useState(false);
+  const [pendingCleanedList, setPendingCleanedList] = useState<any[]>([]);
 
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
@@ -299,6 +315,159 @@ function DataPrepView() {
     });
   });
   const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
+
+  const cleanVietnameseGreetings = (text: string): string => {
+    let cleaned = text.trim();
+    
+    // Danh sách các từ chào/lời dẫn tiếng Việt thường gặp ở đầu câu
+    const introPatterns = [
+      /^(dạ\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^(em\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^dạ\s+chào\s+ạ/i,
+      /^dạ/i,
+      /^(thầy|cô)\s+ơi/i,
+      /^(cho\s+em|cho\s+mình|cho\s+hỏi)\s+hỏi/i,
+      /^thầy\s+cho\s+em\s+hỏi/i,
+      /^cô\s+cho\s+em\s+hỏi/i,
+      /^cho\s+hỏi/i,
+      /^xin\s+chào/i,
+      /^hello/i,
+      /^hi/i,
+      /^alo/i,
+      /^hey/i
+    ];
+
+    let matched = true;
+    while (matched) {
+      matched = false;
+      // Remove leading punctuation like comma, space, colon
+      cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+      for (const pattern of introPatterns) {
+        const match = cleaned.match(pattern);
+        if (match) {
+          cleaned = cleaned.substring(match[0].length).trim();
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+    return cleaned || text.trim();
+  };
+
+  const cleanAssistantGreetings = (text: string): string => {
+    let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    
+    const introPatterns = [
+      /^(dạ\s+)?chào\s+(em|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^(thầy|cô)\s+chào\s+(em|bạn)/i,
+      /^chào\s+em\s+nhé/i,
+      /^chào\s+em/i,
+      /^dạ/i,
+      /^thầy\s+rất\s+vui/i,
+      /^không\s+sao/i,
+      /^câu\s+hỏi\s+hay/i,
+      /^câu\s+hỏi\s+rất\s+hay/i,
+      /^câu\s+hỏi\s+thú\s+vị/i,
+      /^cảm\s+ơn\s+em/i,
+      /^chào/i,
+      /^hello/i,
+      /^hi/i
+    ];
+
+    let matched = true;
+    while (matched) {
+      matched = false;
+      cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+      for (const pattern of introPatterns) {
+        const match = cleaned.match(pattern);
+        if (match) {
+          cleaned = cleaned.substring(match[0].length).trim();
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+    return cleaned || text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  };
+
+  const truncateText = (text: string, limit: number = 150) => {
+    if (!text) return '';
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  };
+
+  const highlightSearch = (text: string, query: string) => {
+    if (!query || !query.trim()) return text;
+    const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase()
+        ? <span key={i} className="search-highlight">{part}</span>
+        : part
+    );
+  };
+
+  const getConversationTopic = (messages: any[]) => {
+    if (!messages || messages.length === 0) return 'Không có nội dung';
+    
+    let targetText = '';
+    const meaningfulTurn = messages.find(m => {
+      const rawText = m.user || '';
+      const cleaned = cleanVietnameseGreetings(rawText);
+      return cleaned.length >= 5;
+    });
+
+    if (meaningfulTurn) {
+      targetText = cleanVietnameseGreetings(meaningfulTurn.user);
+    } else {
+      targetText = cleanVietnameseGreetings(messages[0].user || '');
+    }
+
+    if (!targetText) return 'Không có nội dung';
+    
+    const cleanText = targetText.trim().replace(/^["'\s]+|["'\s]+$/g, '');
+    if (cleanText.length <= 80) return cleanText;
+    
+    const sentences = cleanText.split(/[.!?\n]/);
+    const firstSentence = sentences[0].trim();
+    if (firstSentence.length > 15 && firstSentence.length <= 100) return firstSentence;
+    
+    const words = cleanText.split(/\s+/);
+    if (words.length > 10) {
+      return words.slice(0, 10).join(' ') + '...';
+    }
+    return cleanText.substring(0, 80) + '...';
+  };
+
+  const getAssistantSummary = (messages: any[]) => {
+    if (!messages || messages.length === 0) return 'Không có phản hồi';
+    
+    const meaningfulIdx = messages.findIndex(m => {
+      const rawText = m.user || '';
+      const cleaned = cleanVietnameseGreetings(rawText);
+      return cleaned.length >= 5;
+    });
+
+    const targetMsg = meaningfulIdx !== -1 ? messages[meaningfulIdx] : messages[0];
+    const targetText = targetMsg ? targetMsg.assistant : '';
+    if (!targetText) return 'Không có nội dung';
+
+    const cleanText = cleanAssistantGreetings(targetText).trim().replace(/^["'\s]+|["'\s]+$/g, '');
+    if (cleanText.length <= 80) return cleanText;
+
+    const sentences = cleanText.split(/[.!?\n]/);
+    const firstSentence = sentences[0].trim();
+    if (firstSentence.length > 15 && firstSentence.length <= 100) return firstSentence;
+
+    const words = cleanText.split(/\s+/);
+    if (words.length > 10) {
+      return words.slice(0, 10).join(' ') + '...';
+    }
+    return cleanText.substring(0, 80) + '...';
+  };
   const [selectedIaMsgId, setSelectedIaMsgId] = useState(null);
   const [iaMessages, setIaMessages] = useState<any[]>([
     {
@@ -591,26 +760,295 @@ function DataPrepView() {
 
   const fileInputRef = useRef(null);
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
-      setFile({
-        name: uploaded.name,
-        format: 'Định dạng OpenAI Messages',
-        messages: 586,
-        conversations: 120,
-        size: (uploaded.size / (1024 * 1024)).toFixed(2) + ' MB'
-      });
+      try {
+        setFile({
+          name: uploaded.name,
+          format: 'Đang tải lên và phân tích...',
+          messages: 0,
+          conversations: 0,
+          size: '...'
+        });
+        setRawPreviewText('Đang phân tích dữ liệu tệp...');
+        setSampleOutputText('Đang tạo mẫu đầu ra...');
+
+        const res = await apiService.uploadFile(uploaded);
+
+        setFile({
+          fileId: res.fileId,
+          name: res.filename,
+          format: res.fileType === 'openai_messages' ? 'Định dạng OpenAI Messages' : 'Định dạng Chat/Conversations',
+          messages: res.messageCount || 0,
+          conversations: res.conversationCount || 0,
+          size: (res.size / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+
+        const previewRes = await apiService.getPreview(res.fileId, 5);
+        setRawPreviewText(JSON.stringify(previewRes.preview, null, 2));
+
+        const rawPreview = previewRes.preview;
+        if (Array.isArray(rawPreview) && rawPreview.length > 0) {
+          if (res.fileType === 'openai_messages') {
+            setSampleOutputText(JSON.stringify(rawPreview[0], null, 2));
+          } else if (res.fileType === 'lesson') {
+            const firstRecord = rawPreview[0];
+            const firstLesson = firstRecord.lessons?.[0];
+            const firstExercise = firstLesson?.sections?.find((s: any) => s.type === 'exercise');
+            if (firstExercise) {
+              const sampleOutput = {
+                messages: [
+                  { role: 'user', content: firstExercise.content || '' },
+                  { role: 'assistant', content: firstExercise.answer_text || firstExercise.answer || '' }
+                ]
+              };
+              setSampleOutputText(JSON.stringify(sampleOutput, null, 2));
+            } else {
+              setSampleOutputText('');
+            }
+          } else {
+            const convMap: Record<string, any[]> = {};
+            rawPreview.forEach((msg: any) => {
+              const cid = msg.conversation_id || 'default_conv';
+              if (!convMap[cid]) {
+                convMap[cid] = [];
+              }
+              convMap[cid].push(msg);
+            });
+
+            const firstKey = Object.keys(convMap)[0];
+            const firstConvMessages = convMap[firstKey] || [];
+
+            const formattedMessages = firstConvMessages.map((msg: any) => ({
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content || ''
+            }));
+
+            const sampleOutput = {
+              conversation_id: firstKey,
+              messages: formattedMessages
+            };
+
+            setSampleOutputText(JSON.stringify(sampleOutput, null, 2));
+          }
+        } else {
+          setSampleOutputText('');
+        }
+
+      } catch (err: any) {
+        console.error('Upload failed:', err);
+        alert(err.response?.data?.error || err.message || 'Tải tệp lên thất bại');
+        setFile(null);
+        setRawPreviewText('');
+        setSampleOutputText('');
+      }
     }
   };
 
   const handleRemoveFile = () => {
     setFile(null);
+    setRawPreviewText('');
+    setSampleOutputText('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleConvert = () => {
-    setCurrentStage(2);
+  const mapConvertedToConversations = (data: any[]): any[] => {
+    if (!Array.isArray(data)) return [];
+
+    return data.map((record: any, index: number) => {
+      let messages: any[] = [];
+      let id = record.conversation_id || `conv_${String(index + 1).padStart(3, '0')}`;
+
+      if (record.messages && Array.isArray(record.messages)) {
+        const raw = record.messages;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].role === 'user') {
+            const nextAssistant = raw.slice(i + 1).find((m: any) => m.role === 'assistant');
+            messages.push({
+              user: raw[i].content || '',
+              assistant: nextAssistant ? nextAssistant.content || '' : ''
+            });
+          }
+        }
+      } else if (record.conversations && Array.isArray(record.conversations)) {
+        const raw = record.conversations;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].from === 'human') {
+            const nextGpt = raw.slice(i + 1).find((m: any) => m.from === 'gpt');
+            messages.push({
+              user: raw[i].value || '',
+              assistant: nextGpt ? nextGpt.value || '' : ''
+            });
+          }
+        }
+      } else if (record.instruction) {
+        const user = record.instruction + (record.input ? '\n' + record.input : '');
+        const assistant = record.output || '';
+        messages.push({
+          user,
+          assistant
+        });
+      } else {
+        messages.push({
+          user: 'No user message',
+          assistant: 'No assistant message'
+        });
+      }
+
+      if (messages.length === 0) {
+        messages.push({
+          user: 'Trống',
+          assistant: 'Trống'
+        });
+      }
+
+      return {
+        id,
+        messages
+      };
+    });
+  };
+
+  const handleConvert = async () => {
+    if (!file || !file.fileId) {
+      alert('Vui lòng tải tệp lên trước.');
+      return;
+    }
+
+    try {
+      const res = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: cleaningEnabled,
+        removeThinkTags: removeThinkTags
+      });
+
+      const mapped = mapConvertedToConversations(res.data);
+      setConversationsList(mapped);
+      setConversionStats(res);
+
+      // Cập nhật cả danh sách Stage 3
+      setStage3Convs(mapped.map((c, idx) => {
+        const INITIAL_GROUP_DATA = [
+          { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+          { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+          { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+          { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+          { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+        ];
+        const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+        return {
+          ...c,
+          groupId: group.id,
+          groupLabel: group.label,
+          groupColor: group.color,
+          groupBg: group.bg,
+          confidence: Math.floor(Math.random() * 10 + 90)
+        };
+      }));
+
+      setCurrentStage(2);
+      setCurrentSubStep(1);
+    } catch (err: any) {
+      console.error('Conversion failed:', err);
+      alert(err.response?.data?.error || err.message || 'Chuyển đổi dữ liệu thất bại');
+    }
+  };
+
+  const handleApplyCleaning = async () => {
+    if (!file || !file.fileId) {
+      alert('Vui lòng tải tệp lên trước.');
+      return;
+    }
+
+    try {
+      setIsCleaningLoading(true);
+      const res = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: true,
+        removeThinkTags: removeThinkTags,
+        removeBoilerplate: removeErrorKeywords,
+        removeUnclosedThink: removeUnclosedThink,
+        minCharsAssistant: parseInt(minChars, 10) || 5,
+        maxCharsAssistant: parseInt(maxChars, 10) || 4000,
+        minTurns: parseInt(minPairs, 10) || 1,
+      });
+
+      // Update states and lists
+      setConversionStats(res);
+      const mapped = mapConvertedToConversations(res.data);
+      setPendingCleanedList(mapped);
+
+      // We query the backend with enableCleaning: false to get the original data for preview.
+      const originalRes = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: false,
+        removeThinkTags: removeThinkTags,
+      });
+      const originalMapped = mapConvertedToConversations(originalRes.data);
+
+      // Take a sample of 10 items for the before/after/removed list
+      const originalSample = originalMapped.slice(0, 10);
+      const cleanedSampleMap = new Map<string, any>();
+      mapped.forEach(c => cleanedSampleMap.set(c.id, c));
+
+      const beforePreview: any[] = [];
+      const afterPreview: any[] = [];
+      const removedPreview: any[] = [];
+
+      originalSample.forEach(item => {
+        const cleanedItem = cleanedSampleMap.get(item.id);
+        const userMsg = item.messages[0]?.user || '';
+        const assistantMsgBefore = item.messages[0]?.assistant || '';
+
+        if (cleanedItem) {
+          const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
+          const isFixed = assistantMsgBefore !== assistantMsgAfter;
+
+          beforePreview.push({
+            id: item.id,
+            status: isFixed ? 'has-issue' : 'clean',
+            issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          afterPreview.push({
+            id: item.id,
+            status: isFixed ? 'fixed' : 'clean',
+            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            user: userMsg,
+            assistant: assistantMsgAfter,
+          });
+        } else {
+          beforePreview.push({
+            id: item.id,
+            status: 'has-issue',
+            issue: 'Bị lọc bỏ',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          removedPreview.push({
+            id: item.id,
+            reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+        }
+      });
+
+      setCleaningPreviewBefore(beforePreview);
+      setCleaningPreviewAfter(afterPreview);
+      setCleaningPreviewRemoved(removedPreview);
+      setCleaningPopupView('preview');
+      setPreviewTab('before');
+    } catch (err: any) {
+      console.error('Cleaning failed:', err);
+      alert(err.response?.data?.error || err.message || 'Làm sạch dữ liệu thất bại');
+    } finally {
+      setIsCleaningLoading(false);
+    }
   };
 
   /* ---- Render helpers ---- */
@@ -751,7 +1189,7 @@ function DataPrepView() {
             {rawPreviewOpen && (
               <div className="dataprep-accordion-body">
                 <pre className="raw-data-pre">
-                  {renderJsonHighlighted(SAMPLE_RAW_DATA)}
+                  {renderJsonHighlighted(rawPreviewText || SAMPLE_RAW_DATA)}
                 </pre>
               </div>
             )}
@@ -780,7 +1218,7 @@ function DataPrepView() {
             <div className="sample-output-section">
               <div className="sample-output-label">SAMPLE OUTPUT</div>
               <pre className="sample-output-pre">
-                {renderJsonHighlighted(SAMPLE_OUTPUT)}
+                {renderJsonHighlighted(sampleOutputText || SAMPLE_OUTPUT)}
               </pre>
             </div>
           </div>
@@ -797,19 +1235,19 @@ function DataPrepView() {
 
   /* ---- Stage 2 Content ---- */
   const renderStage2 = () => {
-    const totalConvs = CONVERSATIONS.length;
-    const totalMessages = CONVERSATIONS.reduce((sum, c) => sum + c.messages.length, 0);
+    const totalConvs = conversationsList.length;
+    const totalMessages = conversationsList.reduce((sum, c) => sum + c.messages.length, 0);
 
     /* Filter conversations by search */
     const filtered = searchQuery.trim()
-      ? CONVERSATIONS.filter(conv =>
+      ? conversationsList.filter(conv =>
           conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
           conv.messages.some(m =>
             m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
             m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
           )
         )
-      : CONVERSATIONS;
+      : conversationsList;
 
     const filteredTotal = filtered.length;
     const totalPages = Math.ceil(filteredTotal / convsPerPage);
@@ -848,16 +1286,7 @@ function DataPrepView() {
       setExpandedCells(prev => ({ ...prev, [cellKey]: !prev[cellKey] }));
     };
 
-    /* Search highlight helper */
-    const highlightSearch = (text, query) => {
-      if (!query || !query.trim()) return text;
-      const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
-      return parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase()
-          ? <span key={i} className="search-highlight">{part}</span>
-          : part
-      );
-    };
+    /* using component-level highlightSearch */
 
     /* Cleaning status per conversation (mock) */
     const CONV_STATUS = {
@@ -905,11 +1334,11 @@ function DataPrepView() {
             <div className="post-stats-grid">
               <div className="post-stat-item">
                 <div className="post-stat-label">Converted Records</div>
-                <div className="post-stat-value">120</div>
+                <div className="post-stat-value">{conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs}</div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Source Messages</div>
-                <div className="post-stat-value">586</div>
+                <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
               </div>
             </div>
 
@@ -917,34 +1346,54 @@ function DataPrepView() {
             <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
               <div className="post-stat-item">
                 <div className="post-stat-label">Error keywords</div>
-                <div className="post-stat-value cleaning-red">-28</div>
+                <div className="post-stat-value cleaning-red">
+                  -{conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+                </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Length</div>
-                <div className="post-stat-value cleaning-red">-14</div>
+                <div className="post-stat-value cleaning-red">
+                  -{((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
+                </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Unclosed &lt;think&gt;</div>
-                <div className="post-stat-value cleaning-red">-5</div>
+                <div className="post-stat-value cleaning-red">
+                  -{conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
+                </div>
               </div>
               <div className="post-stat-item highlight">
                 <div className="post-stat-label">Final Count</div>
-                <div className="post-stat-value cleaning-green">539</div>
+                <div className="post-stat-value cleaning-green">{totalConvs}</div>
               </div>
             </div>
             
-            {/* Hardcoded Data Loss Chart */}
-            <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span>Source: 586 (100%)</span>
-                <span>Filtered: 47 (8%)</span>
-                <span>Final: 539 (92%)</span>
-              </div>
-              <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
-                <div style={{ width: '92%', backgroundColor: '#22c55e', transition: 'width 0.5s' }} title="Clean Data (92%)"></div>
-                <div style={{ width: '8%', backgroundColor: '#ef4444', transition: 'width 0.5s' }} title="Removed (8%)"></div>
-              </div>
-            </div>
+            {/* Dynamic Data Loss Chart */}
+            {(() => {
+              const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
+              const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
+              const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
+              const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
+              const removedPct = source > 0 ? 100 - finalPct : 0;
+
+              return (
+                <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span>Source: {source} (100%)</span>
+                    <span>Filtered: {removed} ({removedPct}%)</span>
+                    <span>Final: {final} ({finalPct}%)</span>
+                  </div>
+                  <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
+                    <div style={{ width: `${finalPct}%`, backgroundColor: '#22c55e', transition: 'width 0.5s' }} title={`Clean Data (${finalPct}%)`}></div>
+                    <div style={{ width: `${removedPct}%`, backgroundColor: '#ef4444', transition: 'width 0.5s' }} title={`Removed (${removedPct}%)`}></div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -1036,14 +1485,76 @@ function DataPrepView() {
                           )}
                         </td>
                         <td className="col-msg-num-cell">{conv.messages.length}</td>
-                        <td className="cell-text-col">
-                          <div className="cell-truncate">
-                            {highlightSearch(conv.messages[0].user, searchQuery)}
+                        <td className="cell-text-col" style={{ padding: '12px' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                                {highlightSearch(conv.messages[0].user, searchQuery)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                    {getConversationTopic(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                        {highlightSearch(truncateText(msg.user, 150), searchQuery)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </td>
-                        <td className="cell-text-col">
-                          <div className="cell-truncate">
-                            {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                        <td className="cell-text-col" style={{ padding: '12px' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                                {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
+                                    {getAssistantSummary(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                        {highlightSearch(truncateText(msg.assistant, 150), searchQuery)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="col-action-cell">
@@ -1220,10 +1731,17 @@ function DataPrepView() {
                         {/* Preview button — switches to preview view */}
                         <button
                           className="cleaning-accept-btn"
-                          onClick={() => { setCleaningPopupView('preview'); setPreviewTab('before'); }}
+                          disabled={isCleaningLoading}
+                          onClick={handleApplyCleaning}
                         >
-                          <Eye size={16} />
-                          Preview & Apply Cleaning
+                          {isCleaningLoading ? (
+                            <span>Đang xử lý...</span>
+                          ) : (
+                            <>
+                              <Eye size={16} />
+                              Preview & Apply Cleaning
+                            </>
+                          )}
                         </button>
                       </div>
                     )}
@@ -1248,112 +1766,143 @@ function DataPrepView() {
               {/* ===== VIEW: Preview ===== */}
               {cleaningPopupView === 'preview' && (
                 <>
-                  {/* Tabs */}
-                  <div className="preview-modal-tabs">
-                    <button
-                      className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('before')}
-                    >
-                      📄 Before ({PREVIEW_BEFORE.length})
-                    </button>
-                    <button
-                      className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('after')}
-                    >
-                      ✅ After ({PREVIEW_AFTER.length})
-                    </button>
-                    <button
-                      className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('removed')}
-                    >
-                      🗑️ Removed ({PREVIEW_REMOVED.length})
-                    </button>
-                  </div>
+                  {(() => {
+                    const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
+                    const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
+                    const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                    const totalCount = beforeList.length;
+                    const keptCount = afterList.length;
+                    const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+                    const removedCount = removedList.length;
 
-                  {/* Summary bar */}
-                  <div className="preview-modal-summary">
-                    <span className="summary-tag summary-total">Tổng: {PREVIEW_BEFORE.length} conversations</span>
-                    <span className="summary-tag summary-kept">Giữ lại: {PREVIEW_AFTER.length}</span>
-                    <span className="summary-tag summary-fixed">Đã sửa: {PREVIEW_AFTER.filter(r => r.status === 'fixed').length}</span>
-                    <span className="summary-tag summary-removed">Loại bỏ: {PREVIEW_REMOVED.length}</span>
-                  </div>
+                    return (
+                      <>
+                        {/* Tabs */}
+                        <div className="preview-modal-tabs">
+                          <button
+                            className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('before')}
+                          >
+                            📄 Before (Mẫu {totalCount})
+                          </button>
+                          <button
+                            className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('after')}
+                          >
+                            ✅ After (Mẫu {keptCount})
+                          </button>
+                          <button
+                            className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('removed')}
+                          >
+                            🗑️ Removed (Mẫu {removedCount})
+                          </button>
+                        </div>
 
-                  {/* Tab Content */}
-                  <div className="preview-modal-body">
-                    {previewTab === 'before' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Status</th>
-                            <th>User</th>
-                            <th>Assistant (trước)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_BEFORE.map((row) => (
-                            <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td>
-                                {row.issue
-                                  ? <span className="status-badge badge-issue">{row.issue}</span>
-                                  : <span className="status-badge badge-clean">Clean</span>
-                                }
-                              </td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                        {(() => {
+                          const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                          const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                          const realRemoved = realTotal - realKept;
+                          const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
 
-                    {previewTab === 'after' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Action</th>
-                            <th>User</th>
-                            <th>Assistant (sau)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_AFTER.map((row) => (
-                            <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                          return (
+                            <>
+                              {/* Summary bar */}
+                              <div className="preview-modal-summary">
+                                <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
+                                <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
+                                <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
+                                <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
+                              </div>
 
-                    {previewTab === 'removed' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Lý do loại bỏ</th>
-                            <th>User</th>
-                            <th>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_REMOVED.map((row) => (
-                            <tr key={row.id} className="row-removed">
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td><span className="status-badge badge-removed">{row.reason}</span></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                              {/* Info Alert */}
+                              <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>ℹ️</span>
+                                <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+
+                        {/* Tab Content */}
+                        <div className="preview-modal-body">
+                          {previewTab === 'before' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Status</th>
+                                  <th>User</th>
+                                  <th>Assistant (trước)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {beforeList.map((row) => (
+                                  <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td>
+                                      {row.issue
+                                        ? <span className="status-badge badge-issue">{row.issue}</span>
+                                        : <span className="status-badge badge-clean">Clean</span>
+                                      }
+                                    </td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+
+                          {previewTab === 'after' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Action</th>
+                                  <th>User</th>
+                                  <th>Assistant (sau)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {afterList.map((row) => (
+                                  <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+
+                          {previewTab === 'removed' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Lý do loại bỏ</th>
+                                  <th>User</th>
+                                  <th>Assistant</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {removedList.map((row) => (
+                                  <tr key={row.id} className="row-removed">
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td><span className="status-badge badge-removed">{row.reason}</span></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* Footer */}
                   <div className="preview-modal-footer">
@@ -1362,6 +1911,27 @@ function DataPrepView() {
                       Quay lại cài đặt
                     </button>
                     <button className="modal-confirm-btn" onClick={() => {
+                      if (pendingCleanedList.length > 0) {
+                        setConversationsList(pendingCleanedList);
+                        setStage3Convs(pendingCleanedList.map((c, idx) => {
+                          const INITIAL_GROUP_DATA = [
+                            { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+                            { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+                            { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+                            { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+                            { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+                          ];
+                          const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+                          return {
+                            ...c,
+                            groupId: group.id,
+                            groupLabel: group.label,
+                            groupColor: group.color,
+                            groupBg: group.bg,
+                            confidence: Math.floor(Math.random() * 10 + 90)
+                          };
+                        }));
+                      }
                       setCleaningApplied(true);
                       setShowCleaningPopup(false);
                       setCleaningPopupView('settings');
@@ -2007,8 +2577,78 @@ function DataPrepView() {
                           <span className="conv-id-badge">{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} msgs</span>
                         </td>
-                        <td className="cell-text-col" style={{ verticalAlign: 'middle' }}><div className="cell-truncate">{conv.messages[0].user}</div></td>
-                        <td className="cell-text-col" style={{ verticalAlign: 'middle' }}><div className="cell-truncate">{conv.messages[0].assistant}</div></td>
+                        <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                                {highlightSearch(conv.messages[0].user, stage3Search)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                    {getConversationTopic(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                        {highlightSearch(truncateText(msg.user, 150), stage3Search)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                                {highlightSearch(conv.messages[0].assistant, stage3Search)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
+                                    {getAssistantSummary(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                        {highlightSearch(truncateText(msg.assistant, 150), stage3Search)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
                         <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                           <select
                             className="toolbar-select"
@@ -4302,112 +4942,143 @@ function DataPrepView() {
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="preview-modal-tabs">
-              <button
-                className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('before')}
-              >
-                📄 Before ({PREVIEW_BEFORE.length})
-              </button>
-              <button
-                className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('after')}
-              >
-                ✅ After ({PREVIEW_AFTER.length})
-              </button>
-              <button
-                className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('removed')}
-              >
-                🗑️ Removed ({PREVIEW_REMOVED.length})
-              </button>
-            </div>
+            {(() => {
+              const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
+              const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
+              const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+              const totalCount = beforeList.length;
+              const keptCount = afterList.length;
+              const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+              const removedCount = removedList.length;
 
-            {/* Summary bar */}
-            <div className="preview-modal-summary">
-              <span className="summary-tag summary-total">Tổng: {PREVIEW_BEFORE.length} conversations</span>
-              <span className="summary-tag summary-kept">Giữ lại: {PREVIEW_AFTER.length}</span>
-              <span className="summary-tag summary-fixed">Đã sửa: {PREVIEW_AFTER.filter(r => r.status === 'fixed').length}</span>
-              <span className="summary-tag summary-removed">Loại bỏ: {PREVIEW_REMOVED.length}</span>
-            </div>
+              return (
+                <>
+                  {/* Tabs */}
+                  <div className="preview-modal-tabs">
+                    <button
+                      className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('before')}
+                    >
+                      📄 Before (Mẫu {totalCount})
+                    </button>
+                    <button
+                      className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('after')}
+                    >
+                      ✅ After (Mẫu {keptCount})
+                    </button>
+                    <button
+                      className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('removed')}
+                    >
+                      🗑️ Removed (Mẫu {removedCount})
+                    </button>
+                  </div>
 
-            {/* Tab Content */}
-            <div className="preview-modal-body">
-              {previewTab === 'before' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Status</th>
-                      <th>User</th>
-                      <th>Assistant (trước)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_BEFORE.map((row) => (
-                      <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td>
-                          {row.issue
-                            ? <span className="status-badge badge-issue">{row.issue}</span>
-                            : <span className="status-badge badge-clean">Clean</span>
-                          }
-                        </td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                  {(() => {
+                    const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                    const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                    const realRemoved = realTotal - realKept;
+                    const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
 
-              {previewTab === 'after' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Action</th>
-                      <th>User</th>
-                      <th>Assistant (sau)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_AFTER.map((row) => (
-                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                    return (
+                      <>
+                        {/* Summary bar */}
+                        <div className="preview-modal-summary">
+                          <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
+                          <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
+                          <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
+                          <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
+                        </div>
 
-              {previewTab === 'removed' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Lý do loại bỏ</th>
-                      <th>User</th>
-                      <th>Assistant</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_REMOVED.map((row) => (
-                      <tr key={row.id} className="row-removed">
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td><span className="status-badge badge-removed">{row.reason}</span></td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                        {/* Info Alert */}
+                        <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>ℹ️</span>
+                          <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Tab Content */}
+                  <div className="preview-modal-body">
+                    {previewTab === 'before' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Status</th>
+                            <th>User</th>
+                            <th>Assistant (trước)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {beforeList.map((row) => (
+                            <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td>
+                                {row.issue
+                                  ? <span className="status-badge badge-issue">{row.issue}</span>
+                                  : <span className="status-badge badge-clean">Clean</span>
+                                }
+                              </td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {previewTab === 'after' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Action</th>
+                            <th>User</th>
+                            <th>Assistant (sau)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {afterList.map((row) => (
+                            <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {previewTab === 'removed' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Lý do loại bỏ</th>
+                            <th>User</th>
+                            <th>Assistant</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {removedList.map((row) => (
+                            <tr key={row.id} className="row-removed">
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td><span className="status-badge badge-removed">{row.reason}</span></td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Modal Footer */}
             <div className="preview-modal-footer">
@@ -4415,6 +5086,27 @@ function DataPrepView() {
                 Hủy
               </button>
               <button className="modal-confirm-btn" onClick={() => {
+                if (pendingCleanedList.length > 0) {
+                  setConversationsList(pendingCleanedList);
+                  setStage3Convs(pendingCleanedList.map((c, idx) => {
+                    const INITIAL_GROUP_DATA = [
+                      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+                      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+                      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+                      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+                      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+                    ];
+                    const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+                    return {
+                      ...c,
+                      groupId: group.id,
+                      groupLabel: group.label,
+                      groupColor: group.color,
+                      groupBg: group.bg,
+                      confidence: Math.floor(Math.random() * 10 + 90)
+                    };
+                  }));
+                }
                 setCleaningApplied(true);
                 setShowPreviewModal(false);
               }}>

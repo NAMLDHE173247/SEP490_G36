@@ -371,8 +371,16 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
     system_to_use = default_system if default_system else DEFAULT_SOCRATIC_PROMPT
     # Kiểm tra cột dữ liệu thực tế
     if col_map not in examples:
-        # Nếu không tìm thấy cột map, thử dùng 'messages' hoặc cột đầu tiên
-        actual_col = "messages" if "messages" in examples else next(iter(examples.keys()))
+        # Nếu không tìm thấy cột map, thử dùng 'messages', 'conversations', 'instruction' hoặc cột đầu tiên không phải metadata/tracking
+        if "messages" in examples:
+            actual_col = "messages"
+        elif "conversations" in examples:
+            actual_col = "conversations"
+        elif "instruction" in examples:
+            actual_col = "instruction"
+        else:
+            valid_cols = [k for k in examples.keys() if k not in ["conversation_id", "conversationId", "id", "session_id", "sessionId"]]
+            actual_col = valid_cols[0] if valid_cols else next(iter(examples.keys()))
     else:
         actual_col = col_map
 

@@ -46,5 +46,25 @@ export const apiService = {
   createUser: async (payload: any): Promise<any> => {
     const response = await api.post('/auth/register', payload);
     return response.data;
+  },
+  uploadFile: async (file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  getPreview: async (fileId: string, limit = 5): Promise<any> => {
+    const response = await api.get(`/preview/${fileId}`, {
+      params: { limit },
+    });
+    return response.data;
+  },
+  convertData: async (fileId: string, options: any): Promise<any> => {
+    const response = await api.post('/convert', { fileId, options });
+    return response.data;
   }
 };

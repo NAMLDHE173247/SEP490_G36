@@ -30,15 +30,18 @@ export interface OpenAIMessage {
 }
 
 export interface OpenAIFormat {
+  conversation_id?: string;
   messages: OpenAIMessage[];
 }
 
 export interface AnthropicFormat {
+  conversation_id?: string;
   prompt: string;
   completion: string;
 }
 
 export interface AlpacaFormat {
+  conversation_id?: string;
   instruction: string;
   input: string;
   output: string;
@@ -50,6 +53,7 @@ export interface ShareGPTMessage {
 }
 
 export interface ShareGPTFormat {
+  conversation_id?: string;
   conversations: ShareGPTMessage[];
 }
 

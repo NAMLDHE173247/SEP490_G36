@@ -66,17 +66,26 @@ const upload = multer({
     fileSize: 50 * 1024 * 1024, // 50MB
   },
   fileFilter: (_req, file, cb) => {
-    // Thêm các định dạng phổ biến cho Machine Learning: .json, .jsonl, .csv, .txt
-    const allowedMimeTypes = ['application/json', 'text/csv', 'text/plain', 'application/octet-stream', 'application/zip', 'application/x-zip-compressed'];
-    const allowedExtensions = ['.json', '.jsonl', '.csv', '.txt', '.zip'];
+    // Thêm các định dạng phổ biến cho Machine Learning: .json, .jsonl, .csv, .txt, .xlsx, .xls
+    const allowedMimeTypes = [
+      'application/json',
+      'text/csv',
+      'text/plain',
+      'application/octet-stream',
+      'application/zip',
+      'application/x-zip-compressed',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel'
+    ];
+    const allowedExtensions = ['.json', '.jsonl', '.csv', '.txt', '.zip', '.xlsx', '.xls'];
 
     const isMimeTypeValid = allowedMimeTypes.includes(file.mimetype);
-    const isExtensionValid = allowedExtensions.some(ext => file.originalname.endsWith(ext));
+    const isExtensionValid = allowedExtensions.some(ext => file.originalname.toLowerCase().endsWith(ext));
 
     if (isMimeTypeValid || isExtensionValid) {
       cb(null, true);
     } else {
-      cb(new Error('Only JSON, JSONL, CSV, TXT, and ZIP files are allowed.'));
+      cb(new Error('Only JSON, JSONL, CSV, Excel, TXT, and ZIP files are allowed.'));
     }
   },
 });
