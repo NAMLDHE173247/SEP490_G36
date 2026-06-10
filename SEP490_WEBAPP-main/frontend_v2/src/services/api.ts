@@ -47,6 +47,22 @@ export const apiService = {
     const response = await api.post('/auth/register', payload);
     return response.data;
   },
+  getGpuConfig: async (): Promise<{ gpuUrl: string, configured: boolean }> => {
+    const response = await api.get('/config/gpu-url');
+    return response.data;
+  },
+  updateGpuConfig: async (gpuUrl: string): Promise<any> => {
+    const response = await api.post('/config/gpu-url', { gpuUrl });
+    return response.data;
+  },
+  checkGpuStatus: async (): Promise<{ isOk: boolean; data?: any }> => {
+    try {
+      const response = await api.get('/model-eval/gpu-status', { timeout: 6000 });
+      return { isOk: response.status === 200, data: response.data };
+    } catch {
+      return { isOk: false };
+    }
+  },
   uploadFile: async (file: File): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);

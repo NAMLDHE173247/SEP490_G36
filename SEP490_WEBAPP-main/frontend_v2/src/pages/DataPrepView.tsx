@@ -20,14 +20,15 @@ import {
   Filter,
   Download,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
 import '../styles/dataprep.css';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
+  { num: 3, label: 'Clustering', sub: 'Step 5-7' },
   { num: 4, label: 'Classification', sub: 'Step 8-11' },
   { num: 5, label: 'Evaluation', sub: 'Step 12' },
   { num: 6, label: 'Finish', sub: 'Step 13-15' },
@@ -191,6 +192,31 @@ const CONVERSATIONS = [
   },
 ];
 
+const Tooltip = ({ children, text }) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div 
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={() => setShow(!show)}
+    >
+      {children}
+      {show && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+          backgroundColor: '#1e293b', color: '#fff', padding: '8px 12px', borderRadius: '6px',
+          fontSize: '12px', width: '250px', zIndex: 1000, textAlign: 'left',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', fontWeight: 400, lineHeight: 1.5
+        }}>
+          {text}
+          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', border: '6px solid transparent', borderTopColor: '#1e293b' }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 function DataPrepView() {
   const [currentStage, setCurrentStage] = useState(1);
   const [currentSubStep, setCurrentSubStep] = useState(1);
@@ -281,6 +307,7 @@ function DataPrepView() {
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [selectedGroup3, setSelectedGroup3] = useState(null);
   const [selectedConv3, setSelectedConv3] = useState(null);
+  const [stage3SubGroup, setStage3SubGroup] = useState('A');
   const [stage3Convs, setStage3Convs] = useState<any[]>(() => {
     const INITIAL_GROUP_DATA = [
       { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
@@ -310,6 +337,7 @@ function DataPrepView() {
         groupLabel: group.label,
         groupColor: group.color,
         groupBg: group.bg,
+        subGroup: 'A',
         confidence: Math.floor(Math.random() * 10 + 90),
       };
     });
@@ -2267,17 +2295,32 @@ function DataPrepView() {
                     <div className="cluster-popup-section">
                       <h3 className="cluster-card-title">Clustering Parameters</h3>
                       <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
-                        <label>Target K (Clusters)</label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          Target K (Clusters)
+                          <Tooltip text="Số lượng cụm K mục tiêu thuật toán K-Means sẽ chia dữ liệu. Số K càng lớn thì số cụm môn học càng nhiều.">
+                            <HelpCircle size={14} color="#94a3b8" />
+                          </Tooltip>
+                        </label>
                         <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
                       </div>
                       <p className="cluster-recommend">Recommended K: <strong>14</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</p>
                       <div className="cleaning-inputs-row" style={{ marginBottom: 12 }}>
                         <div className="cleaning-input-group">
-                          <label>DBSCAN EPS</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            DBSCAN EPS
+                            <Tooltip text="Bán kính Epsilon của thuật toán DBSCAN. Quyết định khoảng cách tối đa để hai đoạn hội thoại được xem là cùng một cụm.">
+                              <HelpCircle size={14} color="#94a3b8" />
+                            </Tooltip>
+                          </label>
                           <input type="number" step="0.1" value={clusterEps} onChange={(e) => setClusterEps(e.target.value)} />
                         </div>
                         <div className="cleaning-input-group">
-                          <label>Min Samples</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            Min Samples
+                            <Tooltip text="Số lượng hội thoại tối thiểu cần thiết để tạo thành một cụm DBSCAN hợp lệ. Nếu ít hơn sẽ bị coi là nhiễu (Noise).">
+                              <HelpCircle size={14} color="#94a3b8" />
+                            </Tooltip>
+                          </label>
                           <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
                         </div>
                       </div>
@@ -2421,6 +2464,7 @@ function DataPrepView() {
 
     const filteredRows = allConvRows
       .filter(r => !selectedGroup3 || r.groupId === selectedGroup3)
+      .filter(r => r.subGroup === stage3SubGroup)
       .filter(r => {
         if (!stage3Search.trim()) return true;
         const q = stage3Search.toLowerCase();
@@ -2481,24 +2525,39 @@ function DataPrepView() {
                 </button>
                 <div style={{ flex: 1 }}></div>
                 <button 
-                  style={{ backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }} 
-                  title="Tách các dòng được chọn sang cụm nhiễu (Group B)"
+                  style={{ backgroundColor: stage3SubGroup === 'A' ? '#ef4444' : '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }} 
+                  title={`Di chuyển các dòng đã chọn sang Group ${stage3SubGroup === 'A' ? 'B (Nhiễu)' : 'A (Chuẩn)'}`}
                   disabled={checkedConvIds.length === 0}
                   onClick={() => {
                     setStage3Convs(prev => prev.map(c => 
                       checkedConvIds.includes(c.id) 
-                        ? { ...c, groupId: 5, groupLabel: 'NOISE (Outliers)', groupColor: '#dc2626', groupBg: '#fef2f2' }
+                        ? { ...c, subGroup: stage3SubGroup === 'A' ? 'B' : 'A' }
                         : c
                     ));
                     setCheckedConvIds([]);
                   }}
                 >
-                  Split to Noise Group {checkedConvIds.length > 0 ? `(${checkedConvIds.length})` : ''}
+                  Move to Group {stage3SubGroup === 'A' ? 'B (Noise)' : 'A (Standard)'} {checkedConvIds.length > 0 ? `(${checkedConvIds.length})` : ''}
                 </button>
               </div>
 
               {/* Toolbar */}
-              <div className="preview-toolbar">
+              <div className="preview-toolbar" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                  <button
+                    onClick={() => { setStage3SubGroup('A'); setStage3Page(1); setCheckedConvIds([]); }}
+                    style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'A' ? '#e0f2fe' : '#fff', color: stage3SubGroup === 'A' ? '#0284c7' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                  >
+                    Group A (Chuẩn bộ môn)
+                  </button>
+                  <button
+                    onClick={() => { setStage3SubGroup('B'); setStage3Page(1); setCheckedConvIds([]); }}
+                    style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'B' ? '#fef2f2' : '#fff', color: stage3SubGroup === 'B' ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px', borderLeft: '1px solid #e2e8f0' }}
+                  >
+                    Group B (Nhiễu bộ môn)
+                  </button>
+                </div>
+                <div style={{ flex: 1 }}></div>
                 <span className="toolbar-label">Conversations / page:</span>
                 <select
                   className="toolbar-select"
