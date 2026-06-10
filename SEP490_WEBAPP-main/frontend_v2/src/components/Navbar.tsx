@@ -25,8 +25,8 @@ function Navbar() {
     navigate('/login');
   };
 
-  // Hide header on intro, login, and register pages
-  if (['/', '/login', '/register'].includes(location.pathname)) {
+  // Hide header on login and register pages
+  if (['/login', '/register'].includes(location.pathname)) {
     return null;
   }
 
