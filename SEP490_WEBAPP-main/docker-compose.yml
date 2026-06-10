@@ -85,7 +85,7 @@ services:
   # ── Frontend ───────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend_v2
       dockerfile: Dockerfile
     image: dothang2504/sep490-fe:latest
     container_name: sep490_frontend

@@ -7,7 +7,7 @@ import {
   ShieldAlert, Ban, CheckCircle2, TrendingUp, AlertTriangle,
   ClipboardList, GitBranch, ChevronRight
 } from 'lucide-react';
-import '../home.css';
+import '../styles/home.css';
 
 const getRelativeTime = (dateStr: any) => {
   if (!dateStr) return '-';

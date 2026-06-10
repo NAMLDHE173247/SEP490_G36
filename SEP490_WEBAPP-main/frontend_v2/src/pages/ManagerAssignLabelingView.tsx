@@ -5,7 +5,7 @@ import {
   Eye, Plus, Calendar, ArrowUpDown, BarChart2, Tag,
   MessageSquare, RefreshCw, Send, X, FileText, Sparkles
 } from 'lucide-react';
-import '../assignlabeling.css';
+import '../styles/assignlabeling.css';
 
 /* ── Demo data ── */
 const STAFF_MEMBERS = [

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import '../auth.css';
+import '../styles/auth.css';
 
 // SVG Icons
 const GoogleIcon = () => (

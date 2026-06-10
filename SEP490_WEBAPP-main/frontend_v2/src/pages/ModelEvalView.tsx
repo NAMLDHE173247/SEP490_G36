@@ -11,7 +11,7 @@ import {
   Calendar,
   X
 } from 'lucide-react';
-import '../modeleval.css';
+import '../styles/modeleval.css';
 
 function ModelEvalView() {
   const [isModalOpen, setIsModalOpen] = useState(false);

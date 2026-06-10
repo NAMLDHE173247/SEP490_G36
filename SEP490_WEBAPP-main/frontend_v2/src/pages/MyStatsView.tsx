@@ -3,7 +3,7 @@ import {
   BarChart2, Clock, CheckCircle, TrendingUp, Zap, Calendar,
   FileText, Activity, Award, Target, ChevronRight
 } from 'lucide-react';
-import '../mystats.css';
+import '../styles/mystats.css';
 
 /* ── Demo personal data (staff nhìn thấy data của mình) ── */
 const MY_DATA = {

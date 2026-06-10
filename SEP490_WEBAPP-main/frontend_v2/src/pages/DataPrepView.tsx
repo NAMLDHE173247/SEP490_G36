@@ -21,7 +21,7 @@ import {
   RefreshCw,
   MessageSquare
 } from 'lucide-react';
-import '../dataprep.css';
+import '../styles/dataprep.css';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },

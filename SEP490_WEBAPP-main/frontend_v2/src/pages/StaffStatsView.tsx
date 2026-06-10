@@ -4,7 +4,7 @@ import {
   Download, Calendar, ChevronRight, X, Eye, Activity,
   CheckCircle, AlertCircle, FileText, ArrowUpDown, Star, Zap
 } from 'lucide-react';
-import '../staffstats.css';
+import '../styles/staffstats.css';
 
 /* ── Demo staff data ── */
 const STAFF_DATA = [
