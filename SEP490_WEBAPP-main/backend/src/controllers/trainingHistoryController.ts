@@ -83,6 +83,8 @@ export const saveTrainingHistory = async (req: Request, res: Response) => {
       trainingDuration,
       startedAt,
       completedAt,
+      totalTokens,
+      totalRecords,
     } = req.body;
 
     // Validation
@@ -120,6 +122,8 @@ export const saveTrainingHistory = async (req: Request, res: Response) => {
       existing.trainingDuration = trainingDuration;
       existing.startedAt = new Date(startedAt);
       existing.completedAt = new Date(completedAt);
+      if (totalTokens !== undefined) existing.totalTokens = totalTokens;
+      if (totalRecords !== undefined) existing.totalRecords = totalRecords;
       await existing.save();
 
       console.log(`[Backend] Updated training history for job ${jobId}`);
@@ -144,6 +148,8 @@ export const saveTrainingHistory = async (req: Request, res: Response) => {
       trainingDuration,
       startedAt: new Date(startedAt),
       completedAt: new Date(completedAt),
+      totalTokens: totalTokens || 0,
+      totalRecords: totalRecords || 0,
     });
 
     await history.save();

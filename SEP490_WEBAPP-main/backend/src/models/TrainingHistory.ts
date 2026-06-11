@@ -59,6 +59,10 @@ export interface ITrainingHistory extends Document {
   datasetPath?: string;
   datasetFileId?: string; // ID từ Multer hoặc File System
   workerUrl?: string;
+
+  // Actual stats processed
+  totalTokens?: number;
+  totalRecords?: number;
 }
 
 const TrainingHistorySchema = new Schema<ITrainingHistory>(
@@ -132,6 +136,10 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
     datasetPath: { type: String },
     datasetFileId: { type: String },
     workerUrl: { type: String },
+
+    // Actual stats processed
+    totalTokens: { type: Number, default: 0 },
+    totalRecords: { type: Number, default: 0 },
   },
   {
     timestamps: true, // tự tạo createdAt, updatedAt

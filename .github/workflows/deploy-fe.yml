@@ -7,7 +7,9 @@ on:
       - main
       - develop
     paths:
-      - 'SEP490_WEBAPP-main/frontend/**' # Chỉ tự động chạy nếu code trong thư mục FE thay đổi
+      - 'SEP490_WEBAPP-main/frontend/**'
+      - 'SEP490_WEBAPP-main/frontend_v2/**'
+
 
 env:
   AZURE_WEBAPP_NAME: 'front-end' # Thay bằng tên App Service FE của bạn trên Azure
@@ -27,8 +29,8 @@ jobs:
 
       - name: Install dependencies & Build
         run: |
-          cd SEP490_WEBAPP-main/frontend
-          npm install
+          cd SEP490_WEBAPP-main/frontend_v2
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Deploy to Azure Web App
@@ -36,4 +38,4 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_FE }}
-          package: './SEP490_WEBAPP-main/frontend/dist' # Thư mục chứa code sau khi build của Vite
+          package: './SEP490_WEBAPP-main/frontend_v2/dist' # Thư mục chứa code sau khi build của Vite

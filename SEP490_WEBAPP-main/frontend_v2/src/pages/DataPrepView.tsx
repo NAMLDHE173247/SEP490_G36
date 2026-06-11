@@ -1,5 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { apiService } from '../services/api';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import {
   Upload,
   X,
@@ -775,6 +777,297 @@ function DataPrepView() {
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [sampleQuestion, setSampleQuestion] = useState('Hãy giải phương trình bậc hai sau đây: x² - 5x + 6 = 0');
   const [trialResponse, setTrialResponse] = useState('');
+
+  // Split Guard States
+  const [splitTestPercentage, setSplitTestPercentage] = useState(20);
+  const [splitThreshold, setSplitThreshold] = useState(0.85);
+  const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
+  const [splitResult, setSplitResult] = useState<any>(null);
+  const [isSplitting, setIsSplitting] = useState(false);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
+
+  // Export States
+  const [exportScoreThreshold, setExportScoreThreshold] = useState(6.0);
+  const [huggingFaceToken, setHuggingFaceToken] = useState('');
+  const [huggingFaceRepoId, setHuggingFaceRepoId] = useState('');
+  const [huggingFacePrivate, setHuggingFacePrivate] = useState(true);
+  const [isPushingToHub, setIsPushingToHub] = useState(false);
+
+  // Helper function to format record back to raw shape based on selectedFormat
+  const formatRecord = (conv: any, systemPrompt?: string) => {
+    const trimmedSystemPrompt = String(systemPrompt || '').trim();
+    if (selectedFormat === 'openai') {
+      const messages: any[] = [];
+      if (trimmedSystemPrompt) {
+        messages.push({ role: 'system', content: trimmedSystemPrompt });
+      }
+      if (Array.isArray(conv.messages)) {
+        conv.messages.forEach((msg: any) => {
+          messages.push({ role: 'user', content: msg.user || '' });
+          if (msg.assistant) {
+            messages.push({ role: 'assistant', content: msg.assistant || '' });
+          }
+        });
+      }
+      return {
+        conversation_id: conv.id,
+        messages
+      };
+    } else {
+      // Alpaca format
+      const firstTurn = conv.messages?.[0] || { user: '', assistant: '' };
+      return {
+        id: conv.id,
+        instruction: firstTurn.user || '',
+        input: '',
+        output: firstTurn.assistant || ''
+      };
+    }
+  };
+
+  // Helper function to calculate dynamic overall score from sepQualityRatings (out of 10)
+  const getOverallScore = (conv: any) => {
+    const rubrics = ['Factuality', 'Socratic method', 'Encouragement', 'Completeness', 'Training readiness'];
+    let sum = 0;
+    let count = 0;
+    rubrics.forEach(rubric => {
+      const rating = sepQualityRatings[`${conv.id}-${rubric}`];
+      if (rating !== undefined) {
+        sum += rating;
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      return (sum / count) * 2; // Average rating (1-5) * 2 -> 0-10
+    }
+    return conv.score ?? 8.0; // fallback to default
+  };
+
+  const getConversationText = (conv: any) => {
+    if (!conv) return '';
+    const firstUserMsg = conv.messages?.find((m: any) => m.role === 'user' || m.user);
+    return firstUserMsg ? (firstUserMsg.content || firstUserMsg.user || '') : '';
+  };
+
+  // Action handlers
+  const handleGenerateSplit = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để thực hiện split.');
+      return;
+    }
+
+    setIsSplitting(true);
+    try {
+      const formattedData = conversationsList.map(c => formatRecord(c, ''));
+      const result = await apiService.clusterSafeSplit(
+        formattedData,
+        splitTestPercentage,
+        splitThreshold,
+        splitMaxAttempts,
+        42
+      );
+      setSplitResult(result);
+      if (result.resolved) {
+        alert(`Safe split generated successfully in ${result.attempts} attempts!`);
+      } else {
+        alert(`Safe split finished but ${result.conflictCount} conflicts remain after ${result.attempts} attempts.`);
+      }
+    } catch (err: any) {
+      console.error('Safe split failed:', err);
+      alert(err.response?.data?.error || err.message || 'Phân chia dữ liệu thất bại.');
+    } finally {
+      setIsSplitting(false);
+    }
+  };
+
+  const handleExcludeSample = (id: string) => {
+    setConversationsList(prev => prev.filter(c => c.id !== id));
+    setExcludedIds(prev => [...prev, id]);
+    setSplitResult(null);
+    alert('Đã loại trừ mẫu này khỏi dataset. Vui lòng bấm "Generate safe split" để tính toán lại.');
+  };
+
+  const handleDownloadTrainTestZip = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi tải.');
+      return;
+    }
+
+    const trainIndices = new Set(splitResult.trainIndices || []);
+    const testIndices = new Set(splitResult.testIndices || []);
+    const trainData: any[] = [];
+    const testData: any[] = [];
+
+    conversationsList.forEach((conv, index) => {
+      const formatted = formatRecord(conv, promptText);
+      if (trainIndices.has(index)) {
+        trainData.push(formatted);
+      } else if (testIndices.has(index)) {
+        testData.push(formatted);
+      }
+    });
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(trainData, null, 2));
+    zip.file('test_dataset.json', JSON.stringify(testData, null, 2));
+    zip.file(
+      '_metadata.json',
+      JSON.stringify(
+        {
+          projectName: projectName.trim() || 'dataset',
+          totalTrain: trainData.length,
+          totalTest: testData.length,
+          threshold: splitResult.threshold,
+          attempts: splitResult.attempts,
+          conflictCount: splitResult.conflictCount,
+          maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+          exportedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `${projectName.trim().replace(/\s+/g, '_')}_train_test.zip`);
+    } catch (err: any) {
+      console.error('Failed to generate zip:', err);
+      alert('Tạo file zip thất bại: ' + err.message);
+    }
+  };
+
+  const handleDownloadByScore = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi tải.');
+      return;
+    }
+
+    const trainIndices = new Set(splitResult.trainIndices || []);
+    const testIndices = new Set(splitResult.testIndices || []);
+    const trainData: any[] = [];
+    const testData: any[] = [];
+
+    conversationsList.forEach((conv, index) => {
+      const score = getOverallScore(conv);
+      if (score >= exportScoreThreshold) {
+        const formatted = formatRecord(conv, promptText);
+        if (trainIndices.has(index)) {
+          trainData.push(formatted);
+        } else if (testIndices.has(index)) {
+          testData.push(formatted);
+        }
+      }
+    });
+
+    if (trainData.length === 0 && testData.length === 0) {
+      alert(`Không tìm thấy mẫu nào có điểm Overall >= ${exportScoreThreshold.toFixed(1)}`);
+      return;
+    }
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(trainData, null, 2));
+    zip.file('test_dataset.json', JSON.stringify(testData, null, 2));
+    zip.file(
+      '_metadata.json',
+      JSON.stringify(
+        {
+          projectName: projectName.trim() || 'dataset',
+          totalTrain: trainData.length,
+          totalTest: testData.length,
+          threshold: splitResult.threshold,
+          attempts: splitResult.attempts,
+          conflictCount: splitResult.conflictCount,
+          maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+          overallScoreThreshold: exportScoreThreshold,
+          exportedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const scoreLabel = exportScoreThreshold.toFixed(1).replace('.', '_');
+      saveAs(blob, `${projectName.trim().replace(/\s+/g, '_')}_overall_gte_${scoreLabel}_split.zip`);
+    } catch (err: any) {
+      console.error('Failed to generate zip:', err);
+      alert('Tạo file zip thất bại: ' + err.message);
+    }
+  };
+
+  const handlePushToHub = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi push lên Hugging Face.');
+      return;
+    }
+
+    if (!huggingFaceToken.trim()) {
+      alert('Vui lòng nhập Hugging Face Token.');
+      return;
+    }
+
+    if (!huggingFaceRepoId.trim()) {
+      alert('Vui lòng nhập Repository ID (ví dụ: username/dataset-name).');
+      return;
+    }
+
+    setIsPushingToHub(true);
+    try {
+      const trainIndices = new Set(splitResult.trainIndices || []);
+      const testIndices = new Set(splitResult.testIndices || []);
+      const trainData: any[] = [];
+      const testData: any[] = [];
+
+      conversationsList.forEach((conv, index) => {
+        const formatted = formatRecord(conv, promptText);
+        if (trainIndices.has(index)) {
+          trainData.push(formatted);
+        } else if (testIndices.has(index)) {
+          testData.push(formatted);
+        }
+      });
+
+      const fileName = `${projectName.trim().replace(/\s+/g, '_') || 'dataset'}_train_test_split.json`;
+      const content = JSON.stringify(
+        {
+          train: trainData,
+          test: testData,
+          metadata: {
+            projectName: projectName.trim() || 'dataset',
+            systemPrompt: promptText || null,
+            threshold: splitResult.threshold,
+            attempts: splitResult.attempts,
+            conflictCount: splitResult.conflictCount,
+            maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+            exportedAt: new Date().toISOString(),
+          },
+        },
+        null,
+        2
+      );
+
+      const result = await apiService.pushToHuggingFace({
+        token: huggingFaceToken.trim(),
+        repoId: huggingFaceRepoId.trim(),
+        fileName,
+        content,
+        isPrivate: huggingFacePrivate
+      });
+
+      alert('Đã push dữ liệu lên Hugging Face Hub thành công!');
+      if (result?.url) {
+        window.open(result.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err: any) {
+      console.error('Hugging Face Hub upload failed:', err);
+      alert(err.response?.data?.error || err.message || 'Push lên Hugging Face Hub thất bại.');
+    } finally {
+      setIsPushingToHub(false);
+    }
+  };
   const PROMPT_VERSIONS = [
     { id: 1, name: 'Project 27/05 09:30', desc: 'Initial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
     { id: 2, name: 'Project_27/05_10:15', desc: 'Added encouragement phrases', date: '2026-05-27 10:15', content: 'You are a Socratic tutor. Guide students through questions. Use encouraging phrases like "Great thinking!" and "You\'re on the right track!"' },
@@ -4895,28 +5188,56 @@ function DataPrepView() {
                 <h3>Split Guard</h3>
                 <p>Generate a train/test split with semantic conflict checking handled by the GPU service.</p>
               </div>
-              <button className="s6-trial-btn"><Sparkles size={14} /> Generate safe split</button>
+              <button 
+                className="s6-trial-btn"
+                onClick={handleGenerateSplit}
+                disabled={isSplitting || conversationsList.length === 0}
+              >
+                {isSplitting ? <RefreshCw size={14} className="sep490-spin" /> : <Sparkles size={14} />}
+                Generate safe split
+              </button>
             </div>
 
             {/* Config Cards */}
             <div className="sg-config-row">
               <div className="sg-config-card">
                 <span className="sg-config-label">TOTAL SAMPLES</span>
-                <span className="sg-config-value">72</span>
+                <span className="sg-config-value">{conversationsList.length}</span>
               </div>
               <div className="sg-config-card">
                 <div className="sg-config-label-row">
                   <span className="sg-config-label">TEST PERCENTAGE</span>
-                  <span className="sg-config-pct">50%</span>
+                  <span className="sg-config-pct">{splitTestPercentage}%</span>
                 </div>
-                <input type="range" min="10" max="90" defaultValue={50} className="sg-slider sg-slider-purple" />
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="50" 
+                  value={splitTestPercentage}
+                  onChange={(e) => {
+                    setSplitTestPercentage(Number(e.target.value));
+                    setSplitResult(null);
+                  }}
+                  className="sg-slider sg-slider-purple" 
+                />
               </div>
               <div className="sg-config-card">
                 <div className="sg-config-label-row">
                   <span className="sg-config-label">SEMANTIC THRESHOLD</span>
-                  <span className="sg-config-pct">1.000</span>
+                  <span className="sg-config-pct">{splitThreshold.toFixed(3)}</span>
                 </div>
-                <input type="range" min="0" max="100" defaultValue={100} className="sg-slider sg-slider-purple" />
+                <input 
+                  type="range" 
+                  min="0.8" 
+                  max="1.0" 
+                  step="0.001"
+                  value={splitThreshold}
+                  onChange={(e) => {
+                    setSplitThreshold(Number(e.target.value));
+                    setSplitResult(null);
+                  }}
+                  className="sg-slider sg-slider-purple" 
+                />
               </div>
             </div>
 
@@ -4924,106 +5245,174 @@ function DataPrepView() {
             <div className="sg-attempts-card">
               <span className="sg-config-label">MAX ATTEMPTS</span>
               <p className="sg-attempts-desc">The GPU service will reshuffle until the split is clean or this limit is reached.</p>
-              <input type="number" defaultValue={20} className="sg-attempts-input" />
+              <input 
+                type="number" 
+                min="1" 
+                max="100" 
+                value={splitMaxAttempts}
+                onChange={(e) => {
+                  setSplitMaxAttempts(Math.max(1, Math.min(100, Number(e.target.value) || 1)));
+                  setSplitResult(null);
+                }}
+                className="sg-attempts-input" 
+              />
             </div>
 
             {/* Split Generated Result */}
-            <div className="sg-result-card">
-              <div className="sg-result-title"><Check size={16} /> Split Generated</div>
-              <div className="sg-result-stats">
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">TRAIN</span>
-                  <span className="sg-result-value">36</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">TEST</span>
-                  <span className="sg-result-value">36</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">ATTEMPTS</span>
-                  <span className="sg-result-value">1</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">CONFLICTS</span>
-                  <span className="sg-result-value sg-value-red">4</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">MAX SIMILARITY</span>
-                  <span className="sg-result-value">0.96</span>
-                </div>
+            <div className="sg-result-card" style={{ 
+              borderColor: !splitResult ? '#cbd5e1' : splitResult.resolved ? '#10b981' : '#f43f5e',
+              backgroundColor: !splitResult ? '#f8fafc' : splitResult.resolved ? 'rgba(16,185,129,0.05)' : 'rgba(244,63,94,0.05)',
+              padding: '16px', borderRadius: '12px', border: '1px solid', marginTop: '16px'
+            }}>
+              <div className="sg-result-title" style={{
+                color: !splitResult ? '#64748b' : splitResult.resolved ? '#10b981' : '#f43f5e',
+                fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px'
+              }}>
+                {!splitResult ? <AlertCircle size={16} /> : splitResult.resolved ? <Check size={16} /> : <AlertCircle size={16} />}
+                {!splitResult ? 'No split generated yet' : splitResult.resolved ? 'Split Generated (Clean)' : 'Split Generated (Conflicts remain)'}
               </div>
+              {splitResult && (
+                <div className="sg-result-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginTop: '12px' }}>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>TRAIN</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.trainCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>TEST</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.testCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>ATTEMPTS</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.attempts}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>CONFLICTS</span>
+                    <span className={`sg-result-value ${splitResult.conflictCount > 0 ? 'sg-value-red' : ''}`} style={{ fontSize: '20px', fontWeight: 'bold', color: splitResult.conflictCount > 0 ? '#ef4444' : '#1e293b' }}>{splitResult.conflictCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>MAX SIMILARITY</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{Number(splitResult.maxCrossSplitSimilarity || 0).toFixed(3)}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Venn Diagram */}
-            <div className="sg-venn-card">
-              <h4>Semantic Overlap Visualization</h4>
-              <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
-              <div className="sg-venn-wrap">
-                <svg viewBox="0 0 400 220" className="sg-venn-svg">
-                  {/* Train circle */}
-                  <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
-                  {/* Test circle */}
-                  <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
-                  {/* Overlap area - dashed */}
-                  <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
-                  {/* Labels */}
-                  <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
-                  <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">32 unique</text>
-                  <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
-                  <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">32 unique</text>
-                  <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
-                  <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">4 conflicts</text>
-                </svg>
-              </div>
+            {(() => {
+              const trainUnique = splitResult ? Math.max(0, splitResult.trainCount - splitResult.conflictCount) : 0;
+              const testUnique = splitResult ? Math.max(0, splitResult.testCount - splitResult.conflictCount) : 0;
+              const conflictCount = splitResult ? splitResult.conflictCount : 0;
+              return (
+                <div className="sg-venn-card" style={{ marginTop: '16px' }}>
+                  <h4>Semantic Overlap Visualization</h4>
+                  <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
+                  <div className="sg-venn-wrap">
+                    <svg viewBox="0 0 400 220" className="sg-venn-svg">
+                      {/* Train circle */}
+                      <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                      {/* Test circle */}
+                      <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
+                      {/* Overlap area - dashed */}
+                      <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                      {/* Labels */}
+                      <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
+                      <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">{trainUnique} unique</text>
+                      <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
+                      <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">{testUnique} unique</text>
+                      <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
+                      <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">{conflictCount} conflicts</text>
+                    </svg>
+                  </div>
 
-              {/* Summary Cards */}
-              <div className="sg-summary-row">
-                <div className="sg-summary-card sg-summary-train">
-                  <span className="sg-summary-value">32</span>
-                  <span className="sg-summary-label">Train Only</span>
+                  {/* Summary Cards */}
+                  <div className="sg-summary-row">
+                    <div className="sg-summary-card sg-summary-train">
+                      <span className="sg-summary-value">{trainUnique}</span>
+                      <span className="sg-summary-label">Train Only</span>
+                    </div>
+                    <div className="sg-summary-card sg-summary-conflict">
+                      <span className="sg-summary-value">{conflictCount}</span>
+                      <span className="sg-summary-label">Semantic Conflicts</span>
+                    </div>
+                    <div className="sg-summary-card sg-summary-test">
+                      <span className="sg-summary-value">{testUnique}</span>
+                      <span className="sg-summary-label">Test Only</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="sg-summary-card sg-summary-conflict">
-                  <span className="sg-summary-value">4</span>
-                  <span className="sg-summary-label">Semantic Conflicts</span>
-                </div>
-                <div className="sg-summary-card sg-summary-test">
-                  <span className="sg-summary-value">32</span>
-                  <span className="sg-summary-label">Test Only</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Manual Exclusion Tool */}
-            <div className="sg-exclusion-card">
+            <div className="sg-exclusion-card" style={{ marginTop: '16px' }}>
               <div className="sg-exclusion-header">
                 <div>
                   <h4>Manual Exclusion Tool</h4>
                   <p>Select samples below to exclude them from the dataset and resolve conflicts.</p>
                 </div>
-                <span className="sg-excluded-count">0 excluded</span>
+                <span className="sg-excluded-count">{excludedIds.length} excluded</span>
               </div>
-              <div className="sg-conflict-list">
-                {[
-                  { text: 'Giải phương trình bậc hai x² - 5x + 6 = 0', sim: 0.92 },
-                  { text: 'Tìm nghiệm của phương trình x² + 3x - 4 = 0', sim: 0.87 },
-                  { text: 'Phương trình bậc hai có delta âm thì có mấy nghiệm?', sim: 0.95 },
-                  { text: 'Công thức Vi-et dùng để làm gì?', sim: 0.89 },
-                ].map((item, idx) => (
-                  <div key={idx} className="sg-conflict-item">
-                    <div className="sg-conflict-left">
-                      <X size={14} className="sg-conflict-x" />
-                      <div>
-                        <span className="sg-conflict-text">{item.text}</span>
-                        <div className="sg-conflict-meta">
-                          <span className="sg-dot sg-dot-train"></span> In Train
-                          <span className="sg-dot sg-dot-test"></span> In Test
-                          <span className="sg-conflict-sim">Similarity: <strong style={{ color: '#dc2626' }}>{item.sim}</strong></span>
+              <div className="sg-conflict-list" style={{ marginTop: '12px' }}>
+                {(!splitResult?.conflictsPreview || splitResult.conflictsPreview.length === 0) ? (
+                  <div className="sg-no-conflicts" style={{ padding: '24px', textAlign: 'center', color: '#64748b', border: '1px dashed #cbd5e1', borderRadius: '8px', backgroundColor: '#f8fafc' }}>
+                    No conflicts detected. The split is clean!
+                  </div>
+                ) : (
+                  splitResult.conflictsPreview.map((conflict: any, idx: number) => {
+                    const trainConv = conversationsList[conflict.trainIndex];
+                    const testConv = conversationsList[conflict.testIndex];
+                    const trainText = getConversationText(trainConv);
+                    const testText = getConversationText(testConv);
+
+                    return (
+                      <div key={idx} className="sg-conflict-item-pair" style={{
+                        border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '10px', backgroundColor: '#fff'
+                      }}>
+                        <div className="sg-conflict-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div className="sg-conflict-left" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '80%' }}>
+                            <span className="sg-dot sg-dot-train" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#7c3aed', flexShrink: 0 }}></span>
+                            <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              <strong style={{ fontSize: '12px', color: '#475569' }}>Train #{conflict.trainIndex}:</strong>
+                              <span className="sg-conflict-text" style={{ marginLeft: '8px', fontSize: '13px', color: '#1e293b' }}>{truncateText(trainText, 120)}</span>
+                            </div>
+                          </div>
+                          {trainConv && (
+                            <button 
+                              className="sg-exclude-btn" 
+                              style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: '12px', color: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                              onClick={() => handleExcludeSample(trainConv.id)}
+                            >
+                              Exclude Train
+                            </button>
+                          )}
+                        </div>
+                        
+                        <div className="sg-conflict-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #e2e8f0', paddingTop: '8px' }}>
+                          <div className="sg-conflict-left" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '80%' }}>
+                            <span className="sg-dot sg-dot-test" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6', flexShrink: 0 }}></span>
+                            <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              <strong style={{ fontSize: '12px', color: '#475569' }}>Test #{conflict.testIndex}:</strong>
+                              <span className="sg-conflict-text" style={{ marginLeft: '8px', fontSize: '13px', color: '#1e293b' }}>{truncateText(testText, 120)}</span>
+                            </div>
+                          </div>
+                          {testConv && (
+                            <button 
+                              className="sg-exclude-btn" 
+                              style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: '12px', color: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                              onClick={() => handleExcludeSample(testConv.id)}
+                            >
+                              Exclude Test
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
+                          Similarity Score: <strong style={{ color: '#ef4444' }}>{Number(conflict.similarity).toFixed(3)}</strong>
                         </div>
                       </div>
-                    </div>
-                    <button className="sg-exclude-btn">Click to exclude</button>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -5037,73 +5426,127 @@ function DataPrepView() {
               <div className="ex-preview-header">
                 <div>
                   <h3>Converted Dataset Preview</h3>
-                  <p>Showing 1-5 of 72 records</p>
+                  {(() => {
+                    const itemsPerPage = 5;
+                    const startIndex = (exportPage - 1) * itemsPerPage;
+                    const endIndex = Math.min(startIndex + itemsPerPage, conversationsList.length);
+                    return (
+                      <p>Showing {startIndex + 1}-{endIndex} of {conversationsList.length} records</p>
+                    );
+                  })()}
                 </div>
                 <div className="ex-preview-controls">
-                  <button className="s4-btn-outline" style={{ fontSize: '11px', padding: '5px 10px' }}>Show All</button>
-                  <button className="s4-btn-outline" style={{ fontSize: '11px', padding: '5px 10px' }}>Increase Limit (5)</button>
-                  <select className="s5-filter-select">
-                    <option>5 / page</option>
-                    <option>10 / page</option>
-                    <option>20 / page</option>
-                  </select>
+                  <span style={{ fontSize: '12px', color: '#64748b', marginRight: '8px' }}>Format: <strong>{selectedFormat.toUpperCase()}</strong></span>
                 </div>
               </div>
 
               <table className="ex-table">
                 <thead>
                   <tr>
-                    <th>System</th>
-                    <th>User</th>
-                    <th>Assistant</th>
-                    <th>overall</th>
-                    <th>reason</th>
-                    <th>evaluated by</th>
+                    <th style={{ width: '10%' }}>ID</th>
+                    <th style={{ width: '25%' }}>System</th>
+                    <th style={{ width: '25%' }}>User</th>
+                    <th style={{ width: '30%' }}>Assistant</th>
+                    <th style={{ width: '10%' }}>Overall</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {EXPORT_ROWS.map((row, idx) => (
-                    <tr key={idx}>
-                      <td>-</td>
-                      <td>
-                        <span className="ex-cell-text">{row.user}</span>
-                        <a href="#" className="ex-read-more">Read more</a>
-                      </td>
-                      <td>
-                        <span className="ex-cell-text">{row.assistant}</span>
-                        <a href="#" className="ex-read-more">Read more</a>
-                      </td>
-                      <td>-</td>
-                      <td>-</td>
-                      <td>-</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const itemsPerPage = 5;
+                    const startIndex = (exportPage - 1) * itemsPerPage;
+                    const endIndex = Math.min(startIndex + itemsPerPage, conversationsList.length);
+                    const currentExportRows = conversationsList.slice(startIndex, endIndex);
+
+                    if (currentExportRows.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>No data records available</td>
+                        </tr>
+                      );
+                    }
+
+                    return currentExportRows.map((conv) => {
+                      const firstMsg = conv.messages?.[0] || { user: '', assistant: '' };
+                      const overallScore = getOverallScore(conv);
+                      return (
+                        <tr key={conv.id}>
+                          <td><code>{conv.id}</code></td>
+                          <td>
+                            <span className="ex-cell-text" title={promptText}>{truncateText(promptText || '-', 60)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-cell-text" title={firstMsg.user}>{truncateText(firstMsg.user || '', 80)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-cell-text" title={firstMsg.assistant}>{truncateText(firstMsg.assistant || '', 80)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-score-badge" style={{
+                              backgroundColor: overallScore >= 8.0 ? 'rgba(16,185,129,0.1)' : overallScore >= 5.0 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                              color: overallScore >= 8.0 ? '#10b981' : overallScore >= 5.0 ? '#f59e0b' : '#ef4444',
+                              padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-block'
+                            }}>
+                              {overallScore.toFixed(1)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
 
-              <div className="ex-pagination">
-                <button className="ex-page-btn" onClick={() => setExportPage(Math.max(1, exportPage - 1))}>Previous</button>
-                <span className="ex-page-info">Page {exportPage} / 15</span>
-                <button className="ex-page-btn" onClick={() => setExportPage(Math.min(15, exportPage + 1))}>Next</button>
-              </div>
+              {(() => {
+                const itemsPerPage = 5;
+                const totalExportPages = Math.max(1, Math.ceil(conversationsList.length / itemsPerPage));
+                return (
+                  <div className="ex-pagination">
+                    <button 
+                      className="ex-page-btn" 
+                      disabled={exportPage === 1}
+                      onClick={() => setExportPage(Math.max(1, exportPage - 1))}
+                    >
+                      Previous
+                    </button>
+                    <span className="ex-page-info">Page {exportPage} / {totalExportPages}</span>
+                    <button 
+                      className="ex-page-btn" 
+                      disabled={exportPage === totalExportPages}
+                      onClick={() => setExportPage(Math.min(totalExportPages, exportPage + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Download Cards Row */}
             <div className="ex-download-row">
               <div className="ex-download-card">
                 <h4>Download cooked Train/Test Split</h4>
-                <p className="ex-download-stat">Train: 36 / Test: 36</p>
+                <p className="ex-download-stat">
+                  Train: {splitResult ? splitResult.trainCount : 0} / Test: {splitResult ? splitResult.testCount : 0}
+                </p>
                 <p className="ex-download-note">Export uses the safe split generated in the previous step. Handson-splitting is disabled here.</p>
-                <button className="ex-btn-green"><Download size={14} /> Download train/test .zip</button>
+                <button className="ex-btn-green" onClick={handleDownloadTrainTestZip}><Download size={14} /> Download train/test .zip</button>
               </div>
               <div className="ex-download-card">
                 <h4>Download Split Filter by Overall Score</h4>
                 <div className="ex-score-row">
                   <span className="ex-score-label">Overall Score ≥</span>
-                  <span className="ex-score-value">6.0</span>
+                  <span className="ex-score-value">{exportScoreThreshold.toFixed(1)}</span>
                 </div>
-                <input type="range" min="0" max="10" step="0.5" defaultValue={6} className="sg-slider sg-slider-purple" />
-                <button className="ex-btn-purple"><Download size={14} /> Download split overall &gt;= filter</button>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="10" 
+                  step="0.5" 
+                  value={exportScoreThreshold} 
+                  onChange={(e) => setExportScoreThreshold(Number(e.target.value))}
+                  className="sg-slider sg-slider-purple" 
+                />
+                <button className="ex-btn-purple" onClick={handleDownloadByScore}><Download size={14} /> Download split overall &gt;= filter</button>
               </div>
             </div>
 
@@ -5112,13 +5555,37 @@ function DataPrepView() {
               <div className="ex-push-card">
                 <h4>🔥 Push to Hugging Face Hub</h4>
                 <label className="s6-field-label" style={{ marginTop: 0 }}>Hugging Face Token</label>
-                <input className="s6-field-input" defaultValue="hf_..." style={{ borderLeft: '1px solid #e2e8f0' }} />
+                <input 
+                  type="password"
+                  className="s6-field-input" 
+                  value={huggingFaceToken} 
+                  onChange={e => setHuggingFaceToken(e.target.value)}
+                  placeholder="hf_..."
+                  style={{ borderLeft: '1px solid #e2e8f0' }} 
+                />
                 <label className="s6-field-label">Repository ID</label>
-                <input className="s6-field-input" defaultValue="username/my-dataset" style={{ borderLeft: '1px solid #e2e8f0' }} />
+                <input 
+                  className="s6-field-input" 
+                  value={huggingFaceRepoId} 
+                  onChange={e => setHuggingFaceRepoId(e.target.value)}
+                  placeholder="username/my-dataset" 
+                  style={{ borderLeft: '1px solid #e2e8f0' }} 
+                />
                 <label className="ex-checkbox-label">
-                  <input type="checkbox" /> Make repository private
+                  <input 
+                    type="checkbox" 
+                    checked={huggingFacePrivate}
+                    onChange={e => setHuggingFacePrivate(e.target.checked)}
+                  /> Make repository private
                 </label>
-                <button className="ex-btn-hub"><Upload size={14} /> Push to Hub</button>
+                <button 
+                  className="ex-btn-hub"
+                  onClick={handlePushToHub}
+                  disabled={isPushingToHub}
+                >
+                  {isPushingToHub ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                  {isPushingToHub ? 'Pushing...' : 'Push to Hub'}
+                </button>
               </div>
               <div className="ex-push-card">
                 <h4>☁️ Sync to Cloud Storage</h4>
@@ -5154,11 +5621,15 @@ function DataPrepView() {
             Back
           </button>
           <button className="s6-reset-btn"><RotateCcw size={14} /> Reset & Upload New</button>
-          <button className="dataprep-btn-next" onClick={() => {
-            if (currentSubStep6 < 15) {
-              setCurrentSubStep6(currentSubStep6 + 1);
-            }
-          }}>
+          <button 
+            className="dataprep-btn-next" 
+            disabled={currentSubStep6 === 14 && (!splitResult || !splitResult.resolved)}
+            onClick={() => {
+              if (currentSubStep6 < 15) {
+                setCurrentSubStep6(currentSubStep6 + 1);
+              }
+            }}
+          >
             Next
           </button>
         </div>

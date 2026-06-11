@@ -83,7 +83,44 @@ export const apiService = {
     const response = await api.post('/convert', { fileId, options });
     return response.data;
   },
-
+  listModelRegistries: async (): Promise<any[]> => {
+    const response = await api.get('/model-registry');
+    return response.data;
+  },
+  registerModelVersion: async (payload: any): Promise<any> => {
+    const response = await api.post('/model-versions', payload);
+    return response.data;
+  },
+  getEvaluationsByJob: async (jobId: string): Promise<any[]> => {
+    const response = await api.get(`/model-versions/evaluations/${jobId}`);
+    return response.data;
+  },
+  clusterSafeSplit: async (
+    data: any[],
+    testPercentage: number,
+    threshold: number,
+    maxAttempts: number,
+    seed = 42
+  ): Promise<SafeSplitResult> => {
+    const response = await api.post('/cluster/safe-split', {
+      data,
+      test_percentage: testPercentage,
+      threshold,
+      max_attempts: maxAttempts,
+      seed,
+    });
+    return response.data;
+  },
+  pushToHuggingFace: async (payload: {
+    token: string;
+    repoId: string;
+    fileName: string;
+    content: string;
+    isPrivate: boolean;
+  }): Promise<any> => {
+    const response = await api.post('/huggingface/upload', payload);
+    return response.data;
+  },
   clusterData: async (
     data: any[],
     k?: number,
@@ -104,7 +141,6 @@ export const apiService = {
     });
     return response.data;
   },
-
   clusterVisualize: async (
     data: any[],
     maxK: number = 20,
@@ -120,7 +156,6 @@ export const apiService = {
     const response = await api.post('/cluster/visualize', { data, max_k: maxK, eps, min_samples: minSamples });
     return response.data;
   },
-
   clusterRemoveNoise: async (): Promise<{
     data: any[];
     groups: any[];
@@ -131,7 +166,6 @@ export const apiService = {
     const response = await api.post('/cluster/remove-noise');
     return response.data;
   },
-
   clusterDeduplicate: async (
     threshold?: number
   ): Promise<{
@@ -145,3 +179,24 @@ export const apiService = {
     return response.data;
   }
 };
+
+export interface SafeSplitConflictPreview {
+  trainIndex: number;
+  testIndex: number;
+  similarity: number;
+}
+
+export interface SafeSplitResult {
+  resolved: boolean;
+  attempts: number;
+  threshold: number;
+  trainIndices: number[];
+  testIndices: number[];
+  trainCount: number;
+  testCount: number;
+  conflictCount: number;
+  maxCrossSplitSimilarity: number;
+  datasetFingerprint?: string;
+  conflictsPreview?: SafeSplitConflictPreview[];
+}
+

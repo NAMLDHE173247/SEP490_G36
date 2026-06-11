@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, History
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
 import DataPrepView from './DataPrepView';
 import AutoTrainView from './AutoTrainView';
+import TrainingHistoryView from './TrainingHistoryView';
 import ModelRegistryView from './ModelRegistryView';
 import ModelEvalView from './ModelEvalView';
 import AdminAccountView from './AdminAccountView';
@@ -58,6 +59,7 @@ function Dashboard() {
     { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Training History', label: 'Training History', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
@@ -100,7 +102,9 @@ function Dashboard() {
       case 'Data Prep':
         return <DataPrepView />;
       case 'AutoTrain':
-        return <AutoTrainView />;
+        return <AutoTrainView setActiveTab={setActiveTab} />;
+      case 'Training History':
+        return <TrainingHistoryView setActiveTab={setActiveTab} />;
       case 'Model Registry':
         return <ModelRegistryView />;
       case 'Model Eval':
