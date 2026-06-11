@@ -20,7 +20,7 @@ type ClusterPayload = {
 
 export type AutoLabelSuggestion = {
   clusterId: number;
-  label: SubjectLabel;
+  label: string;
   // reason: string;
   sampleCount: number;
 };
@@ -29,7 +29,7 @@ function isSubjectLabel(value: string): value is SubjectLabel {
   return (SUBJECT_LABELS as readonly string[]).includes(value);
 }
 
-function normalizeSubjectLabel(value: unknown): SubjectLabel {
+function normalizeSubjectLabel(value: unknown): string {
   const raw = String(value || '').trim().toUpperCase();
   if (raw === 'MATH') return 'MATH';
   if (raw === 'PHYSICAL' || raw === 'PHYSICS') return 'PHYSICS';
@@ -39,7 +39,7 @@ function normalizeSubjectLabel(value: unknown): SubjectLabel {
   if (raw === 'LITERATURE') return 'LITERATURE';
   if (raw === 'CODING') return 'CODING';
   if (raw === 'OTHER') return 'OTHER';
-  return isSubjectLabel(raw) ? raw : 'OTHER';
+  return raw.replace(/\s+/g, '_');
 }
 
 function shuffle<T>(items: T[]): T[] {
@@ -89,7 +89,7 @@ function buildPrompt(clusters: ClusterPayload[]) {
 
   return `Bạn là chuyên gia phân loại dữ liệu giáo dục theo môn học.
 
-Hãy gán đúng MỘT nhãn môn học cho từng cụm dữ liệu. Các nhãn hợp lệ:
+Hãy gán đúng MỘT nhãn môn học cho từng cụm dữ liệu. Các nhãn CƠ BẢN:
 - MATH: toán học, số học, đại số, hình học, xác suất, thống kê.
 - PHYSICS: vật lý, cơ học, điện, quang, nhiệt, lực, năng lượng.
 - CHEMISTRY: hóa học, chất, phản ứng, phương trình hóa học, mol, nguyên tử.
@@ -97,7 +97,9 @@ Hãy gán đúng MỘT nhãn môn học cho từng cụm dữ liệu. Các nhãn
 - HISTORY: lịch sử, sự kiện, chiến tranh, triều đại, văn hóa.
 - LITERATURE: ngữ văn, đọc hiểu, viết văn, tiếng Việt, phân tích tác phẩm.
 - CODING: lập trình, thuật toán, công nghệ thông tin, cấu trúc dữ liệu.
-- OTHER: không thuộc một môn cụ thể, xã giao, lỗi hệ thống, dữ liệu nhiễu, hoặc không đủ thông tin.
+
+LƯU Ý QUAN TRỌNG: Nếu đoạn hội thoại rõ ràng thuộc về một môn học cụ thể KHÁC chưa có trong danh sách trên (ví dụ: GEOGRAPHY, CIVIC_EDUCATION, ECONOMICS), hãy tự định nghĩa ra nhãn đó BẰNG CHỮ IN HOA.
+Chỉ dùng OTHER khi nội dung thực sự vô nghĩa, nhiễu, hoặc không thuộc môn học cụ thể nào.
 
 DỮ LIỆU CỤM:
 ${JSON.stringify(payload)}
@@ -105,7 +107,7 @@ ${JSON.stringify(payload)}
 Yêu cầu output:
 - CHỈ trả về JSON array hợp lệ.
 - Mỗi object bắt buộc có: clusterId, label.
-- label phải là một trong: MATH, PHYSICS, CHEMISTRY, BIOLOGY, HISTORY, LITERATURE, CODING, OTHER.
+- label là tên môn học in hoa.
 - Không thêm markdown, không giải thích ngoài JSON.
 
 Định dạng:
@@ -214,7 +216,7 @@ export class AutoLabelingService {
       label: normalizeSubjectLabel(item.label),
     }));
 
-    const invalid = requestedLabels.find((item) => !validClusterIds.has(item.clusterId) || !isSubjectLabel(item.label));
+    const invalid = requestedLabels.find((item) => !validClusterIds.has(item.clusterId) || !item.label);
     if (invalid) {
       throw Object.assign(new Error('Invalid cluster label payload.'), { statusCode: 400 });
     }
@@ -236,7 +238,6 @@ export class AutoLabelingService {
       await removeLabelsByQuery({
         sampleId: { $in: sampleIds },
         type: 'hard',
-        name: { $in: subjectNames },
         createdBy: userOid,
         $or: [
           { targetScope: 'sample' },
