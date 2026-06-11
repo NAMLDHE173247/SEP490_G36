@@ -2954,6 +2954,17 @@ function DataPrepView() {
                       disabled={!clusterRan || isLabelingWithAI}
                       onClick={async () => {
                         if (!clusterRan) return;
+
+                        const hasExistingLabels = Object.values(aiGroupLabels).some(val => val !== '' && val !== undefined);
+                        if (hasExistingLabels) {
+                          const confirmRelabel = window.confirm('Dữ liệu này đã được gán nhãn. Bạn có muốn yêu cầu AI chạy lại và ghi đè nhãn mới không?');
+                          if (!confirmRelabel) return;
+                          
+                          // Xóa nhãn hiện tại trên UI để chạy lại
+                          setAiGroupLabels({});
+                          setPendingAiLabels([]);
+                        }
+
                         setIsLabelingWithAI(true);
                         try {
                           // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
