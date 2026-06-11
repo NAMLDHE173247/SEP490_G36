@@ -82,5 +82,66 @@ export const apiService = {
   convertData: async (fileId: string, options: any): Promise<any> => {
     const response = await api.post('/convert', { fileId, options });
     return response.data;
+  },
+
+  clusterData: async (
+    data: any[],
+    k?: number,
+    eps?: number,
+    minSamples?: number
+  ): Promise<{
+    data: any[];
+    groups: any[];
+    assignments: number[];
+    clusterStats?: Array<{ clusterId: number; avgSimilarity: number; count: number }>;
+    avgSimilarity?: number;
+  }> => {
+    const response = await api.post('/cluster', {
+      data,
+      k,
+      eps,
+      min_samples: minSamples,
+    });
+    return response.data;
+  },
+
+  clusterVisualize: async (
+    data: any[],
+    maxK: number = 20,
+    eps: number = 0.15,
+    minSamples: number = 6
+  ): Promise<{
+    elbow: Array<{ k: number; wcss: number }>;
+    silhouette?: Array<{ k: number; silhouette: number }>;
+    kDistance: Array<{ rank: number; distance: number }>;
+    pointCount: number;
+    noiseCount?: number;
+  }> => {
+    const response = await api.post('/cluster/visualize', { data, max_k: maxK, eps, min_samples: minSamples });
+    return response.data;
+  },
+
+  clusterRemoveNoise: async (): Promise<{
+    data: any[];
+    groups: any[];
+    assignments: number[];
+    clusterStats?: Array<{ clusterId: number; avgSimilarity: number; count: number }>;
+    avgSimilarity?: number;
+  }> => {
+    const response = await api.post('/cluster/remove-noise');
+    return response.data;
+  },
+
+  clusterDeduplicate: async (
+    threshold?: number
+  ): Promise<{
+    data: any[];
+    groups: any[];
+    assignments: number[];
+    clusterStats?: Array<{ clusterId: number; avgSimilarity: number; count: number }>;
+    avgSimilarity?: number;
+  }> => {
+    const response = await api.post('/cluster/deduplicate', { threshold });
+    return response.data;
   }
 };

@@ -265,6 +265,8 @@ function DataPrepView() {
   const [eps, setEps] = useState('0.1');
   const [minSamples, setMinSamples] = useState('3');
   const [showVisualization, setShowVisualization] = useState(false);
+  const [isFindingK, setIsFindingK] = useState(false);
+  const [findKResults, setFindKResults] = useState<any>(null);
 
   /* K-means Cluster state */
   const [targetK, setTargetK] = useState('14');
@@ -274,6 +276,8 @@ function DataPrepView() {
   const [simThreshold, setSimThreshold] = useState(0.9);
   const [clusterPage, setClusterPage] = useState(1);
   const clusterPerPage = 5;
+  const [isClustering, setIsClustering] = useState(false);
+  const [clusterResults, setClusterResults] = useState<any>(null);
 
   /* Compare Groups state */
   const [showCompareModal, setShowCompareModal] = useState(false);
@@ -314,14 +318,14 @@ function DataPrepView() {
       { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
       { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
       { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' },
+      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' },
       { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
       { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
       { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
       { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
       { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
       { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
-      { id: 12, label: 'NOISE (Outliers)', color: '#e11d48', bg: '#fff1f2' },
+      { id: 12, label: 'Group -1', color: '#e11d48', bg: '#fff1f2' },
       { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
       { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
       { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
@@ -962,7 +966,7 @@ function DataPrepView() {
           { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
           { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
           { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-          { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+          { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
         ];
         const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
         return {
@@ -1076,6 +1080,148 @@ function DataPrepView() {
       alert(err.response?.data?.error || err.message || 'Làm sạch dữ liệu thất bại');
     } finally {
       setIsCleaningLoading(false);
+    }
+  };
+
+  const handleVisualizeK = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để tính toán. Vui lòng chuyển đổi dữ liệu trước.');
+      return;
+    }
+
+    try {
+      setIsFindingK(true);
+      setShowVisualization(true);
+      
+      // format for api
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const res = await apiService.clusterVisualize(
+        formattedData,
+        parseInt(maxK, 10),
+        parseFloat(eps),
+        parseInt(minSamples, 10)
+      );
+
+      let recommendedK = 14; // Default fallback
+      if (res.silhouette && res.silhouette.length > 0) {
+        // Find K with max silhouette score
+        const best = res.silhouette.reduce((prev, current) => 
+          (prev.silhouette > current.silhouette) ? prev : current
+        );
+        recommendedK = best.k;
+      }
+
+      setFindKResults({ ...res, recommendedK });
+      setTargetK(recommendedK.toString());
+    } catch (err: any) {
+      console.error('Visualize K failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');
+      setShowVisualization(false);
+    } finally {
+      setIsFindingK(false);
+    }
+  };
+
+  const handleCluster = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để phân cụm.');
+      return;
+    }
+
+    try {
+      setIsClustering(true);
+      
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const res = await apiService.clusterData(
+        formattedData,
+        parseInt(targetK, 10),
+        parseFloat(clusterEps),
+        parseInt(clusterMinSamples, 10)
+      );
+
+      if (res.assignments) {
+        const noiseCount = res.assignments.filter((a: number) => a === -1).length;
+        if (noiseCount > 0) {
+          if (!res.clusterStats) {
+            res.clusterStats = [];
+          }
+          if (!res.clusterStats.some((g: any) => g.clusterId === -1)) {
+            // Inject NOISE group so it shows in the table
+            res.clusterStats.unshift({
+              clusterId: -1,
+              count: noiseCount,
+              avgSimilarity: null
+            });
+          }
+        }
+      }
+
+      setClusterResults(res);
+      setClusterRan(true);
+
+      // Update stage3Convs or conversationsList based on assignments if needed
+      // Currently, DataPrepView uses stage3Convs for stage 3
+      if (res.assignments && res.assignments.length === conversationsList.length) {
+        const updatedConvs = conversationsList.map((c, idx) => {
+          const groupId = res.assignments[idx];
+          const groupStat = res.clusterStats?.find((g: any) => g.clusterId === groupId);
+          
+          return {
+            ...c,
+            groupId: groupId,
+            groupLabel: groupId === -1 ? 'Group -1' : `Group ${groupId}`,
+            // assign random color or keep existing logic
+            groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
+            groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+          };
+        });
+        setStage3Convs(updatedConvs);
+        setConversationsList(updatedConvs);
+      }
+
+    } catch (err: any) {
+      console.error('Cluster failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi phân cụm K-means');
+    } finally {
+      setIsClustering(false);
+    }
+  };
+
+  const handleRemoveNoise = () => {
+    try {
+      const updatedConvs = conversationsList.filter(c => c.groupId !== -1);
+      const numRemoved = conversationsList.length - updatedConvs.length;
+      
+      setConversationsList(updatedConvs);
+      setStage3Convs(updatedConvs);
+
+      if (clusterResults && clusterResults.clusterStats) {
+        const updatedStats = clusterResults.clusterStats.filter((g: any) => g.clusterId !== -1);
+        setClusterResults({
+          ...clusterResults,
+          clusterStats: updatedStats
+        });
+      }
+
+      alert(`Đã loại bỏ ${numRemoved} hội thoại nhiễu (Group -1).`);
+    } catch (err: any) {
+      console.error('Remove Noise failed:', err);
+      alert('Lỗi khi loại bỏ nhiễu');
     }
   };
 
@@ -1947,7 +2093,7 @@ function DataPrepView() {
                             { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
                             { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
                             { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-                            { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+                            { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
                           ];
                           const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
                           return {
@@ -1994,116 +2140,126 @@ function DataPrepView() {
                   <label>Min Samples:</label>
                   <input type="number" value={minSamples} onChange={(e) => setMinSamples(e.target.value)} />
                 </div>
-                <button className="findk-visualize-btn" onClick={() => setShowVisualization(true)}>
-                  <Sparkles size={16} />
-                  Visualize (GPU)
+                <button className="findk-visualize-btn" onClick={handleVisualizeK} disabled={isFindingK}>
+                  {isFindingK ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  {isFindingK ? 'Calculating...' : 'Visualize (GPU)'}
                 </button>
               </div>
             </div>
 
-            {showVisualization && (
-              <>
-                <div className="findk-result-banner">
-                  <Sparkles size={16} className="banner-icon" />
-                  <div>
-                    <strong>120 points analyzed, 0 noise points filtered by DBSCAN</strong>
-                    <div className="banner-sub">Recommended K: <strong>14</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</div>
-                  </div>
-                </div>
+            {showVisualization && findKResults && (() => {
+              const elbow = findKResults.elbow || [];
+              const silhouette = findKResults.silhouette || [];
+              
+              const wcssMax = Math.max(...elbow.map((d: any) => d.wcss), 12);
+              const wcssMin = 0;
+              const silMax = Math.max(...silhouette.map((d: any) => d.silhouette), 0.22);
+              const silMin = 0;
+              
+              const chartHeight = 240; 
+              const chartBottom = 280;
+              const chartWidth = 700;
+              const chartLeft = 60;
+              
+              const maxKVal = elbow.length > 0 ? elbow.length : parseInt(maxK, 10);
+              const stepX = maxKVal > 1 ? chartWidth / (maxKVal - 1) : 0;
+              
+              const wcssPoints = elbow.map((d: any, i: number) => {
+                const x = chartLeft + i * stepX;
+                const y = chartBottom - ((d.wcss - wcssMin) / (wcssMax - wcssMin || 1)) * chartHeight;
+                return [x, y];
+              });
+              
+              const silPoints = silhouette.map((d: any, i: number) => {
+                const x = chartLeft + i * stepX;
+                const y = chartBottom - ((d.silhouette - silMin) / (silMax - silMin || 1)) * chartHeight;
+                return [x, y];
+              });
 
-                <div className="findk-chart-card">
-                  <div className="chart-header-row">
+              const recKIndex = elbow.findIndex((d: any) => d.k === findKResults.recommendedK);
+              const recommendedX = recKIndex >= 0 ? chartLeft + recKIndex * stepX : chartLeft;
+
+              return (
+                <>
+                  <div className="findk-result-banner">
+                    <Sparkles size={16} className="banner-icon" />
                     <div>
-                      <h4>Elbow Method vs. Silhouette Score</h4>
-                      <p className="chart-subtitle">Use the blue curve to spot the elbow and the green curve to confirm the strongest silhouette.</p>
-                    </div>
-                    <div className="chart-legend">
-                      <span className="legend-item legend-wcss"><span className="legend-dot"></span> Elbow (WCSS)</span>
-                      <span className="legend-item legend-sil"><span className="legend-dot"></span> Silhouette</span>
-                      <span className="legend-item legend-rec"><span className="legend-dot"></span> Recommended K = 14</span>
+                      <strong>{findKResults.pointCount || conversationsList.length} points analyzed, {findKResults.noiseCount || 0} noise points filtered by DBSCAN</strong>
+                      <div className="banner-sub">Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</div>
                     </div>
                   </div>
-                  <div className="chart-area">
-                    <svg viewBox="0 0 800 340" className="findk-svg">
-                      {/* Grid lines */}
-                      {[0, 1, 2, 3, 4].map(i => (
-                        <line key={`grid-${i}`} x1="60" y1={40 + i * 65} x2="760" y2={40 + i * 65} stroke="#f1f5f9" strokeWidth="1" />
-                      ))}
-                      {/* Y-axis left labels (WCSS) */}
-                      <text x="8" y="44" className="axis-label">12</text>
-                      <text x="16" y="109" className="axis-label">9</text>
-                      <text x="16" y="174" className="axis-label">6</text>
-                      <text x="16" y="239" className="axis-label">3</text>
-                      <text x="16" y="304" className="axis-label">0</text>
-                      <text x="10" y="175" className="axis-title" transform="rotate(-90, 10, 175)">WCSS</text>
-                      {/* Y-axis right labels (Silhouette) */}
-                      <text x="770" y="44" className="axis-label-right">0.22</text>
-                      <text x="770" y="109" className="axis-label-right">0.165</text>
-                      <text x="770" y="174" className="axis-label-right">0.11</text>
-                      <text x="770" y="239" className="axis-label-right">0.055</text>
-                      <text x="770" y="304" className="axis-label-right">0</text>
-                      <text x="795" y="175" className="axis-title-right" transform="rotate(90, 795, 175)">Silhouette</text>
-                      {/* X-axis labels */}
-                      {Array.from({length: 20}, (_, i) => (
-                        <text key={`x-${i}`} x={60 + (i * 700 / 19)} y="330" className="axis-label" textAnchor="middle">{i + 1}</text>
-                      ))}
-                      {/* Recommended K=14 dotted line */}
-                      <line x1={60 + (13 * 700 / 19)} y1="40" x2={60 + (13 * 700 / 19)} y2="300" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
-                      {/* WCSS line (blue) */}
-                      <polyline
-                        fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"
-                        points={[
-                          [60, 52], [60+700/19*1, 85], [60+700/19*2, 105], [60+700/19*3, 125],
-                          [60+700/19*4, 140], [60+700/19*5, 155], [60+700/19*6, 168],
-                          [60+700/19*7, 178], [60+700/19*8, 188], [60+700/19*9, 196],
-                          [60+700/19*10, 205], [60+700/19*11, 212], [60+700/19*12, 218],
-                          [60+700/19*13, 226], [60+700/19*14, 235], [60+700/19*15, 243],
-                          [60+700/19*16, 250], [60+700/19*17, 255], [60+700/19*18, 262],
-                          [60+700/19*19, 268]
-                        ].map(p => p.join(',')).join(' ')}
-                      />
-                      {/* WCSS dots */}
-                      {[
-                        [60, 52], [60+700/19*1, 85], [60+700/19*2, 105], [60+700/19*3, 125],
-                        [60+700/19*4, 140], [60+700/19*5, 155], [60+700/19*6, 168],
-                        [60+700/19*7, 178], [60+700/19*8, 188], [60+700/19*9, 196],
-                        [60+700/19*10, 205], [60+700/19*11, 212], [60+700/19*12, 218],
-                        [60+700/19*13, 226], [60+700/19*14, 235], [60+700/19*15, 243],
-                        [60+700/19*16, 250], [60+700/19*17, 255], [60+700/19*18, 262],
-                        [60+700/19*19, 268]
-                      ].map((p, i) => (
-                        <circle key={`wc-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
-                      ))}
-                      {/* Silhouette line (green) */}
-                      <polyline
-                        fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinejoin="round"
-                        points={[
-                          [60, 280], [60+700/19*1, 125], [60+700/19*2, 110],
-                          [60+700/19*3, 100], [60+700/19*4, 95], [60+700/19*5, 88],
-                          [60+700/19*6, 82], [60+700/19*7, 78], [60+700/19*8, 72],
-                          [60+700/19*9, 68], [60+700/19*10, 62], [60+700/19*11, 56],
-                          [60+700/19*12, 50], [60+700/19*13, 48], [60+700/19*14, 50],
-                          [60+700/19*15, 48], [60+700/19*16, 50], [60+700/19*17, 48],
-                          [60+700/19*18, 44], [60+700/19*19, 44]
-                        ].map(p => p.join(',')).join(' ')}
-                      />
-                      {/* Silhouette dots */}
-                      {[
-                        [60, 280], [60+700/19*1, 125], [60+700/19*2, 110],
-                        [60+700/19*3, 100], [60+700/19*4, 95], [60+700/19*5, 88],
-                        [60+700/19*6, 82], [60+700/19*7, 78], [60+700/19*8, 72],
-                        [60+700/19*9, 68], [60+700/19*10, 62], [60+700/19*11, 56],
-                        [60+700/19*12, 50], [60+700/19*13, 48], [60+700/19*14, 50],
-                        [60+700/19*15, 48], [60+700/19*16, 50], [60+700/19*17, 48],
-                        [60+700/19*18, 44], [60+700/19*19, 44]
-                      ].map((p, i) => (
-                        <circle key={`sl-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#16a34a" strokeWidth="2" />
-                      ))}
-                    </svg>
+
+                  <div className="findk-chart-card">
+                    <div className="chart-header-row">
+                      <div>
+                        <h4>Elbow Method vs. Silhouette Score</h4>
+                        <p className="chart-subtitle">Use the blue curve to spot the elbow and the green curve to confirm the strongest silhouette.</p>
+                      </div>
+                      <div className="chart-legend">
+                        <span className="legend-item legend-wcss"><span className="legend-dot"></span> Elbow (WCSS)</span>
+                        <span className="legend-item legend-sil"><span className="legend-dot"></span> Silhouette</span>
+                        <span className="legend-item legend-rec"><span className="legend-dot"></span> Recommended K = {findKResults.recommendedK}</span>
+                      </div>
+                    </div>
+                    <div className="chart-area">
+                      <svg viewBox="0 0 840 340" className="findk-svg">
+                        {/* Grid lines */}
+                        {[0, 1, 2, 3, 4].map(i => (
+                          <line key={`grid-${i}`} x1="60" y1={40 + i * 60} x2="760" y2={40 + i * 60} stroke="#f1f5f9" strokeWidth="1" />
+                        ))}
+                        {/* Y-axis left labels (WCSS) */}
+                        <text x="8" y="44" className="axis-label">{wcssMax.toFixed(1)}</text>
+                        <text x="16" y="104" className="axis-label">{(wcssMax * 0.75).toFixed(1)}</text>
+                        <text x="16" y="164" className="axis-label">{(wcssMax * 0.5).toFixed(1)}</text>
+                        <text x="16" y="224" className="axis-label">{(wcssMax * 0.25).toFixed(1)}</text>
+                        <text x="16" y="284" className="axis-label">0</text>
+                        <text x="10" y="175" className="axis-title" transform="rotate(-90, 10, 175)">WCSS</text>
+                        
+                        {/* Y-axis right labels (Silhouette) */}
+                        <text x="770" y="44" className="axis-label-right">{silMax.toFixed(3)}</text>
+                        <text x="770" y="104" className="axis-label-right">{(silMax * 0.75).toFixed(3)}</text>
+                        <text x="770" y="164" className="axis-label-right">{(silMax * 0.5).toFixed(3)}</text>
+                        <text x="770" y="224" className="axis-label-right">{(silMax * 0.25).toFixed(3)}</text>
+                        <text x="770" y="284" className="axis-label-right">0</text>
+                        <text x="825" y="175" className="axis-title-right" transform="rotate(90, 825, 175)">Silhouette</text>
+                        
+                        {/* X-axis labels */}
+                        {elbow.map((d: any, i: number) => (
+                          <text key={`x-${i}`} x={chartLeft + i * stepX} y="310" className="axis-label" textAnchor="middle">{d.k}</text>
+                        ))}
+                        
+                        {/* Recommended K dotted line */}
+                        <line x1={recommendedX} y1="40" x2={recommendedX} y2="280" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
+                        
+                        {/* WCSS line (blue) */}
+                        <polyline
+                          fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"
+                          points={wcssPoints.map(p => p.join(',')).join(' ')}
+                        />
+                        {/* WCSS dots */}
+                        {wcssPoints.map((p, i) => (
+                          <circle key={`wc-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
+                        ))}
+                        
+                        {/* Silhouette line (green) */}
+                        {silPoints.length > 0 && (
+                          <>
+                            <polyline
+                              fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinejoin="round"
+                              points={silPoints.map(p => p.join(',')).join(' ')}
+                            />
+                            {/* Silhouette dots */}
+                            {silPoints.map((p, i) => (
+                              <circle key={`sl-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#16a34a" strokeWidth="2" />
+                            ))}
+                          </>
+                        )}
+                      </svg>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -2174,13 +2330,13 @@ function DataPrepView() {
               </div>
 
               <div className="preview-table-wrapper cluster-table-full">
-                <table className="preview-table conv-grouped">
+                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th className="col-conv-id">Conversation ID</th>
-                      <th className="col-msg-num">#</th>
-                      <th>User</th>
-                      <th>Assistant</th>
+                      <th style={{ width: '14%', textAlign: 'center' }}>Conversation ID</th>
+                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
+                      <th style={{ width: '40%' }}>User</th>
+                      <th style={{ width: '43%' }}>Assistant</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2204,6 +2360,11 @@ function DataPrepView() {
                               </button>
                               <span className="conv-id-badge">{conv.id}</span>
                               <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              {conv.groupLabel && (
+                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {conv.groupLabel}
+                                </span>
+                              )}
                             </td>
                             <td className="col-msg-num-cell">—</td>
                             <td className="cell-text-col" title={conv.messages[0].user}>
@@ -2228,6 +2389,11 @@ function DataPrepView() {
                               </button>
                               <span className="conv-id-badge">{conv.id}</span>
                               <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              {conv.groupLabel && (
+                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {conv.groupLabel}
+                                </span>
+                              )}
                             </td>
                           )}
                           <td className="col-msg-num-cell">#{msgIdx + 1}</td>
@@ -2303,7 +2469,13 @@ function DataPrepView() {
                         </label>
                         <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
                       </div>
-                      <p className="cluster-recommend">Recommended K: <strong>14</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</p>
+                      <p className="cluster-recommend">
+                        {findKResults?.recommendedK ? (
+                          <>Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</>
+                        ) : (
+                          <>Run <strong>Find K</strong> step first to get Recommended K.</>
+                        )}
+                      </p>
                       <div className="cleaning-inputs-row" style={{ marginBottom: 12 }}>
                         <div className="cleaning-input-group">
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -2324,9 +2496,9 @@ function DataPrepView() {
                           <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
                         </div>
                       </div>
-                      <button className="cluster-run-btn" onClick={() => setClusterRan(true)}>
-                        <Sparkles size={16} />
-                        Cluster
+                      <button className="cluster-run-btn" onClick={handleCluster} disabled={isClustering}>
+                        {isClustering ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                        {isClustering ? 'Clustering...' : 'Cluster'}
                       </button>
                     </div>
 
@@ -2345,7 +2517,7 @@ function DataPrepView() {
                             className="sim-slider"
                           />
                           <div className="cluster-action-btns">
-                            <button className="cluster-btn-noise">Remove Noise</button>
+                            <button className="cluster-btn-noise" onClick={handleRemoveNoise}>Remove Noise</button>
                             <button className="cluster-btn-dedup">Deduplicate</button>
                           </div>
                           <button className="reset-filter-btn">Reset Filter</button>
@@ -2370,7 +2542,14 @@ function DataPrepView() {
                               </tr>
                             </thead>
                             <tbody>
-                              {CLUSTER_GROUPS.map((g, i) => (
+                              {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
+                                <tr key={i}>
+                                  <td><input type="checkbox" /></td>
+                                  <td><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
+                                  <td className="count-cell">{g.count}</td>
+                                  <td className="sim-cell">{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
+                                </tr>
+                              )) : CLUSTER_GROUPS.map((g, i) => (
                                 <tr key={i}>
                                   <td><input type="checkbox" /></td>
                                   <td><strong>{g.name}</strong></td>
@@ -2442,14 +2621,14 @@ function DataPrepView() {
       { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
       { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
       { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' },
+      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' },
       { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
       { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
       { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
       { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
       { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
       { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
-      { id: 12, label: 'NOISE (Outliers)', color: '#e11d48', bg: '#fff1f2' },
+      { id: 12, label: 'Group -1', color: '#e11d48', bg: '#fff1f2' },
       { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
       { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
       { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
@@ -5153,7 +5332,7 @@ function DataPrepView() {
                       { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
                       { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
                       { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-                      { id: 5, label: 'NOISE (Outliers)', color: '#dc2626', bg: '#fef2f2' }
+                      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
                     ];
                     const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
                     return {
