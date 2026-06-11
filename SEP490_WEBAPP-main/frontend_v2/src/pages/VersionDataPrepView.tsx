@@ -25,7 +25,7 @@ import {
   Send,
   Play
 } from 'lucide-react';
-import '../versiondataprep.css';
+import '../styles/versiondataprep.css';
 
 const VERSIONS = [
   {

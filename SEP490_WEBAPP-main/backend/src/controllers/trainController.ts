@@ -676,14 +676,20 @@ export const getSystemResources = async (_req: Request, res: Response) => {
   try {
     const urls = workerManager.getUrls();
     const resourcePromises = urls.map(async (url) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
+
       try {
         const response = await fetch(`${url}/api/system/resources`, {
-          headers: { 'ngrok-skip-browser-warning': 'true' }
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          signal: controller.signal as any
         });
         const data: any = await response.json();
         return { url, ...data };
       } catch (err) {
         return { url, error: 'Worker unreachable' };
+      } finally {
+        clearTimeout(timeoutId);
       }
     });
 

@@ -14,7 +14,7 @@ import {
   AlertCircle,
   ArrowRight
 } from 'lucide-react';
-import '../datalabeling.css';
+import '../styles/datalabeling.css';
 
 /* ── Demo conversation data ── */
 const CONVERSATIONS = [

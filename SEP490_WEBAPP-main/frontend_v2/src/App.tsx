@@ -5,7 +5,7 @@ import Auth from './pages/Auth';
 import Dashboard from './pages/Dashboard';
 import Navbar from './components/Navbar';
 import { AuthProvider } from './context/AuthContext';
-import './index.css';
+import './styles/index.css';
 
 function App() {
   return (

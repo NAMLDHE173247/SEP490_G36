@@ -13,7 +13,7 @@ import {
   Sparkles,
   Terminal
 } from 'lucide-react';
-import '../chat.css';
+import '../styles/chat.css';
 
 function ChatView() {
   const [mode, setMode] = useState('single'); // 'single' or 'compare'

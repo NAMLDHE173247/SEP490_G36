@@ -1,17 +1,22 @@
+import './dotenv';
 import express, { Express } from 'express';
 import cors from 'cors';
 import compression from 'compression';
-import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import routes from './routes';
 import fs from 'fs';
 import path from 'path';
 
-dotenv.config();
+console.log('=== APP STARTING ===');
+console.log('PORT:', process.env.PORT);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('MONGO_URI exists:', !!process.env.MONGO_URI);
 
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_training';
+
+
 
 // Connect to MongoDB
 import { User } from './models/User';

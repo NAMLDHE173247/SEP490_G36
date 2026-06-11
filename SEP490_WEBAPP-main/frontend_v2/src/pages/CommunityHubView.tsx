@@ -12,7 +12,7 @@ import {
   BookmarkCheck
 } from 'lucide-react';
 import DataLabelingView from './DataLabelingView';
-import '../communityhub.css';
+import '../styles/communityhub.css';
 
 /* ── Demo data ── */
 const PROJECTS = [

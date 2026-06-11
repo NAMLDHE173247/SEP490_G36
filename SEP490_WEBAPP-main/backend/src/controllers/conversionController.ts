@@ -151,26 +151,38 @@ export class ConversionController {
           }
         };
       } else if (stored.metadata.fileType === 'openai_messages') {
-        // If input is already OpenAI messages, we can pass through or convert to other formats
+        // If input is already OpenAI messages — apply cleanContent if removeThinkTags
+        let cleanedData = stored.data;
+        if (options.removeThinkTags) {
+          cleanedData = stored.data.map((conv: any) => ({
+            ...conv,
+            messages: Array.isArray(conv.messages)
+              ? conv.messages.map((msg: any) => ({
+                  ...msg,
+                  content: conversionService.cleanContent(msg.content || '', true)
+                }))
+              : conv.messages
+          }));
+        }
+
         if (options.format === 'openai' || options.format === 'alpaca') {
           result = {
-            data: stored.data,
+            data: cleanedData,
             format: 'openai',
             stats: {
-              totalConversations: stored.data.length,
+              totalConversations: cleanedData.length,
               totalMessages: stored.metadata.messageCount,
-              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(stored.data))
+              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(cleanedData))
             }
           };
         } else {
-          // Default fallback or handle other formats if needed
           result = {
-            data: stored.data,
+            data: cleanedData,
             format: options.format,
             stats: {
-              totalConversations: stored.data.length,
+              totalConversations: cleanedData.length,
               totalMessages: stored.metadata.messageCount,
-              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(stored.data))
+              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(cleanedData))
             }
           };
         }

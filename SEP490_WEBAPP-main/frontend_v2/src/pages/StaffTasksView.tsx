@@ -3,7 +3,7 @@ import {
   ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
   Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
 } from 'lucide-react';
-import '../stafftasks.css';
+import '../styles/stafftasks.css';
 
 const MY_TASKS = [
   {

@@ -5,7 +5,7 @@ import {
   BarChart2, ArrowRight, Layers, Shield, Globe,
   Cpu, GitBranch, Sparkles, Play, CheckCircle2, Users, Rocket
 } from 'lucide-react';
-import '../landing.css';
+import '../styles/landing.css';
 
 function Intro() {
   const [visibleSections, setVisibleSections] = useState(new Set());

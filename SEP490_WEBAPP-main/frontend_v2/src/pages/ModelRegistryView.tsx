@@ -9,7 +9,7 @@ import {
   BarChart2,
   HardDrive
 } from 'lucide-react';
-import '../modelregistry.css';
+import '../styles/modelregistry.css';
 
 function ModelRegistryView() {
   const models = [

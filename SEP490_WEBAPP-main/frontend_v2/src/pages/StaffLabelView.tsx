@@ -3,7 +3,7 @@ import {
   ArrowLeft, Save, Send, ChevronDown, ChevronRight, CheckCircle,
   AlertCircle, MessageSquare, Sparkles, FileText, X, Clock
 } from 'lucide-react';
-import '../stafflabel.css';
+import '../styles/stafflabel.css';
 
 /* ── Demo sample data ── */
 const DEMO_SAMPLES = [

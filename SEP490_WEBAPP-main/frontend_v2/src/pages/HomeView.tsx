@@ -7,7 +7,7 @@ import {
   ShieldAlert, Ban, CheckCircle2, TrendingUp, AlertTriangle,
   ClipboardList, GitBranch, ChevronRight
 } from 'lucide-react';
-import '../home.css';
+import '../styles/home.css';
 
 const getRelativeTime = (dateStr: any) => {
   if (!dateStr) return '-';
@@ -32,6 +32,7 @@ function HomeView({ setActiveTab }) {
   const { user } = useAuth();
   const role = user?.role || 'admin';
   const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardStats = async () => {
@@ -40,12 +41,44 @@ function HomeView({ setActiveTab }) {
         setDashboardStats(res.data);
       } catch (err) {
         console.error('Error fetching dashboard stats:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
     if (user) {
       fetchDashboardStats();
     }
   }, [user]);
+
+  if (isLoading) {
+    return (
+      <div className="dashboard-loading-container" style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '400px',
+        color: 'var(--text-muted)',
+        gap: '16px'
+      }}>
+        <div className="spinner" style={{
+          width: '40px',
+          height: '40px',
+          border: '3px solid #f3e8ff',
+          borderTop: '3px solid #8b5cf6',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <p style={{ fontSize: '14px', fontWeight: '500' }}>Đang tải dữ liệu hệ thống...</p>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   // ==================== ADMIN VIEW ====================
   if (role === 'admin') {
@@ -63,6 +96,7 @@ function HomeView({ setActiveTab }) {
 
 /* ──────── ADMIN HOME ──────── */
 function AdminHomeView({ setActiveTab, dashboardStats }) {
+  const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState([
     { value: '12', label: 'Datasets', color: 'text-primary' },
     { value: '2', label: 'Active Jobs', color: 'text-blue' },
@@ -223,11 +257,43 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
 
       } catch (err) {
         console.error('Error fetching admin dashboard data:', err);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchData();
   }, []);
+
+  if (isLoading) {
+    return (
+      <div className="dashboard-loading-container" style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '400px',
+        color: 'var(--text-muted)',
+        gap: '16px'
+      }}>
+        <div className="spinner" style={{
+          width: '40px',
+          height: '40px',
+          border: '3px solid #f3e8ff',
+          borderTop: '3px solid #8b5cf6',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <p style={{ fontSize: '14px', fontWeight: '500' }}>Đang tải dữ liệu chi tiết...</p>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   const cards = [
     { icon: <MessageSquare size={24} />, title: 'Chat', description: 'Conversational AI with streaming inference', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.chatSessionsCount ?? 0} active sessions`, actionText: 'New Chat', badge: 'Idle', badgeColor: 'default', tab: 'Chat' },

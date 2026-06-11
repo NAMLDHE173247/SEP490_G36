@@ -23,7 +23,7 @@ import {
   StopCircle,
   X
 } from 'lucide-react';
-import '../autotrain.css';
+import '../styles/autotrain.css';
 
 function AutoTrainView() {
   const [isTraining, setIsTraining] = useState(false);

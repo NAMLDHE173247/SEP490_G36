@@ -42,7 +42,18 @@ function Dashboard() {
     }
   };
 
-  const [activeTab, setActiveTab] = useState(getDefaultTab());
+  const [activeTab, setActiveTabState] = useState(() => {
+    // Restore the last active tab from localStorage on reload
+    const saved = localStorage.getItem('dashboard_active_tab');
+    if (saved) return saved;
+    return getDefaultTab();
+  });
+
+  // Wrapper: update state AND persist to localStorage
+  const setActiveTab = (tab: string) => {
+    localStorage.setItem('dashboard_active_tab', tab);
+    setActiveTabState(tab);
+  };
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [viewingTaskDetail, setViewingTaskDetail] = useState(false);

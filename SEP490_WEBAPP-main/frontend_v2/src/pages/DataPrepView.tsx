@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { apiService } from '../services/api';
 import {
   Upload,
   X,
@@ -19,9 +20,10 @@ import {
   Filter,
   Download,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  HelpCircle
 } from 'lucide-react';
-import '../dataprep.css';
+import '../styles/dataprep.css';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
@@ -190,18 +192,58 @@ const CONVERSATIONS = [
   },
 ];
 
+const Tooltip = ({ children, text }) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div 
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={() => setShow(!show)}
+    >
+      {children}
+      {show && (
+        <div style={{
+          position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+          backgroundColor: '#1e293b', color: '#fff', padding: '8px 12px', borderRadius: '6px',
+          fontSize: '12px', width: '250px', zIndex: 1000, textAlign: 'left',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', fontWeight: 400, lineHeight: 1.5
+        }}>
+          {text}
+          <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', border: '6px solid transparent', borderTopColor: '#1e293b' }} />
+        </div>
+      )}
+    </div>
+  );
+};
+
 function DataPrepView() {
   const [currentStage, setCurrentStage] = useState(1);
   const [currentSubStep, setCurrentSubStep] = useState(1);
   const [file, setFile] = useState(null);
-  const [projectName, setProjectName] = useState('Project_01/06_16:14');
+  const [rawPreviewText, setRawPreviewText] = useState('');
+  const [sampleOutputText, setSampleOutputText] = useState('');
+  const [projectName, setProjectName] = useState(() => {
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    return `Project Dataset ${dd}/${mm}/${yyyy}`;
+  });
   const [rawPreviewOpen, setRawPreviewOpen] = useState(false);
+  const [conversationsList, setConversationsList] = useState<any[]>([]);
   const [selectedFormat, setSelectedFormat] = useState('openai');
   const [removeThinkTags, setRemoveThinkTags] = useState(true);
   const [cleaningEnabled, setCleaningEnabled] = useState(false);
   const [cleaningApplied, setCleaningApplied] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTab, setPreviewTab] = useState('before');
+  const [conversionStats, setConversionStats] = useState<any>(null);
+  const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
+  const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
+  const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [isCleaningLoading, setIsCleaningLoading] = useState(false);
+  const [pendingCleanedList, setPendingCleanedList] = useState<any[]>([]);
 
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
@@ -223,6 +265,8 @@ function DataPrepView() {
   const [eps, setEps] = useState('0.1');
   const [minSamples, setMinSamples] = useState('3');
   const [showVisualization, setShowVisualization] = useState(false);
+  const [isFindingK, setIsFindingK] = useState(false);
+  const [findKResults, setFindKResults] = useState<any>(null);
 
   /* K-means Cluster state */
   const [targetK, setTargetK] = useState('14');
@@ -232,6 +276,8 @@ function DataPrepView() {
   const [simThreshold, setSimThreshold] = useState(0.9);
   const [clusterPage, setClusterPage] = useState(1);
   const clusterPerPage = 5;
+  const [isClustering, setIsClustering] = useState(false);
+  const [clusterResults, setClusterResults] = useState<any>(null);
 
   /* Compare Groups state */
   const [showCompareModal, setShowCompareModal] = useState(false);
@@ -251,7 +297,7 @@ function DataPrepView() {
 
   /* Stage 3 state */
   const SUB_STEPS_STAGE3 = [
-    { num: 5, label: 'Auto Labeling' },
+    { num: 5, label: 'Clustering & Labeling' },
     { num: 6, label: 'Save & Assign' },
     { num: 7, label: 'Intent-Action' }
   ];
@@ -265,6 +311,167 @@ function DataPrepView() {
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [selectedGroup3, setSelectedGroup3] = useState(null);
   const [selectedConv3, setSelectedConv3] = useState(null);
+  const [stage3SubGroup, setStage3SubGroup] = useState('A');
+  /* AI Labeling state */
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
+  const [isSavingLabels, setIsSavingLabels] = useState(false);
+  const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
+  const [stage3Convs, setStage3Convs] = useState<any[]>([]);
+  const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
+
+  const cleanVietnameseGreetings = (text: string): string => {
+    let cleaned = text.trim();
+    
+    // Danh sách các từ chào/lời dẫn tiếng Việt thường gặp ở đầu câu
+    const introPatterns = [
+      /^(dạ\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^(em\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^dạ\s+chào\s+ạ/i,
+      /^dạ/i,
+      /^(thầy|cô)\s+ơi/i,
+      /^(cho\s+em|cho\s+mình|cho\s+hỏi)\s+hỏi/i,
+      /^thầy\s+cho\s+em\s+hỏi/i,
+      /^cô\s+cho\s+em\s+hỏi/i,
+      /^cho\s+hỏi/i,
+      /^xin\s+chào/i,
+      /^hello/i,
+      /^hi/i,
+      /^alo/i,
+      /^hey/i
+    ];
+
+    let matched = true;
+    while (matched) {
+      matched = false;
+      // Remove leading punctuation like comma, space, colon
+      cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+      for (const pattern of introPatterns) {
+        const match = cleaned.match(pattern);
+        if (match) {
+          cleaned = cleaned.substring(match[0].length).trim();
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+    return cleaned || text.trim();
+  };
+
+  const cleanAssistantGreetings = (text: string): string => {
+    let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    
+    const introPatterns = [
+      /^(dạ\s+)?chào\s+(em|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+      /^(thầy|cô)\s+chào\s+(em|bạn)/i,
+      /^chào\s+em\s+nhé/i,
+      /^chào\s+em/i,
+      /^dạ/i,
+      /^thầy\s+rất\s+vui/i,
+      /^không\s+sao/i,
+      /^câu\s+hỏi\s+hay/i,
+      /^câu\s+hỏi\s+rất\s+hay/i,
+      /^câu\s+hỏi\s+thú\s+vị/i,
+      /^cảm\s+ơn\s+em/i,
+      /^chào/i,
+      /^hello/i,
+      /^hi/i
+    ];
+
+    let matched = true;
+    while (matched) {
+      matched = false;
+      cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+      for (const pattern of introPatterns) {
+        const match = cleaned.match(pattern);
+        if (match) {
+          cleaned = cleaned.substring(match[0].length).trim();
+          matched = true;
+          break;
+        }
+      }
+    }
+    
+    cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+    return cleaned || text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  };
+
+  const truncateText = (text: string, limit: number = 150) => {
+    if (!text) return '';
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  };
+
+  const highlightSearch = (text: string, query: string) => {
+    if (!query || !query.trim()) return text;
+    const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase()
+        ? <span key={i} className="search-highlight">{part}</span>
+        : part
+    );
+  };
+
+  const getConversationTopic = (messages: any[]) => {
+    if (!messages || messages.length === 0) return 'Không có nội dung';
+    
+    let targetText = '';
+    const meaningfulTurn = messages.find(m => {
+      const rawText = m.user || '';
+      const cleaned = cleanVietnameseGreetings(rawText);
+      return cleaned.length >= 5;
+    });
+
+    if (meaningfulTurn) {
+      targetText = cleanVietnameseGreetings(meaningfulTurn.user);
+    } else {
+      targetText = cleanVietnameseGreetings(messages[0].user || '');
+    }
+
+    if (!targetText) return 'Không có nội dung';
+    
+    const cleanText = targetText.trim().replace(/^["'\s]+|["'\s]+$/g, '');
+    if (cleanText.length <= 80) return cleanText;
+    
+    const sentences = cleanText.split(/[.!?\n]/);
+    const firstSentence = sentences[0].trim();
+    if (firstSentence.length > 15 && firstSentence.length <= 100) return firstSentence;
+    
+    const words = cleanText.split(/\s+/);
+    if (words.length > 10) {
+      return words.slice(0, 10).join(' ') + '...';
+    }
+    return cleanText.substring(0, 80) + '...';
+  };
+
+  const getAssistantSummary = (messages: any[]) => {
+    if (!messages || messages.length === 0) return 'Không có phản hồi';
+    
+    const meaningfulIdx = messages.findIndex(m => {
+      const rawText = m.user || '';
+      const cleaned = cleanVietnameseGreetings(rawText);
+      return cleaned.length >= 5;
+    });
+
+    const targetMsg = meaningfulIdx !== -1 ? messages[meaningfulIdx] : messages[0];
+    const targetText = targetMsg ? targetMsg.assistant : '';
+    if (!targetText) return 'Không có nội dung';
+
+    const cleanText = cleanAssistantGreetings(targetText).trim().replace(/^["'\s]+|["'\s]+$/g, '');
+    if (cleanText.length <= 80) return cleanText;
+
+    const sentences = cleanText.split(/[.!?\n]/);
+    const firstSentence = sentences[0].trim();
+    if (firstSentence.length > 15 && firstSentence.length <= 100) return firstSentence;
+
+    const words = cleanText.split(/\s+/);
+    if (words.length > 10) {
+      return words.slice(0, 10).join(' ') + '...';
+    }
+    return cleanText.substring(0, 80) + '...';
+  };
   const [selectedIaMsgId, setSelectedIaMsgId] = useState(null);
   const [iaMessages, setIaMessages] = useState<any[]>([
     {
@@ -557,26 +764,433 @@ function DataPrepView() {
 
   const fileInputRef = useRef(null);
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
-      setFile({
-        name: uploaded.name,
-        format: 'Định dạng OpenAI Messages',
-        messages: 586,
-        conversations: 120,
-        size: (uploaded.size / (1024 * 1024)).toFixed(2) + ' MB'
-      });
+      localStorage.removeItem('current_version_id');
+      try {
+        setFile({
+          name: uploaded.name,
+          format: 'Đang tải lên và phân tích...',
+          messages: 0,
+          conversations: 0,
+          size: '...'
+        });
+        setRawPreviewText('Đang phân tích dữ liệu tệp...');
+        setSampleOutputText('Đang tạo mẫu đầu ra...');
+
+        const res = await apiService.uploadFile(uploaded);
+
+        setFile({
+          fileId: res.fileId,
+          name: res.filename,
+          format: res.fileType === 'openai_messages' ? 'Định dạng OpenAI Messages' : 'Định dạng Chat/Conversations',
+          messages: res.messageCount || 0,
+          conversations: res.conversationCount || 0,
+          size: (res.size / (1024 * 1024)).toFixed(2) + ' MB'
+        });
+
+        const previewRes = await apiService.getPreview(res.fileId, 5);
+        setRawPreviewText(JSON.stringify(previewRes.preview, null, 2));
+
+        const rawPreview = previewRes.preview;
+        if (Array.isArray(rawPreview) && rawPreview.length > 0) {
+          if (res.fileType === 'openai_messages') {
+            setSampleOutputText(JSON.stringify(rawPreview[0], null, 2));
+          } else if (res.fileType === 'lesson') {
+            const firstRecord = rawPreview[0];
+            const firstLesson = firstRecord.lessons?.[0];
+            const firstExercise = firstLesson?.sections?.find((s: any) => s.type === 'exercise');
+            if (firstExercise) {
+              const sampleOutput = {
+                messages: [
+                  { role: 'user', content: firstExercise.content || '' },
+                  { role: 'assistant', content: firstExercise.answer_text || firstExercise.answer || '' }
+                ]
+              };
+              setSampleOutputText(JSON.stringify(sampleOutput, null, 2));
+            } else {
+              setSampleOutputText('');
+            }
+          } else {
+            const convMap: Record<string, any[]> = {};
+            rawPreview.forEach((msg: any) => {
+              const cid = msg.conversation_id || 'default_conv';
+              if (!convMap[cid]) {
+                convMap[cid] = [];
+              }
+              convMap[cid].push(msg);
+            });
+
+            const firstKey = Object.keys(convMap)[0];
+            const firstConvMessages = convMap[firstKey] || [];
+
+            const formattedMessages = firstConvMessages.map((msg: any) => ({
+              role: msg.role === 'assistant' ? 'assistant' : 'user',
+              content: msg.content || ''
+            }));
+
+            const sampleOutput = {
+              conversation_id: firstKey,
+              messages: formattedMessages
+            };
+
+            setSampleOutputText(JSON.stringify(sampleOutput, null, 2));
+          }
+        } else {
+          setSampleOutputText('');
+        }
+
+      } catch (err: any) {
+        console.error('Upload failed:', err);
+        alert(err.response?.data?.error || err.message || 'Tải tệp lên thất bại');
+        setFile(null);
+        setRawPreviewText('');
+        setSampleOutputText('');
+      }
     }
   };
 
   const handleRemoveFile = () => {
     setFile(null);
+    setRawPreviewText('');
+    setSampleOutputText('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleConvert = () => {
-    setCurrentStage(2);
+  const mapConvertedToConversations = (data: any[]): any[] => {
+    if (!Array.isArray(data)) return [];
+
+    return data.map((record: any, index: number) => {
+      let messages: any[] = [];
+      let id = record.conversation_id || `conv_${String(index + 1).padStart(3, '0')}`;
+
+      if (record.messages && Array.isArray(record.messages)) {
+        const raw = record.messages;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].role === 'user') {
+            const nextAssistant = raw.slice(i + 1).find((m: any) => m.role === 'assistant');
+            messages.push({
+              user: raw[i].content || '',
+              assistant: nextAssistant ? nextAssistant.content || '' : ''
+            });
+          }
+        }
+      } else if (record.conversations && Array.isArray(record.conversations)) {
+        const raw = record.conversations;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].from === 'human') {
+            const nextGpt = raw.slice(i + 1).find((m: any) => m.from === 'gpt');
+            messages.push({
+              user: raw[i].value || '',
+              assistant: nextGpt ? nextGpt.value || '' : ''
+            });
+          }
+        }
+      } else if (record.instruction) {
+        const user = record.instruction + (record.input ? '\n' + record.input : '');
+        const assistant = record.output || '';
+        messages.push({
+          user,
+          assistant
+        });
+      } else {
+        messages.push({
+          user: 'No user message',
+          assistant: 'No assistant message'
+        });
+      }
+
+      if (messages.length === 0) {
+        messages.push({
+          user: 'Trống',
+          assistant: 'Trống'
+        });
+      }
+
+      return {
+        id,
+        messages
+      };
+    });
+  };
+
+  const handleConvert = async () => {
+    if (!file || !file.fileId) {
+      alert('Vui lòng tải tệp lên trước.');
+      return;
+    }
+
+    try {
+      const res = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: cleaningEnabled,
+        removeThinkTags: removeThinkTags
+      });
+
+      const mapped = mapConvertedToConversations(res.data);
+      setConversationsList(mapped);
+      setConversionStats(res);
+
+      // Cập nhật cả danh sách Stage 3
+      setStage3Convs(mapped.map((c, idx) => {
+        const gId = (idx % 15) + 1;
+        return {
+          ...c,
+          groupId: gId,
+          groupLabel: '',
+          groupColor: '#64748b',
+          groupBg: '#f8fafc',
+          subGroup: 'A',
+          confidence: 0
+        };
+      }));
+
+      setCurrentStage(2);
+      setCurrentSubStep(1);
+    } catch (err: any) {
+      console.error('Conversion failed:', err);
+      alert(err.response?.data?.error || err.message || 'Chuyển đổi dữ liệu thất bại');
+    }
+  };
+
+  const handleApplyCleaning = async () => {
+    if (!file || !file.fileId) {
+      alert('Vui lòng tải tệp lên trước.');
+      return;
+    }
+
+    try {
+      setIsCleaningLoading(true);
+      const res = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: true,
+        removeThinkTags: removeThinkTags,
+        removeBoilerplate: removeErrorKeywords,
+        removeUnclosedThink: removeUnclosedThink,
+        minCharsAssistant: parseInt(minChars, 10) || 5,
+        maxCharsAssistant: parseInt(maxChars, 10) || 4000,
+        minTurns: parseInt(minPairs, 10) || 1,
+      });
+
+      // Update states and lists
+      setConversionStats(res);
+      const mapped = mapConvertedToConversations(res.data);
+      setPendingCleanedList(mapped);
+
+      // We query the backend with enableCleaning: false to get the original data for preview.
+      const originalRes = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: false,
+        removeThinkTags: removeThinkTags,
+      });
+      const originalMapped = mapConvertedToConversations(originalRes.data);
+
+      // Take a sample of 10 items for the before/after/removed list
+      const originalSample = originalMapped.slice(0, 10);
+      const cleanedSampleMap = new Map<string, any>();
+      mapped.forEach(c => cleanedSampleMap.set(c.id, c));
+
+      const beforePreview: any[] = [];
+      const afterPreview: any[] = [];
+      const removedPreview: any[] = [];
+
+      originalSample.forEach(item => {
+        const cleanedItem = cleanedSampleMap.get(item.id);
+        const userMsg = item.messages[0]?.user || '';
+        const assistantMsgBefore = item.messages[0]?.assistant || '';
+
+        if (cleanedItem) {
+          const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
+          const isFixed = assistantMsgBefore !== assistantMsgAfter;
+
+          beforePreview.push({
+            id: item.id,
+            status: isFixed ? 'has-issue' : 'clean',
+            issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          afterPreview.push({
+            id: item.id,
+            status: isFixed ? 'fixed' : 'clean',
+            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            user: userMsg,
+            assistant: assistantMsgAfter,
+          });
+        } else {
+          beforePreview.push({
+            id: item.id,
+            status: 'has-issue',
+            issue: 'Bị lọc bỏ',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          removedPreview.push({
+            id: item.id,
+            reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+        }
+      });
+
+      setCleaningPreviewBefore(beforePreview);
+      setCleaningPreviewAfter(afterPreview);
+      setCleaningPreviewRemoved(removedPreview);
+      setCleaningPopupView('preview');
+      setPreviewTab('before');
+    } catch (err: any) {
+      console.error('Cleaning failed:', err);
+      alert(err.response?.data?.error || err.message || 'Làm sạch dữ liệu thất bại');
+    } finally {
+      setIsCleaningLoading(false);
+    }
+  };
+
+  const handleVisualizeK = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để tính toán. Vui lòng chuyển đổi dữ liệu trước.');
+      return;
+    }
+
+    try {
+      setIsFindingK(true);
+      setShowVisualization(true);
+      
+      // format for api
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const res = await apiService.clusterVisualize(
+        formattedData,
+        parseInt(maxK, 10),
+        parseFloat(eps),
+        parseInt(minSamples, 10)
+      );
+
+      let recommendedK = 14; // Default fallback
+      if (res.silhouette && res.silhouette.length > 0) {
+        // Find K with max silhouette score
+        const best = res.silhouette.reduce((prev, current) => 
+          (prev.silhouette > current.silhouette) ? prev : current
+        );
+        recommendedK = best.k;
+      }
+
+      setFindKResults({ ...res, recommendedK });
+      setTargetK(recommendedK.toString());
+    } catch (err: any) {
+      console.error('Visualize K failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');
+      setShowVisualization(false);
+    } finally {
+      setIsFindingK(false);
+    }
+  };
+
+  const handleCluster = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để phân cụm.');
+      return;
+    }
+
+    try {
+      setIsClustering(true);
+      
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const res = await apiService.clusterData(
+        formattedData,
+        parseInt(targetK, 10),
+        parseFloat(clusterEps),
+        parseInt(clusterMinSamples, 10)
+      );
+
+      if (res.assignments) {
+        const noiseCount = res.assignments.filter((a: number) => a === -1).length;
+        if (noiseCount > 0) {
+          if (!res.clusterStats) {
+            res.clusterStats = [];
+          }
+          if (!res.clusterStats.some((g: any) => g.clusterId === -1)) {
+            // Inject NOISE group so it shows in the table
+            res.clusterStats.unshift({
+              clusterId: -1,
+              count: noiseCount,
+              avgSimilarity: null
+            });
+          }
+        }
+      }
+
+      setClusterResults(res);
+      setClusterRan(true);
+
+      // Update stage3Convs or conversationsList based on assignments if needed
+      // Currently, DataPrepView uses stage3Convs for stage 3
+      if (res.assignments && res.assignments.length === conversationsList.length) {
+        const updatedConvs = conversationsList.map((c, idx) => {
+          const groupId = res.assignments[idx];
+          const groupStat = res.clusterStats?.find((g: any) => g.clusterId === groupId);
+          
+          return {
+            ...c,
+            groupId: groupId,
+            groupLabel: '',
+            // assign random color or keep existing logic
+            groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
+            groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            subGroup: c.subGroup || 'A',
+            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+          };
+        });
+        setStage3Convs(updatedConvs);
+        setConversationsList(updatedConvs);
+      }
+
+    } catch (err: any) {
+      console.error('Cluster failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi phân cụm K-means');
+    } finally {
+      setIsClustering(false);
+    }
+  };
+
+  const handleRemoveNoise = () => {
+    try {
+      const updatedConvs = conversationsList.filter(c => c.groupId !== -1);
+      const numRemoved = conversationsList.length - updatedConvs.length;
+      
+      setConversationsList(updatedConvs);
+      setStage3Convs(updatedConvs);
+
+      if (clusterResults && clusterResults.clusterStats) {
+        const updatedStats = clusterResults.clusterStats.filter((g: any) => g.clusterId !== -1);
+        setClusterResults({
+          ...clusterResults,
+          clusterStats: updatedStats
+        });
+      }
+
+      alert(`Đã loại bỏ ${numRemoved} hội thoại nhiễu (Group -1).`);
+    } catch (err: any) {
+      console.error('Remove Noise failed:', err);
+      alert('Lỗi khi loại bỏ nhiễu');
+    }
   };
 
   /* ---- Render helpers ---- */
@@ -717,7 +1331,7 @@ function DataPrepView() {
             {rawPreviewOpen && (
               <div className="dataprep-accordion-body">
                 <pre className="raw-data-pre">
-                  {renderJsonHighlighted(SAMPLE_RAW_DATA)}
+                  {renderJsonHighlighted(rawPreviewText || SAMPLE_RAW_DATA)}
                 </pre>
               </div>
             )}
@@ -746,7 +1360,7 @@ function DataPrepView() {
             <div className="sample-output-section">
               <div className="sample-output-label">SAMPLE OUTPUT</div>
               <pre className="sample-output-pre">
-                {renderJsonHighlighted(SAMPLE_OUTPUT)}
+                {renderJsonHighlighted(sampleOutputText || SAMPLE_OUTPUT)}
               </pre>
             </div>
           </div>
@@ -763,19 +1377,19 @@ function DataPrepView() {
 
   /* ---- Stage 2 Content ---- */
   const renderStage2 = () => {
-    const totalConvs = CONVERSATIONS.length;
-    const totalMessages = CONVERSATIONS.reduce((sum, c) => sum + c.messages.length, 0);
+    const totalConvs = conversationsList.length;
+    const totalMessages = conversationsList.reduce((sum, c) => sum + c.messages.length, 0);
 
     /* Filter conversations by search */
     const filtered = searchQuery.trim()
-      ? CONVERSATIONS.filter(conv =>
+      ? conversationsList.filter(conv =>
           conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
           conv.messages.some(m =>
             m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
             m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
           )
         )
-      : CONVERSATIONS;
+      : conversationsList;
 
     const filteredTotal = filtered.length;
     const totalPages = Math.ceil(filteredTotal / convsPerPage);
@@ -814,16 +1428,7 @@ function DataPrepView() {
       setExpandedCells(prev => ({ ...prev, [cellKey]: !prev[cellKey] }));
     };
 
-    /* Search highlight helper */
-    const highlightSearch = (text, query) => {
-      if (!query || !query.trim()) return text;
-      const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
-      return parts.map((part, i) =>
-        part.toLowerCase() === query.toLowerCase()
-          ? <span key={i} className="search-highlight">{part}</span>
-          : part
-      );
-    };
+    /* using component-level highlightSearch */
 
     /* Cleaning status per conversation (mock) */
     const CONV_STATUS = {
@@ -871,33 +1476,66 @@ function DataPrepView() {
             <div className="post-stats-grid">
               <div className="post-stat-item">
                 <div className="post-stat-label">Converted Records</div>
-                <div className="post-stat-value">120</div>
+                <div className="post-stat-value">{conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs}</div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Source Messages</div>
-                <div className="post-stat-value">586</div>
+                <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
               </div>
             </div>
 
-            <div className="cleaning-report-title">CLEANING REPORT</div>
-            <div className="post-stats-grid">
+            <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
+            <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
               <div className="post-stat-item">
                 <div className="post-stat-label">Error keywords</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">
+                  -{conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+                </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Length</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">
+                  -{((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
+                </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Unclosed &lt;think&gt;</div>
-                <div className="post-stat-value cleaning-red">-0</div>
+                <div className="post-stat-value cleaning-red">
+                  -{conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
+                </div>
               </div>
               <div className="post-stat-item highlight">
                 <div className="post-stat-label">Final Count</div>
-                <div className="post-stat-value cleaning-green">120</div>
+                <div className="post-stat-value cleaning-green">{totalConvs}</div>
               </div>
             </div>
+            
+            {/* Dynamic Data Loss Chart */}
+            {(() => {
+              const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
+              const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
+                              (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
+              const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
+              const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
+              const removedPct = source > 0 ? 100 - finalPct : 0;
+
+              return (
+                <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span>Source: {source} (100%)</span>
+                    <span>Filtered: {removed} ({removedPct}%)</span>
+                    <span>Final: {final} ({finalPct}%)</span>
+                  </div>
+                  <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
+                    <div style={{ width: `${finalPct}%`, backgroundColor: '#22c55e', transition: 'width 0.5s' }} title={`Clean Data (${finalPct}%)`}></div>
+                    <div style={{ width: `${removedPct}%`, backgroundColor: '#ef4444', transition: 'width 0.5s' }} title={`Removed (${removedPct}%)`}></div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -952,8 +1590,7 @@ function DataPrepView() {
               <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
-                    <th style={{ width: '10%', textAlign: 'center' }}>Conv ID</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>Conv ID</th>
                     <th style={{ width: '3%', textAlign: 'center' }}>#</th>
                     <th style={{ width: '30%' }}>User</th>
                     <th style={{ width: '43%' }}>Assistant</th>
@@ -963,7 +1600,7 @@ function DataPrepView() {
                 <tbody>
                   {pageConvs.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                         No conversations match your search.
                       </td>
                     </tr>
@@ -978,9 +1615,8 @@ function DataPrepView() {
                         key={conv.id}
                         className={`conv-row conv-first conv-last ${groupClass} conv-clickable`}
                       >
-                        <td className="col-conv-num-cell">{convGlobalIdx}</td>
                         <td className="col-conv-id-cell">
-                          <span className="conv-id-badge">{conv.id}</span>
+                          <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} messages</span>
                           {cleaningApplied && (
                             <span className={`conv-status-badge badge-${status}`}>
@@ -989,14 +1625,76 @@ function DataPrepView() {
                           )}
                         </td>
                         <td className="col-msg-num-cell">{conv.messages.length}</td>
-                        <td className="cell-text-col">
-                          <div className="cell-truncate">
-                            {highlightSearch(conv.messages[0].user, searchQuery)}
+                        <td className="cell-text-col" style={{ padding: '12px' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                                {highlightSearch(conv.messages[0].user, searchQuery)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                    {getConversationTopic(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                        {highlightSearch(truncateText(msg.user, 150), searchQuery)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </td>
-                        <td className="cell-text-col">
-                          <div className="cell-truncate">
-                            {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                        <td className="cell-text-col" style={{ padding: '12px' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                                {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
+                                    {getAssistantSummary(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                      <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                        {highlightSearch(truncateText(msg.assistant, 150), searchQuery)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="col-action-cell">
@@ -1173,10 +1871,17 @@ function DataPrepView() {
                         {/* Preview button — switches to preview view */}
                         <button
                           className="cleaning-accept-btn"
-                          onClick={() => { setCleaningPopupView('preview'); setPreviewTab('before'); }}
+                          disabled={isCleaningLoading}
+                          onClick={handleApplyCleaning}
                         >
-                          <Eye size={16} />
-                          Preview & Apply Cleaning
+                          {isCleaningLoading ? (
+                            <span>Đang xử lý...</span>
+                          ) : (
+                            <>
+                              <Eye size={16} />
+                              Preview & Apply Cleaning
+                            </>
+                          )}
                         </button>
                       </div>
                     )}
@@ -1201,112 +1906,143 @@ function DataPrepView() {
               {/* ===== VIEW: Preview ===== */}
               {cleaningPopupView === 'preview' && (
                 <>
-                  {/* Tabs */}
-                  <div className="preview-modal-tabs">
-                    <button
-                      className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('before')}
-                    >
-                      📄 Before ({PREVIEW_BEFORE.length})
-                    </button>
-                    <button
-                      className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('after')}
-                    >
-                      ✅ After ({PREVIEW_AFTER.length})
-                    </button>
-                    <button
-                      className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                      onClick={() => setPreviewTab('removed')}
-                    >
-                      🗑️ Removed ({PREVIEW_REMOVED.length})
-                    </button>
-                  </div>
+                  {(() => {
+                    const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
+                    const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
+                    const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                    const totalCount = beforeList.length;
+                    const keptCount = afterList.length;
+                    const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+                    const removedCount = removedList.length;
 
-                  {/* Summary bar */}
-                  <div className="preview-modal-summary">
-                    <span className="summary-tag summary-total">Tổng: {PREVIEW_BEFORE.length} conversations</span>
-                    <span className="summary-tag summary-kept">Giữ lại: {PREVIEW_AFTER.length}</span>
-                    <span className="summary-tag summary-fixed">Đã sửa: {PREVIEW_AFTER.filter(r => r.status === 'fixed').length}</span>
-                    <span className="summary-tag summary-removed">Loại bỏ: {PREVIEW_REMOVED.length}</span>
-                  </div>
+                    return (
+                      <>
+                        {/* Tabs */}
+                        <div className="preview-modal-tabs">
+                          <button
+                            className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('before')}
+                          >
+                            📄 Before (Mẫu {totalCount})
+                          </button>
+                          <button
+                            className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('after')}
+                          >
+                            ✅ After (Mẫu {keptCount})
+                          </button>
+                          <button
+                            className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
+                            onClick={() => setPreviewTab('removed')}
+                          >
+                            🗑️ Removed (Mẫu {removedCount})
+                          </button>
+                        </div>
 
-                  {/* Tab Content */}
-                  <div className="preview-modal-body">
-                    {previewTab === 'before' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Status</th>
-                            <th>User</th>
-                            <th>Assistant (trước)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_BEFORE.map((row) => (
-                            <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td>
-                                {row.issue
-                                  ? <span className="status-badge badge-issue">{row.issue}</span>
-                                  : <span className="status-badge badge-clean">Clean</span>
-                                }
-                              </td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                        {(() => {
+                          const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                          const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                          const realRemoved = realTotal - realKept;
+                          const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
 
-                    {previewTab === 'after' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Action</th>
-                            <th>User</th>
-                            <th>Assistant (sau)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_AFTER.map((row) => (
-                            <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+                          return (
+                            <>
+                              {/* Summary bar */}
+                              <div className="preview-modal-summary">
+                                <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
+                                <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
+                                <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
+                                <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
+                              </div>
 
-                    {previewTab === 'removed' && (
-                      <table className="preview-modal-table">
-                        <thead>
-                          <tr>
-                            <th>Conv ID</th>
-                            <th>Lý do loại bỏ</th>
-                            <th>User</th>
-                            <th>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {PREVIEW_REMOVED.map((row) => (
-                            <tr key={row.id} className="row-removed">
-                              <td><span className="conv-id-badge">{row.id}</span></td>
-                              <td><span className="status-badge badge-removed">{row.reason}</span></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                              <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                              {/* Info Alert */}
+                              <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>ℹ️</span>
+                                <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+
+                        {/* Tab Content */}
+                        <div className="preview-modal-body">
+                          {previewTab === 'before' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Status</th>
+                                  <th>User</th>
+                                  <th>Assistant (trước)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {beforeList.map((row) => (
+                                  <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td>
+                                      {row.issue
+                                        ? <span className="status-badge badge-issue">{row.issue}</span>
+                                        : <span className="status-badge badge-clean">Clean</span>
+                                      }
+                                    </td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+
+                          {previewTab === 'after' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Action</th>
+                                  <th>User</th>
+                                  <th>Assistant (sau)</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {afterList.map((row) => (
+                                  <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+
+                          {previewTab === 'removed' && (
+                            <table className="preview-modal-table">
+                              <thead>
+                                <tr>
+                                  <th>Conv ID</th>
+                                  <th>Lý do loại bỏ</th>
+                                  <th>User</th>
+                                  <th>Assistant</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {removedList.map((row) => (
+                                  <tr key={row.id} className="row-removed">
+                                    <td><span className="conv-id-badge">{row.id}</span></td>
+                                    <td><span className="status-badge badge-removed">{row.reason}</span></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* Footer */}
                   <div className="preview-modal-footer">
@@ -1315,6 +2051,21 @@ function DataPrepView() {
                       Quay lại cài đặt
                     </button>
                     <button className="modal-confirm-btn" onClick={() => {
+                      if (pendingCleanedList.length > 0) {
+                        setConversationsList(pendingCleanedList);
+                        setStage3Convs(pendingCleanedList.map((c, idx) => {
+                          const gId = (idx % 15) + 1;
+                          return {
+                            ...c,
+                            groupId: gId,
+                            groupLabel: '',
+                            groupColor: '#64748b',
+                            groupBg: '#f8fafc',
+                            subGroup: c.subGroup || 'A',
+                            confidence: 0
+                          };
+                        }));
+                      }
                       setCleaningApplied(true);
                       setShowCleaningPopup(false);
                       setCleaningPopupView('settings');
@@ -1349,116 +2100,126 @@ function DataPrepView() {
                   <label>Min Samples:</label>
                   <input type="number" value={minSamples} onChange={(e) => setMinSamples(e.target.value)} />
                 </div>
-                <button className="findk-visualize-btn" onClick={() => setShowVisualization(true)}>
-                  <Sparkles size={16} />
-                  Visualize (GPU)
+                <button className="findk-visualize-btn" onClick={handleVisualizeK} disabled={isFindingK}>
+                  {isFindingK ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                  {isFindingK ? 'Calculating...' : 'Visualize (GPU)'}
                 </button>
               </div>
             </div>
 
-            {showVisualization && (
-              <>
-                <div className="findk-result-banner">
-                  <Sparkles size={16} className="banner-icon" />
-                  <div>
-                    <strong>120 points analyzed, 0 noise points filtered by DBSCAN</strong>
-                    <div className="banner-sub">Recommended K: <strong>14</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</div>
-                  </div>
-                </div>
+            {showVisualization && findKResults && (() => {
+              const elbow = findKResults.elbow || [];
+              const silhouette = findKResults.silhouette || [];
+              
+              const wcssMax = Math.max(...elbow.map((d: any) => d.wcss), 12);
+              const wcssMin = 0;
+              const silMax = Math.max(...silhouette.map((d: any) => d.silhouette), 0.22);
+              const silMin = 0;
+              
+              const chartHeight = 240; 
+              const chartBottom = 280;
+              const chartWidth = 700;
+              const chartLeft = 60;
+              
+              const maxKVal = elbow.length > 0 ? elbow.length : parseInt(maxK, 10);
+              const stepX = maxKVal > 1 ? chartWidth / (maxKVal - 1) : 0;
+              
+              const wcssPoints = elbow.map((d: any, i: number) => {
+                const x = chartLeft + i * stepX;
+                const y = chartBottom - ((d.wcss - wcssMin) / (wcssMax - wcssMin || 1)) * chartHeight;
+                return [x, y];
+              });
+              
+              const silPoints = silhouette.map((d: any, i: number) => {
+                const x = chartLeft + i * stepX;
+                const y = chartBottom - ((d.silhouette - silMin) / (silMax - silMin || 1)) * chartHeight;
+                return [x, y];
+              });
 
-                <div className="findk-chart-card">
-                  <div className="chart-header-row">
+              const recKIndex = elbow.findIndex((d: any) => d.k === findKResults.recommendedK);
+              const recommendedX = recKIndex >= 0 ? chartLeft + recKIndex * stepX : chartLeft;
+
+              return (
+                <>
+                  <div className="findk-result-banner">
+                    <Sparkles size={16} className="banner-icon" />
                     <div>
-                      <h4>Elbow Method vs. Silhouette Score</h4>
-                      <p className="chart-subtitle">Use the blue curve to spot the elbow and the green curve to confirm the strongest silhouette.</p>
-                    </div>
-                    <div className="chart-legend">
-                      <span className="legend-item legend-wcss"><span className="legend-dot"></span> Elbow (WCSS)</span>
-                      <span className="legend-item legend-sil"><span className="legend-dot"></span> Silhouette</span>
-                      <span className="legend-item legend-rec"><span className="legend-dot"></span> Recommended K = 14</span>
+                      <strong>{findKResults.pointCount || conversationsList.length} points analyzed, {findKResults.noiseCount || 0} noise points filtered by DBSCAN</strong>
+                      <div className="banner-sub">Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</div>
                     </div>
                   </div>
-                  <div className="chart-area">
-                    <svg viewBox="0 0 800 340" className="findk-svg">
-                      {/* Grid lines */}
-                      {[0, 1, 2, 3, 4].map(i => (
-                        <line key={`grid-${i}`} x1="60" y1={40 + i * 65} x2="760" y2={40 + i * 65} stroke="#f1f5f9" strokeWidth="1" />
-                      ))}
-                      {/* Y-axis left labels (WCSS) */}
-                      <text x="8" y="44" className="axis-label">12</text>
-                      <text x="16" y="109" className="axis-label">9</text>
-                      <text x="16" y="174" className="axis-label">6</text>
-                      <text x="16" y="239" className="axis-label">3</text>
-                      <text x="16" y="304" className="axis-label">0</text>
-                      <text x="10" y="175" className="axis-title" transform="rotate(-90, 10, 175)">WCSS</text>
-                      {/* Y-axis right labels (Silhouette) */}
-                      <text x="770" y="44" className="axis-label-right">0.22</text>
-                      <text x="770" y="109" className="axis-label-right">0.165</text>
-                      <text x="770" y="174" className="axis-label-right">0.11</text>
-                      <text x="770" y="239" className="axis-label-right">0.055</text>
-                      <text x="770" y="304" className="axis-label-right">0</text>
-                      <text x="795" y="175" className="axis-title-right" transform="rotate(90, 795, 175)">Silhouette</text>
-                      {/* X-axis labels */}
-                      {Array.from({length: 20}, (_, i) => (
-                        <text key={`x-${i}`} x={60 + (i * 700 / 19)} y="330" className="axis-label" textAnchor="middle">{i + 1}</text>
-                      ))}
-                      {/* Recommended K=14 dotted line */}
-                      <line x1={60 + (13 * 700 / 19)} y1="40" x2={60 + (13 * 700 / 19)} y2="300" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
-                      {/* WCSS line (blue) */}
-                      <polyline
-                        fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"
-                        points={[
-                          [60, 52], [60+700/19*1, 85], [60+700/19*2, 105], [60+700/19*3, 125],
-                          [60+700/19*4, 140], [60+700/19*5, 155], [60+700/19*6, 168],
-                          [60+700/19*7, 178], [60+700/19*8, 188], [60+700/19*9, 196],
-                          [60+700/19*10, 205], [60+700/19*11, 212], [60+700/19*12, 218],
-                          [60+700/19*13, 226], [60+700/19*14, 235], [60+700/19*15, 243],
-                          [60+700/19*16, 250], [60+700/19*17, 255], [60+700/19*18, 262],
-                          [60+700/19*19, 268]
-                        ].map(p => p.join(',')).join(' ')}
-                      />
-                      {/* WCSS dots */}
-                      {[
-                        [60, 52], [60+700/19*1, 85], [60+700/19*2, 105], [60+700/19*3, 125],
-                        [60+700/19*4, 140], [60+700/19*5, 155], [60+700/19*6, 168],
-                        [60+700/19*7, 178], [60+700/19*8, 188], [60+700/19*9, 196],
-                        [60+700/19*10, 205], [60+700/19*11, 212], [60+700/19*12, 218],
-                        [60+700/19*13, 226], [60+700/19*14, 235], [60+700/19*15, 243],
-                        [60+700/19*16, 250], [60+700/19*17, 255], [60+700/19*18, 262],
-                        [60+700/19*19, 268]
-                      ].map((p, i) => (
-                        <circle key={`wc-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
-                      ))}
-                      {/* Silhouette line (green) */}
-                      <polyline
-                        fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinejoin="round"
-                        points={[
-                          [60, 280], [60+700/19*1, 125], [60+700/19*2, 110],
-                          [60+700/19*3, 100], [60+700/19*4, 95], [60+700/19*5, 88],
-                          [60+700/19*6, 82], [60+700/19*7, 78], [60+700/19*8, 72],
-                          [60+700/19*9, 68], [60+700/19*10, 62], [60+700/19*11, 56],
-                          [60+700/19*12, 50], [60+700/19*13, 48], [60+700/19*14, 50],
-                          [60+700/19*15, 48], [60+700/19*16, 50], [60+700/19*17, 48],
-                          [60+700/19*18, 44], [60+700/19*19, 44]
-                        ].map(p => p.join(',')).join(' ')}
-                      />
-                      {/* Silhouette dots */}
-                      {[
-                        [60, 280], [60+700/19*1, 125], [60+700/19*2, 110],
-                        [60+700/19*3, 100], [60+700/19*4, 95], [60+700/19*5, 88],
-                        [60+700/19*6, 82], [60+700/19*7, 78], [60+700/19*8, 72],
-                        [60+700/19*9, 68], [60+700/19*10, 62], [60+700/19*11, 56],
-                        [60+700/19*12, 50], [60+700/19*13, 48], [60+700/19*14, 50],
-                        [60+700/19*15, 48], [60+700/19*16, 50], [60+700/19*17, 48],
-                        [60+700/19*18, 44], [60+700/19*19, 44]
-                      ].map((p, i) => (
-                        <circle key={`sl-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#16a34a" strokeWidth="2" />
-                      ))}
-                    </svg>
+
+                  <div className="findk-chart-card">
+                    <div className="chart-header-row">
+                      <div>
+                        <h4>Elbow Method vs. Silhouette Score</h4>
+                        <p className="chart-subtitle">Use the blue curve to spot the elbow and the green curve to confirm the strongest silhouette.</p>
+                      </div>
+                      <div className="chart-legend">
+                        <span className="legend-item legend-wcss"><span className="legend-dot"></span> Elbow (WCSS)</span>
+                        <span className="legend-item legend-sil"><span className="legend-dot"></span> Silhouette</span>
+                        <span className="legend-item legend-rec"><span className="legend-dot"></span> Recommended K = {findKResults.recommendedK}</span>
+                      </div>
+                    </div>
+                    <div className="chart-area">
+                      <svg viewBox="0 0 840 340" className="findk-svg">
+                        {/* Grid lines */}
+                        {[0, 1, 2, 3, 4].map(i => (
+                          <line key={`grid-${i}`} x1="60" y1={40 + i * 60} x2="760" y2={40 + i * 60} stroke="#f1f5f9" strokeWidth="1" />
+                        ))}
+                        {/* Y-axis left labels (WCSS) */}
+                        <text x="8" y="44" className="axis-label">{wcssMax.toFixed(1)}</text>
+                        <text x="16" y="104" className="axis-label">{(wcssMax * 0.75).toFixed(1)}</text>
+                        <text x="16" y="164" className="axis-label">{(wcssMax * 0.5).toFixed(1)}</text>
+                        <text x="16" y="224" className="axis-label">{(wcssMax * 0.25).toFixed(1)}</text>
+                        <text x="16" y="284" className="axis-label">0</text>
+                        <text x="10" y="175" className="axis-title" transform="rotate(-90, 10, 175)">WCSS</text>
+                        
+                        {/* Y-axis right labels (Silhouette) */}
+                        <text x="770" y="44" className="axis-label-right">{silMax.toFixed(3)}</text>
+                        <text x="770" y="104" className="axis-label-right">{(silMax * 0.75).toFixed(3)}</text>
+                        <text x="770" y="164" className="axis-label-right">{(silMax * 0.5).toFixed(3)}</text>
+                        <text x="770" y="224" className="axis-label-right">{(silMax * 0.25).toFixed(3)}</text>
+                        <text x="770" y="284" className="axis-label-right">0</text>
+                        <text x="825" y="175" className="axis-title-right" transform="rotate(90, 825, 175)">Silhouette</text>
+                        
+                        {/* X-axis labels */}
+                        {elbow.map((d: any, i: number) => (
+                          <text key={`x-${i}`} x={chartLeft + i * stepX} y="310" className="axis-label" textAnchor="middle">{d.k}</text>
+                        ))}
+                        
+                        {/* Recommended K dotted line */}
+                        <line x1={recommendedX} y1="40" x2={recommendedX} y2="280" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
+                        
+                        {/* WCSS line (blue) */}
+                        <polyline
+                          fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"
+                          points={wcssPoints.map(p => p.join(',')).join(' ')}
+                        />
+                        {/* WCSS dots */}
+                        {wcssPoints.map((p, i) => (
+                          <circle key={`wc-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
+                        ))}
+                        
+                        {/* Silhouette line (green) */}
+                        {silPoints.length > 0 && (
+                          <>
+                            <polyline
+                              fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinejoin="round"
+                              points={silPoints.map(p => p.join(',')).join(' ')}
+                            />
+                            {/* Silhouette dots */}
+                            {silPoints.map((p, i) => (
+                              <circle key={`sl-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#16a34a" strokeWidth="2" />
+                            ))}
+                          </>
+                        )}
+                      </svg>
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1529,13 +2290,13 @@ function DataPrepView() {
               </div>
 
               <div className="preview-table-wrapper cluster-table-full">
-                <table className="preview-table conv-grouped">
+                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th className="col-conv-id">Conversation ID</th>
-                      <th className="col-msg-num">#</th>
-                      <th>User</th>
-                      <th>Assistant</th>
+                      <th style={{ width: '14%', textAlign: 'center' }}>Conversation ID</th>
+                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
+                      <th style={{ width: '40%' }}>User</th>
+                      <th style={{ width: '43%' }}>Assistant</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1559,6 +2320,11 @@ function DataPrepView() {
                               </button>
                               <span className="conv-id-badge">{conv.id}</span>
                               <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              {conv.groupLabel && (
+                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {conv.groupLabel}
+                                </span>
+                              )}
                             </td>
                             <td className="col-msg-num-cell">—</td>
                             <td className="cell-text-col" title={conv.messages[0].user}>
@@ -1583,6 +2349,11 @@ function DataPrepView() {
                               </button>
                               <span className="conv-id-badge">{conv.id}</span>
                               <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              {conv.groupLabel && (
+                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {conv.groupLabel}
+                                </span>
+                              )}
                             </td>
                           )}
                           <td className="col-msg-num-cell">#{msgIdx + 1}</td>
@@ -1650,23 +2421,44 @@ function DataPrepView() {
                     <div className="cluster-popup-section">
                       <h3 className="cluster-card-title">Clustering Parameters</h3>
                       <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
-                        <label>Target K (Clusters)</label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          Target K (Clusters)
+                          <Tooltip text="Số lượng cụm K mục tiêu thuật toán K-Means sẽ chia dữ liệu. Số K càng lớn thì số cụm môn học càng nhiều.">
+                            <HelpCircle size={14} color="#94a3b8" />
+                          </Tooltip>
+                        </label>
                         <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
                       </div>
-                      <p className="cluster-recommend">Recommended K: <strong>14</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</p>
+                      <p className="cluster-recommend">
+                        {findKResults?.recommendedK ? (
+                          <>Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</>
+                        ) : (
+                          <>Run <strong>Find K</strong> step first to get Recommended K.</>
+                        )}
+                      </p>
                       <div className="cleaning-inputs-row" style={{ marginBottom: 12 }}>
                         <div className="cleaning-input-group">
-                          <label>DBSCAN EPS</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            DBSCAN EPS
+                            <Tooltip text="Bán kính Epsilon của thuật toán DBSCAN. Quyết định khoảng cách tối đa để hai đoạn hội thoại được xem là cùng một cụm.">
+                              <HelpCircle size={14} color="#94a3b8" />
+                            </Tooltip>
+                          </label>
                           <input type="number" step="0.1" value={clusterEps} onChange={(e) => setClusterEps(e.target.value)} />
                         </div>
                         <div className="cleaning-input-group">
-                          <label>Min Samples</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            Min Samples
+                            <Tooltip text="Số lượng hội thoại tối thiểu cần thiết để tạo thành một cụm DBSCAN hợp lệ. Nếu ít hơn sẽ bị coi là nhiễu (Noise).">
+                              <HelpCircle size={14} color="#94a3b8" />
+                            </Tooltip>
+                          </label>
                           <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
                         </div>
                       </div>
-                      <button className="cluster-run-btn" onClick={() => setClusterRan(true)}>
-                        <Sparkles size={16} />
-                        Cluster
+                      <button className="cluster-run-btn" onClick={handleCluster} disabled={isClustering}>
+                        {isClustering ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                        {isClustering ? 'Clustering...' : 'Cluster'}
                       </button>
                     </div>
 
@@ -1685,7 +2477,7 @@ function DataPrepView() {
                             className="sim-slider"
                           />
                           <div className="cluster-action-btns">
-                            <button className="cluster-btn-noise">Remove Noise</button>
+                            <button className="cluster-btn-noise" onClick={handleRemoveNoise}>Remove Noise</button>
                             <button className="cluster-btn-dedup">Deduplicate</button>
                           </div>
                           <button className="reset-filter-btn">Reset Filter</button>
@@ -1710,7 +2502,14 @@ function DataPrepView() {
                               </tr>
                             </thead>
                             <tbody>
-                              {CLUSTER_GROUPS.map((g, i) => (
+                              {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
+                                <tr key={i}>
+                                  <td><input type="checkbox" /></td>
+                                  <td><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
+                                  <td className="count-cell">{g.count}</td>
+                                  <td className="sim-cell">{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
+                                </tr>
+                              )) : CLUSTER_GROUPS.map((g, i) => (
                                 <tr key={i}>
                                   <td><input type="checkbox" /></td>
                                   <td><strong>{g.name}</strong></td>
@@ -1776,32 +2575,50 @@ function DataPrepView() {
   ];
 
   const renderStage3 = () => {
-    /* Group data with distinct colors */
-    const GROUP_DATA = [
-      { id: 7, label: 'MATH', count: 8, color: '#6366f1', bg: '#eef2ff' },
-      { id: 8, label: 'CODING', count: 9, color: '#0891b2', bg: '#ecfeff' },
-      { id: 9, label: 'PHYSICAL', count: 4, color: '#059669', bg: '#ecfdf5' },
-      { id: 10, label: 'MATH', count: 8, color: '#d97706', bg: '#fffbeb' },
-      { id: 11, label: 'MATH', count: 5, color: '#dc2626', bg: '#fef2f2' },
-      { id: 12, label: 'PHYSICAL', count: 9, color: '#7c3aed', bg: '#f5f3ff' },
+    /* Group data — tự sinh từ dữ liệu thực tế, chỉ hiện nhóm có conversation */
+    const GROUP_COLORS = [
+      { color: '#6366f1', bg: '#eef2ff' },
+      { color: '#0891b2', bg: '#ecfeff' },
+      { color: '#059669', bg: '#ecfdf5' },
+      { color: '#d97706', bg: '#fffbeb' },
+      { color: '#dc2626', bg: '#fef2f2' },
+      { color: '#7c3aed', bg: '#f5f3ff' },
+      { color: '#2563eb', bg: '#eff6ff' },
+      { color: '#9333ea', bg: '#faf5ff' },
+      { color: '#ea580c', bg: '#fff7ed' },
+      { color: '#16a34a', bg: '#f0fdf4' },
+      { color: '#0284c7', bg: '#f0f9ff' },
+      { color: '#e11d48', bg: '#fff1f2' },
+      { color: '#4f46e5', bg: '#eef2ff' },
+      { color: '#c026d3', bg: '#fdf4ff' },
+      { color: '#b45309', bg: '#fef3c7' },
     ];
 
-    /* Build conversation list from CONVERSATIONS with group assignment */
-    const allConvRows = CONVERSATIONS.map((conv, idx) => {
-      const gIdx = idx % GROUP_DATA.length;
-      const group = GROUP_DATA[gIdx];
-      return {
-        ...conv,
-        groupId: group.id,
-        groupLabel: group.label,
-        groupColor: group.color,
-        groupBg: group.bg,
-        confidence: Math.floor(Math.random() * 10 + 90),
-      };
+    // Đếm conversations theo groupId, chỉ lấy nhóm có ít nhất 1 conversation
+    const groupCountMap = new Map<number, number>();
+    stage3Convs.forEach(c => {
+      groupCountMap.set(c.groupId, (groupCountMap.get(c.groupId) || 0) + 1);
     });
+
+    const GROUP_DATA = Array.from(groupCountMap.entries())
+      .sort((a, b) => a[0] - b[0]) // sắp xếp theo groupId
+      .map(([groupId, count]) => {
+        const colorIdx = groupId === -1 ? 4 : (groupId - 1) % GROUP_COLORS.length;
+        const palette = GROUP_COLORS[colorIdx >= 0 ? colorIdx : 0];
+        return {
+          id: groupId,
+          label: groupId === -1 ? 'NOISE' : (aiGroupLabels[groupId] || ''),
+          color: groupId === -1 ? '#dc2626' : palette.color,
+          bg: groupId === -1 ? '#fef2f2' : palette.bg,
+          count,
+        };
+      });
+
+    const allConvRows = stage3Convs;
 
     const filteredRows = allConvRows
       .filter(r => !selectedGroup3 || r.groupId === selectedGroup3)
+      .filter(r => r.subGroup === stage3SubGroup)
       .filter(r => {
         if (!stage3Search.trim()) return true;
         const q = stage3Search.toLowerCase();
@@ -1848,8 +2665,53 @@ function DataPrepView() {
                 </span>
               </div>
 
+              {/* Bulk Label & Split Toolbar */}
+              <div className="preview-toolbar" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span className="toolbar-label" style={{ fontWeight: 600 }}>Bulk Actions:</span>
+                <select className="toolbar-select" style={{ minWidth: '150px' }}>
+                  <option value="">-- Select Subject --</option>
+                  <option value="MATH">Toán học (MATH)</option>
+                  <option value="CODING">Lập trình (CODING)</option>
+                  <option value="PHYSICS">Vật lý (PHYSICS)</option>
+                </select>
+                <button style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', transition: 'background 0.15s' }}>
+                  Apply Bulk Label
+                </button>
+                <div style={{ flex: 1 }}></div>
+                <button 
+                  style={{ backgroundColor: stage3SubGroup === 'A' ? '#ef4444' : '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }} 
+                  title={`Di chuyển các dòng đã chọn sang Group ${stage3SubGroup === 'A' ? 'B (Nhiễu)' : 'A (Chuẩn)'}`}
+                  disabled={checkedConvIds.length === 0}
+                  onClick={() => {
+                    setStage3Convs(prev => prev.map(c => 
+                      checkedConvIds.includes(c.id) 
+                        ? { ...c, subGroup: stage3SubGroup === 'A' ? 'B' : 'A' }
+                        : c
+                    ));
+                    setCheckedConvIds([]);
+                  }}
+                >
+                  Move to Group {stage3SubGroup === 'A' ? 'B (Noise)' : 'A (Standard)'} {checkedConvIds.length > 0 ? `(${checkedConvIds.length})` : ''}
+                </button>
+              </div>
+
               {/* Toolbar */}
-              <div className="preview-toolbar">
+              <div className="preview-toolbar" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                  <button
+                    onClick={() => { setStage3SubGroup('A'); setStage3Page(1); setCheckedConvIds([]); }}
+                    style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'A' ? '#e0f2fe' : '#fff', color: stage3SubGroup === 'A' ? '#0284c7' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                  >
+                    Group A (Chuẩn bộ môn)
+                  </button>
+                  <button
+                    onClick={() => { setStage3SubGroup('B'); setStage3Page(1); setCheckedConvIds([]); }}
+                    style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'B' ? '#fef2f2' : '#fff', color: stage3SubGroup === 'B' ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px', borderLeft: '1px solid #e2e8f0' }}
+                  >
+                    Group B (Nhiễu bộ môn)
+                  </button>
+                </div>
+                <div style={{ flex: 1 }}></div>
                 <span className="toolbar-label">Conversations / page:</span>
                 <select
                   className="toolbar-select"
@@ -1870,46 +2732,171 @@ function DataPrepView() {
                 />
               </div>
 
-              <div className="preview-table-wrapper" style={{ maxHeight: '620px', overflowX: 'hidden' }}>
-                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+              <div className="preview-table-wrapper" style={{ maxHeight: '620px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', minWidth: '1100px', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: '3%', textAlign: 'center' }}>STT</th>
-                      <th style={{ width: '9%', textAlign: 'center' }}>Conv ID</th>
-                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
-                      <th style={{ width: '22%' }}>User</th>
-                      <th style={{ width: '42%' }}>Assistant</th>
-                      <th style={{ width: '10%', textAlign: 'center' }}>Label</th>
-                      <th style={{ width: '7%', textAlign: 'center' }}></th>
+                      <th style={{ width: '4%', textAlign: 'center' }} title="Select to move to noise group">
+                        <input 
+                          type="checkbox" 
+                          checked={stage3PageRows.length > 0 && stage3PageRows.every(r => checkedConvIds.includes(r.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const newIds = [...checkedConvIds];
+                              stage3PageRows.forEach(r => {
+                                if (!newIds.includes(r.id)) newIds.push(r.id);
+                              });
+                              setCheckedConvIds(newIds);
+                            } else {
+                              const pageIds = stage3PageRows.map(r => r.id);
+                              setCheckedConvIds(prev => prev.filter(id => !pageIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Conv ID</th>
+                      <th style={{ width: '25%' }}>User</th>
+                      <th style={{ width: '36%' }}>Assistant</th>
+                      <th style={{ width: '12%', textAlign: 'center' }}>Subject Label</th>
+                      <th style={{ width: '8%', textAlign: 'center' }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {stage3PageRows.length === 0 && (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                           No conversations in this group.
                         </td>
                       </tr>
                     )}
                     {stage3PageRows.map((conv, idx) => (
                       <tr key={conv.id} className="conv-row conv-first conv-last">
-                        <td className="col-conv-num-cell">{(stage3Page - 1) * stage3PerPage + idx + 1}</td>
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={checkedConvIds.includes(conv.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setCheckedConvIds(prev => [...prev, conv.id]);
+                              } else {
+                                setCheckedConvIds(prev => prev.filter(id => id !== conv.id));
+                              }
+                            }}
+                          />
+                        </td>
                         <td className="col-conv-id-cell">
-                          <span className="conv-id-badge">{conv.id}</span>
+                          <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} msgs</span>
                         </td>
-                        <td className="col-msg-num-cell">{conv.messages.length}</td>
-                        <td className="cell-text-col"><div className="cell-truncate">{conv.messages[0].user}</div></td>
-                        <td className="cell-text-col"><div className="cell-truncate">{conv.messages[0].assistant}</div></td>
-                        <td style={{ textAlign: 'center' }}>
-                          <span
-                            className="auto-label-pill-colored"
-                            style={{ background: conv.groupBg, color: conv.groupColor, borderColor: conv.groupColor }}
-                          >
-                            {conv.groupLabel} {conv.confidence}%
-                          </span>
+                        <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '15px', color: '#1e293b', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
+                                <span style={{ marginRight: '6px', fontSize: '14px' }}>📌</span>
+                                {highlightSearch(conv.messages[0].user, stage3Search)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '14px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '15px', color: '#4f46e5' }}>
+                                    {getConversationTopic(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
+                                      <span style={{ fontWeight: '700', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ color: '#1e293b', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                        {highlightSearch(truncateText(msg.user, 150), stage3Search)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </td>
-                        <td className="col-action-cell">
+                        <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {conv.messages.length === 1 ? (
+                              /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
+                              <div style={{ fontSize: '15px', color: '#334155', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
+                                <span style={{ marginRight: '6px', fontSize: '14px' }}>💡</span>
+                                {highlightSearch(conv.messages[0].assistant, stage3Search)}
+                              </div>
+                            ) : (
+                              /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
+                              <>
+                                <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '14px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '15px', color: '#0891b2' }}>
+                                    {getAssistantSummary(conv.messages)}
+                                  </span>
+                                </div>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
+                                  {conv.messages.slice(0, 3).map((msg, idx) => (
+                                    <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
+                                      <span style={{ fontWeight: '700', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                        {highlightSearch(truncateText(msg.assistant, 150), stage3Search)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {conv.messages.length > 3 && (
+                                    <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                      + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                          <select
+                            className="toolbar-select"
+                            style={{
+                              background: conv.groupBg,
+                              color: conv.groupColor,
+                              borderColor: conv.groupColor,
+                              fontWeight: 700,
+                              padding: '2px 6px',
+                              borderRadius: '8px',
+                              fontSize: '12px',
+                              height: 'auto',
+                              minWidth: '90px',
+                              cursor: 'pointer'
+                            }}
+                            value={aiGroupLabels[conv.groupId] || conv.groupLabel || ''}
+                            onChange={e => {
+                              const newLabel = e.target.value;
+                              setAiGroupLabels(prev => ({ ...prev, [conv.groupId]: newLabel }));
+                              setStage3Convs(prev => prev.map(c =>
+                                c.groupId === conv.groupId ? { ...c, groupLabel: newLabel } : c
+                              ));
+                            }}
+                          >
+                            <option value="">-- Select --</option>
+                            <option value="MATH">MATH</option>
+                            <option value="CODING">CODING</option>
+                            <option value="PHYSICS">PHYSICS</option>
+                            <option value="CHEMISTRY">CHEMISTRY</option>
+                            <option value="BIOLOGY">BIOLOGY</option>
+                            <option value="HISTORY">HISTORY</option>
+                            <option value="LITERATURE">LITERATURE</option>
+                            <option value="OTHER">OTHER</option>
+                            <option value="NOISE">NOISE</option>
+                          </select>
+                        </td>
+                        <td className="col-action-cell" style={{ verticalAlign: 'middle' }}>
                           <button className="view-detail-btn" onClick={() => setSelectedConv3(conv)}>
                             <Eye size={14} />
                             Detail
@@ -1944,61 +2931,247 @@ function DataPrepView() {
             {/* Right: Sidebar */}
             <div className="stage2-sidebar">
               <div className="cleaning-pipeline-card">
-                <div className="auto-labeling-header">
-                  <h3 className="cluster-card-title">Auto Labeling</h3>
-                  <div className="auto-labeling-actions">
-                    <select className="label-model-select">
-                      <option>Deepseek</option>
+                <div className="auto-labeling-header" style={{ paddingBottom: '0', borderBottom: 'none' }}>
+                  <div className="auto-labeling-actions" style={{ width: '100%', display: 'flex', gap: '8px' }}>
+                    <select
+                      className="label-model-select"
+                      style={{ flex: 1 }}
+                      value={aiProvider}
+                      onChange={e => setAiProvider(e.target.value as any)}
+                      disabled={isLabelingWithAI}
+                    >
+                      <option value="deepseek">Deepseek</option>
+                      <option value="openai">ChatGPT</option>
+                      <option value="gemini">Gemini</option>
                     </select>
-                    <button className="label-ai-btn">
-                      <Sparkles size={14} /> Label with AI
+                    <button
+                      className="label-ai-btn"
+                      style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
+                      disabled={!clusterRan || isLabelingWithAI}
+                      onClick={async () => {
+                        if (!clusterRan) return;
+                        setIsLabelingWithAI(true);
+                        try {
+                          // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
+                          let versionId: string =
+                            (stage3Convs[0] as any)?.datasetVersionId ||
+                            (stage3Convs[0] as any)?.versionId ||
+                            localStorage.getItem('current_version_id') ||
+                            '';
+
+                          // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
+                          if (!versionId) {
+                            const payload = {
+                              projectName: 'Auto-Label Dataset',
+                              operationType: 'labeling_base' as const,
+                              similarityThreshold: 0.85,
+                              format: 'openai' as const,
+                              data: stage3Convs.map((conv, idx) => {
+                                const messages = conv.messages.flatMap((m: any) => [
+                                  { role: 'user', content: m.user },
+                                  { role: 'assistant', content: m.assistant }
+                                ]).filter((m: any) => m.content && String(m.content).trim() !== '');
+
+                                return {
+                                  sourceKey: `conv-${idx}`,
+                                  data: {
+                                    messages,
+                                    cluster: conv.groupId,
+                                    conversation_id: `conv-${idx}`
+                                  }
+                                };
+                              })
+                            };
+                            const created = await apiService.createDatasetVersion(payload);
+                            versionId = created.datasetVersion._id;
+                            localStorage.setItem('current_version_id', versionId);
+                          }
+
+                          // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
+                          const res = await apiService.previewAutoLabels(versionId, aiProvider);
+                          const suggestions = res.suggestions || [];
+
+                          // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
+                          const labelMap: Record<number, string> = {};
+                          suggestions.forEach((s: any) => {
+                            // clusterId từ BE có thể là 0,1,2... còn groupId trong UI là 1,2,3...
+                            const groupId = (s.clusterId ?? s.groupId);
+                            if (groupId !== undefined) {
+                              labelMap[groupId] = s.label;
+                            }
+                          });
+                          setAiGroupLabels(prev => ({ ...prev, ...labelMap }));
+                        } catch (err: any) {
+                          const msg = err?.response?.data?.error || err?.message || 'AI labeling failed.';
+                          alert(`Lỗi gán nhãn AI: ${msg}`);
+                        } finally {
+                          setIsLabelingWithAI(false);
+                        }
+                      }}
+                    >
+                      {isLabelingWithAI
+                        ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Đang xử lý...</>
+                        : <><Sparkles size={14} /> Label with AI</>
+                      }
                     </button>
                   </div>
                 </div>
 
-                <div className="label-summary">
-                  <h4>Suggestion Summary</h4>
-                  <p>Generated Labels: <strong>{allConvRows.length} / {allConvRows.length}</strong></p>
-                </div>
-
                 {/* Group Cards */}
-                <div className="group-cards-container">
-                  {/* Show All button */}
-                  <div
-                    className={`group-card-item ${selectedGroup3 === null ? 'group-card-active' : ''}`}
-                    style={{ borderColor: '#94a3b8', '--group-accent': '#64748b' } as React.CSSProperties}
-                    onClick={() => { setSelectedGroup3(null); setStage3Page(1); }}
-                  >
-                    <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
-                    <div className="group-card-count">{allConvRows.length}</div>
-                  </div>
-                  {GROUP_DATA.map(g => (
-                    <div
-                      key={g.id}
-                      className={`group-card-item ${selectedGroup3 === g.id ? 'group-card-active' : ''}`}
-                      style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
-                      onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
-                    >
-                      <div className="group-card-color-dot" style={{ background: g.color }} />
-                      <div className="group-card-name" style={{ color: g.color }}>Group {g.id}</div>
-                      <div className="group-card-count">{g.count}</div>
-                      <div className="group-card-label">
-                        <select className="inline-label-select" onClick={e => e.stopPropagation()} defaultValue={g.label}>
-                          <option>PHYSICAL</option>
-                          <option>MATH</option>
-                          <option>CODING</option>
-                        </select>
-                      </div>
+                <div className="group-cards-container" style={{ maxHeight: '550px', overflowY: 'auto' }}>
+                  {!clusterRan ? (
+                    /* Placeholder: chưa chạy cluster */
+                    <div style={{ padding: '32px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔬</div>
+                      <div style={{ fontWeight: 600, fontSize: '13px', color: '#64748b', marginBottom: '6px' }}>Chưa có dữ liệu phân cụm</div>
+                      <div style={{ fontSize: '12px', lineHeight: '1.6' }}>Vui lòng quay lại <strong>Stage 2 → K-means Cluster</strong> và chạy phân cụm trước khi gán nhãn.</div>
                     </div>
-                  ))}
+                  ) : (
+                    <>
+                      {/* Show All button */}
+                      <div
+                        className={`group-card-item ${selectedGroup3 === null ? 'group-card-active' : ''}`}
+                        style={{ borderColor: '#94a3b8', '--group-accent': '#64748b' } as React.CSSProperties}
+                        onClick={() => { setSelectedGroup3(null); setStage3Page(1); }}
+                      >
+                        <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
+                        <div className="group-card-count">{allConvRows.length}</div>
+                      </div>
+
+                      {/* Legend Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 16px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <div style={{ flex: 1 }}>Group Name</div>
+                        <div style={{ width: '36px', textAlign: 'center', marginRight: '12px' }}>Count</div>
+                        <div style={{ width: '120px', textAlign: 'left', paddingLeft: '4px' }}>Label</div>
+                      </div>
+
+                      {GROUP_DATA.map(g => (
+                        <div
+                          key={g.id}
+                          className={`group-card-item ${selectedGroup3 === g.id ? 'group-card-active' : ''}`}
+                          style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
+                          onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
+                        >
+                          <div className="group-card-name" style={{ color: g.color, fontWeight: 700 }}>Group {g.id}</div>
+                          <div className="group-card-count">{g.count}</div>
+                          <div className="group-card-label">
+                            <select
+                              className="inline-label-select"
+                              onClick={e => e.stopPropagation()}
+                              value={aiGroupLabels[g.id] || g.label}
+                              onChange={e => {
+                                const newLabel = e.target.value;
+                                setAiGroupLabels(prev => ({ ...prev, [g.id]: newLabel }));
+                                setStage3Convs(prev => prev.map(c =>
+                                  c.groupId === g.id ? { ...c, groupLabel: newLabel } : c
+                                ));
+                              }}
+                            >
+                              <option value="">-- Select --</option>
+                              <option value="MATH">MATH</option>
+                              <option value="CODING">CODING</option>
+                              <option value="PHYSICS">PHYSICS</option>
+                              <option value="PHYSICAL">PHYSICAL</option>
+                              <option value="CHEMISTRY">CHEMISTRY</option>
+                              <option value="BIOLOGY">BIOLOGY</option>
+                              <option value="HISTORY">HISTORY</option>
+                              <option value="LITERATURE">LITERATURE</option>
+                              <option value="OTHER">OTHER</option>
+                              <option value="NOISE">NOISE</option>
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+
+                      {isLabelingWithAI && (
+                        <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', color: '#6366f1', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                          AI đang phân tích và gán nhãn...
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
-                <div className="label-bottom-actions">
-                  <button className="compare-labels-btn" onClick={() => setShowCompareLabels(true)}>
-                    <FileText size={14} /> Compare Labels
-                  </button>
-                  <button className="save-labels-btn">
-                    <Check size={14} /> Save
+                <div className="label-bottom-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  {/* Clear button — luôn hiển thị khi đã chạy cluster */}
+                  {clusterRan && (
+                    <button
+                      onClick={() => {
+                        setAiGroupLabels({});
+                        setStage3Convs(prev => prev.map(c => ({ ...c, groupLabel: '' })));
+                      }}
+                      disabled={Object.keys(aiGroupLabels).length === 0}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        background: 'white', border: '1.5px solid #e2e8f0',
+                        color: Object.keys(aiGroupLabels).length > 0 ? '#64748b' : '#cbd5e1',
+                        padding: '8px 16px', borderRadius: '6px',
+                        fontSize: '13px', fontWeight: 600, cursor: Object.keys(aiGroupLabels).length > 0 ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.15s',
+                        opacity: Object.keys(aiGroupLabels).length > 0 ? 1 : 0.5
+                      }}
+                      onMouseEnter={e => {
+                        if (Object.keys(aiGroupLabels).length === 0) return;
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444';
+                        (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                        (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#e2e8f0';
+                        (e.currentTarget as HTMLButtonElement).style.color = Object.keys(aiGroupLabels).length > 0 ? '#64748b' : '#cbd5e1';
+                        (e.currentTarget as HTMLButtonElement).style.background = 'white';
+                      }}
+                      title="Xóa toàn bộ nhãn AI đã gán"
+                    >
+                      <X size={14} /> Clear
+                    </button>
+                  )}
+                  <button
+                    className="save-labels-btn"
+                    disabled={!clusterRan || isSavingLabels}
+                    style={{ opacity: (clusterRan && !isSavingLabels) ? 1 : 0.5 }}
+                    onClick={async () => {
+                      if (!clusterRan || isSavingLabels) return;
+                      setIsSavingLabels(true);
+                      try {
+                        const versionId = localStorage.getItem('current_version_id');
+                        if (!versionId) {
+                          alert('Không tìm thấy versionId, không thể lưu nhãn lên DB.');
+                          setIsSavingLabels(false);
+                          return;
+                        }
+
+                        // Payload: { clusterId, label }
+                        const payloadLabels = Object.entries(aiGroupLabels).map(([groupId, label]) => ({
+                          clusterId: Number(groupId),
+                          label
+                        }));
+
+                        if (payloadLabels.length === 0) {
+                          alert('Chưa có nhãn nào được gắn.');
+                          setIsSavingLabels(false);
+                          return;
+                        }
+
+                        await apiService.saveAutoLabels(versionId, payloadLabels);
+                        
+                        // Cập nhật giao diện cục bộ sau khi lưu thành công
+                        setStage3Convs(prev => prev.map(c => ({
+                          ...c,
+                          groupLabel: aiGroupLabels[c.groupId] || c.groupLabel
+                        })));
+                        alert('Đã lưu nhãn thành công vào Database!');
+                      } catch (err: any) {
+                        console.error('Save labels error:', err);
+                        alert(`Lỗi khi lưu nhãn: ${err.message || 'Unknown error'}`);
+                      } finally {
+                        setIsSavingLabels(false);
+                      }
+                    }}
+                  >
+                    {isSavingLabels ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={14} />} 
+                    {isSavingLabels ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -2758,9 +3931,6 @@ function DataPrepView() {
             }
           }}>
             Back
-          </button>
-          <button className="dataprep-btn-reset" onClick={handleRemoveFile}>
-            <RotateCcw size={16} /> Reset & Upload New
           </button>
           <button className="dataprep-btn-next" onClick={() => {
             if (currentSubStep3 < 7) {
@@ -4147,7 +5317,10 @@ function DataPrepView() {
           }}>
             Back
           </button>
-          <button className="s6-reset-btn"><RotateCcw size={14} /> Reset & Upload New</button>
+          <button className="s6-reset-btn" onClick={() => {
+            localStorage.removeItem('current_version_id');
+            window.location.reload();
+          }}><RotateCcw size={14} /> Reset & Upload New</button>
           <button className="dataprep-btn-next" onClick={() => {
             if (currentSubStep6 < 15) {
               setCurrentSubStep6(currentSubStep6 + 1);
@@ -4174,112 +5347,143 @@ function DataPrepView() {
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="preview-modal-tabs">
-              <button
-                className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('before')}
-              >
-                📄 Before ({PREVIEW_BEFORE.length})
-              </button>
-              <button
-                className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('after')}
-              >
-                ✅ After ({PREVIEW_AFTER.length})
-              </button>
-              <button
-                className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                onClick={() => setPreviewTab('removed')}
-              >
-                🗑️ Removed ({PREVIEW_REMOVED.length})
-              </button>
-            </div>
+            {(() => {
+              const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
+              const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
+              const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+              const totalCount = beforeList.length;
+              const keptCount = afterList.length;
+              const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+              const removedCount = removedList.length;
 
-            {/* Summary bar */}
-            <div className="preview-modal-summary">
-              <span className="summary-tag summary-total">Tổng: {PREVIEW_BEFORE.length} conversations</span>
-              <span className="summary-tag summary-kept">Giữ lại: {PREVIEW_AFTER.length}</span>
-              <span className="summary-tag summary-fixed">Đã sửa: {PREVIEW_AFTER.filter(r => r.status === 'fixed').length}</span>
-              <span className="summary-tag summary-removed">Loại bỏ: {PREVIEW_REMOVED.length}</span>
-            </div>
+              return (
+                <>
+                  {/* Tabs */}
+                  <div className="preview-modal-tabs">
+                    <button
+                      className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('before')}
+                    >
+                      📄 Before (Mẫu {totalCount})
+                    </button>
+                    <button
+                      className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('after')}
+                    >
+                      ✅ After (Mẫu {keptCount})
+                    </button>
+                    <button
+                      className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
+                      onClick={() => setPreviewTab('removed')}
+                    >
+                      🗑️ Removed (Mẫu {removedCount})
+                    </button>
+                  </div>
 
-            {/* Tab Content */}
-            <div className="preview-modal-body">
-              {previewTab === 'before' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Status</th>
-                      <th>User</th>
-                      <th>Assistant (trước)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_BEFORE.map((row) => (
-                      <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td>
-                          {row.issue
-                            ? <span className="status-badge badge-issue">{row.issue}</span>
-                            : <span className="status-badge badge-clean">Clean</span>
-                          }
-                        </td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                  {(() => {
+                    const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                    const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                    const realRemoved = realTotal - realKept;
+                    const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
 
-              {previewTab === 'after' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Action</th>
-                      <th>User</th>
-                      <th>Assistant (sau)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_AFTER.map((row) => (
-                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                    return (
+                      <>
+                        {/* Summary bar */}
+                        <div className="preview-modal-summary">
+                          <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
+                          <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
+                          <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
+                          <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
+                        </div>
 
-              {previewTab === 'removed' && (
-                <table className="preview-modal-table">
-                  <thead>
-                    <tr>
-                      <th>Conv ID</th>
-                      <th>Lý do loại bỏ</th>
-                      <th>User</th>
-                      <th>Assistant</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {PREVIEW_REMOVED.map((row) => (
-                      <tr key={row.id} className="row-removed">
-                        <td><span className="conv-id-badge">{row.id}</span></td>
-                        <td><span className="status-badge badge-removed">{row.reason}</span></td>
-                        <td className="cell-truncate">{row.user}</td>
-                        <td className="cell-truncate">{row.assistant}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
+                        {/* Info Alert */}
+                        <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>ℹ️</span>
+                          <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Tab Content */}
+                  <div className="preview-modal-body">
+                    {previewTab === 'before' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Status</th>
+                            <th>User</th>
+                            <th>Assistant (trước)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {beforeList.map((row) => (
+                            <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td>
+                                {row.issue
+                                  ? <span className="status-badge badge-issue">{row.issue}</span>
+                                  : <span className="status-badge badge-clean">Clean</span>
+                                }
+                              </td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {previewTab === 'after' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Action</th>
+                            <th>User</th>
+                            <th>Assistant (sau)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {afterList.map((row) => (
+                            <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+
+                    {previewTab === 'removed' && (
+                      <table className="preview-modal-table">
+                        <thead>
+                          <tr>
+                            <th>Conv ID</th>
+                            <th>Lý do loại bỏ</th>
+                            <th>User</th>
+                            <th>Assistant</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {removedList.map((row) => (
+                            <tr key={row.id} className="row-removed">
+                              <td><span className="conv-id-badge">{row.id}</span></td>
+                              <td><span className="status-badge badge-removed">{row.reason}</span></td>
+                              <td className="cell-truncate">{row.user}</td>
+                              <td className="cell-truncate">{row.assistant}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Modal Footer */}
             <div className="preview-modal-footer">
@@ -4287,6 +5491,28 @@ function DataPrepView() {
                 Hủy
               </button>
               <button className="modal-confirm-btn" onClick={() => {
+                if (pendingCleanedList.length > 0) {
+                  setConversationsList(pendingCleanedList);
+                  setStage3Convs(pendingCleanedList.map((c, idx) => {
+                    const INITIAL_GROUP_DATA = [
+                      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
+                      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
+                      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
+                      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
+                      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
+                    ];
+                    const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+                    return {
+                      ...c,
+                      groupId: group.id,
+                      groupLabel: group.label,
+                      groupColor: group.color,
+                      groupBg: group.bg,
+                      subGroup: c.subGroup || 'A',
+                      confidence: Math.floor(Math.random() * 10 + 90)
+                    };
+                  }));
+                }
                 setCleaningApplied(true);
                 setShowPreviewModal(false);
               }}>

@@ -16,6 +16,9 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
+# Set port environment variable
+ENV PORT=3000
+
 # Mở cổng 3000
 EXPOSE 3000
 

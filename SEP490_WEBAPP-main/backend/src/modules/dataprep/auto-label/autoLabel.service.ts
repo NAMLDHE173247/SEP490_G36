@@ -4,7 +4,7 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { insertAssignments, removeLabelsByQuery } from '../../../services/labelAssignmentService';
 import { ILlmProvider } from '../../../services/providers/ILlmProvider';
 
-export const SUBJECT_LABELS = ['MATH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'OTHER'] as const;
+export const SUBJECT_LABELS = ['MATH', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'CODING', 'OTHER'] as const;
 export type SubjectLabel = typeof SUBJECT_LABELS[number];
 
 type ClusterSample = {
@@ -32,10 +32,12 @@ function isSubjectLabel(value: string): value is SubjectLabel {
 function normalizeSubjectLabel(value: unknown): SubjectLabel {
   const raw = String(value || '').trim().toUpperCase();
   if (raw === 'MATH') return 'MATH';
-  if (raw === 'PHYSICAL') return 'PHYSICAL';
+  if (raw === 'PHYSICAL' || raw === 'PHYSICS') return 'PHYSICS';
   if (raw === 'CHEMISTRY') return 'CHEMISTRY';
-  if (raw === 'LITERATURE') return 'LITERATURE';
   if (raw === 'BIOLOGY') return 'BIOLOGY';
+  if (raw === 'HISTORY') return 'HISTORY';
+  if (raw === 'LITERATURE') return 'LITERATURE';
+  if (raw === 'CODING') return 'CODING';
   if (raw === 'OTHER') return 'OTHER';
   return isSubjectLabel(raw) ? raw : 'OTHER';
 }
@@ -89,10 +91,12 @@ function buildPrompt(clusters: ClusterPayload[]) {
 
 Hãy gán đúng MỘT nhãn môn học cho từng cụm dữ liệu. Các nhãn hợp lệ:
 - MATH: toán học, số học, đại số, hình học, xác suất, thống kê.
-- PHYSICAL: vật lý, cơ học, điện, quang, nhiệt, lực, năng lượng.
+- PHYSICS: vật lý, cơ học, điện, quang, nhiệt, lực, năng lượng.
 - CHEMISTRY: hóa học, chất, phản ứng, phương trình hóa học, mol, nguyên tử.
-- LITERATURE: ngữ văn, đọc hiểu, viết văn, tiếng Việt, phân tích tác phẩm.
 - BIOLOGY: sinh học, cơ thể sống, tế bào, di truyền, sinh thái.
+- HISTORY: lịch sử, sự kiện, chiến tranh, triều đại, văn hóa.
+- LITERATURE: ngữ văn, đọc hiểu, viết văn, tiếng Việt, phân tích tác phẩm.
+- CODING: lập trình, thuật toán, công nghệ thông tin, cấu trúc dữ liệu.
 - OTHER: không thuộc một môn cụ thể, xã giao, lỗi hệ thống, dữ liệu nhiễu, hoặc không đủ thông tin.
 
 DỮ LIỆU CỤM:
@@ -101,7 +105,7 @@ ${JSON.stringify(payload)}
 Yêu cầu output:
 - CHỈ trả về JSON array hợp lệ.
 - Mỗi object bắt buộc có: clusterId, label.
-- label phải là một trong: MATH, PHYSICAL, CHEMISTRY, LITERATURE, BIOLOGY, OTHER.
+- label phải là một trong: MATH, PHYSICS, CHEMISTRY, BIOLOGY, HISTORY, LITERATURE, CODING, OTHER.
 - Không thêm markdown, không giải thích ngoài JSON.
 
 Định dạng:

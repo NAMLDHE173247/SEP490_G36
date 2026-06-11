@@ -4,7 +4,7 @@ import {
   BarChart2, AlertTriangle, ChevronRight, Shield, X, Send,
   FileText, MessageSquare, RefreshCw, Calendar, Tag
 } from 'lucide-react';
-import '../taskdetail.css';
+import '../styles/taskdetail.css';
 
 /* ── Demo data ── */
 const TASK_DATA = {

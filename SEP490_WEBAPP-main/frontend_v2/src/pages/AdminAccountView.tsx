@@ -7,7 +7,7 @@ import {
   Users, UserPlus, AlertTriangle, RefreshCw, ShieldAlert
 } from 'lucide-react';
 import { apiService } from '../services/api';
-import '../admin.css';
+import '../styles/admin.css';
 
 const formatDateTime = (dateStr: any) => {
   if (!dateStr || dateStr === '-') return '-';
