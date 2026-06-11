@@ -158,9 +158,24 @@
 .runs-table {
   width: 100%;
   border-collapse: collapse;
+  display: table !important;
+  table-layout: auto !important;
+}
+
+.runs-table thead {
+  display: table-header-group !important;
+}
+
+.runs-table tbody {
+  display: table-row-group !important;
+}
+
+.runs-table tr {
+  display: table-row !important;
 }
 
 .runs-table th {
+  display: table-cell !important;
   text-align: left;
   padding: 14px 20px;
   font-size: 13px;
@@ -184,6 +199,7 @@
 }
 
 .runs-table td {
+  display: table-cell !important;
   padding: 16px 20px;
   font-size: 14px;
   color: var(--text-main);
@@ -192,6 +208,7 @@
 }
 
 .runs-table .checkbox-cell {
+  display: table-cell !important;
   width: 48px;
   text-align: center;
   padding-right: 0;

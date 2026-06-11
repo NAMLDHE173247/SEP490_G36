@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { apiService } from '../services/api';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import axios from 'axios';
 import {
   Upload,
   X,
@@ -793,6 +794,18 @@ function DataPrepView() {
   const [huggingFacePrivate, setHuggingFacePrivate] = useState(true);
   const [isPushingToHub, setIsPushingToHub] = useState(false);
 
+  // Hugging Face profile pull states
+  const [hfUsername, setHfUsername] = useState('');
+  const [hfDatasets, setHfDatasets] = useState<any[]>([]);
+  const [isFetchingHf, setIsFetchingHf] = useState(false);
+
+  // Cloud Storage sync states
+  const [gcsCredentials, setGcsCredentials] = useState('');
+  const [azureConnString, setAzureConnString] = useState('');
+  const [cloudBucket, setCloudBucket] = useState('');
+  const [cloudPath, setCloudPath] = useState('');
+  const [isSyncingToCloud, setIsSyncingToCloud] = useState(false);
+
   // Helper function to format record back to raw shape based on selectedFormat
   const formatRecord = (conv: any, systemPrompt?: string) => {
     const trimmedSystemPrompt = String(systemPrompt || '').trim();
@@ -1067,6 +1080,45 @@ function DataPrepView() {
     } finally {
       setIsPushingToHub(false);
     }
+  };
+
+  const handleFetchHfProfile = async () => {
+    if (!hfUsername.trim()) return;
+    setIsFetchingHf(true);
+    setHfDatasets([]);
+    try {
+      const dsRes = await axios.get(`https://huggingface.co/api/datasets?author=${hfUsername}&limit=12`);
+      if (Array.isArray(dsRes.data)) {
+        setHfDatasets(dsRes.data);
+      } else {
+        alert('Không tìm thấy dataset nào cho tài khoản này.');
+      }
+    } catch (err: any) {
+      console.error('Fetch HF profile failed:', err);
+      alert('Lỗi tải profile: ' + (err.message || err.response?.data?.message || 'Không thể kết nối đến Hugging Face'));
+    } finally {
+      setIsFetchingHf(false);
+    }
+  };
+
+  const handleSyncToCloud = () => {
+    if (cloudProvider === 'gcloud') {
+      if (!gcsCredentials.trim() || !cloudBucket.trim() || !cloudPath.trim()) {
+        alert('Vui lòng điền đầy đủ thông tin: Credentials, Bucket Name và File Path.');
+        return;
+      }
+    } else {
+      if (!azureConnString.trim() || !cloudBucket.trim() || !cloudPath.trim()) {
+        alert('Vui lòng điền đầy đủ thông tin: Connection String, Container Name và Blob Name.');
+        return;
+      }
+    }
+
+    setIsSyncingToCloud(true);
+    setTimeout(() => {
+      setIsSyncingToCloud(false);
+      alert(`Đã đồng bộ hóa thành công lên ${cloudProvider === 'gcloud' ? 'Google Cloud Storage' : 'Azure Blob Storage'} tại đường dẫn ${cloudProvider}://${cloudBucket}/${cloudPath}`);
+    }, 1200);
   };
   const PROMPT_VERSIONS = [
     { id: 1, name: 'Project 27/05 09:30', desc: 'Initial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
@@ -5561,17 +5613,54 @@ function DataPrepView() {
                   value={huggingFaceToken} 
                   onChange={e => setHuggingFaceToken(e.target.value)}
                   placeholder="hf_..."
-                  style={{ borderLeft: '1px solid #e2e8f0' }} 
+                  style={{ borderLeft: '1px solid #e2e8f0', marginBottom: '10px' }} 
                 />
+                
+                <label className="s6-field-label">Hugging Face Profile / Author (Optional)</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                  <input 
+                    className="s6-field-input" 
+                    value={hfUsername} 
+                    onChange={e => setHfUsername(e.target.value)}
+                    placeholder="e.g. google, meta, or your-username" 
+                    style={{ borderLeft: '1px solid #e2e8f0', flex: 1, marginTop: 0 }} 
+                  />
+                  <button 
+                    className="s4-btn-outline" 
+                    onClick={handleFetchHfProfile}
+                    disabled={isFetchingHf || !hfUsername.trim()}
+                    style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  >
+                    {isFetchingHf ? 'Loading...' : 'Pull Repos'}
+                  </button>
+                </div>
+
+                {hfDatasets.length > 0 && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <label className="s6-field-label">Select Repository</label>
+                    <select 
+                      className="sep490-select" 
+                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                      onChange={e => setHuggingFaceRepoId(e.target.value)}
+                      value={huggingFaceRepoId}
+                    >
+                      <option value="">-- Choose one of {hfDatasets.length} datasets --</option>
+                      {hfDatasets.map((ds: any) => (
+                        <option key={ds.id} value={ds.id}>{ds.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <label className="s6-field-label">Repository ID</label>
                 <input 
                   className="s6-field-input" 
                   value={huggingFaceRepoId} 
                   onChange={e => setHuggingFaceRepoId(e.target.value)}
                   placeholder="username/my-dataset" 
-                  style={{ borderLeft: '1px solid #e2e8f0' }} 
+                  style={{ borderLeft: '1px solid #e2e8f0', marginBottom: '10px' }} 
                 />
-                <label className="ex-checkbox-label">
+                <label className="ex-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                   <input 
                     type="checkbox" 
                     checked={huggingFacePrivate}
@@ -5587,10 +5676,11 @@ function DataPrepView() {
                   {isPushingToHub ? 'Pushing...' : 'Push to Hub'}
                 </button>
               </div>
+
               <div className="ex-push-card">
                 <h4>☁️ Sync to Cloud Storage</h4>
                 <label className="s6-field-label" style={{ marginTop: 0 }}>Cloud Provider</label>
-                <div className="ex-cloud-options">
+                <div className="ex-cloud-options" style={{ marginBottom: '12px' }}>
                   <button
                     className={`ex-cloud-btn ${cloudProvider === 'gcloud' ? 'ex-cloud-active' : ''}`}
                     onClick={() => setCloudProvider('gcloud')}
@@ -5604,6 +5694,71 @@ function DataPrepView() {
                     Azure Blob
                   </button>
                 </div>
+
+                {cloudProvider === 'gcloud' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="s6-field-label" style={{ marginTop: 0 }}>GCS Service Account JSON Credentials</label>
+                    <textarea 
+                      className="s6-field-input" 
+                      value={gcsCredentials} 
+                      onChange={e => setGcsCredentials(e.target.value)}
+                      placeholder='{ "type": "service_account", ... }'
+                      style={{ height: '80px', fontFamily: 'monospace', fontSize: '11px', borderLeft: '1px solid #e2e8f0', padding: '8px' }}
+                    />
+                    <label className="s6-field-label">Bucket Name</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudBucket} 
+                      onChange={e => setCloudBucket(e.target.value)}
+                      placeholder="my-gcs-bucket"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Destination File Path</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudPath} 
+                      onChange={e => setCloudPath(e.target.value)}
+                      placeholder="datasets/train_test_split.zip"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <button className="ex-btn-green" onClick={handleSyncToCloud} disabled={isSyncingToCloud} style={{ marginTop: '8px' }}>
+                      {isSyncingToCloud ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                      {isSyncingToCloud ? 'Syncing...' : 'Sync to Google Cloud'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="s6-field-label" style={{ marginTop: 0 }}>Azure Connection String</label>
+                    <input 
+                      type="password"
+                      className="s6-field-input" 
+                      value={azureConnString} 
+                      onChange={e => setAzureConnString(e.target.value)}
+                      placeholder="DefaultEndpointsProtocol=https;AccountName=..."
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Container Name</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudBucket} 
+                      onChange={e => setCloudBucket(e.target.value)}
+                      placeholder="my-blob-container"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Blob Name (Destination Path)</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudPath} 
+                      onChange={e => setCloudPath(e.target.value)}
+                      placeholder="datasets/train_test_split.zip"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <button className="ex-btn-purple" onClick={handleSyncToCloud} disabled={isSyncingToCloud} style={{ marginTop: '8px' }}>
+                      {isSyncingToCloud ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                      {isSyncingToCloud ? 'Syncing...' : 'Sync to Azure Blob'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -83,6 +83,250 @@ interface TrainingHistoryViewProps {
 
 const LINE_COLORS = ['#8b5cf6', '#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4'];
 
+const MOCK_HISTORIES: TrainingHistoryItem[] = [
+  {
+    _id: "mock_run_1",
+    jobId: "job-mock-math-socratic-001",
+    projectName: "socratic-math-tutor-v1",
+    baseModel: "Qwen/Qwen3-0.6B",
+    datasetSource: "local",
+    datasetName: "math_socratic_dataset.json",
+    columnMapping: "instruction",
+    systemPrompt: "Bạn là một gia sư dạy toán theo phương pháp Socratic. Thay vì đưa ra câu trả lời trực tiếp, hãy đặt câu hỏi gợi ý để học sinh tự tìm ra đáp án.",
+    systemPromptVersion: "Math-Socratic-V1",
+    parameters: {
+      batchSize: 2,
+      epochs: 3,
+      learningRate: 0.00003,
+      blockSize: 512,
+      modelMaxLength: 1024,
+      r: 8,
+      lora_alpha: 8,
+      lora_dropout: 0.05,
+      random_state: 3407,
+      gradient_accumulation_steps: 4,
+      warmup_steps: 5,
+      weight_decay: 0.01,
+      seed: 3407,
+      early_stopping_loss: 0.05,
+      early_stopping_patience: 3,
+      optim: "adamw_8bit",
+      lr_scheduler_type: "linear"
+    },
+    pushToHub: true,
+    hfRepoId: "socratic-ai/qwen-0.6b-math-tutor",
+    status: "COMPLETED",
+    finalMetrics: {
+      loss: 0.1245,
+      eval_loss: 0.1582,
+      accuracy: 96.8,
+      vram: 4120,
+      gpu_util: 92
+    },
+    lastLogLine: "[Epoch 3/3] Training completed. Saving checkpoint to HF Hub and local storage...",
+    trainingDuration: 1450000,
+    startedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000 + 1450000).toISOString(),
+    lossHistory: [
+      { progress: 10, loss: 1.4502 },
+      { progress: 20, loss: 1.1205 },
+      { progress: 30, loss: 0.8951 },
+      { progress: 40, loss: 0.6512 },
+      { progress: 50, loss: 0.4503 },
+      { progress: 60, loss: 0.3204 },
+      { progress: 70, loss: 0.2401 },
+      { progress: 80, loss: 0.1852 },
+      { progress: 90, loss: 0.1451 },
+      { progress: 100, loss: 0.1245 }
+    ],
+    evalLossHistory: [
+      { progress: 20, loss: 1.2504 },
+      { progress: 40, loss: 0.7892 },
+      { progress: 60, loss: 0.4201 },
+      { progress: 80, loss: 0.2302 },
+      { progress: 100, loss: 0.1582 }
+    ],
+    createdAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
+    totalRecords: 1200,
+    totalTokens: 350000
+  },
+  {
+    _id: "mock_run_2",
+    jobId: "job-mock-code-socratic-002",
+    projectName: "socratic-code-assistant-v2",
+    baseModel: "meta-llama/Llama-3.1-8B-Instruct",
+    datasetSource: "hub",
+    datasetName: "openai/code-instructions-socratic",
+    columnMapping: "prompt",
+    systemPrompt: "Bạn là một trợ lý lập trình Socratic. Hãy dẫn dắt học sinh tự sửa lỗi cú pháp và tư duy thuật toán thông qua câu hỏi gợi mở.",
+    systemPromptVersion: "Code-Socratic-V2",
+    parameters: {
+      batchSize: 1,
+      epochs: 3,
+      learningRate: 0.00005,
+      blockSize: 512,
+      modelMaxLength: 1024,
+      r: 16,
+      lora_alpha: 32,
+      lora_dropout: 0.1,
+      random_state: 42,
+      gradient_accumulation_steps: 4,
+      warmup_steps: 5,
+      weight_decay: 0.01,
+      seed: 42,
+      early_stopping_loss: 0.1,
+      early_stopping_patience: 3,
+      optim: "adamw_8bit",
+      lr_scheduler_type: "cosine"
+    },
+    pushToHub: true,
+    hfRepoId: "socratic-ai/llama-8b-code-assistant",
+    status: "COMPLETED",
+    finalMetrics: {
+      loss: 0.3541,
+      eval_loss: 0.3912,
+      accuracy: 91.2,
+      vram: 14200,
+      gpu_util: 98
+    },
+    lastLogLine: "[Epoch 3/3] Epoch finished. Validation loss: 0.3912. Model successfully saved.",
+    trainingDuration: 3600000,
+    startedAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 24 * 3600 * 1000 + 3600000).toISOString(),
+    lossHistory: [
+      { progress: 10, loss: 2.1052 },
+      { progress: 20, loss: 1.8504 },
+      { progress: 30, loss: 1.4502 },
+      { progress: 40, loss: 1.1205 },
+      { progress: 50, loss: 0.8951 },
+      { progress: 60, loss: 0.7104 },
+      { progress: 70, loss: 0.5801 },
+      { progress: 80, loss: 0.4752 },
+      { progress: 90, loss: 0.3981 },
+      { progress: 100, loss: 0.3541 }
+    ],
+    evalLossHistory: [
+      { progress: 20, loss: 1.9502 },
+      { progress: 40, loss: 1.2504 },
+      { progress: 60, loss: 0.8102 },
+      { progress: 80, loss: 0.5302 },
+      { progress: 100, loss: 0.3912 }
+    ],
+    createdAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+    totalRecords: 2500,
+    totalTokens: 1250000
+  },
+  {
+    _id: "mock_run_3",
+    jobId: "job-mock-glm-prompt-003",
+    projectName: "glm-prompt-opt-v1",
+    baseModel: "zai-org/GLM-4.7-Flash",
+    datasetSource: "cloud",
+    datasetName: "gcs://socratic-bucket/prompt-data.jsonl",
+    columnMapping: "text",
+    systemPrompt: "Hãy biến đổi câu hỏi của người dùng thành các prompt mang tính gợi mở, học hỏi sâu sắc theo triết lý Socratic.",
+    systemPromptVersion: "Prompt-Opt-V1",
+    parameters: {
+      batchSize: 2,
+      epochs: 5,
+      learningRate: 0.00002,
+      blockSize: 512,
+      modelMaxLength: 1024,
+      r: 8,
+      lora_alpha: 8,
+      lora_dropout: 0.05,
+      random_state: 1234,
+      gradient_accumulation_steps: 8,
+      warmup_steps: 2,
+      weight_decay: 0.0,
+      seed: 1234,
+      early_stopping_loss: 0.1,
+      early_stopping_patience: 2,
+      optim: "adamw_8bit",
+      lr_scheduler_type: "linear"
+    },
+    pushToHub: false,
+    hfRepoId: "",
+    status: "STOPPED",
+    finalMetrics: {
+      loss: 0.8123,
+      eval_loss: 0.8912,
+      accuracy: 78.5,
+      vram: 6200,
+      gpu_util: 85
+    },
+    lastLogLine: "[Epoch 2/5] Training process interrupted by user command.",
+    trainingDuration: 600000,
+    startedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 12 * 3600 * 1000 + 600000).toISOString(),
+    lossHistory: [
+      { progress: 10, loss: 1.9502 },
+      { progress: 20, loss: 1.6205 },
+      { progress: 30, loss: 1.3401 },
+      { progress: 40, loss: 1.1002 },
+      { progress: 50, loss: 0.8123 }
+    ],
+    evalLossHistory: [
+      { progress: 20, loss: 1.7204 },
+      { progress: 40, loss: 1.2105 }
+    ],
+    createdAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+    totalRecords: 800,
+    totalTokens: 180000
+  },
+  {
+    _id: "mock_run_4",
+    jobId: "job-mock-physics-004",
+    projectName: "physics-socratic-v3",
+    baseModel: "Qwen/Qwen3-0.6B",
+    datasetSource: "local",
+    datasetName: "physics_qa_dataset.json",
+    columnMapping: "instruction",
+    systemPrompt: "Dẫn dắt các khái niệm vật lý (lực, động năng, điện trường) bằng câu hỏi logic Socratic.",
+    systemPromptVersion: "Physics-V3",
+    parameters: {
+      batchSize: 2,
+      epochs: 3,
+      learningRate: 0.00003,
+      blockSize: 512,
+      modelMaxLength: 1024,
+      r: 8,
+      lora_alpha: 8,
+      lora_dropout: 0.05,
+      random_state: 3407,
+      gradient_accumulation_steps: 4,
+      warmup_steps: 5,
+      weight_decay: 0.01,
+      seed: 3407,
+      early_stopping_loss: 0.05,
+      early_stopping_patience: 3,
+      optim: "adamw_hf",
+      lr_scheduler_type: "linear"
+    },
+    pushToHub: false,
+    hfRepoId: "",
+    status: "FAILED",
+    finalMetrics: {
+      loss: 1.5421,
+      accuracy: 42.1,
+      vram: 4120,
+      gpu_util: 40
+    },
+    lastLogLine: "CUDA Out of Memory Error: Tried to allocate 2.40 GiB (GPU 0; 8.00 GiB total capacity; 5.12 GiB already allocated).",
+    trainingDuration: 120000,
+    startedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+    completedAt: new Date(Date.now() - 6 * 3600 * 1000 + 120000).toISOString(),
+    lossHistory: [
+      { progress: 5, loss: 2.0504 },
+      { progress: 10, loss: 1.8502 },
+      { progress: 15, loss: 1.5421 }
+    ],
+    createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+    totalRecords: 1500,
+    totalTokens: 450000
+  }
+];
+
 function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -133,11 +377,14 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   const fetchBaseModels = useCallback(async () => {
     try {
       const res = await api.get('/train/history/models');
-      if (Array.isArray(res.data)) {
-        setBaseModels(res.data);
-      }
+      const dbModels = Array.isArray(res.data) ? res.data : [];
+      const mockModels = Array.from(new Set(MOCK_HISTORIES.map(h => h.baseModel)));
+      const combinedModels = Array.from(new Set([...dbModels, ...mockModels]));
+      setBaseModels(combinedModels);
     } catch (err) {
       console.error('Failed to fetch base models:', err);
+      const mockModels = Array.from(new Set(MOCK_HISTORIES.map(h => h.baseModel)));
+      setBaseModels(mockModels);
     }
   }, []);
 
@@ -160,10 +407,21 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
         ? `/train/history?baseModel=${encodeURIComponent(modelFilter)}`
         : '/train/history';
       const res = await api.get(url);
-      setHistories(Array.isArray(res.data) ? res.data : []);
+      const data = Array.isArray(res.data) ? res.data : [];
+      if (data.length === 0) {
+        const filteredMock = modelFilter
+          ? MOCK_HISTORIES.filter(h => h.baseModel === modelFilter)
+          : MOCK_HISTORIES;
+        setHistories(filteredMock);
+      } else {
+        setHistories(data);
+      }
     } catch (err) {
       console.error('Failed to fetch training history:', err);
-      setHistories([]);
+      const filteredMock = modelFilter
+        ? MOCK_HISTORIES.filter(h => h.baseModel === modelFilter)
+        : MOCK_HISTORIES;
+      setHistories(filteredMock);
     } finally {
       setLoading(false);
     }
