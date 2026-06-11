@@ -189,6 +189,8 @@ export const startTraining = async (req: Request, res: Response) => {
       column_mapping, // Accept both camelCase and snake_case
       systemPrompt,
       systemPromptVersion,
+      totalTokens,
+      totalRecords,
     } = req.body;
 
     console.log('[Backend] Received columnMapping:', columnMapping);
@@ -434,6 +436,8 @@ export const startTraining = async (req: Request, res: Response) => {
         datasetPath: savedDatasetPath,
         datasetFileId: datasetFile?.filename,
         workerUrl: workerUrl,
+        totalTokens: parseInt(totalTokens as string) || 0,
+        totalRecords: parseInt(totalRecords as string) || 0,
       });
       console.log(`[Backend] Initial TrainingHistory created for job ${job_id}`);
     } catch (dbErr) {

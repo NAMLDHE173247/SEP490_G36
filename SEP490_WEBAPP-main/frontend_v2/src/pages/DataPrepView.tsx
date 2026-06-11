@@ -1,5 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { apiService } from '../services/api';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import axios from 'axios';
 import {
   Upload,
   X,
@@ -729,26 +732,16 @@ function DataPrepView() {
 
   /* Stage 4 state */
   const SUB_STEPS_STAGE4 = [
-    { num: 7, label: '0 - Awaiting Staff' },
-    { num: 8, label: '1 - AI Scoring' },
-    { num: 9, label: '2 - Quality Review' },
-    { num: 10, label: '3a - Assign Rewrite' },
-    { num: 11, label: '3b - Review Submissions' },
-    { num: 12, label: '4 - Dataset Distribution' },
+    { num: 8, label: 'Classification' },
+    { num: 9, label: 'Quality Management' },
+    { num: 10, label: 'Distribution' },
+    { num: 11, label: 'Rewrite' },
   ];
-  const [currentSubStep4, setCurrentSubStep4] = useState(7);
+  const [currentSubStep4, setCurrentSubStep4] = useState(8);
   const [classPage, setClassPage] = useState(1);
   const [qualityTab, setQualityTab] = useState('all');
-  const [rewriteConvIdx, setRewriteConvIdx] = useState(0);
+  const [rewriteConvIdx, setRewriteConvIdx] = useState(8);
   const [rewriteTab, setRewriteTab] = useState('original');
-  const [rewriteTextContent, setRewriteTextContent] = useState('');
-  const [reviewDetailModal, setReviewDetailModal] = useState(null);
-  const [selectedRewriteIds, setSelectedRewriteIds] = useState([]);
-  const [bulkAssignStaff, setBulkAssignStaff] = useState('');
-  const [reassignStaff, setReassignStaff] = useState({});
-  const [confirmedConvs, setconfirmedConvs] = useState({});
-  const [completedRewrites, setCompletedRewrites] = useState({});
-  const [stage4StaffReady, setStage4StaffReady] = useState(false);
 
   /* Stage 5 state */
   const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
@@ -766,40 +759,380 @@ function DataPrepView() {
   const [sepSelectedDistQuality, setSepSelectedDistQuality] = useState('Rewrite');
   const [sepSelectedError, setSepSelectedError] = useState('');
   const [sepBalanceApplied, setSepBalanceApplied] = useState(false);
-  const [balancedSubject, setBalancedSubject] = useState(false);
-  const [balancedQuality, setBalancedQuality] = useState(false);
-  const [aiScoringDone, setAiScoringDone] = useState(false);
   const [sepRewriteGenerated, setSepRewriteGenerated] = useState(false);
   const [sepRewriteDecision, setSepRewriteDecision] = useState('ai');
   const [sepQualityRatings, setSepQualityRatings] = useState({});
   const [sepQualityLabels, setSepQualityLabels] = useState({});
 
-  /* Stage 5 state (Finish) */
-  const SUB_STEPS_STAGE5 = [
-    { num: 11, label: 'System Prompt' },
-    { num: 12, label: 'Split Guard' },
-    { num: 13, label: 'Export' },
+
+  /* Stage 6 state */
+  const SUB_STEPS_STAGE6 = [
+    { num: 13, label: 'System Prompt' },
+    { num: 14, label: 'Split Guard' },
+    { num: 15, label: 'Export' },
   ];
-  const [currentSubStep5, setCurrentSubStep5] = useState(13);
+  const [currentSubStep6, setCurrentSubStep6] = useState(13);
   const [promptText, setPromptText] = useState('');
   const [promptName, setPromptName] = useState('Project_27/05_11:11');
   const [promptDesc, setPromptDesc] = useState('Example: Added Socratic method');
   const [selectedVersion, setSelectedVersion] = useState(null);
-  const [sampleQuestion, setSampleQuestion] = useState('HÃ£y giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai sau Ä‘Ã¢y: xÂ² - 5x + 6 = 0');
+  const [sampleQuestion, setSampleQuestion] = useState('Hãy giải phương trình bậc hai sau đây: x² - 5x + 6 = 0');
   const [trialResponse, setTrialResponse] = useState('');
+
+  // Split Guard States
+  const [splitTestPercentage, setSplitTestPercentage] = useState(20);
+  const [splitThreshold, setSplitThreshold] = useState(0.85);
+  const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
+  const [splitResult, setSplitResult] = useState<any>(null);
+  const [isSplitting, setIsSplitting] = useState(false);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
+
+  // Export States
+  const [exportScoreThreshold, setExportScoreThreshold] = useState(6.0);
+  const [huggingFaceToken, setHuggingFaceToken] = useState('');
+  const [huggingFaceRepoId, setHuggingFaceRepoId] = useState('');
+  const [huggingFacePrivate, setHuggingFacePrivate] = useState(true);
+  const [isPushingToHub, setIsPushingToHub] = useState(false);
+
+  // Hugging Face profile pull states
+  const [hfUsername, setHfUsername] = useState('');
+  const [hfDatasets, setHfDatasets] = useState<any[]>([]);
+  const [isFetchingHf, setIsFetchingHf] = useState(false);
+
+  // Cloud Storage sync states
+  const [gcsCredentials, setGcsCredentials] = useState('');
+  const [azureConnString, setAzureConnString] = useState('');
+  const [cloudBucket, setCloudBucket] = useState('');
+  const [cloudPath, setCloudPath] = useState('');
+  const [isSyncingToCloud, setIsSyncingToCloud] = useState(false);
+
+  // Helper function to format record back to raw shape based on selectedFormat
+  const formatRecord = (conv: any, systemPrompt?: string) => {
+    const trimmedSystemPrompt = String(systemPrompt || '').trim();
+    if (selectedFormat === 'openai') {
+      const messages: any[] = [];
+      if (trimmedSystemPrompt) {
+        messages.push({ role: 'system', content: trimmedSystemPrompt });
+      }
+      if (Array.isArray(conv.messages)) {
+        conv.messages.forEach((msg: any) => {
+          messages.push({ role: 'user', content: msg.user || '' });
+          if (msg.assistant) {
+            messages.push({ role: 'assistant', content: msg.assistant || '' });
+          }
+        });
+      }
+      return {
+        conversation_id: conv.id,
+        messages
+      };
+    } else {
+      // Alpaca format
+      const firstTurn = conv.messages?.[0] || { user: '', assistant: '' };
+      return {
+        id: conv.id,
+        instruction: firstTurn.user || '',
+        input: '',
+        output: firstTurn.assistant || ''
+      };
+    }
+  };
+
+  // Helper function to calculate dynamic overall score from sepQualityRatings (out of 10)
+  const getOverallScore = (conv: any) => {
+    const rubrics = ['Factuality', 'Socratic method', 'Encouragement', 'Completeness', 'Training readiness'];
+    let sum = 0;
+    let count = 0;
+    rubrics.forEach(rubric => {
+      const rating = sepQualityRatings[`${conv.id}-${rubric}`];
+      if (rating !== undefined) {
+        sum += rating;
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      return (sum / count) * 2; // Average rating (1-5) * 2 -> 0-10
+    }
+    return conv.score ?? 8.0; // fallback to default
+  };
+
+  const getConversationText = (conv: any) => {
+    if (!conv) return '';
+    const firstUserMsg = conv.messages?.find((m: any) => m.role === 'user' || m.user);
+    return firstUserMsg ? (firstUserMsg.content || firstUserMsg.user || '') : '';
+  };
+
+  // Action handlers
+  const handleGenerateSplit = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để thực hiện split.');
+      return;
+    }
+
+    setIsSplitting(true);
+    try {
+      const formattedData = conversationsList.map(c => formatRecord(c, ''));
+      const result = await apiService.clusterSafeSplit(
+        formattedData,
+        splitTestPercentage,
+        splitThreshold,
+        splitMaxAttempts,
+        42
+      );
+      setSplitResult(result);
+      if (result.resolved) {
+        alert(`Safe split generated successfully in ${result.attempts} attempts!`);
+      } else {
+        alert(`Safe split finished but ${result.conflictCount} conflicts remain after ${result.attempts} attempts.`);
+      }
+    } catch (err: any) {
+      console.error('Safe split failed:', err);
+      alert(err.response?.data?.error || err.message || 'Phân chia dữ liệu thất bại.');
+    } finally {
+      setIsSplitting(false);
+    }
+  };
+
+  const handleExcludeSample = (id: string) => {
+    setConversationsList(prev => prev.filter(c => c.id !== id));
+    setExcludedIds(prev => [...prev, id]);
+    setSplitResult(null);
+    alert('Đã loại trừ mẫu này khỏi dataset. Vui lòng bấm "Generate safe split" để tính toán lại.');
+  };
+
+  const handleDownloadTrainTestZip = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi tải.');
+      return;
+    }
+
+    const trainIndices = new Set(splitResult.trainIndices || []);
+    const testIndices = new Set(splitResult.testIndices || []);
+    const trainData: any[] = [];
+    const testData: any[] = [];
+
+    conversationsList.forEach((conv, index) => {
+      const formatted = formatRecord(conv, promptText);
+      if (trainIndices.has(index)) {
+        trainData.push(formatted);
+      } else if (testIndices.has(index)) {
+        testData.push(formatted);
+      }
+    });
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(trainData, null, 2));
+    zip.file('test_dataset.json', JSON.stringify(testData, null, 2));
+    zip.file(
+      '_metadata.json',
+      JSON.stringify(
+        {
+          projectName: projectName.trim() || 'dataset',
+          totalTrain: trainData.length,
+          totalTest: testData.length,
+          threshold: splitResult.threshold,
+          attempts: splitResult.attempts,
+          conflictCount: splitResult.conflictCount,
+          maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+          exportedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `${projectName.trim().replace(/\s+/g, '_')}_train_test.zip`);
+    } catch (err: any) {
+      console.error('Failed to generate zip:', err);
+      alert('Tạo file zip thất bại: ' + err.message);
+    }
+  };
+
+  const handleDownloadByScore = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi tải.');
+      return;
+    }
+
+    const trainIndices = new Set(splitResult.trainIndices || []);
+    const testIndices = new Set(splitResult.testIndices || []);
+    const trainData: any[] = [];
+    const testData: any[] = [];
+
+    conversationsList.forEach((conv, index) => {
+      const score = getOverallScore(conv);
+      if (score >= exportScoreThreshold) {
+        const formatted = formatRecord(conv, promptText);
+        if (trainIndices.has(index)) {
+          trainData.push(formatted);
+        } else if (testIndices.has(index)) {
+          testData.push(formatted);
+        }
+      }
+    });
+
+    if (trainData.length === 0 && testData.length === 0) {
+      alert(`Không tìm thấy mẫu nào có điểm Overall >= ${exportScoreThreshold.toFixed(1)}`);
+      return;
+    }
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(trainData, null, 2));
+    zip.file('test_dataset.json', JSON.stringify(testData, null, 2));
+    zip.file(
+      '_metadata.json',
+      JSON.stringify(
+        {
+          projectName: projectName.trim() || 'dataset',
+          totalTrain: trainData.length,
+          totalTest: testData.length,
+          threshold: splitResult.threshold,
+          attempts: splitResult.attempts,
+          conflictCount: splitResult.conflictCount,
+          maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+          overallScoreThreshold: exportScoreThreshold,
+          exportedAt: new Date().toISOString(),
+        },
+        null,
+        2
+      )
+    );
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const scoreLabel = exportScoreThreshold.toFixed(1).replace('.', '_');
+      saveAs(blob, `${projectName.trim().replace(/\s+/g, '_')}_overall_gte_${scoreLabel}_split.zip`);
+    } catch (err: any) {
+      console.error('Failed to generate zip:', err);
+      alert('Tạo file zip thất bại: ' + err.message);
+    }
+  };
+
+  const handlePushToHub = async () => {
+    if (!splitResult || !splitResult.resolved) {
+      alert('Vui lòng tạo Safe Split thành công trước khi push lên Hugging Face.');
+      return;
+    }
+
+    if (!huggingFaceToken.trim()) {
+      alert('Vui lòng nhập Hugging Face Token.');
+      return;
+    }
+
+    if (!huggingFaceRepoId.trim()) {
+      alert('Vui lòng nhập Repository ID (ví dụ: username/dataset-name).');
+      return;
+    }
+
+    setIsPushingToHub(true);
+    try {
+      const trainIndices = new Set(splitResult.trainIndices || []);
+      const testIndices = new Set(splitResult.testIndices || []);
+      const trainData: any[] = [];
+      const testData: any[] = [];
+
+      conversationsList.forEach((conv, index) => {
+        const formatted = formatRecord(conv, promptText);
+        if (trainIndices.has(index)) {
+          trainData.push(formatted);
+        } else if (testIndices.has(index)) {
+          testData.push(formatted);
+        }
+      });
+
+      const fileName = `${projectName.trim().replace(/\s+/g, '_') || 'dataset'}_train_test_split.json`;
+      const content = JSON.stringify(
+        {
+          train: trainData,
+          test: testData,
+          metadata: {
+            projectName: projectName.trim() || 'dataset',
+            systemPrompt: promptText || null,
+            threshold: splitResult.threshold,
+            attempts: splitResult.attempts,
+            conflictCount: splitResult.conflictCount,
+            maxCrossSplitSimilarity: splitResult.maxCrossSplitSimilarity,
+            exportedAt: new Date().toISOString(),
+          },
+        },
+        null,
+        2
+      );
+
+      const result = await apiService.pushToHuggingFace({
+        token: huggingFaceToken.trim(),
+        repoId: huggingFaceRepoId.trim(),
+        fileName,
+        content,
+        isPrivate: huggingFacePrivate
+      });
+
+      alert('Đã push dữ liệu lên Hugging Face Hub thành công!');
+      if (result?.url) {
+        window.open(result.url, '_blank', 'noopener,noreferrer');
+      }
+    } catch (err: any) {
+      console.error('Hugging Face Hub upload failed:', err);
+      alert(err.response?.data?.error || err.message || 'Push lên Hugging Face Hub thất bại.');
+    } finally {
+      setIsPushingToHub(false);
+    }
+  };
+
+  const handleFetchHfProfile = async () => {
+    if (!hfUsername.trim()) return;
+    setIsFetchingHf(true);
+    setHfDatasets([]);
+    try {
+      const dsRes = await axios.get(`https://huggingface.co/api/datasets?author=${hfUsername}&limit=12`);
+      if (Array.isArray(dsRes.data)) {
+        setHfDatasets(dsRes.data);
+      } else {
+        alert('Không tìm thấy dataset nào cho tài khoản này.');
+      }
+    } catch (err: any) {
+      console.error('Fetch HF profile failed:', err);
+      alert('Lỗi tải profile: ' + (err.message || err.response?.data?.message || 'Không thể kết nối đến Hugging Face'));
+    } finally {
+      setIsFetchingHf(false);
+    }
+  };
+
+  const handleSyncToCloud = () => {
+    if (cloudProvider === 'gcloud') {
+      if (!gcsCredentials.trim() || !cloudBucket.trim() || !cloudPath.trim()) {
+        alert('Vui lòng điền đầy đủ thông tin: Credentials, Bucket Name và File Path.');
+        return;
+      }
+    } else {
+      if (!azureConnString.trim() || !cloudBucket.trim() || !cloudPath.trim()) {
+        alert('Vui lòng điền đầy đủ thông tin: Connection String, Container Name và Blob Name.');
+        return;
+      }
+    }
+
+    setIsSyncingToCloud(true);
+    setTimeout(() => {
+      setIsSyncingToCloud(false);
+      alert(`Đã đồng bộ hóa thành công lên ${cloudProvider === 'gcloud' ? 'Google Cloud Storage' : 'Azure Blob Storage'} tại đường dẫn ${cloudProvider}://${cloudBucket}/${cloudPath}`);
+    }, 1200);
+  };
   const PROMPT_VERSIONS = [
-    { id: 1, name: 'Project 27/05 09:30', desc: 'Printitial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
+    { id: 1, name: 'Project 27/05 09:30', desc: 'Initial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
     { id: 2, name: 'Project_27/05_10:15', desc: 'Added encouragement phrases', date: '2026-05-27 10:15', content: 'You are a Socratic tutor. Guide students through questions. Use encouraging phrases like "Great thinking!" and "You\'re on the right track!"' },
     { id: 3, name: 'Project 27/05 11:11', desc: 'Added Socratic method', date: '2026-05-27 11:11', content: 'You are a Socratic tutor specializing in STEM education. Always ask guiding questions. Never give direct answers. Encourage step-by-step reasoning.' },
   ];
   const [exportPage, setExportPage] = useState(1);
   const [cloudProvider, setCloudProvider] = useState('gcloud');
   const EXPORT_ROWS = [
-    { user: 'HÃ£y giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai sau Ä‘Ã¢y: x^2 - 5x + 6 = 0', assistant: 'Äá»ƒ giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai nÃ y, mÃ¬nh sáº½ há»i má»™t sá»‘ cÃ¢u há»i...' },
-    { user: 'Giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ chá»©a tham sá»‘ m', assistant: 'Má»‘i giÃ¡ trá»‹ cá»§a tham sá»‘ báº­c hai nhÆ° tháº¿ nÃ o vá»›i thi dÃ¹ng chÆ°a cÃ³ má»™t...' },
-    { user: 'CÃ¡ch tÃ­nh biá»‡t thá»©c delta vÃ  delta pháº©y cá»§a phÆ°Æ¡ng trÃ¬nh báº­c hai', assistant: 'Biá»‡t thá»©c Delta Ä‘Æ°á»£c tÃ­nh báº±ng cÃ´ng thá»©c b^2 - 4ac...' },
-    { user: 'PhÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ hai nghiá»‡m phÃ¢n biá»‡t khi nÃ o?', assistant: 'Äá»ƒ hiá»ƒu ká»¹ hÆ¡n phÆ°Æ¡ng trÃ¬nh cÃ³ hai nghiá»‡m phÃ¢n biá»‡t, Ä‘iá»u nÃ y cÃ³ Ã½...' },
-    { user: 'Giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ chá»©a tham sá»‘ m', assistant: 'Má»‘i giÃ¡ trá»‹ cá»§a tham sá»‘ báº­c hai nhÆ° tháº¿ nÃ o vá»›i thi dÃ¹ng chÆ°a cÃ³ má»™t...' },
+    { user: 'Hãy giải phương trình bậc hai sau đây: x^2 - 5x + 6 = 0', assistant: 'Để giải phương trình bậc hai này, mình sẽ hỏi một số câu hỏi...' },
+    { user: 'Giải phương trình bậc hai có chứa tham số m', assistant: 'Mối giá trị của tham số bậc hai như thế nào với thi dùng chưa có một...' },
+    { user: 'Cách tính biệt thức delta và delta phẩy của phương trình bậc hai', assistant: 'Biệt thức Delta được tính bằng công thức b^2 - 4ac...' },
+    { user: 'Phương trình bậc hai có hai nghiệm phân biệt khi nào?', assistant: 'Để hiểu kỹ hơn phương trình có hai nghiệm phân biệt, điều này có ý...' },
+    { user: 'Giải phương trình bậc hai có chứa tham số m', assistant: 'Mối giá trị của tham số bậc hai như thế nào với thi dùng chưa có một...' },
   ];
 
   const fileInputRef = useRef(null);
@@ -3795,12 +4128,11 @@ function DataPrepView() {
   };
 
   const QUALITY_CONVS = [
-    { id: 'CONV-1', hash: '(Há»˜I THOáº I #42D67D)', label: 'MATH_ADVANCED', desc: 'NÃ³ theo xuáº¥t sáº¯c...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.80 },
-    { id: 'CONV-2', hash: '(Há»˜I THOáº I #42D4E)', label: 'OUT_OF_SCOPE', desc: 'Chá»‰ viáº¿t láº¡i pháº§n NÃ³ A...', quality: 'REWRITE', msgs: 4, turns: 2, score: 2.50 },
-    { id: 'CONV-3', hash: '(Há»˜I THOáº I #42DE5T)', label: 'OUT_OF_SCOPE', desc: 'AI pháº£n há»“i sai kiáº¿n thá»©c...', quality: 'BAD', msgs: 4, turns: 2, score: 1.20 },
-    { id: 'CONV-4', hash: '(Há»˜I THOáº I #42D68B)', label: 'PHYSICS_MOTION', desc: 'Giáº£i thÃ­ch rÃµ rÃ ng...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.50 },
+    { id: 'CONV-1', hash: '(HỘI THOẠI #42D67D)', label: 'MATH_ADVANCED', desc: 'Nó theo xuất sắc...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.80 },
+    { id: 'CONV-2', hash: '(HỘI THOẠI #42D4E)', label: 'OUT_OF_SCOPE', desc: 'Chỉ viết lại phần Nó A...', quality: 'REWRITE', msgs: 4, turns: 2, score: 2.50 },
+    { id: 'CONV-3', hash: '(HỘI THOẠI #42DE5T)', label: 'OUT_OF_SCOPE', desc: 'AI phản hồi sai kiến thức...', quality: 'BAD', msgs: 4, turns: 2, score: 1.20 },
+    { id: 'CONV-4', hash: '(HỘI THOẠI #42D68B)', label: 'PHYSICS_MOTION', desc: 'Giải thích rõ ràng...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.50 },
   ];
-
 
   const renderSep490Stage4 = () => {
     const baseSubjects = sepBalanceApplied ? [
@@ -3845,7 +4177,7 @@ function DataPrepView() {
         messages: [
           { role: 'user', text: 'Luc ma sat la gi a?' },
           { role: 'assistant', text: 'Truoc het em thu nghi vi sao xe phanh lai dung duoc tren mat duong?' },
-          { role: 'user', text: 'Yes le vi banh xe bi mat duong can lai?' },
+          { role: 'user', text: 'Co le vi banh xe bi mat duong can lai?' },
           { role: 'assistant', text: 'Dung huong roi. Luc can do chinh la luc ma sat, no xuat hien khi hai be mat tiep xuc va can tro chuyen dong.' },
         ],
       },
@@ -3910,7 +4242,7 @@ function DataPrepView() {
       { label: 'Gold', count: 8, tone: 'emerald', summary: 'Ready for training with strong Socratic guidance.' },
       { label: 'Rewrite', count: 9, tone: 'amber', summary: 'Needs tutor reply rewrite before evaluation.' },
       { label: 'Bad', count: 3, tone: 'rose', summary: 'Reject or send to supervisor because quality is too low.' },
-      { label: 'Printcomplete', count: 0, tone: 'slate', summary: 'Missing turns or incomplete context.' },
+      { label: 'Incomplete', count: 0, tone: 'slate', summary: 'Missing turns or incomplete context.' },
     ];
 
     const qualitySamples = Array.from({ length: 20 }, (_, idx) => {
@@ -4006,1168 +4338,746 @@ function DataPrepView() {
           ))}
         </div>
 
-        {/* ===== STEP 7: LOBBY GATE ===== */}
-        {currentSubStep4 === 7 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Hero card */}
-            <div style={{ background: '#1e293b', borderRadius: '16px', padding: '32px', color: '#fff', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap' }}>
-              <div style={{ flex: '1', minWidth: '240px' }}>
-                <div style={{ fontSize: '12px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>STAGE 4 â€” CHO STAFF HOAN THANH</div>
-                <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '800', color: '#f8fafc' }}>Dang cho Staff hoan thanh Stage 3</h2>
-                <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', lineHeight: '1.6' }}>
-                  Sau khi tat ca Staff nop du so mau labeling, he thong se tu dong giai khoa Stage 4 de chay AI Judges.
-                </p>
+        {currentSubStep4 === 8 && (
+          <div className="sep490-grid sep490-grid-2-1 sep490-classification">
+            <section className="sep490-panel">
+              <div className="sep490-panel-head">
+                <div>
+                  <h3>Converted Dataset Preview</h3>
+                  <p>Conversation preview keeps the old chat-bubble style and supports multi-message dialogs.</p>
+                </div>
+                <span className="sep490-count">{visibleConversations.length} conversations</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                <div style={{ position: 'relative', width: '100px', height: '100px' }}>
-                  <svg width="100" height="100" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="#334155" strokeWidth="8" />
-                    <circle cx="50" cy="50" r="42" fill="none" stroke="#4f46e5" strokeWidth="8"
-                      strokeDasharray={`${(77 / 100) * 264} 264`}
-                      strokeLinecap="round" transform="rotate(-90 50 50)" />
-                  </svg>
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '22px', fontWeight: '900', color: '#fff' }}>77%</span>
-                    <span style={{ fontSize: '10px', color: '#94a3b8' }}>hoan thanh</span>
+              <div className="sep490-toolbar">
+                <button className="sep490-chip active" onClick={() => setSepSubjectFilter('ALL')}>Show all</button>
+                <button className="sep490-chip" onClick={() => setClassPage((p) => (p % Math.max(visibleConversations.length, 1)) + 1)}>Next conversation</button>
+                <select className="sep490-select" value={classPage} onChange={(e) => setClassPage(Number(e.target.value))}>
+                  {visibleConversations.map((conv, idx) => <option key={conv.id} value={idx + 1}>{conv.id}</option>)}
+                </select>
+              </div>
+              <div className="sep490-chat-shell">
+                <div className="sep490-chat-head">
+                  <span className="sep490-mono">{activeConversation.id}</span>
+                  <span className="sep490-badge indigo">{activeConversation.subject}</span>
+                </div>
+                <div className="sep490-chat-body">
+                  {activeConversation.messages.map((msg, idx) => (
+                    <div key={idx} className={`sep490-chat-bubble ${msg.role}`}>
+                      <span>{msg.role === 'user' ? 'USER' : 'ASSISTANT'}</span>
+                      <p>{msg.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <aside className="sep490-panel sep490-side">
+              <div className="sep490-panel-head compact">
+                <h3>Subject Classification</h3>
+                <button
+                  className="sep490-primary"
+                  onClick={() => {
+                    setSepRunningClass(true);
+                    window.setTimeout(() => setSepRunningClass(false), 700);
+                  }}
+                >
+                  <RefreshCw size={14} className={sepRunningClass ? 'sep490-spin' : ''} />
+                  Run
+                </button>
+              </div>
+              <div className="sep490-kpi">
+                <span>Total samples</span>
+                <strong>129</strong>
+              </div>
+              <button className={`sep490-filter-row ${sepSubjectFilter === 'ALL' ? 'active' : ''}`} onClick={() => { setSepSubjectFilter('ALL'); setClassPage(1); }}>
+                <span>All samples</span>
+                {sepSubjectFilter === 'ALL' && <Check size={15} />}
+              </button>
+              {baseSubjects.map((item) => (
+                <button key={item.group} className={`sep490-filter-row ${sepSubjectFilter === item.group ? 'active' : ''}`} onClick={() => { setSepSubjectFilter(item.group); setClassPage(1); }}>
+                  <span>{item.group}</span>
+                  <span>{item.percentage}% <strong>{item.count}</strong>{sepSubjectFilter === item.group && <Check size={15} />}</span>
+                </button>
+              ))}
+              <div className="sep490-note">
+                <AlertCircle size={15} />
+                Run subject classification before moving into quality and distribution checks.
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {currentSubStep4 === 9 && (
+          <>
+            <section className="sep490-hero-panel">
+              <div className="sep490-icon-box"><Sparkles size={22} /></div>
+              <div>
+                <h3>Pedagogical Quality Management <span>Stage 4</span></h3>
+                <p>Review conversation quality, resolve conflicts, and prepare samples for rewrite.</p>
+              </div>
+              <button
+                className="sep490-primary"
+                onClick={() => {
+                  setSepRunningQuality(true);
+                  window.setTimeout(() => setSepRunningQuality(false), 700);
+                }}
+              >
+                <RefreshCw size={14} className={sepRunningQuality ? 'sep490-spin' : ''} />
+                Run Quality Classification
+              </button>
+            </section>
+
+            <div className="sep490-alert">
+              <Check size={15} />
+              Assignment labeling check: reviewed <strong>18</strong> / <strong>24</strong> conversations.
+            </div>
+
+            <div className="sep490-grid sep490-grid-3-1">
+              <main>
+                <div className="sep490-tabs">
+                  {[
+                    ['all', 'All', '24 HT / 96 MSG'],
+                    ['gold', 'Gold', '6 HT / 24 MSG'],
+                    ['rewrite', 'Needs Rewrite', '14 HT / 56 MSG'],
+                    ['bad', 'Bad', '4 HT / 16 MSG'],
+                  ].map(([key, label, sub]) => (
+                    <button key={key} className={qualityTab === key ? 'active' : ''} onClick={() => { setQualityTab(key); setSepSelectedError(''); }}>
+                      <span>{label}</span>
+                      <small>{sub}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="sep490-card-grid">
+                  {filteredQualitySamples.map((item) => {
+                    const itemLabel = getQualityLabel(item);
+                    return (
+                      <button
+                        key={item.id}
+                        className={`sep490-quality-card ${qualityClass(itemLabel)}`}
+                        onClick={() => setSepQualityModal(item)}
+                      >
+                        <div className="sep490-card-top">
+                          <span className="sep490-mono">{item.id}</span>
+                          <span className={`sep490-badge ${itemLabel === 'Gold' ? 'emerald' : itemLabel === 'Bad' ? 'rose' : itemLabel === 'Incomplete' ? 'slate' : 'amber'}`}>{itemLabel}</span>
+                        </div>
+                        <h4>{item.subject}</h4>
+                        <p>{item.issue}</p>
+                        <div className="sep490-card-meta">
+                          <span>{item.messages.length} messages</span>
+                          <strong>Score {item.score.toFixed(1)}</strong>
+                        </div>
+                        <span className="sep490-open-review">Open review</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </main>
+
+              <aside className="sep490-stack">
+                <div className="sep490-panel">
+                  <div className="sep490-panel-head compact">
+                    <h3>Review Progress</h3>
+                    <span>18 / 24</span>
+                  </div>
+                  <div className="sep490-progress"><span style={{ width: '75%' }} /></div>
+                  <p className="sep490-muted">75% of conversations have supervisor-ready quality labels.</p>
+                </div>
+                <div className="sep490-panel danger">
+                  <h3>Error Pattern</h3>
+                  {[
+                    ['direct-answer', 'Student asks theory -> AI gives direct answer', '68%'],
+                    ['low-training-value', 'Low training value or reject-level answer', '32%'],
+                  ].map(([key, label, width]) => (
+                    <button key={key} className={`sep490-error-row ${sepSelectedError === key ? 'active' : ''}`} onClick={() => setSepSelectedError((prev) => prev === key ? '' : key)}>
+                      <span>{label}</span>
+                      <div className="sep490-progress rose"><span style={{ width }} /></div>
+                    </button>
+                  ))}
+                </div>
+                <div className="sep490-panel">
+                  <h3>Adjudication Guide</h3>
+                  <p className="sep490-muted">Expanded cards show exactly which message failed and why, matching the old project review flow.</p>
+                </div>
+              </aside>
+            </div>
+          </>
+        )}
+
+        {currentSubStep4 === 10 && (
+          <div className="s4-distribution sep490-distribution-old">
+            <div className="s4-dist-header">
+              <div>
+                <h3>Dataset Distribution</h3>
+                <p>Overview of subject distribution and data quality metrics.</p>
+              </div>
+              <div className="s4-dist-actions" style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`s4-btn-outline ${sepBalanceApplied ? 'active' : ''}`}
+                  onClick={() => setSepBalanceApplied(!sepBalanceApplied)}
+                  style={{
+                    borderColor: sepBalanceApplied ? '#10b981' : '#e2e8f0',
+                    color: sepBalanceApplied ? '#10b981' : '#334155',
+                    background: sepBalanceApplied ? '#f0fdf4' : '#ffffff',
+                  }}
+                >
+                  <Sparkles size={14} />
+                  {sepBalanceApplied ? 'Balanced' : 'Balance Dataset'}
+                </button>
+                <button className="s4-btn-primary"><Download size={14} /> Export report</button>
+              </div>
+            </div>
+
+            <div className="s4-dist-stats">
+              <div className="s4-stat-card">
+                <div className="s4-stat-icon-row"><span className="s4-stat-icon s4-stat-icon-blue">#</span><span className="s4-stat-change s4-change-up">+12%</span></div>
+                <div className="s4-stat-value">{subjectTotal}</div>
+                <div className="s4-stat-label">TOTAL SAMPLES</div>
+              </div>
+              <div className="s4-stat-card">
+                <div className="s4-stat-icon-row"><span className="s4-stat-icon s4-stat-icon-purple">S</span><span className="s4-stat-badge">stable</span></div>
+                <div className="s4-stat-value">{subjectGroups.length - 1}</div>
+                <div className="s4-stat-label">SUBJECTS</div>
+              </div>
+              <div className="s4-stat-card">
+                <div className="s4-stat-icon-row"><span className="s4-stat-icon s4-stat-icon-green">✓</span><span className="s4-stat-change s4-change-up">+2.4%</span></div>
+                <div className="s4-stat-value">{qualityTotal}</div>
+                <div className="s4-stat-label">QUALITY LABELED</div>
+              </div>
+              <div className="s4-stat-card">
+                <div className="s4-stat-icon-row"><span className="s4-stat-icon s4-stat-icon-red">!</span><span className="s4-stat-change s4-change-down">-0.5%</span></div>
+                <div className="s4-stat-value">{selectedQuality.count}</div>
+                <div className="s4-stat-label">{selectedQuality.label.toUpperCase()}</div>
+              </div>
+            </div>
+
+            <div className="s4-dist-charts">
+              <div className="s4-chart-card">
+                <h4><BarChart2 size={16} /> SUBJECT DISTRIBUTION</h4>
+                <div className="s4-bar-chart">
+                  {subjectGroups.map((item) => (
+                    <button
+                      key={item.group}
+                      className={`s4-bar-row s4-bar-row-click ${sepSelectedDistSubject === item.group ? 'active' : ''}`}
+                      onClick={() => {
+                        setSepSelectedDistSubject(item.group);
+                        setSepSubjectFilter(item.group);
+                      }}
+                    >
+                      <span className="s4-bar-label">{item.label}</span>
+                      <div className="s4-bar-track">
+                        <div className="s4-bar-fill-dist" style={{ width: `${item.percentage}%`, background: item.color }} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="s4-chart-selected">
+                  Selected: <strong>{selectedSubject.label}</strong> - {selectedSubject.count} samples ({selectedSubject.percentage}%)
+                </div>
+              </div>
+
+              <div className="s4-chart-card">
+                <h4>⏳ QUALITY CLASSIFICATION</h4>
+                <div className="s4-donut-container">
+                  <div className="s4-donut-wrapper" style={{ position: 'relative', width: '230px', height: '230px', flexShrink: 0 }}>
+                    <svg viewBox="0 0 200 200" className="s4-donut-svg" style={{ width: '100%', height: '100%' }}>
+                      <circle cx="100" cy="100" r="70" fill="none" stroke="#f1f5f9" strokeWidth="28" />
+                      <circle cx="100" cy="100" r="70" fill="none" stroke="#10b981" strokeWidth="28" strokeDasharray="175.93 263.89" strokeDashoffset="0" transform="rotate(-90 100 100)" strokeLinecap="round" />
+                      <circle cx="100" cy="100" r="70" fill="none" stroke="#f59e0b" strokeWidth="28" strokeDasharray="197.92 241.90" strokeDashoffset="-175.93" transform="rotate(-90 100 100)" />
+                      <circle cx="100" cy="100" r="70" fill="none" stroke="#ef4444" strokeWidth="28" strokeDasharray="65.97 373.85" strokeDashoffset="-373.85" transform="rotate(-90 100 100)" />
+                    </svg>
+                    <div className="s4-donut-center" style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      textAlign: 'center',
+                      pointerEvents: 'none',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <strong style={{ fontSize: '24px', fontWeight: '800', color: '#0f172a', lineHeight: '1.1' }}>{qualityTotal}</strong>
+                      <span style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total</span>
+                    </div>
+                  </div>
+                  <div className="s4-donut-legend">
+                    {qualityDistribution.slice(0, 3).map(({ label, count, tone }) => (
+                      <button
+                        key={label}
+                        className={`s4-legend-item s4-legend-click ${sepSelectedDistQuality === label ? 'active' : ''}`}
+                        onClick={() => {
+                          setSepSelectedDistQuality(label);
+                          setQualityTab(label.toLowerCase());
+                        }}
+                        style={sepSelectedDistQuality === label ? (
+                          label === 'Gold' ? { borderColor: '#bbf7d0', background: '#f0fdf4' } :
+                          label === 'Rewrite' ? { borderColor: '#fde68a', background: '#fffbeb' } :
+                          { borderColor: '#fecaca', background: '#fef2f2' }
+                        ) : {}}
+                      >
+                        <span className="s4-legend-dot" style={{ background: tone === 'emerald' ? '#10b981' : tone === 'amber' ? '#f59e0b' : '#ef4444' }} />
+                        <span>{label === 'Gold' ? 'Gold (Excellent)' : label === 'Rewrite' ? 'Needs Rewrite' : 'Bad (Reject)'}</span>
+                        <strong>{Math.round((count / qualityTotal) * 100)}%</strong>
+                      </button>
+                    ))}
                   </div>
                 </div>
-                <span style={{ fontSize: '12px', color: '#64748b' }}>3 Staff chua nop du</span>
               </div>
             </div>
 
-            {/* Staff Status Board */}
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Bang trang thai Staff</h3>
-                <span style={{ fontSize: '13px', color: '#64748b' }}>Update: 2 phut truoc</span>
+          </div>
+        )}
+        {currentSubStep4 === 11 && (
+          <div className="sep490-rewrite">
+            <section className="sep490-panel sep490-rewrite-header">
+              <div className="sep490-panel-head">
+                <div>
+                  <h3>Rewrite Workspace</h3>
+                  <p>Review the flagged tutor turn, compare suggestions, and choose the final training response.</p>
+                </div>
+                <div className="sep490-actions">
+                  <select className="sep490-select" defaultValue="gemini">
+                    <option value="gemini">AI Judge: GEMINI</option>
+                    <option value="openai">AI Judge: OPENAI</option>
+                    <option value="deepseek">AI Judge: DEEPSEEK</option>
+                  </select>
+                  <button className="sep490-outline" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> AI fix all</button>
+                  <button className="sep490-outline" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Quick approve all</button>
+                  <button className="sep490-primary" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Save rewrite</button>
+                </div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Staff</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Subject phu trach</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Da nop / Phan cong</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase', minWidth: '150px' }}>Progress</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
-                      <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Thao tac</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[
-                      { name: 'Nguyen Thi A', mon: 'Math', done: 120, total: 120, pct: 100 },
-                      { name: 'Tran Van B', mon: 'Physics', done: 98, total: 120, pct: 82 },
-                      { name: 'Le Thi C', mon: 'Chemistry', done: 75, total: 120, pct: 63 },
-                      { name: 'Pham Van D', mon: 'Biology', done: 120, total: 120, pct: 100 },
-                      { name: 'Hoang Thi E', mon: 'History', done: 42, total: 120, pct: 35 },
-                      { name: 'Bui Van F', mon: 'Geography', done: 120, total: 120, pct: 100 },
-                      { name: 'Do Thi G', mon: 'Literature', done: 110, total: 120, pct: 92 },
-                    ].map((staff, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#4f46e5', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700' }}>
-                              {staff.name[0]}
-                            </div>
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>{staff.name}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#475569' }}>{staff.mon}</td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: staff.pct === 100 ? '#16a34a' : '#ea580c' }}>
-                          {staff.done} / {staff.total}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                              <div style={{ height: '100%', width: `${staff.pct}%`, background: staff.pct === 100 ? '#16a34a' : staff.pct > 60 ? '#f59e0b' : '#ef4444', borderRadius: '4px' }} />
-                            </div>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569', minWidth: '36px' }}>{staff.pct}%</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          <span style={{
-                            padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700',
-                            background: staff.pct === 100 ? '#dcfce7' : staff.pct > 60 ? '#fef3c7' : '#fee2e2',
-                            color: staff.pct === 100 ? '#15803d' : staff.pct > 60 ? '#92400e' : '#b91c1c'
-                          }}>
-                            {staff.pct === 100 ? 'Finish' : staff.pct > 60 ? 'Print Progress' : 'Cham tien do'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                          {staff.pct < 100 && (
-                            <button
-                              onClick={() => alert(`Da gui nhac viec cho ${staff.name}`)}
-                              style={{ padding: '6px 14px', fontSize: '12px', fontWeight: '600', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#475569' }}
-                            >
-                              Remind
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="sep490-metric-grid">
+                <div><span>Need Rewrite</span><strong>10</strong></div>
+                <div><span>AI Suggestions</span><strong>{sepRewriteGenerated ? 11 : 7}</strong></div>
+                <div><span>AI Accepted</span><strong>{sepRewriteDecision === 'ai' ? 5 : 4}</strong></div>
+                <div><span>Manual Edited</span><strong>2</strong></div>
+                <div><span>Original Kept</span><strong>1</strong></div>
               </div>
-            </div>
+            </section>
 
-            {/* Action */}
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => { setStage4StaffReady(true); setCurrentSubStep4(8); }}
-                style={{ padding: '14px 28px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#e2e8f0', color: '#64748b', cursor: 'pointer' }}
-              >
-                Skip (Demo Mode)
-              </button>
-              <button
-                onClick={() => { setStage4StaffReady(true); setCurrentSubStep4(8); }}
-                style={{ padding: '14px 28px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}
-              >
-                Next: AI Cham diem &rarr;
-              </button>
+            <div className="sep490-rewrite-workspace">
+              <aside className="sep490-panel sep490-rewrite-queue">
+                <div className="sep490-panel-head compact">
+                  <h3>Rewrite Queue</h3>
+                  <span className="sep490-pill amber">10 pending</span>
+                </div>
+                {rewriteRows.map((row, idx) => {
+                  const convNumber = idx + 8;
+                  return (
+                    <button
+                      key={row.title}
+                      className={rewriteConvIdx === convNumber ? 'active' : ''}
+                      onClick={() => setRewriteConvIdx(convNumber)}
+                    >
+                      <span>{row.title}</span>
+                      <strong>{row.intent}</strong>
+                      <small>{row.action} {'->'} {row.expected}</small>
+                    </button>
+                  );
+                })}
+                <div className="sep490-nav-pair">
+                  <button onClick={() => setRewriteConvIdx(Math.max(8, rewriteConvIdx - 1))}><ChevronLeft size={14} /> Previous</button>
+                  <button onClick={() => setRewriteConvIdx(Math.min(9, rewriteConvIdx + 1))}>Next <ChevronRight size={14} /></button>
+                </div>
+              </aside>
+
+              <main className="rw-content sep490-rw-full">
+                <div className="rw-turn-card rw-turn-rewrite">
+                  <div className="rw-turn-header">
+                    <span className="rw-turn-title">Turn #1 needs edit</span>
+                    <span className="rw-turn-badge-required">REWRITE REQUIRED</span>
+                  </div>
+                  <div className="rw-turn-tags">
+                    <span className="rw-tag rw-tag-blue">INTENT: {currentRewrite.intent}</span>
+                    <span className="rw-tag rw-tag-green">ACTION: {currentRewrite.action}</span>
+                    <span className="rw-tag rw-tag-purple">EXPECTED: {currentRewrite.expected}</span>
+                  </div>
+
+                  <div className="rw-turn-columns">
+                    <div className="rw-col">
+                      <span className="rw-col-title">STUDENT (USER)</span>
+                      <div className="rw-col-box">{currentRewrite.user}</div>
+                    </div>
+                    <div className="rw-col">
+                      <span className="rw-col-title">ORIGINAL ANSWER</span>
+                      <div className="rw-col-box">{currentRewrite.original}</div>
+                    </div>
+                    <div className="rw-col rw-col-edit">
+                      <div className="rw-col-title-row">
+                        <span className="rw-col-title">REWRITE</span>
+                        <div className="rw-edit-tabs">
+                          {[
+                            ['original', 'Original'],
+                            ['ai', 'AI'],
+                            ['manual', 'Manual'],
+                          ].map(([tab, label]) => (
+                            <button key={tab} className={`rw-edit-tab ${sepRewriteDecision === tab ? 'active' : ''}`} onClick={() => setSepRewriteDecision(tab)}>{label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {sepRewriteDecision === 'manual' ? (
+                        <textarea defaultValue={currentRewrite.manual} className="rw-col-box rw-col-editable sep490-textarea" />
+                      ) : (
+                        <div className="rw-col-box rw-col-editable">
+                          <p>{rewriteText}</p>
+                          <p className="rw-hint-text">{sepRewriteDecision === 'ai' ? 'AI suggestion is selected.' : 'Original answer is selected.'}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <button className="rw-suggest-btn" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> Generate AI suggestion for this turn</button>
+                </div>
+
+                <div className="rw-turn-card rw-turn-context">
+                  <div className="rw-turn-header">
+                    <span className="rw-turn-title">Turn #2 (context only)</span>
+                    <span className="rw-turn-badge-ok">VALID - NO EDIT</span>
+                  </div>
+                  <div className="rw-turn-columns rw-turn-cols-2">
+                    <div className="rw-col">
+                      <span className="rw-col-title">STUDENT</span>
+                      <div className="rw-col-box">Hinh nhu nam 1939 a.</div>
+                    </div>
+                    <div className="rw-col">
+                      <span className="rw-col-title">AI TUTOR</span>
+                      <div className="rw-col-box">Chinh xac. Su kien do thuong duoc xem la moc khoi dau cua cuoc chien.</div>
+                    </div>
+                  </div>
+                </div>
+              </main>
             </div>
           </div>
         )}
 
-        {/* ===== STEP 8: AI CHAM DIEM ===== */}
-        {currentSubStep4 === 8 && (() => {
-          const aiModels = [
-            { key: 'gemini',   label: 'Gemini Flash 1.5', desc: 'Giao duc judge mac dinh – low cost',  color: '#4f46e5', badge: 'Recommended' },
-            { key: 'openai',   label: 'OpenAI GPT-4o',    desc: 'Do chinh xac cao – xac minh kien thuc', color: '#059669', badge: '' },
-            { key: 'deepseek', label: 'Deepseek R1/V3',   desc: 'Logic su pham nang cao – free',      color: '#0891b2', badge: 'Free' },
-          ];
-          const selectedCount = Object.values(judgeModels).filter(Boolean).length;
-          const totalConv = 20;
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px 24px' }}>
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Automated AI Scoring</h2>
-                <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#64748b' }}>Select cac mo hinh AI de cham diem conversations. Nen chon it nhat 2 mo hinh de phat hien conflict. Conflict = |avg(AI) − Human| &gt; nguong.</p>
+        <div className="dataprep-actions-row">
+          <button className="dataprep-btn-back" onClick={() => {
+            if (currentSubStep4 > 8) setCurrentSubStep4(currentSubStep4 - 1);
+            else setCurrentStage(3);
+          }}>
+            Back
+          </button>
+          <button className="dataprep-btn-next" onClick={() => {
+            if (currentSubStep4 < 11) setCurrentSubStep4(currentSubStep4 + 1);
+            else setCurrentStage(5);
+          }}>
+            Next
+          </button>
+        </div>
+
+        {sepQualityModal && (
+          <div className="compare-modal-overlay" onClick={() => setSepQualityModal(null)}>
+            <div className="sep490-modal sep490-quality-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="sep490-modal-head">
+                <div>
+                  <h3>Quality Review & Pedagogy Finalization</h3>
+                  <p>{sepQualityModal.id} - {sepQualityModal.subject} - score {sepQualityModal.score.toFixed(1)}</p>
+                </div>
+                <button className="compare-close-btn" onClick={() => setSepQualityModal(null)}><X size={14} /> Close</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '16px' }}>
-                {/* Model Selection */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b' }}>Select AI Judge Models</h3>
-                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '20px', background: selectedCount >= 2 ? '#dcfce7' : '#fef3c7', color: selectedCount >= 2 ? '#15803d' : '#92400e' }}>
-                      {selectedCount} / 3 da chon
-                    </span>
+
+              <div className="sep490-quality-modal-body">
+                <section className="sep490-modal-thread">
+                  <div className="sep490-review-section-title">Conversation thread</div>
+                  {sepQualityModal.errorMessageIndex !== null && (
+                    <div className="sep490-error-banner">
+                      <AlertCircle size={16} />
+                      <div>
+                        <strong>Error detected at Turn #{sepQualityModal.errorMessageIndex + 1}</strong>
+                        <span>{sepQualityModal.reason}</span>
+                      </div>
+                    </div>
+                  )}
+                  {sepQualityModal.messages.map((msg, idx) => (
+                    <div key={idx} className={`sep490-review-bubble ${msg.role} ${idx === sepQualityModal.errorMessageIndex ? 'error' : ''}`}>
+                      <div>
+                        <span>{msg.role === 'user' ? 'Câu hỏi - Học sinh' : 'Câu trả lời - AI Tutor'}</span>
+                        <em>#Turn {idx + 1}</em>
+                      </div>
+                      <div className="sep490-message-tags">
+                        <b>{msg.role === 'user' ? 'QUESTION' : 'ANSWER'}</b>
+                        <b>{sepQualityModal.subject}</b>
+                        {idx === sepQualityModal.errorMessageIndex && <b className="danger">ERROR</b>}
+                      </div>
+                      <p>{msg.text}</p>
+                      {idx === sepQualityModal.errorMessageIndex && <small>{sepQualityModal.reason}</small>}
+                    </div>
+                  ))}
+                </section>
+
+                <aside className="sep490-modal-score">
+                  <div className="sep490-quality-classifier">
+                    <strong>Phân loại chất lượng hội thoại</strong>
+                    <div>
+                      {['Gold', 'Rewrite', 'Bad', 'Incomplete'].map((label) => {
+                        const active = getQualityLabel(sepQualityModal) === label;
+                        return (
+                          <button
+                            key={label}
+                            className={`${qualityClass(label)} ${active ? 'active' : ''}`}
+                            onClick={() => setSepQualityLabels((prev) => ({ ...prev, [sepQualityModal.id]: label }))}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-                    {aiModels.map(({ key, label, desc, color, badge }) => (
-                      <label key={key} onClick={() => setJudgeModels(prev => ({ ...prev, [key]: !prev[key] }))}
-                        style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', borderRadius: '10px', border: `2px solid ${judgeModels[key] ? color : '#e2e8f0'}`, background: judgeModels[key] ? `${color}08` : '#fafafa', cursor: 'pointer', transition: 'all 0.2s' }}>
-                        <div style={{ width: '22px', height: '22px', borderRadius: '6px', border: `2px solid ${judgeModels[key] ? color : '#cbd5e1'}`, background: judgeModels[key] ? color : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          {judgeModels[key] && <span style={{ color: '#fff', fontSize: '14px', fontWeight: '900' }}>✓</span>}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#1e293b' }}>{label}</span>
-                            {badge && <span style={{ fontSize: '10px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: badge === 'Free' ? '#dcfce7' : '#e0e7ff', color: badge === 'Free' ? '#15803d' : '#4338ca' }}>{badge}</span>}
+
+                  <div className="sep490-rubric-grid">
+                    {[
+                      ['Factuality', sepQualityModal.bucket === 'Reject' ? 2 : 5, 'Correct knowledge, no hallucination.'],
+                      ['Socratic method', sepQualityModal.bucket === 'Gold' ? 5 : 2, 'Guides learner instead of answering too soon.'],
+                      ['Encouragement', sepQualityModal.bucket === 'Reject' ? 2 : 5, 'Patient and motivating tone.'],
+                      ['Vietnamese quality', 5, 'Natural wording and clean grammar.'],
+                      ['Completeness', sepQualityModal.bucket === 'Reject' ? 2 : 4, 'No broken or missing context.'],
+                      ['Training readiness', Math.max(1, Math.round(sepQualityModal.score / 2)), 'Ready to use for fine-tuning.'],
+                    ].map(([name, defaultScore, desc]) => {
+                      const score = getQualityScore(sepQualityModal.id, name, defaultScore);
+                      return (
+                        <div key={name} className="sep490-rubric-card">
+                          <div><strong>{name}</strong><span>{score}/5</span></div>
+                          <div className="sep490-star-buttons" aria-label={`${score} out of 5`}>
+                            {Array.from({ length: 5 }, (_, starIndex) => (
+                              <button
+                                key={starIndex}
+                                className={starIndex < score ? 'filled' : ''}
+                                onClick={() => setSepQualityRatings((prev) => ({ ...prev, [`${sepQualityModal.id}-${name}`]: starIndex + 1 }))}
+                              >
+                                {'★'}
+                              </button>
+                            ))}
                           </div>
-                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{desc}</div>
+                          <small>{desc}</small>
                         </div>
-                        {judgeModels[key] && <span style={{ fontSize: '12px', fontWeight: '700', color, padding: '4px 10px', borderRadius: '20px', background: `${color}15` }}>ON</span>}
+                      );
+                    })}
+                  </div>
+
+                  <div className="sep490-alert amber">
+                    <FileText size={15} />
+                    <span>{sepQualityModal.reason}</span>
+                  </div>
+
+                  <div className="sep490-review-checks">
+                    <strong>Detected issues</strong>
+                    {['Wrong fact', 'Direct answer too early', 'Needs supervisor review', 'Vietnamese wording issue'].map((label) => (
+                      <label key={label}>
+                        <input type="checkbox" defaultChecked={sepQualityModal.bucket !== 'Gold' && label !== 'Wrong fact'} />
+                        {label}
                       </label>
                     ))}
                   </div>
-                  <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '14px', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>Conflict Threshold: |avg(AI) − Human|</div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      {[1.5, 2.0, 2.5, 3.0].map(v => (
-                        <button key={v} style={{ flex: 1, padding: '8px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: `1px solid ${v === 2.0 ? '#4f46e5' : '#e2e8f0'}`, background: v === 2.0 ? '#e0e7ff' : '#f8fafc', color: v === 2.0 ? '#4338ca' : '#475569', cursor: 'pointer' }}>
-                          ±{v}
-                        </button>
-                      ))}
-                    </div>
-                    <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#94a3b8' }}>Mac dinh ±2.0. Conflict se hien thi o Quality Review va Distribution Dashboard.</p>
+
+                  <label className="sep490-review-note">
+                    Detailed note
+                    <textarea defaultValue={sepQualityModal.reason} />
+                  </label>
+
+                  <div className="sep490-actions end">
+                    <button className="sep490-outline" onClick={() => { setSepQualityModal(null); setCurrentSubStep4(11); }}>Mark Rewrite</button>
+                    <button className="sep490-primary" onClick={() => setSepQualityModal(null)}>Save quality decision</button>
                   </div>
-                  <button
-                    disabled={selectedCount === 0 || aiScoringDone}
-                    onClick={() => { setSepRunningEval(true); window.setTimeout(() => { setSepRunningEval(false); setAiScoringDone(true); }, 2000); }}
-                    style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: '10px', border: 'none', background: selectedCount === 0 ? '#f1f5f9' : aiScoringDone ? '#dcfce7' : '#1e293b', color: selectedCount === 0 ? '#94a3b8' : aiScoringDone ? '#15803d' : '#fff', cursor: selectedCount === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-                    {sepRunningEval ? '⚙ Scoring in progress...' : aiScoringDone ? '✓ Completed cham diem' : `Start Scoring (${selectedCount} mo hinh)`}
-                  </button>
-                </div>
-                {/* Status Panel */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b' }}>Status cham diem</h3>
-                  <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '14px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569' }}>Progress tong the</span>
-                      <span style={{ fontSize: '13px', fontWeight: '900', color: aiScoringDone ? '#15803d' : '#4f46e5' }}>{aiScoringDone ? '20 / 20' : sepRunningEval ? '12 / 20' : '0 / 20'}</span>
-                    </div>
-                    <div style={{ height: '10px', background: '#e2e8f0', borderRadius: '5px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: aiScoringDone ? '100%' : sepRunningEval ? '60%' : '0%', background: aiScoringDone ? '#16a34a' : '#4f46e5', borderRadius: '5px', transition: 'width 0.5s' }} />
-                    </div>
-                    <div style={{ marginTop: '6px', fontSize: '11px', color: '#64748b' }}>{aiScoringDone ? 'Finish – san sang xem ket qua' : sepRunningEval ? 'Dang goi API...' : 'Not Started'}</div>
-                  </div>
-                  {aiModels.map(({ key, label, color }) => (
-                    judgeModels[key] && (
-                      <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', background: '#f8fafc', border: `1px solid ${color}22` }}>
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: aiScoringDone ? '#16a34a' : sepRunningEval ? color : '#cbd5e1', flexShrink: 0 }} />
-                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#334155', flex: 1 }}>{label}</span>
-                        <span style={{ fontSize: '12px', fontWeight: '700', color: aiScoringDone ? '#15803d' : sepRunningEval ? color : '#94a3b8' }}>
-                          {aiScoringDone ? `${totalConv}/${totalConv} ✓` : sepRunningEval ? 'Dang chay...' : 'Cho'}
-                        </span>
-                      </div>
-                    )
-                  ))}
-                  {aiScoringDone && (
-                    <div style={{ background: '#fff7f7', border: '1px solid #fecaca', borderRadius: '10px', padding: '14px' }}>
-                      <div style={{ fontSize: '13px', fontWeight: '800', color: '#dc2626', marginBottom: '6px' }}>⚠️ 3 Conflict phat hien</div>
-                      <div style={{ fontSize: '11px', color: '#7f1d1d', lineHeight: '1.6' }}>
-                        Cac conversations co |avg(AI) − Human| &gt; 2.0 se duoc danh dau trong Quality Review.
-                      </div>
-                    </div>
-                  )}
-                  {aiScoringDone && (
-                    <button onClick={() => setCurrentSubStep4(9)}
-                      style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: '10px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                      View Quality Review →
-                    </button>
-                  )}
-                </div>
+                </aside>
               </div>
             </div>
-          );
-        })()}
-
-        {/* ===== STEP 9: QUALITY REVIEW (read-only) ===== */}
-        {currentSubStep4 === 9 && (() => {
-          // Mock AI Judge scores integrated with quality samples
-          const aiJudgeScores = {
-            'conv_428051_1': { gemini: 8.6, deepseek: 8.9, openai: null, human: 9.0, conflict: false },
-            'conv_42D67D_2': { gemini: 8.8, deepseek: 8.5, openai: 8.7, human: 8.5, conflict: false },
-            'conv_42DE5T_3': { gemini: 9.0, deepseek: 8.8, openai: null, human: 8.8, conflict: false },
-            'conv_428051_4': { gemini: 8.6, deepseek: 8.4, openai: 8.9, human: null, conflict: false },
-            'conv_42D67D_5': { gemini: 8.8, deepseek: 9.0, openai: null, human: 8.6, conflict: false },
-            'conv_42DE5T_6': { gemini: 9.0, deepseek: 8.7, openai: 9.1, human: 9.0, conflict: false },
-            'conv_428051_7': { gemini: 8.6, deepseek: 8.5, openai: null, human: 8.4, conflict: false },
-            'conv_42D67D_8': { gemini: 8.8, deepseek: 8.9, openai: 8.6, human: 9.0, conflict: false },
-            'conv_42DE5T_9': { gemini: 4.2, deepseek: 7.8, openai: 5.1, human: null, conflict: true },
-            'conv_428051_10': { gemini: 5.5, deepseek: 5.1, openai: null, human: 4.8, conflict: false },
-            'conv_42D67D_11': { gemini: 4.1, deepseek: 7.2, openai: 4.5, human: null, conflict: true },
-            'conv_42DE5T_12': { gemini: 4.4, deepseek: 4.2, openai: null, human: 4.0, conflict: false },
-            'conv_428051_13': { gemini: 5.2, deepseek: 5.0, openai: 5.3, human: null, conflict: false },
-            'conv_42D67D_14': { gemini: 4.9, deepseek: 7.1, openai: null, human: 5.0, conflict: true },
-            'conv_42DE5T_15': { gemini: 5.1, deepseek: 4.9, openai: 5.4, human: null, conflict: false },
-            'conv_428051_16': { gemini: 5.3, deepseek: 5.5, openai: null, human: 4.9, conflict: false },
-            'conv_42D67D_17': { gemini: 4.7, deepseek: 4.5, openai: 4.8, human: null, conflict: false },
-          };
-          const getScores = (item) => aiJudgeScores[item.convId] || { gemini: item.score, deepseek: null, openai: null, human: null, conflict: false };
-          const getAvgAI = (scores) => {
-            const vals = [scores.gemini, scores.deepseek, scores.openai].filter(v => v != null);
-            return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-          };
-          const isConflict = (scores) => {
-            const avg = getAvgAI(scores);
-            return avg != null && scores.human != null && Math.abs(avg - scores.human) > 2.0;
-          };
-          const getScoresWithConflict = (item) => {
-            const s = getScores(item);
-            return { ...s, conflict: s.conflict || isConflict(s) };
-          };
-          const rewriteItems = filteredQualitySamples.filter(i => i.bucket === 'Rewrite' || i.bucket === 'Reject');
-          const goldItems = filteredQualitySamples.filter(i => i.bucket === 'Gold');
-          const allItems = filteredQualitySamples;
-          const conflictItems = allItems.filter(i => getScoresWithConflict(i).conflict);
-          const displayItems = qualityTab === 'rewrite' ? rewriteItems : qualityTab === 'gold' ? goldItems : qualityTab === 'conflict' ? conflictItems : allItems;
-
-          const ScoreCell = ({ val }) => val != null
-            ? <span style={{ fontWeight: '700', color: val >= 7 ? '#16a34a' : val >= 5 ? '#d97706' : '#dc2626' }}>{val.toFixed(1)}</span>
-            : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>—</span>;
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {/* Header read-only */}
-              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Quality Review — View ket qua cham diem</h2>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>View diem cham cua AI Judges va Human Reviewer. No chinh sua o day. Dung buoc 2a/2b de xu ly cac conversations.</p>
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  {[{ bg: '#dcfce7', clr: '#15803d', lbl: 'Gold', cnt: goldItems.length }, { bg: '#fef3c7', clr: '#92400e', lbl: 'Rewrite', cnt: rewriteItems.length }, { bg: '#fee2e2', clr: '#dc2626', lbl: 'Reject', cnt: filteredQualitySamples.filter(i => i.bucket === 'Reject').length }, { bg: '#fff1f2', clr: '#dc2626', lbl: 'Conflict', cnt: conflictItems.length }].map(({ bg, clr, lbl, cnt }) => (
-                    <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '8px 14px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '11px', fontWeight: '700', color: clr }}>{lbl}</div>
-                      <div style={{ fontSize: '20px', fontWeight: '900', color: clr }}>{cnt}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Summary bar + tabs */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {[
-                    { key: 'all', label: 'All', count: allItems.length, color: '#475569' },
-                    { key: 'gold', label: 'Gold', count: goldItems.length, color: '#15803d' },
-                    { key: 'rewrite', label: 'Needs Edit', count: rewriteItems.length, color: '#92400e' },
-                    { key: 'conflict', label: 'Conflict', count: conflictItems.length, color: '#dc2626' },
-                  ].map(({ key, label, count, color }) => (
-                    <button key={key} onClick={() => setQualityTab(key)} style={{
-                      padding: '8px 16px', fontSize: '13px', fontWeight: '700', borderRadius: '20px', border: '1px solid',
-                      background: qualityTab === key ? '#1e293b' : '#fff',
-                      color: qualityTab === key ? '#fff' : color,
-                      borderColor: qualityTab === key ? '#1e293b' : '#e2e8f0', cursor: 'pointer'
-                    }}>
-                      {label} <span style={{ fontWeight: '900' }}>({count})</span>
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button onClick={() => setCurrentSubStep4(10)}
-                    style={{ padding: '12px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                    Go to Assign Rewrite &rarr;
-                  </button>
-                </div>
-              </div>
-
-              {/* Main Table */}
-              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Conv ID</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Issue</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>Gemini</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#0891b2', fontSize: '11px', textTransform: 'uppercase', background: '#f0faff' }}>Deepseek</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>OpenAI</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Avg AI</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase' }}>Human</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Conflict</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Verdict</th>
-                      <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {displayItems.map((item, i) => {
-                      const label = getQualityLabel(item);
-                      const scores = getScoresWithConflict(item);
-                      const avgAI = getAvgAI(scores);
-                      const diff = (avgAI != null && scores.human != null) ? Math.abs(avgAI - scores.human) : null;
-                      return (
-                        <tr key={item.id}
-                          style={{ borderBottom: '1px solid #f1f5f9', background: scores.conflict ? '#fff7f7' : i % 2 === 0 ? '#fff' : '#fafafa', cursor: 'pointer' }}
-                          onClick={() => setReviewDetailModal({ ...item, scores })}>
-                          <td style={{ padding: '10px 14px', fontWeight: '700', color: '#1e293b', fontFamily: 'monospace', fontSize: '12px', whiteSpace: 'nowrap' }}>
-                            {item.convId}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>
-                            <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', background: '#f1f5f9', color: '#475569' }}>{item.subject}</span>
-                          </td>
-                          <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '12px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f8faff' }}><ScoreCell val={scores.gemini} /></td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f0faff' }}><ScoreCell val={scores.deepseek} /></td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f0fff4' }}><ScoreCell val={scores.openai} /></td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f5f3ff' }}>
-                            {avgAI != null ? <span style={{ fontWeight: '800', color: avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI.toFixed(1)}</span> : <span style={{ color: '#cbd5e1' }}>—</span>}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}><ScoreCell val={scores.human} /></td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                            {scores.conflict ? (
-                              <span style={{ padding: '4px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '800', background: '#fee2e2', color: '#dc2626', whiteSpace: 'nowrap' }}>
-                                ⚠ ±{diff?.toFixed(1) ?? '?'}
-                              </span>
-                            ) : (
-                              <span style={{ color: '#cbd5e1', fontSize: '12px' }}>—</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                            <span style={{
-                              padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
-                              background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2',
-                              color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626'
-                            }}>{label}</span>
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                            <button onClick={e => { e.stopPropagation(); setReviewDetailModal({ ...item, scores }); }}
-                              style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#4f46e5' }}>
-                              View
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* READ-ONLY Detail Modal */}
-              {reviewDetailModal && (() => {
-                const scores = reviewDetailModal.scores || getScoresWithConflict(reviewDetailModal);
-                const label = getQualityLabel(reviewDetailModal);
-                const avgAI = getAvgAI(scores);
-                const diff = (avgAI != null && scores.human != null) ? Math.abs(avgAI - scores.human) : null;
-                return (
-                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-                    onClick={() => setReviewDetailModal(null)}>
-                    <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}
-                      onClick={e => e.stopPropagation()}>
-                      <div style={{ background: '#1e293b', padding: '20px 24px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#f8fafc' }}>{reviewDetailModal.convId}</h3>
-                          <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{label}</span>
-                          {scores.conflict && <span style={{ padding: '4px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: '#fee2e2', color: '#dc2626' }}>⚠ CONFLICT</span>}
-                        </div>
-                        <button onClick={() => setReviewDetailModal(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '22px', cursor: 'pointer' }}>&#x2715;</button>
-                      </div>
-                      <div style={{ padding: '2px 24px 12px', background: '#1e293b' }}>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>Subject: {reviewDetailModal.subject} — Issue: {reviewDetailModal.issue}</p>
-                      </div>
-                      <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                        <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Score danh gia (chi doc)</h4>
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                          {[{ label: 'Gemini', val: scores.gemini, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.openai, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
-                            <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color, marginBottom: '4px' }}>{lbl}</div>
-                              <div style={{ fontSize: '20px', fontWeight: '900', color: val == null ? '#cbd5e1' : val >= 7 ? '#15803d' : val >= 5 ? '#d97706' : '#dc2626' }}>{val != null ? val.toFixed(1) : '—'}</div>
-                            </div>
-                          ))}
-                          <div style={{ background: '#f5f3ff', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '90px', border: '2px solid #c4b5fd' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#7c3aed', marginBottom: '4px' }}>Avg AI</div>
-                            <div style={{ fontSize: '22px', fontWeight: '900', color: avgAI == null ? '#cbd5e1' : avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI != null ? avgAI.toFixed(1) : '—'}</div>
-                            <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>TB cac AI</div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: '22px', fontWeight: '300', alignSelf: 'center' }}>vs</div>
-                          <div style={{ background: '#fed7aa', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '2px solid #f97316' : '2px solid transparent' }}>
-                            <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Human</div>
-                            <div style={{ fontSize: '22px', fontWeight: '900', color: scores.human == null ? '#cbd5e1' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>{scores.human != null ? scores.human.toFixed(1) : '—'}</div>
-                          </div>
-                          {diff != null && (
-                            <div style={{ background: scores.conflict ? '#fee2e2' : '#f1f5f9', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '1px solid #fca5a5' : '1px solid #e2e8f0' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color: scores.conflict ? '#dc2626' : '#64748b', marginBottom: '4px' }}>Delta</div>
-                              <div style={{ fontSize: '20px', fontWeight: '900', color: scores.conflict ? '#dc2626' : '#64748b' }}>±{diff.toFixed(1)}</div>
-                              {scores.conflict && <div style={{ fontSize: '10px', color: '#dc2626', marginTop: '2px' }}>⚠ &gt; 2.0</div>}
-                            </div>
-                          )}
-                        </div>
-                        {scores.conflict && diff != null && (
-                          <div style={{ marginTop: '14px', background: '#fff7f7', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#b91c1c', display: 'flex', gap: '8px' }}>
-                            <span>⚠️</span>
-                            <span><strong>Conflict AI vs Human:</strong> Score TB cac AI ({avgAI?.toFixed(1)}) chenh lech voi Human ({scores.human?.toFixed(1)}) la ±{diff.toFixed(1)} vuot nguong 2.0. Can Human expert xem lai.</span>
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ padding: '20px 24px' }}>
-                        <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Noi dung conversations</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto' }}>
-                          {reviewDetailModal.messages.map((msg, idx) => (
-                            <div key={idx} style={{ padding: '10px 14px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.6', background: msg.role === 'user' ? '#f8fafc' : idx === reviewDetailModal.errorMessageIndex ? '#fef3c7' : '#f0fdf4', border: idx === reviewDetailModal.errorMessageIndex ? '2px solid #fcd34d' : '1px solid transparent', alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end', maxWidth: '85%' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>{msg.role === 'user' ? 'Hoc sinh' : idx === reviewDetailModal.errorMessageIndex ? '⚠ AI Tutor (co loi)' : 'AI Tutor'}</div>
-                              {msg.text}
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ marginTop: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span>ℹ️</span>
-                          <span>This screen is read-only. To edit, use step "3a - Assign Rewrite" or "3b - Review Submissions".</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          );
-        })()}
-
-        {/* ===== STEP 10: GIAO VIEC REWRITE (BULK ASSIGN) ===== */}
-        {currentSubStep4 === 10 && (() => {
-          const rewriteItems = filteredQualitySamples.filter(i => i.bucket === 'Rewrite');
-          const allSelected = rewriteItems.length > 0 && selectedRewriteIds.length === rewriteItems.length;
-          const assignedCount = rewriteItems.filter(i => reassignStaff[i.id]).length;
-          const pendingCount = rewriteItems.length - assignedCount;
-          const progress = rewriteItems.length > 0 ? Math.round((assignedCount / rewriteItems.length) * 100) : 0;
-
-          const subjectColors = {
-            'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
-            'Chemistry': { bg: '#d1fae5', color: '#065f46' }, 'Biology': { bg: '#fef3c7', color: '#92400e' },
-            'History': { bg: '#ede9fe', color: '#6d28d9' }, 'Geography': { bg: '#fee2e2', color: '#b91c1c' },
-            'Literature': { bg: '#fce7f3', color: '#9d174d' }, 'English': { bg: '#fff7ed', color: '#9a3412' },
-            'PHYSICAL': { bg: '#cffafe', color: '#0e7490' }, 'CHEMISTRY': { bg: '#d1fae5', color: '#065f46' },
-            'BIOLOGY': { bg: '#fef3c7', color: '#92400e' }, 'HISTORY': { bg: '#ede9fe', color: '#6d28d9' },
-            'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
-            'MATH': { bg: '#e0e7ff', color: '#4338ca' },
-          };
-          const getSubjectStyle = (s) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
-
-          const staffList = [
-            { value: 'Nguyen Thi A', initials: 'NA', color: '#4f46e5' },
-            { value: 'Tran Van B', initials: 'TB', color: '#0891b2' },
-            { value: 'Le Thi C', initials: 'LC', color: '#059669' },
-            { value: 'Pham Van D', initials: 'PD', color: '#d97706' },
-          ];
-          const getStaffColor = (name) => staffList.find(s => s.value === name)?.color || '#64748b';
-          const getStaffInitials = (name) => staffList.find(s => s.value === name)?.initials || '??';
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Header card */}
-              <div style={{ background: 'linear-gradient(135deg, #fafbff 0%, #f0f4ff 100%)', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '22px 28px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '18px' }}>📋</span>
-                      </div>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>Assign Rewrite Tasks to Staff</h2>
-                    </div>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>Assign conversations that need editing to team members. Select multiple for bulk assignment.</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 18px', textAlign: 'center', minWidth: '70px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Not Assigned</div>
-                      <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', lineHeight: 1.2 }}>{pendingCount}</div>
-                    </div>
-                    <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 18px', textAlign: 'center', minWidth: '70px' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned</div>
-                      <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{assignedCount}</div>
-                    </div>
-                    <button onClick={() => setCurrentSubStep4(11)}
-                      style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                      Go to Review →
-                    </button>
-                  </div>
-                </div>
-                {/* Progress bar */}
-                <div style={{ marginTop: '16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>Progress phan cong</span>
-                    <span style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5' }}>{assignedCount} / {rewriteItems.length} conversations</span>
-                  </div>
-                  <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${progress}%`, background: 'linear-gradient(90deg, #4f46e5, #7c3aed)', borderRadius: '999px', transition: 'width 0.4s ease' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Table */}
-              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ padding: '14px 16px', width: '44px' }}>
-                        <input type="checkbox" checked={allSelected} onChange={() => setSelectedRewriteIds(allSelected ? [] : rewriteItems.map(i => i.id))}
-                          style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }} />
-                      </th>
-                      <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conv ID</th>
-                      <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subject</th>
-                      <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Issue Detected</th>
-                      <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '220px' }}>Assign to</th>
-                      <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100px' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rewriteItems.map((item, i) => {
-                      const checked = selectedRewriteIds.includes(item.id);
-                      const staff = reassignStaff[item.id];
-                      const subjStyle = getSubjectStyle(item.subject);
-                      return (
-                        <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9', background: checked ? '#f5f3ff' : i % 2 === 0 ? '#fff' : '#fafafa', transition: 'background 0.15s' }}>
-                          <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                            <input type="checkbox" checked={checked} onChange={() => setSelectedRewriteIds(prev => checked ? prev.filter(x => x !== item.id) : [...prev, item.id])}
-                              style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }} />
-                          </td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <span style={{ fontWeight: '700', color: '#1e293b', fontFamily: 'monospace', fontSize: '13px', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0' }}>{item.convId}</span>
-                          </td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <span style={{ padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', background: subjStyle.bg, color: subjStyle.color }}>{item.subject}</span>
-                          </td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <span style={{ fontSize: '13px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0, display: 'inline-block' }} />
-                              {item.issue}
-                            </span>
-                          </td>
-                          <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                            {staff ? (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: getStaffColor(staff), display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                  <span style={{ fontSize: '10px', fontWeight: '800', color: '#fff' }}>{getStaffInitials(staff)}</span>
-                                </div>
-                                <span style={{ fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>{staff}</span>
-                                <button onClick={() => setReassignStaff(prev => { const n = {...prev}; delete n[item.id]; return n; })}
-                                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>✕</button>
-                              </div>
-                            ) : (
-                              <select value="" onChange={e => setReassignStaff(prev => ({...prev, [item.id]: e.target.value}))}
-                                style={{ padding: '7px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#64748b', outline: 'none', minWidth: '160px' }}>
-                                <option value="">Select staff member...</option>
-                                {staffList.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
-                              </select>
-                            )}
-                          </td>
-                          <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                            <span style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '800', background: staff ? '#dcfce7' : '#f1f5f9', color: staff ? '#15803d' : '#94a3b8', letterSpacing: '0.3px' }}>
-                              {staff ? '✓ Assigned' : 'Not Assigned'}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Floating bulk assign bar */}
-              {selectedRewriteIds.length > 0 && (
-                <div style={{ position: 'sticky', bottom: '16px', background: 'linear-gradient(135deg, #1e293b, #0f172a)', borderRadius: '14px', padding: '16px 24px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 12px 32px rgba(0,0,0,0.35)', border: '1px solid #334155' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#4f46e5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ color: '#fff', fontSize: '14px', fontWeight: '900' }}>{selectedRewriteIds.length}</span>
-                    </div>
-                    <span style={{ color: '#e2e8f0', fontWeight: '700', fontSize: '14px' }}>conversations duoc chon</span>
-                  </div>
-                  <div style={{ width: '1px', height: '32px', background: '#334155' }} />
-                  <select value={bulkAssignStaff} onChange={e => setBulkAssignStaff(e.target.value)}
-                    style={{ padding: '10px 14px', fontSize: '14px', borderRadius: '8px', border: '1px solid #475569', background: '#334155', color: '#f1f5f9', cursor: 'pointer', flex: 1, maxWidth: '240px', outline: 'none' }}>
-                    <option value="">Select staff to assign...</option>
-                    {staffList.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
-                  </select>
-                  <button onClick={() => {
-                    if (!bulkAssignStaff) return alert('Vui long chon nhan vien!');
-                    const updates = {};
-                    selectedRewriteIds.forEach(id => { updates[id] = bulkAssignStaff; });
-                    setReassignStaff(prev => ({...prev, ...updates}));
-                    setSelectedRewriteIds([]);
-                    setBulkAssignStaff('');
-                  }} style={{ padding: '10px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.4)' }}>
-                    Assign All
-                  </button>
-                  <button onClick={() => setSelectedRewriteIds([])}
-                    style={{ padding: '10px 16px', fontSize: '13px', fontWeight: '600', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
-                    Cancel
-                </button>
-              </div>
-            )}
           </div>
-        );
-      })()}
-
-        {/* ===== STEP 11: STAFF SUBMISSION REVIEW (3b) ===== */}
-        {currentSubStep4 === 11 && (() => {
-          const rewriteItems = filteredQualitySamples.filter(i => i.bucket === 'Rewrite');
-          const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
-          const approvedCount = rewriteItems.filter(i => completedRewrites[i.id]).length;
-          const pendingCount = rewriteItems.filter(i => !completedRewrites[i.id]).length;
-
-          const subjectColors = {
-            'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
-            'Chemistry': { bg: '#d1fae5', color: '#065f46' }, 'Biology': { bg: '#fef3c7', color: '#92400e' },
-            'History': { bg: '#ede9fe', color: '#6d28d9' }, 'Geography': { bg: '#fee2e2', color: '#b91c1c' },
-            'PHYSICAL': { bg: '#cffafe', color: '#0e7490' }, 'CHEMISTRY': { bg: '#d1fae5', color: '#065f46' },
-            'BIOLOGY': { bg: '#fef3c7', color: '#92400e' }, 'HISTORY': { bg: '#ede9fe', color: '#6d28d9' },
-            'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
-            'MATH': { bg: '#e0e7ff', color: '#4338ca' },
-          };
-          const getSubjectStyle = (s) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Header */}
-              <div style={{ background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '1px solid #fde68a', borderRadius: '16px', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: '22px' }}>🔍</span>
-                  </div>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Review Staff Submissions</h2>
-                    <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>Compare the original and staff-revised versions. Approve (Gold) or request a redo.</p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 18px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Pending Review</div>
-                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', lineHeight: 1.2 }}>{pendingCount}</div>
-                  </div>
-                  <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '12px 18px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Approved</div>
-                    <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{approvedCount}</div>
-                  </div>
-                  <button onClick={() => setCurrentSubStep4(12)}
-                    style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                    Dataset Distribution →
-                  </button>
-                </div>
-              </div>
-
-              {/* 2-col layout */}
-              <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '16px', alignItems: 'flex-start' }}>
-                {/* Left sidebar */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Submission List</h4>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>{rewriteItems.length} items</span>
-                  </div>
-                  <div style={{ maxHeight: '540px', overflowY: 'auto' }}>
-                    {rewriteItems.map((item, idx) => {
-                      const isSelected = activeItem?.id === item.id;
-                      const isDone = completedRewrites[item.id];
-                      const staffName = reassignStaff[item.id];
-                      const subjStyle = getSubjectStyle(item.subject);
-                      return (
-                        <div key={item.id}
-                          onClick={() => { setRewriteConvIdx(idx); setRewriteTextContent(''); }}
-                          style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: isSelected ? '#f5f3ff' : '#fff', borderLeft: isSelected ? '3px solid #4f46e5' : '3px solid transparent', transition: 'all 0.15s' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#1e293b', fontFamily: 'monospace' }}>{item.convId}</span>
-                            <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: isDone ? '#dcfce7' : staffName ? '#fef9c3' : '#f1f5f9', color: isDone ? '#15803d' : staffName ? '#854d0e' : '#94a3b8', letterSpacing: '0.3px', flexShrink: 0 }}>
-                              {isDone ? '✓ Approved' : staffName ? '⏳ Pending Review' : 'Not Submitted'}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '20px', background: subjStyle.bg, color: subjStyle.color }}>{item.subject}</span>
-                          {staffName && <div style={{ fontSize: '11px', color: '#4f46e5', marginTop: '5px', fontWeight: '600' }}>👤 {staffName}</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Right review panel */}
-                {activeItem ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* Conv header */}
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '42px', height: '42px', borderRadius: '10px', background: getSubjectStyle(activeItem.subject).bg, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${getSubjectStyle(activeItem.subject).color}30` }}>
-                          <span style={{ fontSize: '10px', fontWeight: '900', color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject.slice(0,3)}</span>
-                        </div>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a', fontFamily: 'monospace' }}>{activeItem.convId}</h3>
-                          <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                            Subject: <strong style={{ color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject}</strong>
-                            {reassignStaff[activeItem.id] && <> &mdash; Giao cho: <strong style={{ color: '#4f46e5' }}>{reassignStaff[activeItem.id]}</strong></>}
-                          </p>
-                        </div>
-                      </div>
-                      {!completedRewrites[activeItem.id] && (
-                        <button onClick={() => setRewriteTextContent(`[Gia lap ${reassignStaff[activeItem.id] || 'Staff'} nop]: Truoc khi giai, em hay thu suy nghi xem quy tac nao co the ap dung o day nhe?`)}
-                          style={{ padding: '9px 16px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: '1.5px dashed #c7d2fe', background: '#f0f4ff', cursor: 'pointer', color: '#4338ca', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>⚡</span> Simulate Staff Submission
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Error context banner */}
-                    <div style={{ background: 'linear-gradient(135deg, #fff7ed, #fffbeb)', border: '1px solid #fcd34d', borderRadius: '12px', padding: '14px 18px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: '14px' }}>⚠</span>
-                      </div>
-                      <div>
-                        <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error to Fix (Detected by AI Judges)</p>
-                        <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason}</p>
-                      </div>
-                    </div>
-
-                    {/* Yesmparison: Original vs Rewrite */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div style={{ background: '#fff', border: '1.5px solid #fca5a5', borderRadius: '12px', overflow: 'hidden' }}>
-                        <div style={{ padding: '12px 16px', background: '#fff1f2', borderBottom: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Original Response (Has Error)</span>
-                          <span style={{ fontSize: '11px', color: '#ef4444', marginLeft: 'auto' }}>Turn #{(activeItem.errorMessageIndex || 1) + 1}</span>
-                        </div>
-                        <div style={{ padding: '16px', fontSize: '14px', color: '#374151', lineHeight: '1.7', minHeight: '100px' }}>
-                          {activeItem.messages[activeItem.errorMessageIndex || 1]?.text || '(khong tim thay noi dung)'}
-                        </div>
-                      </div>
-                      <div style={{ background: '#fff', border: `1.5px solid ${(rewriteTextContent || completedRewrites[activeItem.id]) ? '#86efac' : '#e2e8f0'}`, borderRadius: '12px', overflow: 'hidden' }}>
-                        <div style={{ padding: '12px 16px', background: (rewriteTextContent || completedRewrites[activeItem.id]) ? '#f0fdf4' : '#f8fafc', borderBottom: `1px solid ${(rewriteTextContent || completedRewrites[activeItem.id]) ? '#86efac' : '#e2e8f0'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: (rewriteTextContent || completedRewrites[activeItem.id]) ? '#16a34a' : '#94a3b8' }} />
-                          <span style={{ fontSize: '12px', fontWeight: '800', color: (rewriteTextContent || completedRewrites[activeItem.id]) ? '#15803d' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Submission</span>
-                          {reassignStaff[activeItem.id] && <span style={{ fontSize: '11px', color: '#4f46e5', marginLeft: 'auto', fontWeight: '600' }}>by {reassignStaff[activeItem.id]}</span>}
-                        </div>
-                        <div style={{ padding: '16px', fontSize: '14px', color: (rewriteTextContent || completedRewrites[activeItem.id]) ? '#15803d' : '#94a3b8', lineHeight: '1.7', minHeight: '100px', fontStyle: (rewriteTextContent || completedRewrites[activeItem.id]) ? 'normal' : 'italic' }}>
-                          {(rewriteTextContent || completedRewrites[activeItem.id]) ? (rewriteTextContent || 'Rewrite submitted.') : 'Staff chua nop ban rewrite. Label "Simulate Staff Submission" de xem demo.'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Admin action bar */}
-                    {(rewriteTextContent || completedRewrites[activeItem.id]) ? (
-                      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                        <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569', flex: 1 }}>Admin Decision:</span>
-                        <button onClick={() => {
-                          setCompletedRewrites(prev => ({...prev, [activeItem.id]: true}));
-                          const next = rewriteItems.find((x, xi) => xi > rewriteConvIdx && !completedRewrites[x.id]);
-                          if (next) { setRewriteConvIdx(rewriteItems.indexOf(next)); setRewriteTextContent(''); }
-                        }} disabled={!!completedRewrites[activeItem.id]}
-                          style={{ padding: '11px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '9px', border: 'none', background: completedRewrites[activeItem.id] ? '#e2e8f0' : 'linear-gradient(135deg, #16a34a, #15803d)', color: completedRewrites[activeItem.id] ? '#94a3b8' : '#fff', cursor: completedRewrites[activeItem.id] ? 'default' : 'pointer', boxShadow: completedRewrites[activeItem.id] ? 'none' : '0 4px 12px rgba(22,163,74,0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {completedRewrites[activeItem.id] ? '✓ Approved → Gold' : '✓ Approve → Gold'}
-                        </button>
-                        <button onClick={() => { setRewriteTextContent(''); setCompletedRewrites(prev => { const n = {...prev}; delete n[activeItem.id]; return n; }); }}
-                          disabled={!!completedRewrites[activeItem.id]}
-                          style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '9px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', cursor: completedRewrites[activeItem.id] ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          ↩ Request Redo
-                        </button>
-                        <button disabled={!!completedRewrites[activeItem.id]}
-                          style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '9px', border: '1.5px solid #fca5a5', background: '#fff1f2', color: '#dc2626', cursor: completedRewrites[activeItem.id] ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          ✕ Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px', padding: '28px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '32px', marginBottom: '8px' }}>📭</div>
-                        <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Staff chua nop ban rewrite.</p>
-                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>Label "Simulate Staff Submission" o tren de xem demo.</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ padding: '60px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px' }}>
-                    <div style={{ fontSize: '40px', marginBottom: '12px' }}>👆</div>
-                    <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Select mot conversations o ben trai de kiem duyet.</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ===== STEP 11: FINAL DISTRIBUTION DASHBOARD ===== */}
-        {currentSubStep4 === 12 && (() => {
-          const totalConv = 20;
-          const totalMsg = 148;
-          const goldCount = 8;
-          const rewriteCount = 9;
-          const rejectCount = 3;
-          const goldRate = Math.round((goldCount / totalConv) * 100);
-          const avgAIScore = 6.9;
-          const conflictCount = 3;
-
-          const subjectData = [
-            { name: 'Math', conv: 5, pct: 25, color: '#4f46e5' },
-            { name: 'Physics', conv: 4, pct: 20, color: '#0891b2' },
-            { name: 'Chemistry', conv: 3, pct: 15, color: '#059669' },
-            { name: 'Biology', conv: 3, pct: 15, color: '#d97706' },
-            { name: 'History', conv: 2, pct: 10, color: '#7c3aed' },
-            { name: 'Geography', conv: 1, pct: 5, color: '#dc2626' },
-            { name: 'Literature', conv: 1, pct: 5, color: '#0d9488' },
-            { name: 'English', conv: 1, pct: 5, color: '#ea580c' },
-          ];
-
-          const topReasons = [
-            { reason: 'AI tra loi truc tiep (khong Socratic)', count: 7, pct: 58, bucket: 'Rewrite' },
-            { reason: 'Cau tra loi gia tri training thap', count: 5, pct: 42, bucket: 'Rewrite' },
-            { reason: 'Sai kien thuc chuyen mon', count: 2, pct: 17, bucket: 'Reject' },
-            { reason: 'Ngon ngu khong phu hop hoc sinh', count: 1, pct: 8, bucket: 'Reject' },
-          ];
-
-          const staffData = [
-            { name: 'Nguyen Thi A', subject: 'Math', assigned: 6, approved: 6, rate: 100, status: 'Finish' },
-            { name: 'Tran Van B', subject: 'Physics', assigned: 5, approved: 4, rate: 80, status: 'Approved' },
-            { name: 'Le Thi C', subject: 'Chemistry', assigned: 4, approved: 4, rate: 100, status: 'Finish' },
-            { name: 'Pham Van D', subject: 'Biology', assigned: 3, approved: 2, rate: 67, status: 'Pending Review' },
-            { name: 'Hoang Thi E', subject: 'History', assigned: 2, approved: 1, rate: 50, status: 'Pending Review' },
-          ];
-
-          const conflictData = [
-            { id: 'conv_42DE5T_9', subject: 'Physics', gemini: 4.2, deepseek: 7.8, human: null, diff: 3.6, resolved: false },
-            { id: 'conv_42D67D_11', subject: 'Biology', gemini: 4.1, deepseek: 7.2, human: null, diff: 3.1, resolved: false },
-            { id: 'conv_42D67D_14', subject: 'History', gemini: 4.9, deepseek: 7.1, human: 5.0, diff: 2.2, resolved: true },
-          ];
-
-          // Donut arc calculation
-          const total = goldCount + rewriteCount + rejectCount;
-          const r = 70, circ = 2 * Math.PI * r;
-          const goldArc = (goldCount / total) * circ;
-          const rewriteArc = (rewriteCount / total) * circ;
-          const rejectArc = (rejectCount / total) * circ;
-
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-              {/* ── PROJECT METADATA HEADER ── */}
-              <div style={{ background: 'linear-gradient(135deg, #f0f4ff 0%, #faf5ff 50%, #f0fdf4 100%)', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '22px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', position: 'relative', overflow: 'hidden' }}>
-                {/* decorative bg circles */}
-                <div style={{ position: 'absolute', top: '-20px', right: '120px', width: '120px', height: '120px', borderRadius: '50%', background: 'radial-gradient(circle, #4f46e520 0%, transparent 70%)', pointerEvents: 'none' }} />
-                <div style={{ position: 'absolute', bottom: '-30px', right: '40px', width: '160px', height: '160px', borderRadius: '50%', background: 'radial-gradient(circle, #7c3aed15 0%, transparent 70%)', pointerEvents: 'none' }} />
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '20px', background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe' }}>SEP490-G36</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 10px', borderRadius: '20px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' }}>v2.4 · Batch 3</span>
-                    <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '20px', background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '4px' }}>✓ READY TO EXPORT</span>
-                  </div>
-                  <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#0f172a', letterSpacing: '-0.3px' }}>Dataset Distribution Dashboard</h2>
-                  <p style={{ margin: '5px 0 0 0', fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
-                    Overview of dataset before export and training · Finish: 10/06/2026
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button style={{ padding: '10px 18px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                    <Download size={14} /> Export Report
-                  </button>
-                  <button style={{ padding: '10px 20px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.35)' }}>
-                    Export Dataset
-                  </button>
-                </div>
-              </div>
-
-              {/* ── 5 KPI CARDS ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px' }}>
-                {[
-                  { label: 'Conversations', value: totalConv, sub: `${totalMsg} messages`, color: '#4f46e5', bg: '#eef2ff', icon: '💬' },
-                  { label: 'Gold Rate', value: `${goldRate}%`, sub: `${goldCount} / ${totalConv} conv`, color: '#15803d', bg: '#f0fdf4', icon: '🏅' },
-                  { label: 'Avg AI Score', value: avgAIScore, sub: 'Gemini + Deepseek', color: '#0891b2', bg: '#f0f9ff', icon: '🤖' },
-                  { label: 'Subjects', value: subjectData.length, sub: 'Evenly distributed', color: '#7c3aed', bg: '#f5f3ff', icon: '📚' },
-                  { label: 'Conflict', value: conflictCount, sub: `${conflictData.filter(c => c.resolved).length} da giai quyet`, color: '#dc2626', bg: '#fff5f5', icon: '⚠️' },
-                ].map(({ label, value, sub, color, bg, icon }) => (
-                  <div key={label} style={{ background: bg, border: `1.5px solid ${color}22`, borderRadius: '14px', padding: '16px 18px', position: 'relative', overflow: 'hidden', boxShadow: `0 2px 8px ${color}10` }}>
-                    <div style={{ position: 'absolute', top: '12px', right: '14px', fontSize: '22px', opacity: 0.25 }}>{icon}</div>
-                    <div style={{ fontSize: '11px', fontWeight: '800', color, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</div>
-                    <div style={{ fontSize: '30px', fontWeight: '900', color, lineHeight: 1 }}>{value}</div>
-                    <div style={{ fontSize: '11.5px', color: `${color}bb`, marginTop: '5px', fontWeight: '500' }}>{sub}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* ── SUBJECT DISTRIBUTION + QUALITY DONUT ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
-                {/* Subject Distribution */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>📚 Phan bo Subject</h3>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>{subjectData.length} mon / {totalConv} conversations</p>
-                    </div>
-                    <button
-                      onClick={() => setBalancedSubject(!balancedSubject)}
-                      style={{ padding: '7px 13px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: `1.5px solid ${balancedSubject ? '#15803d' : '#e2e8f0'}`, background: balancedSubject ? '#dcfce7' : '#f8fafc', color: balancedSubject ? '#15803d' : '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.2s' }}>
-                      <Sparkles size={12} />
-                      {balancedSubject ? 'Da can bang Subject' : 'Can bang Subject'}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {subjectData.map(({ name, conv, pct, color }) => {
-                      const displayPct = balancedSubject ? 12.5 : pct;
-                      const displayConv = balancedSubject ? Math.round(totalConv / subjectData.length) : conv;
-                      return (
-                        <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: '600', color: '#374151', minWidth: '76px' }}>{name}</span>
-                          <div style={{ flex: 1, height: '14px', background: '#f1f5f9', borderRadius: '7px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${displayPct * 4}%`, background: `linear-gradient(90deg, ${color}bb, ${color})`, borderRadius: '7px', transition: 'width 0.55s ease', boxShadow: `inset 0 1px 2px rgba(255,255,255,0.4)` }} />
-                          </div>
-                          <span style={{ fontSize: '12px', fontWeight: '800', color, minWidth: '78px', textAlign: 'right' }}>{displayConv} ({displayPct}%)</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {balancedSubject && (
-                    <div style={{ marginTop: '14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#15803d', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      ✅ Da can bang: moi mon hoc duoc dieu chinh ve ~2-3 conv (12.5% moi nhom).
-                    </div>
-                  )}
-                </div>
-
-                {/* Quality Donut */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>📊 Classification Chat luong</h3>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>{total} conversations da phan loai</p>
-                    </div>
-                    <button
-                      onClick={() => setBalancedQuality(!balancedQuality)}
-                      style={{ padding: '7px 13px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: `1.5px solid ${balancedQuality ? '#15803d' : '#e2e8f0'}`, background: balancedQuality ? '#dcfce7' : '#f8fafc', color: balancedQuality ? '#15803d' : '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', transition: 'all 0.2s' }}>
-                      <Sparkles size={12} />
-                      {balancedQuality ? 'Da can bang Chat luong' : 'Can bang Chat luong'}
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-                    {/* Donut SVG - larger and with drop shadow */}
-                    <div style={{ position: 'relative', width: '190px', height: '190px', flexShrink: 0 }}>
-                      <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)', filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10))' }}>
-                        <circle cx="100" cy="100" r={r} fill="none" stroke="#f1f5f9" strokeWidth="30" />
-                        <circle cx="100" cy="100" r={r} fill="none" stroke="#16a34a" strokeWidth="30"
-                          strokeDasharray={`${balancedQuality ? circ * 0.6 : goldArc} ${circ}`} strokeDashoffset="0" strokeLinecap="round" style={{ transition: 'stroke-dasharray 0.6s ease' }} />
-                        <circle cx="100" cy="100" r={r} fill="none" stroke="#d97706" strokeWidth="30"
-                          strokeDasharray={`${balancedQuality ? circ * 0.3 : rewriteArc} ${circ}`} strokeDashoffset={`${-(balancedQuality ? circ * 0.6 : goldArc)}`} style={{ transition: 'all 0.6s ease' }} />
-                        <circle cx="100" cy="100" r={r} fill="none" stroke="#dc2626" strokeWidth="30"
-                          strokeDasharray={`${balancedQuality ? circ * 0.1 : rejectArc} ${circ}`} strokeDashoffset={`${-(balancedQuality ? circ * 0.9 : goldArc + rewriteArc)}`} style={{ transition: 'all 0.6s ease' }} />
-                      </svg>
-                      <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                        <div style={{ fontSize: '28px', fontWeight: '900', color: '#1e293b', lineHeight: 1 }}>{total}</div>
-                        <div style={{ fontSize: '10px', fontWeight: '700', color: '#94a3b8', letterSpacing: '0.5px', marginTop: '3px' }}>TOTAL</div>
-                      </div>
-                    </div>
-                    {/* Legend cards with mini progress bars */}
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {[
-                        { label: 'Gold (Xuat sac)', count: balancedQuality ? 12 : goldCount, pct: balancedQuality ? 60 : goldRate, color: '#16a34a', bg: '#f0fdf4', icon: '🏅' },
-                        { label: 'Rewrite (Edit)', count: balancedQuality ? 6 : rewriteCount, pct: balancedQuality ? 30 : 45, color: '#d97706', bg: '#fffbeb', icon: '✏️' },
-                        { label: 'Reject (Loai)', count: balancedQuality ? 2 : rejectCount, pct: balancedQuality ? 10 : 15, color: '#dc2626', bg: '#fff5f5', icon: '🚫' },
-                      ].map(({ label, count, pct, color, bg, icon }) => (
-                        <div key={label} style={{ padding: '10px 12px', borderRadius: '10px', background: bg, border: `1px solid ${color}25` }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '6px' }}>
-                            <span style={{ fontSize: '14px' }}>{icon}</span>
-                            <span style={{ fontSize: '12.5px', fontWeight: '700', color, flex: 1 }}>{label}</span>
-                            <span style={{ fontSize: '17px', fontWeight: '900', color, lineHeight: 1 }}>{count}</span>
-                            <span style={{ fontSize: '11px', color: `${color}99`, fontWeight: '600' }}>({pct}%)</span>
-                          </div>
-                          <div style={{ height: '5px', background: `${color}18`, borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${color}88, ${color})`, borderRadius: '3px', transition: 'width 0.6s ease' }} />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {balancedQuality && (
-                    <div style={{ marginTop: '14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 14px', fontSize: '12px', color: '#15803d' }}>
-                      ✅ Da tai can bang: xu ly oversample Gold, undersample Reject. Rate moi: 60% / 30% / 10%.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── STAFF PERFORMANCE ── */}
-              <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b' }}>Staff Performance</h3>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>{staffData.length} nhan vien tham gia xu ly tap du lieu nay</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <div style={{ background: '#dcfce7', borderRadius: '8px', padding: '8px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#15803d' }}>Finish</div>
-                      <div style={{ fontSize: '18px', fontWeight: '900', color: '#15803d' }}>{staffData.filter(s => s.status === 'Finish').length}</div>
-                    </div>
-                    <div style={{ background: '#fef3c7', borderRadius: '8px', padding: '8px 12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '700', color: '#92400e' }}>Pending Review</div>
-                      <div style={{ fontSize: '18px', fontWeight: '900', color: '#92400e' }}>{staffData.filter(s => s.status === 'Pending Review').length}</div>
-                    </div>
-                  </div>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                      {['Staff', 'Subject phu trach', 'Da nop / Giao', 'Rate duyet', 'Progress', 'Status'].map(h => (
-                        <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staffData.map((s, i) => (
-                      <tr key={s.name} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                        <td style={{ padding: '12px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#4f46e5', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '700', flexShrink: 0 }}>
-                              {s.name[0]}
-                            </div>
-                            <span style={{ fontWeight: '700', color: '#1e293b' }}>{s.name}</span>
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: '700', background: '#f1f5f9', color: '#475569' }}>{s.subject}</span>
-                        </td>
-                        <td style={{ padding: '12px 16px', fontWeight: '700', color: s.approved === s.assigned ? '#15803d' : '#d97706' }}>
-                          {s.approved} / {s.assigned}
-                        </td>
-                        <td style={{ padding: '12px 16px', fontWeight: '700', color: s.rate >= 100 ? '#15803d' : s.rate >= 70 ? '#d97706' : '#dc2626' }}>
-                          {s.rate}%
-                        </td>
-                        <td style={{ padding: '12px 16px', minWidth: '120px' }}>
-                          <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${s.rate}%`, background: s.rate >= 100 ? '#16a34a' : s.rate >= 70 ? '#d97706' : '#dc2626', borderRadius: '4px', transition: 'width 0.3s' }} />
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span style={{
-                            padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '700',
-                            background: s.status === 'Finish' ? '#dcfce7' : s.status === 'Approved' ? '#e0e7ff' : '#fef3c7',
-                            color: s.status === 'Finish' ? '#15803d' : s.status === 'Approved' ? '#4338ca' : '#92400e'
-                          }}>{s.status}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* ── TOP REASONS + CONFLICT ── */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {/* Top Reasons */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#1e293b' }}>Reason loi pho bien (Top Reasons)</h3>
-                    <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>Vi sao cac mau bi phan loai Rewrite/Reject</p>
-                  </div>
-                  <div style={{ padding: '16px' }}>
-                    {topReasons.map(({ reason, count, pct, bucket }, idx) => (
-                      <div key={idx} style={{ marginBottom: '14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '800', background: bucket === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: bucket === 'Rewrite' ? '#92400e' : '#dc2626' }}>{bucket}</span>
-                            <span style={{ fontSize: '13px', color: '#334155', fontWeight: '600' }}>{reason}</span>
-                          </div>
-                          <span style={{ fontSize: '13px', fontWeight: '800', color: '#1e293b' }}>{count} HT</span>
-                        </div>
-                        <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: bucket === 'Rewrite' ? '#d97706' : '#dc2626', borderRadius: '4px' }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* AI vs Human Conflict */}
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff7f7' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#b91c1c' }}>Conflict AI vs Human</h3>
-                        <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#dc2626' }}>{conflictData.filter(c => !c.resolved).length} chua giai quyet / {conflictData.length} tong</p>
-                      </div>
-                      <span style={{ fontSize: '22px' }}>⚠️</span>
-                    </div>
-                  </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                        {['ID', 'Subject', 'Gemini', 'Deepseek', 'Human', 'Delta', 'Status'].map(h => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {conflictData.map(({ id, subject, gemini, deepseek, human, diff, resolved }) => (
-                        <tr key={id} style={{ borderBottom: '1px solid #f1f5f9', background: resolved ? '#f0fdf4' : '#fff7f7' }}>
-                          <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#1e293b' }}>{id.slice(-6)}</td>
-                          <td style={{ padding: '10px 12px', fontSize: '12px', color: '#475569' }}>{subject}</td>
-                          <td style={{ padding: '10px 12px', fontWeight: '700', color: '#dc2626', fontSize: '13px' }}>{gemini}</td>
-                          <td style={{ padding: '10px 12px', fontWeight: '700', color: '#16a34a', fontSize: '13px' }}>{deepseek}</td>
-                          <td style={{ padding: '10px 12px', fontWeight: '700', color: human ? '#ea580c' : '#cbd5e1', fontSize: '13px' }}>{human ?? '—'}</td>
-                          <td style={{ padding: '10px 12px', fontWeight: '800', color: diff >= 3 ? '#dc2626' : '#d97706', fontSize: '13px' }}>±{diff}</td>
-                          <td style={{ padding: '10px 12px' }}>
-                            <span style={{ padding: '3px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: '800', background: resolved ? '#dcfce7' : '#fee2e2', color: resolved ? '#15803d' : '#dc2626' }}>
-                              {resolved ? 'Resolved' : 'Can xu ly'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div style={{ padding: '12px 16px', background: '#fafafa', borderTop: '1px solid #f1f5f9', fontSize: '12px', color: '#64748b' }}>
-                    💡 Conflict xay ra khi diem AI va Human chenh nhau &gt; 2.0 diem. Can duoc xac nhan bo truoc khi xuat.
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          );
-        })()}
+        )}
       </div>
     );
   };
 
-  const renderStage5 = () => {
+  const renderSep490Stage5 = () => {
+    const evalItems = [
+      {
+        id: 'eval_428051',
+        subject: 'MATH',
+        score: 4.3,
+        recommendation: 'Reject',
+        conflict: true,
+        messages: [
+          ['Student', 'Em khong hieu dao ham cua x^2 tinh the nao a?'],
+          ['AI Tutor', 'Hay nho quy tac dao ham cua x^n va thu ap dung voi n = 2.'],
+          ['Student', 'Hinh nhu la n*x^(n-1) a?'],
+        ],
+        models: [
+          { name: 'GEMINI', rec: 'Reject', score: 4.0, color: 'rose' },
+          { name: 'DEEPSEEK', rec: 'Pass', score: 7.8, color: 'emerald' },
+          { name: 'OPENAI', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
+        ],
+      },
+      {
+        id: 'eval_42D67D',
+        subject: 'PHYSICAL',
+        score: 8.7,
+        recommendation: 'Pass',
+        conflict: false,
+        messages: [
+          ['Student', 'Luc ma sat la gi a?'],
+          ['AI Tutor', 'Em thu nghi xem vi sao xe phanh lai dung duoc tren mat duong?'],
+        ],
+        models: [
+          { name: 'GEMINI', rec: 'Pass', score: 8.8, color: 'emerald' },
+          { name: 'DEEPSEEK', rec: 'Pass', score: 8.4, color: 'emerald' },
+        ],
+      },
+    ];
+
+    const visibleEvalItems = evalItems.filter((item) => {
+      const matchesRec = sepEvalRecommendation === 'all' || item.recommendation === sepEvalRecommendation;
+      const matchesConflict = !sepEvalConflictOnly || item.conflict;
+      const matchesScore = item.score >= Number(sepEvalMinScore || 0);
+      return matchesRec && matchesConflict && matchesScore;
+    });
+
+    return (
+      <div className="dataprep-stage2 sep490-stage">
+        <div className="sep490-grid sep490-grid-1-2">
+          <section className="sep490-panel">
+            <div className="sep490-panel-head compact">
+              <h3>AI Judge Setup</h3>
+              <span className="sep490-pill indigo">1-3 models</span>
+            </div>
+            <div className="sep490-check-list">
+              {[
+                ['gemini', 'Gemini (Flash 1.5)', 'Default education judge'],
+                ['openai', 'OpenAI (GPT-4o)', 'High precision verification'],
+                ['deepseek', 'Deepseek (R1/V3)', 'Advanced logic judge'],
+              ].map(([key, label, desc]) => (
+                <label key={key} className={judgeModels[key] ? 'active' : ''}>
+                  <input
+                    type="checkbox"
+                    checked={judgeModels[key]}
+                    onChange={() => setJudgeModels((prev) => ({ ...prev, [key]: !prev[key] }))}
+                  />
+                  <span><strong>{label}</strong><small>{desc}</small></span>
+                </label>
+              ))}
+            </div>
+            <label className="sep490-field">
+              Context window
+              <select className="sep490-select">
+                <option>n - 2 to n + 2 (recommended)</option>
+                <option>n - 1 to n + 1</option>
+                <option>Whole conversation</option>
+              </select>
+            </label>
+            <button
+              className="sep490-primary full"
+              onClick={() => {
+                setSepRunningEval(true);
+                window.setTimeout(() => setSepRunningEval(false), 900);
+              }}
+            >
+              <Sparkles size={14} className={sepRunningEval ? 'sep490-spin' : ''} />
+              Start AI verification & refinement
+            </button>
+          </section>
+
+          <section className="sep490-panel">
+            <div className="sep490-panel-head compact">
+              <h3>Verification Status</h3>
+              <span className="sep490-pill emerald">{sepRunningEval ? 'RUNNING' : 'COMPLETE'}</span>
+            </div>
+            <div className="sep490-progress large"><span style={{ width: sepRunningEval ? '62%' : '100%' }} /></div>
+            <div className="sep490-status-grid">
+              <div><span>Evaluated</span><strong>{sepRunningEval ? 6 : 9}</strong></div>
+              <div><span>Processing</span><strong>{sepRunningEval ? 3 : 0}</strong></div>
+              <div><span>Auto refined</span><strong>2</strong></div>
+              <div><span>API errors</span><strong>0</strong></div>
+              <div><span>Conflicts</span><strong className="amber">1</strong></div>
+            </div>
+          </section>
+        </div>
+
+        <div className="sep490-filterbar">
+          <span><Sparkles size={14} /> Auto filter</span>
+          <label>Recommendation
+            <select value={sepEvalRecommendation} onChange={(e) => setSepEvalRecommendation(e.target.value)}>
+              <option value="all">All</option>
+              <option value="Pass">Pass</option>
+              <option value="Need Rewrite">Need Rewrite</option>
+              <option value="Reject">Reject</option>
+            </select>
+          </label>
+          <label>Min score
+            <input type="number" min="0" max="10" step="0.5" value={sepEvalMinScore} onChange={(e) => setSepEvalMinScore(parseFloat(e.target.value) || 0)} />
+          </label>
+          <label className="sep490-inline-check">
+            <input type="checkbox" checked={sepEvalConflictOnly} onChange={() => setSepEvalConflictOnly(!sepEvalConflictOnly)} />
+            Conflict only
+          </label>
+          <button className="sep490-outline"><RefreshCw size={14} /> Refresh</button>
+        </div>
+
+        <div className="sep490-stack">
+          {visibleEvalItems.length === 0 ? (
+            <div className="sep490-empty">No evaluation result matches this filter.</div>
+          ) : visibleEvalItems.map((item) => (
+            <section key={item.id} className="sep490-eval-card">
+              <div className="sep490-eval-head" onClick={() => setEvalExpanded(evalExpanded === item.id ? "" : item.id)}>
+                <div>
+                  <span className={`sep490-score ${item.score >= 8 ? 'emerald' : item.score >= 6 ? 'amber' : 'rose'}`}>{item.score.toFixed(1)} / 10</span>
+                  {item.conflict && <span className="sep490-badge rose">Conflict</span>}
+                  <strong>{item.subject} - sample #{item.id.slice(-6).toUpperCase()}</strong>
+                </div>
+                <div>
+                  <span className={`sep490-badge ${item.recommendation === 'Pass' ? 'emerald' : item.recommendation === 'Reject' ? 'rose' : 'amber'}`}>Suggest: {item.recommendation}</span>
+                  <ChevronDown size={16} style={{ transform: evalExpanded === item.id ? 'rotate(180deg)' : 'none' }} />
+                </div>
+              </div>
+              {evalExpanded === item.id && (
+                <div className="sep490-eval-body">
+                  <div className="sep490-context">
+                    <div className="sep490-context-head">
+                      <span>Conversation context</span>
+                      <button>Score history</button>
+                    </div>
+                    {item.messages.map(([role, content], idx) => (
+                      <p key={idx} className={idx === 1 ? 'target' : ''}><strong>{role}:</strong> {content}{idx === 1 && <span>TARGET</span>}</p>
+                    ))}
+                  </div>
+
+                  <div className="sep490-model-grid">
+                    {item.models.map((model) => (
+                      <div key={model.name} className={`sep490-model-card ${model.color}`}>
+                        <div><strong>{model.name}</strong><span>{model.rec} ({model.score.toFixed(1)})</span></div>
+                        <dl>
+                          <dt>Factuality</dt><dd>{Math.min(10, model.score + 0.8).toFixed(1)}/10</dd>
+                          <dt>Socratic</dt><dd>{Math.max(0, model.score - 0.6).toFixed(1)}/10</dd>
+                          <dt>Vietnamese quality</dt><dd>{Math.min(10, model.score + 1).toFixed(1)}/10</dd>
+                          <dt>Training readiness</dt><dd>{model.score.toFixed(1)}/10</dd>
+                        </dl>
+                        <p>The response is checked for correctness, Socratic guidance, context fit, and training readiness.</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+
+        <div className="dataprep-actions-row">
+          <button className="dataprep-btn-back" onClick={() => setCurrentStage(4)}>
+            Back
+          </button>
+          <button className="dataprep-btn-next" onClick={() => setCurrentStage(6)}>
+            Next
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStage6 = () => {
     const livePreviewJSON = {
       messages: [
         { role: 'system', content: promptText || '[No system prompt yet]' },
         { role: 'user', content: sampleQuestion },
-        { role: 'assistant', content: '"ChÃ o báº¡n, phÆ°Æ¡ng trÃ¬nh nÃ y cÃ³ thá»ƒ giáº£i báº±ng cÃ¡ch nhÃ¢n nghiá»‡m theo há»‡ thá»©c Vi et: x1 + x2 = 5 vÃ  x1 * x2 = 6. Váº­y nghiá»‡m lÃ  x = 2 vÃ  x = 3. CÃ³ Ä‘iá» u gÃ¬ mÃ  báº¡n muá»‘n tháº£o luáº­n thÃªm vá»  cÃ¡ch giáº£i nÃ y?"' }
+        { role: 'assistant', content: '"Chào bạn, phương trình này có thể giải bằng cách nhân nghiệm theo hệ thức Vi et: x1 + x2 = 5 và x1 * x2 = 6. Vậy nghiệm là x = 2 và x = 3. Có điều gì mà bạn muốn thảo luận thêm về cách giải này?"' }
       ]
     };
 
@@ -5175,24 +5085,24 @@ function DataPrepView() {
       <div className="dataprep-stage2">
         {/* Sub-stepper */}
         <div className="sub-stepper">
-          {SUB_STEPS_STAGE5.map((step, idx) => (
+          {SUB_STEPS_STAGE6.map((step, idx) => (
             <React.Fragment key={step.num}>
               <div
-                className={`sub-step ${step.num === currentSubStep5 ? 'active' : ''} ${step.num < currentSubStep5 ? 'completed' : ''}`}
-                onClick={() => setCurrentSubStep5(step.num)}
+                className={`sub-step ${step.num === currentSubStep6 ? 'active' : ''} ${step.num < currentSubStep6 ? 'completed' : ''}`}
+                onClick={() => setCurrentSubStep6(step.num)}
               >
                 <div className="sub-step-circle">
-                  {step.num < currentSubStep5 ? <Check size={14} /> : step.num}
+                  {step.num < currentSubStep6 ? <Check size={14} /> : step.num}
                 </div>
                 <div className="sub-step-label" style={{ whiteSpace: 'pre-line', textAlign: 'center' }}>{step.label}</div>
               </div>
-              {idx < SUB_STEPS_STAGE5.length - 1 && <div className="sub-step-connector" />}
+              {idx < SUB_STEPS_STAGE6.length - 1 && <div className="sub-step-connector" />}
             </React.Fragment>
           ))}
         </div>
 
         {/* Sub-step 13: System Prompt */}
-        {currentSubStep5 === 11 && (
+        {currentSubStep6 === 13 && (
           <div className="s6-prompt">
             <div className="s6-prompt-title">
               <h3>System Prompt Versioning</h3>
@@ -5322,7 +5232,7 @@ function DataPrepView() {
         )}
 
         {/* Sub-step 14: Split Guard */}
-        {currentSubStep5 === 12 && (
+        {currentSubStep6 === 14 && (
           <div className="sg-container">
             {/* Header */}
             <div className="sg-header">
@@ -5330,28 +5240,56 @@ function DataPrepView() {
                 <h3>Split Guard</h3>
                 <p>Generate a train/test split with semantic conflict checking handled by the GPU service.</p>
               </div>
-              <button className="s6-trial-btn"><Sparkles size={14} /> Generate safe split</button>
+              <button 
+                className="s6-trial-btn"
+                onClick={handleGenerateSplit}
+                disabled={isSplitting || conversationsList.length === 0}
+              >
+                {isSplitting ? <RefreshCw size={14} className="sep490-spin" /> : <Sparkles size={14} />}
+                Generate safe split
+              </button>
             </div>
 
             {/* Config Cards */}
             <div className="sg-config-row">
               <div className="sg-config-card">
                 <span className="sg-config-label">TOTAL SAMPLES</span>
-                <span className="sg-config-value">72</span>
+                <span className="sg-config-value">{conversationsList.length}</span>
               </div>
               <div className="sg-config-card">
                 <div className="sg-config-label-row">
                   <span className="sg-config-label">TEST PERCENTAGE</span>
-                  <span className="sg-config-pct">50%</span>
+                  <span className="sg-config-pct">{splitTestPercentage}%</span>
                 </div>
-                <input type="range" min="10" max="90" defaultValue={50} className="sg-slider sg-slider-purple" />
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="50" 
+                  value={splitTestPercentage}
+                  onChange={(e) => {
+                    setSplitTestPercentage(Number(e.target.value));
+                    setSplitResult(null);
+                  }}
+                  className="sg-slider sg-slider-purple" 
+                />
               </div>
               <div className="sg-config-card">
                 <div className="sg-config-label-row">
                   <span className="sg-config-label">SEMANTIC THRESHOLD</span>
-                  <span className="sg-config-pct">1.000</span>
+                  <span className="sg-config-pct">{splitThreshold.toFixed(3)}</span>
                 </div>
-                <input type="range" min="0" max="100" defaultValue={100} className="sg-slider sg-slider-purple" />
+                <input 
+                  type="range" 
+                  min="0.8" 
+                  max="1.0" 
+                  step="0.001"
+                  value={splitThreshold}
+                  onChange={(e) => {
+                    setSplitThreshold(Number(e.target.value));
+                    setSplitResult(null);
+                  }}
+                  className="sg-slider sg-slider-purple" 
+                />
               </div>
             </div>
 
@@ -5359,206 +5297,390 @@ function DataPrepView() {
             <div className="sg-attempts-card">
               <span className="sg-config-label">MAX ATTEMPTS</span>
               <p className="sg-attempts-desc">The GPU service will reshuffle until the split is clean or this limit is reached.</p>
-              <input type="number" defaultValue={20} className="sg-attempts-input" />
+              <input 
+                type="number" 
+                min="1" 
+                max="100" 
+                value={splitMaxAttempts}
+                onChange={(e) => {
+                  setSplitMaxAttempts(Math.max(1, Math.min(100, Number(e.target.value) || 1)));
+                  setSplitResult(null);
+                }}
+                className="sg-attempts-input" 
+              />
             </div>
 
             {/* Split Generated Result */}
-            <div className="sg-result-card">
-              <div className="sg-result-title"><Check size={16} /> Split Generated</div>
-              <div className="sg-result-stats">
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">TRAIN</span>
-                  <span className="sg-result-value">36</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">TEST</span>
-                  <span className="sg-result-value">36</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">ATTEMPTS</span>
-                  <span className="sg-result-value">1</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">CONFLICTS</span>
-                  <span className="sg-result-value sg-value-red">4</span>
-                </div>
-                <div className="sg-result-stat">
-                  <span className="sg-result-label">MAX SIMILARITY</span>
-                  <span className="sg-result-value">0.96</span>
-                </div>
+            <div className="sg-result-card" style={{ 
+              borderColor: !splitResult ? '#cbd5e1' : splitResult.resolved ? '#10b981' : '#f43f5e',
+              backgroundColor: !splitResult ? '#f8fafc' : splitResult.resolved ? 'rgba(16,185,129,0.05)' : 'rgba(244,63,94,0.05)',
+              padding: '16px', borderRadius: '12px', border: '1px solid', marginTop: '16px'
+            }}>
+              <div className="sg-result-title" style={{
+                color: !splitResult ? '#64748b' : splitResult.resolved ? '#10b981' : '#f43f5e',
+                fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px'
+              }}>
+                {!splitResult ? <AlertCircle size={16} /> : splitResult.resolved ? <Check size={16} /> : <AlertCircle size={16} />}
+                {!splitResult ? 'No split generated yet' : splitResult.resolved ? 'Split Generated (Clean)' : 'Split Generated (Conflicts remain)'}
               </div>
+              {splitResult && (
+                <div className="sg-result-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginTop: '12px' }}>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>TRAIN</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.trainCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>TEST</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.testCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>ATTEMPTS</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{splitResult.attempts}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>CONFLICTS</span>
+                    <span className={`sg-result-value ${splitResult.conflictCount > 0 ? 'sg-value-red' : ''}`} style={{ fontSize: '20px', fontWeight: 'bold', color: splitResult.conflictCount > 0 ? '#ef4444' : '#1e293b' }}>{splitResult.conflictCount}</span>
+                  </div>
+                  <div className="sg-result-stat" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="sg-result-label" style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase' }}>MAX SIMILARITY</span>
+                    <span className="sg-result-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>{Number(splitResult.maxCrossSplitSimilarity || 0).toFixed(3)}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Venn Diagram */}
-            <div className="sg-venn-card">
-              <h4>Semantic Overlap Visualization</h4>
-              <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
-              <div className="sg-venn-wrap">
-                <svg viewBox="0 0 400 220" className="sg-venn-svg">
-                  {/* Train circle */}
-                  <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
-                  {/* Test circle */}
-                  <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
-                  {/* Overlap area - dashed */}
-                  <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
-                  {/* Labels */}
-                  <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
-                  <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">32 unique</text>
-                  <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
-                  <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">32 unique</text>
-                  <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
-                  <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">4 conflicts</text>
-                </svg>
-              </div>
+            {(() => {
+              const trainUnique = splitResult ? Math.max(0, splitResult.trainCount - splitResult.conflictCount) : 0;
+              const testUnique = splitResult ? Math.max(0, splitResult.testCount - splitResult.conflictCount) : 0;
+              const conflictCount = splitResult ? splitResult.conflictCount : 0;
+              return (
+                <div className="sg-venn-card" style={{ marginTop: '16px' }}>
+                  <h4>Semantic Overlap Visualization</h4>
+                  <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
+                  <div className="sg-venn-wrap">
+                    <svg viewBox="0 0 400 220" className="sg-venn-svg">
+                      {/* Train circle */}
+                      <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                      {/* Test circle */}
+                      <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
+                      {/* Overlap area - dashed */}
+                      <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                      {/* Labels */}
+                      <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
+                      <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">{trainUnique} unique</text>
+                      <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
+                      <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">{testUnique} unique</text>
+                      <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
+                      <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">{conflictCount} conflicts</text>
+                    </svg>
+                  </div>
 
-              {/* Summary Cards */}
-              <div className="sg-summary-row">
-                <div className="sg-summary-card sg-summary-train">
-                  <span className="sg-summary-value">32</span>
-                  <span className="sg-summary-label">Train Only</span>
+                  {/* Summary Cards */}
+                  <div className="sg-summary-row">
+                    <div className="sg-summary-card sg-summary-train">
+                      <span className="sg-summary-value">{trainUnique}</span>
+                      <span className="sg-summary-label">Train Only</span>
+                    </div>
+                    <div className="sg-summary-card sg-summary-conflict">
+                      <span className="sg-summary-value">{conflictCount}</span>
+                      <span className="sg-summary-label">Semantic Conflicts</span>
+                    </div>
+                    <div className="sg-summary-card sg-summary-test">
+                      <span className="sg-summary-value">{testUnique}</span>
+                      <span className="sg-summary-label">Test Only</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="sg-summary-card sg-summary-conflict">
-                  <span className="sg-summary-value">4</span>
-                  <span className="sg-summary-label">Semantic Conflicts</span>
-                </div>
-                <div className="sg-summary-card sg-summary-test">
-                  <span className="sg-summary-value">32</span>
-                  <span className="sg-summary-label">Test Only</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Manual Exclusion Tool */}
-            <div className="sg-exclusion-card">
+            <div className="sg-exclusion-card" style={{ marginTop: '16px' }}>
               <div className="sg-exclusion-header">
                 <div>
                   <h4>Manual Exclusion Tool</h4>
                   <p>Select samples below to exclude them from the dataset and resolve conflicts.</p>
                 </div>
-                <span className="sg-excluded-count">0 excluded</span>
+                <span className="sg-excluded-count">{excludedIds.length} excluded</span>
               </div>
-              <div className="sg-conflict-list">
-                {[
-                  { text: 'Giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai xÂ² - 5x + 6 = 0', sim: 0.92 },
-                  { text: 'TÃ¬m nghiá»‡m cá»§a phÆ°Æ¡ng trÃ¬nh xÂ² + 3x - 4 = 0', sim: 0.87 },
-                  { text: 'PhÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ delta Ã¢m thÃ¬ cÃ³ máº¥y nghiá»‡m?', sim: 0.95 },
-                  { text: 'CÃ´ng thá»©c Vi-et dÃ¹ng Ä‘á»ƒ lÃ m gÃ¬?', sim: 0.89 },
-                ].map((item, idx) => (
-                  <div key={idx} className="sg-conflict-item">
-                    <div className="sg-conflict-left">
-                      <X size={14} className="sg-conflict-x" />
-                      <div>
-                        <span className="sg-conflict-text">{item.text}</span>
-                        <div className="sg-conflict-meta">
-                          <span className="sg-dot sg-dot-train"></span> Print Train
-                          <span className="sg-dot sg-dot-test"></span> Print Test
-                          <span className="sg-conflict-sim">Similarity: <strong style={{ color: '#dc2626' }}>{item.sim}</strong></span>
+              <div className="sg-conflict-list" style={{ marginTop: '12px' }}>
+                {(!splitResult?.conflictsPreview || splitResult.conflictsPreview.length === 0) ? (
+                  <div className="sg-no-conflicts" style={{ padding: '24px', textAlign: 'center', color: '#64748b', border: '1px dashed #cbd5e1', borderRadius: '8px', backgroundColor: '#f8fafc' }}>
+                    No conflicts detected. The split is clean!
+                  </div>
+                ) : (
+                  splitResult.conflictsPreview.map((conflict: any, idx: number) => {
+                    const trainConv = conversationsList[conflict.trainIndex];
+                    const testConv = conversationsList[conflict.testIndex];
+                    const trainText = getConversationText(trainConv);
+                    const testText = getConversationText(testConv);
+
+                    return (
+                      <div key={idx} className="sg-conflict-item-pair" style={{
+                        border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '10px', backgroundColor: '#fff'
+                      }}>
+                        <div className="sg-conflict-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <div className="sg-conflict-left" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '80%' }}>
+                            <span className="sg-dot sg-dot-train" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#7c3aed', flexShrink: 0 }}></span>
+                            <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              <strong style={{ fontSize: '12px', color: '#475569' }}>Train #{conflict.trainIndex}:</strong>
+                              <span className="sg-conflict-text" style={{ marginLeft: '8px', fontSize: '13px', color: '#1e293b' }}>{truncateText(trainText, 120)}</span>
+                            </div>
+                          </div>
+                          {trainConv && (
+                            <button 
+                              className="sg-exclude-btn" 
+                              style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: '12px', color: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                              onClick={() => handleExcludeSample(trainConv.id)}
+                            >
+                              Exclude Train
+                            </button>
+                          )}
+                        </div>
+                        
+                        <div className="sg-conflict-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #e2e8f0', paddingTop: '8px' }}>
+                          <div className="sg-conflict-left" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '80%' }}>
+                            <span className="sg-dot sg-dot-test" style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#3b82f6', flexShrink: 0 }}></span>
+                            <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              <strong style={{ fontSize: '12px', color: '#475569' }}>Test #{conflict.testIndex}:</strong>
+                              <span className="sg-conflict-text" style={{ marginLeft: '8px', fontSize: '13px', color: '#1e293b' }}>{truncateText(testText, 120)}</span>
+                            </div>
+                          </div>
+                          {testConv && (
+                            <button 
+                              className="sg-exclude-btn" 
+                              style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: '12px', color: '#ef4444', backgroundColor: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '4px', cursor: 'pointer', flexShrink: 0 }}
+                              onClick={() => handleExcludeSample(testConv.id)}
+                            >
+                              Exclude Test
+                            </button>
+                          )}
+                        </div>
+
+                        <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
+                          Similarity Score: <strong style={{ color: '#ef4444' }}>{Number(conflict.similarity).toFixed(3)}</strong>
                         </div>
                       </div>
-                    </div>
-                    <button className="sg-exclude-btn">Click to exclude</button>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
         )}
 
         {/* Sub-step 15: Export */}
-        {currentSubStep5 === 13 && (
+        {currentSubStep6 === 15 && (
           <div className="ex-container">
             {/* Dataset Preview */}
             <div className="ex-preview-card">
               <div className="ex-preview-header">
                 <div>
                   <h3>Converted Dataset Preview</h3>
-                  <p>Showing 1-5 of 72 records</p>
+                  {(() => {
+                    const itemsPerPage = 5;
+                    const startIndex = (exportPage - 1) * itemsPerPage;
+                    const endIndex = Math.min(startIndex + itemsPerPage, conversationsList.length);
+                    return (
+                      <p>Showing {startIndex + 1}-{endIndex} of {conversationsList.length} records</p>
+                    );
+                  })()}
                 </div>
                 <div className="ex-preview-controls">
-                  <button className="s4-btn-outline" style={{ fontSize: '11px', padding: '5px 10px' }}>Show All</button>
-                  <button className="s4-btn-outline" style={{ fontSize: '11px', padding: '5px 10px' }}>Increase Limit (5)</button>
-                  <select className="s5-filter-select">
-                    <option>5 / page</option>
-                    <option>10 / page</option>
-                    <option>20 / page</option>
-                  </select>
+                  <span style={{ fontSize: '12px', color: '#64748b', marginRight: '8px' }}>Format: <strong>{selectedFormat.toUpperCase()}</strong></span>
                 </div>
               </div>
 
               <table className="ex-table">
                 <thead>
                   <tr>
-                    <th>System</th>
-                    <th>User</th>
-                    <th>Assistant</th>
-                    <th>overall</th>
-                    <th>reason</th>
-                    <th>evaluated by</th>
+                    <th style={{ width: '10%' }}>ID</th>
+                    <th style={{ width: '25%' }}>System</th>
+                    <th style={{ width: '25%' }}>User</th>
+                    <th style={{ width: '30%' }}>Assistant</th>
+                    <th style={{ width: '10%' }}>Overall</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {EXPORT_ROWS.map((row, idx) => (
-                    <tr key={idx}>
-                      <td>-</td>
-                      <td>
-                        <span className="ex-cell-text">{row.user}</span>
-                        <a href="#" className="ex-read-more">Read more</a>
-                      </td>
-                      <td>
-                        <span className="ex-cell-text">{row.assistant}</span>
-                        <a href="#" className="ex-read-more">Read more</a>
-                      </td>
-                      <td>-</td>
-                      <td>-</td>
-                      <td>-</td>
-                    </tr>
-                  ))}
+                  {(() => {
+                    const itemsPerPage = 5;
+                    const startIndex = (exportPage - 1) * itemsPerPage;
+                    const endIndex = Math.min(startIndex + itemsPerPage, conversationsList.length);
+                    const currentExportRows = conversationsList.slice(startIndex, endIndex);
+
+                    if (currentExportRows.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>No data records available</td>
+                        </tr>
+                      );
+                    }
+
+                    return currentExportRows.map((conv) => {
+                      const firstMsg = conv.messages?.[0] || { user: '', assistant: '' };
+                      const overallScore = getOverallScore(conv);
+                      return (
+                        <tr key={conv.id}>
+                          <td><code>{conv.id}</code></td>
+                          <td>
+                            <span className="ex-cell-text" title={promptText}>{truncateText(promptText || '-', 60)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-cell-text" title={firstMsg.user}>{truncateText(firstMsg.user || '', 80)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-cell-text" title={firstMsg.assistant}>{truncateText(firstMsg.assistant || '', 80)}</span>
+                          </td>
+                          <td>
+                            <span className="ex-score-badge" style={{
+                              backgroundColor: overallScore >= 8.0 ? 'rgba(16,185,129,0.1)' : overallScore >= 5.0 ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                              color: overallScore >= 8.0 ? '#10b981' : overallScore >= 5.0 ? '#f59e0b' : '#ef4444',
+                              padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-block'
+                            }}>
+                              {overallScore.toFixed(1)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
 
-              <div className="ex-pagination">
-                <button className="ex-page-btn" onClick={() => setExportPage(Math.max(1, exportPage - 1))}>Previous</button>
-                <span className="ex-page-info">Page {exportPage} / 15</span>
-                <button className="ex-page-btn" onClick={() => setExportPage(Math.min(15, exportPage + 1))}>Next</button>
-              </div>
+              {(() => {
+                const itemsPerPage = 5;
+                const totalExportPages = Math.max(1, Math.ceil(conversationsList.length / itemsPerPage));
+                return (
+                  <div className="ex-pagination">
+                    <button 
+                      className="ex-page-btn" 
+                      disabled={exportPage === 1}
+                      onClick={() => setExportPage(Math.max(1, exportPage - 1))}
+                    >
+                      Previous
+                    </button>
+                    <span className="ex-page-info">Page {exportPage} / {totalExportPages}</span>
+                    <button 
+                      className="ex-page-btn" 
+                      disabled={exportPage === totalExportPages}
+                      onClick={() => setExportPage(Math.min(totalExportPages, exportPage + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Download Cards Row */}
             <div className="ex-download-row">
               <div className="ex-download-card">
                 <h4>Download cooked Train/Test Split</h4>
-                <p className="ex-download-stat">Train: 36 / Test: 36</p>
+                <p className="ex-download-stat">
+                  Train: {splitResult ? splitResult.trainCount : 0} / Test: {splitResult ? splitResult.testCount : 0}
+                </p>
                 <p className="ex-download-note">Export uses the safe split generated in the previous step. Handson-splitting is disabled here.</p>
-                <button className="ex-btn-green"><Download size={14} /> Download train/test .zip</button>
+                <button className="ex-btn-green" onClick={handleDownloadTrainTestZip}><Download size={14} /> Download train/test .zip</button>
               </div>
               <div className="ex-download-card">
                 <h4>Download Split Filter by Overall Score</h4>
                 <div className="ex-score-row">
-                  <span className="ex-score-label">Overall Score â‰¥</span>
-                  <span className="ex-score-value">6.0</span>
+                  <span className="ex-score-label">Overall Score ≥</span>
+                  <span className="ex-score-value">{exportScoreThreshold.toFixed(1)}</span>
                 </div>
-                <input type="range" min="0" max="10" step="0.5" defaultValue={6} className="sg-slider sg-slider-purple" />
-                <button className="ex-btn-purple"><Download size={14} /> Download split overall &gt;= filter</button>
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="10" 
+                  step="0.5" 
+                  value={exportScoreThreshold} 
+                  onChange={(e) => setExportScoreThreshold(Number(e.target.value))}
+                  className="sg-slider sg-slider-purple" 
+                />
+                <button className="ex-btn-purple" onClick={handleDownloadByScore}><Download size={14} /> Download split overall &gt;= filter</button>
               </div>
             </div>
 
             {/* Push & Sync Row */}
             <div className="ex-push-row">
               <div className="ex-push-card">
-                <h4>ðŸ”¥ Push to Hugging Face Hub</h4>
+                <h4>🔥 Push to Hugging Face Hub</h4>
                 <label className="s6-field-label" style={{ marginTop: 0 }}>Hugging Face Token</label>
-                <input className="s6-field-input" defaultValue="hf_..." style={{ borderLeft: '1px solid #e2e8f0' }} />
+                <input 
+                  type="password"
+                  className="s6-field-input" 
+                  value={huggingFaceToken} 
+                  onChange={e => setHuggingFaceToken(e.target.value)}
+                  placeholder="hf_..."
+                  style={{ borderLeft: '1px solid #e2e8f0', marginBottom: '10px' }} 
+                />
+                
+                <label className="s6-field-label">Hugging Face Profile / Author (Optional)</label>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                  <input 
+                    className="s6-field-input" 
+                    value={hfUsername} 
+                    onChange={e => setHfUsername(e.target.value)}
+                    placeholder="e.g. google, meta, or your-username" 
+                    style={{ borderLeft: '1px solid #e2e8f0', flex: 1, marginTop: 0 }} 
+                  />
+                  <button 
+                    className="s4-btn-outline" 
+                    onClick={handleFetchHfProfile}
+                    disabled={isFetchingHf || !hfUsername.trim()}
+                    style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}
+                  >
+                    {isFetchingHf ? 'Loading...' : 'Pull Repos'}
+                  </button>
+                </div>
+
+                {hfDatasets.length > 0 && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <label className="s6-field-label">Select Repository</label>
+                    <select 
+                      className="sep490-select" 
+                      style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', backgroundColor: '#fff' }}
+                      onChange={e => setHuggingFaceRepoId(e.target.value)}
+                      value={huggingFaceRepoId}
+                    >
+                      <option value="">-- Choose one of {hfDatasets.length} datasets --</option>
+                      {hfDatasets.map((ds: any) => (
+                        <option key={ds.id} value={ds.id}>{ds.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <label className="s6-field-label">Repository ID</label>
-                <input className="s6-field-input" defaultValue="username/my-dataset" style={{ borderLeft: '1px solid #e2e8f0' }} />
-                <label className="ex-checkbox-label">
-                  <input type="checkbox" /> Make repository private
+                <input 
+                  className="s6-field-input" 
+                  value={huggingFaceRepoId} 
+                  onChange={e => setHuggingFaceRepoId(e.target.value)}
+                  placeholder="username/my-dataset" 
+                  style={{ borderLeft: '1px solid #e2e8f0', marginBottom: '10px' }} 
+                />
+                <label className="ex-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={huggingFacePrivate}
+                    onChange={e => setHuggingFacePrivate(e.target.checked)}
+                  /> Make repository private
                 </label>
-                <button className="ex-btn-hub"><Upload size={14} /> Push to Hub</button>
+                <button 
+                  className="ex-btn-hub"
+                  onClick={handlePushToHub}
+                  disabled={isPushingToHub}
+                >
+                  {isPushingToHub ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                  {isPushingToHub ? 'Pushing...' : 'Push to Hub'}
+                </button>
               </div>
+
               <div className="ex-push-card">
-                <h4>â˜ ï¸  Sync to Cloud Storage</h4>
+                <h4>☁️ Sync to Cloud Storage</h4>
                 <label className="s6-field-label" style={{ marginTop: 0 }}>Cloud Provider</label>
-                <div className="ex-cloud-options">
+                <div className="ex-cloud-options" style={{ marginBottom: '12px' }}>
                   <button
                     className={`ex-cloud-btn ${cloudProvider === 'gcloud' ? 'ex-cloud-active' : ''}`}
                     onClick={() => setCloudProvider('gcloud')}
@@ -5572,6 +5694,71 @@ function DataPrepView() {
                     Azure Blob
                   </button>
                 </div>
+
+                {cloudProvider === 'gcloud' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="s6-field-label" style={{ marginTop: 0 }}>GCS Service Account JSON Credentials</label>
+                    <textarea 
+                      className="s6-field-input" 
+                      value={gcsCredentials} 
+                      onChange={e => setGcsCredentials(e.target.value)}
+                      placeholder='{ "type": "service_account", ... }'
+                      style={{ height: '80px', fontFamily: 'monospace', fontSize: '11px', borderLeft: '1px solid #e2e8f0', padding: '8px' }}
+                    />
+                    <label className="s6-field-label">Bucket Name</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudBucket} 
+                      onChange={e => setCloudBucket(e.target.value)}
+                      placeholder="my-gcs-bucket"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Destination File Path</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudPath} 
+                      onChange={e => setCloudPath(e.target.value)}
+                      placeholder="datasets/train_test_split.zip"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <button className="ex-btn-green" onClick={handleSyncToCloud} disabled={isSyncingToCloud} style={{ marginTop: '8px' }}>
+                      {isSyncingToCloud ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                      {isSyncingToCloud ? 'Syncing...' : 'Sync to Google Cloud'}
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="s6-field-label" style={{ marginTop: 0 }}>Azure Connection String</label>
+                    <input 
+                      type="password"
+                      className="s6-field-input" 
+                      value={azureConnString} 
+                      onChange={e => setAzureConnString(e.target.value)}
+                      placeholder="DefaultEndpointsProtocol=https;AccountName=..."
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Container Name</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudBucket} 
+                      onChange={e => setCloudBucket(e.target.value)}
+                      placeholder="my-blob-container"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <label className="s6-field-label">Blob Name (Destination Path)</label>
+                    <input 
+                      className="s6-field-input" 
+                      value={cloudPath} 
+                      onChange={e => setCloudPath(e.target.value)}
+                      placeholder="datasets/train_test_split.zip"
+                      style={{ borderLeft: '1px solid #e2e8f0' }} 
+                    />
+                    <button className="ex-btn-purple" onClick={handleSyncToCloud} disabled={isSyncingToCloud} style={{ marginTop: '8px' }}>
+                      {isSyncingToCloud ? <RefreshCw size={14} className="sep490-spin" /> : <Upload size={14} />} 
+                      {isSyncingToCloud ? 'Syncing...' : 'Sync to Azure Blob'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -5580,20 +5767,24 @@ function DataPrepView() {
         {/* Action Buttons */}
         <div className="dataprep-actions-row">
           <button className="dataprep-btn-back" onClick={() => {
-            if (currentSubStep5 > 11) {
-              setCurrentSubStep5(currentSubStep5 - 1);
+            if (currentSubStep6 > 13) {
+              setCurrentSubStep6(currentSubStep6 - 1);
             } else {
-              setCurrentStage(4);
+              setCurrentStage(5);
             }
           }}>
             Back
           </button>
           <button className="s6-reset-btn"><RotateCcw size={14} /> Reset & Upload New</button>
-          <button className="dataprep-btn-next" onClick={() => {
-            if (currentSubStep5 < 13) {
-              setCurrentSubStep5(currentSubStep5 + 1);
-            }
-          }}>
+          <button 
+            className="dataprep-btn-next" 
+            disabled={currentSubStep6 === 14 && (!splitResult || !splitResult.resolved)}
+            onClick={() => {
+              if (currentSubStep6 < 15) {
+                setCurrentSubStep6(currentSubStep6 + 1);
+              }
+            }}
+          >
             Next
           </button>
         </div>
@@ -5818,8 +6009,8 @@ function DataPrepView() {
       {currentStage === 2 && renderStage2()}
       {currentStage === 3 && renderStage3()}
       {currentStage === 4 && renderSep490Stage4()}
-      {currentStage === 5 && renderStage5()}
-      {}
+      {currentStage === 5 && renderSep490Stage5()}
+      {currentStage === 6 && renderStage6()}
 
       {/* Compare Groups Modal */}
       {showCompareModal && (

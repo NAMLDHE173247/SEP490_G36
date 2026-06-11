@@ -129,9 +129,9 @@ export const SystemPromptPage: React.FC<SystemPromptPageProps> = ({
     const base = previewJson as Record<string, any>;
     const messages = Array.isArray(base.messages)
       ? base.messages.map((msg: any) => ({
-          role: String(msg?.role || ''),
-          content: String(msg?.content || ''),
-        }))
+        role: String(msg?.role || ''),
+        content: String(msg?.content || ''),
+      }))
       : [];
 
     if (!trimmedPrompt) {
@@ -390,11 +390,10 @@ export const SystemPromptPage: React.FC<SystemPromptPageProps> = ({
                           setActivePreviewSource('history');
                         }
                       }}
-                      className={`relative w-full rounded-lg border px-3 py-2 text-left transition ${
-                        isSelected
+                      className={`relative w-full rounded-lg border px-3 py-2 text-left transition ${isSelected
                           ? 'border-blue-400 bg-blue-50'
                           : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-                      }`}
+                        }`}
                     >
                       <div className="absolute right-2 top-2">
                         {item.isUsed ? (
@@ -494,7 +493,7 @@ export const SystemPromptPage: React.FC<SystemPromptPageProps> = ({
 
             <div>
               <label htmlFor="promptNameInput" className="mb-1 block text-sm font-medium text-gray-700">
-                Prompt Name (Unique)
+                Project Name (Unique)
               </label>
               <input
                 id="promptNameInput"
