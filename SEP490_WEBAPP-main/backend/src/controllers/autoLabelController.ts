@@ -147,6 +147,7 @@ export const autoLabelGroups = async (req: Request, res: Response): Promise<void
     }
 
     const prompt = buildPrompt(groups);
+    console.log(`[AutoLabel] Prompt being sent:\n${prompt}\n`);
     console.log(`[AutoLabel] Calling ${provider} for ${groups.length} groups...`);
 
     let result: any;
@@ -162,6 +163,8 @@ export const autoLabelGroups = async (req: Request, res: Response): Promise<void
         result = await callDeepseek(prompt);
         break;
     }
+
+    console.log(`[AutoLabel] Raw result from AI:\n${JSON.stringify(result, null, 2)}\n`);
 
     // Validate and sanitize suggestions
     const rawSuggestions: any[] = result?.suggestions || [];
