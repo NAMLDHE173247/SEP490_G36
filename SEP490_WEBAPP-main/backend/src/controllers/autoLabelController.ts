@@ -49,7 +49,7 @@ function buildPrompt(groups: ClusterGroup[]): string {
   return `You are an expert AI assistant for educational data labeling.
 Analyze the following conversation cluster groups and assign the most appropriate subject label to each group.
 
-Available labels: ${SUBJECT_LABELS.join(', ')}
+Available base labels: ${SUBJECT_LABELS.join(', ')}
 - MATH: Mathematics, algebra, calculus, geometry, statistics
 - PHYSICS: Physics, mechanics, thermodynamics, optics, electricity
 - CHEMISTRY: Chemistry, elements, reactions, organic/inorganic
@@ -57,7 +57,8 @@ Available labels: ${SUBJECT_LABELS.join(', ')}
 - HISTORY: History, events, civilizations, wars, culture
 - LITERATURE: Literature, poetry, grammar, writing, language arts
 - CODING: Programming, software, algorithms, data structures, web/app development
-- OTHER: Does not fit any category above
+
+IMPORTANT: If the conversation clearly belongs to a well-known subject NOT listed above (e.g., GEOGRAPHY, CIVIC_EDUCATION, ECONOMICS), output the name of that new subject in UPPERCASE. Only use OTHER if the conversation is truly random, unclear, or does not belong to any specific educational subject.
 
 Groups to analyze:
 ${groupDescriptions}
@@ -170,11 +171,15 @@ export const autoLabelGroups = async (req: Request, res: Response): Promise<void
     const rawSuggestions: any[] = result?.suggestions || [];
     const suggestions = rawSuggestions
       .filter(s => typeof s.groupId === 'number')
-      .map(s => ({
-        groupId: s.groupId,
-        label: SUBJECT_LABELS.includes(s.label as SubjectLabel) ? s.label : 'OTHER',
-        reason: s.reason || '',
-      }));
+      .map(s => {
+        let finalLabel = (s.label || 'OTHER').toString().trim().toUpperCase();
+        finalLabel = finalLabel.replace(/\s+/g, '_');
+        return {
+          groupId: s.groupId,
+          label: finalLabel,
+          reason: s.reason || '',
+        };
+      });
 
     console.log(`[AutoLabel] ${provider} returned ${suggestions.length} suggestions`);
     res.json({ suggestions });

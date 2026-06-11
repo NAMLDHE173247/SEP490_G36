@@ -305,6 +305,8 @@ function DataPrepView() {
   const [stage3Page, setStage3Page] = useState(1);
   const [stage3PerPage, setStage3PerPage] = useState(10);
   const [stage3Search, setStage3Search] = useState('');
+  const [customSubjectLabels, setCustomSubjectLabels] = useState<string[]>([]);
+  const [pendingAiLabels, setPendingAiLabels] = useState<string[]>([]);
   const [showCompareLabels, setShowCompareLabels] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [iaActiveTab, setIaActiveTab] = useState('assignment');
@@ -2894,6 +2896,8 @@ function DataPrepView() {
                             <option value="LITERATURE">LITERATURE</option>
                             <option value="OTHER">OTHER</option>
                             <option value="NOISE">NOISE</option>
+                            {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
+                            {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                           </select>
                         </td>
                         <td className="col-action-cell" style={{ verticalAlign: 'middle' }}>
@@ -2993,13 +2997,23 @@ function DataPrepView() {
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
                           const labelMap: Record<number, string> = {};
+                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                          const newLabels = new Set<string>();
+
                           suggestions.forEach((s: any) => {
                             // clusterId từ BE có thể là 0,1,2... còn groupId trong UI là 1,2,3...
                             const groupId = (s.clusterId ?? s.groupId);
                             if (groupId !== undefined) {
                               labelMap[groupId] = s.label;
+                              if (s.label && !predefinedLabels.includes(s.label) && !customSubjectLabels.includes(s.label)) {
+                                newLabels.add(s.label);
+                              }
                             }
                           });
+                          
+                          if (newLabels.size > 0) {
+                            setPendingAiLabels(Array.from(newLabels));
+                          }
                           setAiGroupLabels(prev => ({ ...prev, ...labelMap }));
                         } catch (err: any) {
                           const msg = err?.response?.data?.error || err?.message || 'AI labeling failed.';
@@ -3016,6 +3030,39 @@ function DataPrepView() {
                     </button>
                   </div>
                 </div>
+
+                {pendingAiLabels.length > 0 && (
+                  <div style={{ padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <div style={{ color: '#d97706', marginTop: '2px' }}><Sparkles size={16} /></div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>
+                          AI phát hiện môn học mới
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#b45309', marginBottom: '10px' }}>
+                          Có vẻ dữ liệu của bạn có các môn: <strong>{pendingAiLabels.join(', ')}</strong>. Bạn có muốn thêm vào danh sách lựa chọn?
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            style={{ padding: '4px 10px', fontSize: '12px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
+                            onClick={() => {
+                              setCustomSubjectLabels(prev => [...new Set([...prev, ...pendingAiLabels])]);
+                              setPendingAiLabels([]);
+                            }}
+                          >
+                            Thêm & Áp dụng
+                          </button>
+                          <button
+                            style={{ padding: '4px 10px', fontSize: '12px', background: 'transparent', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
+                            onClick={() => setPendingAiLabels([])}
+                          >
+                            Bỏ qua
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Group Cards */}
                 <div className="group-cards-container" style={{ maxHeight: '550px', overflowY: 'auto' }}>
@@ -3078,6 +3125,8 @@ function DataPrepView() {
                               <option value="LITERATURE">LITERATURE</option>
                               <option value="OTHER">OTHER</option>
                               <option value="NOISE">NOISE</option>
+                              {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
+                              {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                             </select>
                           </div>
                         </div>
