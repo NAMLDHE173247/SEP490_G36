@@ -12,6 +12,7 @@ import {
   getSystemResources,
   resumeTraining,
   getDashboardStats,
+  downloadCloudDataset,
 } from '../controllers/trainController';
 import {
   saveTrainingHistory,
@@ -162,6 +163,7 @@ router.post('/config/gpu-url', updateGpuConfig);
 
 // Training Routes
 router.post('/train/start', upload.single('dataset_file'), startTraining);
+router.post('/train/download-cloud', downloadCloudDataset);
 router.get('/train/active', getActiveTrainingJobs);
 router.get('/train/status/:jobId', getTrainingStatus);
 router.get('/train/stream/:jobId', streamTrainingStatus);

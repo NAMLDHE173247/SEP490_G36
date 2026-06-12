@@ -2864,7 +2864,25 @@ def start_training():
 def get_status(job_id):
     global last_heartbeat
     last_heartbeat = time.time()
-    return jsonify(jobs_db.get(job_id, {"status": "NOT_FOUND"})), 200
+    
+    job_info = jobs_db.get(job_id)
+    if job_info:
+        res_info = dict(job_info)
+        # Inject live GPU resources if active but HF trainer hasn't output metrics yet
+        if res_info.get('status') in ['TRAINING', 'PENDING', 'LOADING_MODEL']:
+            vram_used, _, gpu_util = get_gpu_stats()
+            metrics = res_info.get('metrics', {})
+            if not isinstance(metrics, dict):
+                metrics = {}
+            else:
+                metrics = dict(metrics)
+            
+            metrics.setdefault('vram', vram_used)
+            metrics.setdefault('gpu_util', gpu_util)
+            res_info['metrics'] = metrics
+        return jsonify(res_info), 200
+        
+    return jsonify({"status": "NOT_FOUND"}), 200
 @app.route('/api/system/resources')
 def get_system_resources():
     """Trả về thông số VRAM và GPU Utilization hiện tại cho giao diện AutoTrain."""

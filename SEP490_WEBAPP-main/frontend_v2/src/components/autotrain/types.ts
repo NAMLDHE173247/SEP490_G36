@@ -1,0 +1,308 @@
+// ============================================================
+// AutoTrain Wizard — Shared Types & Constants
+// ============================================================
+
+// ── Training Configuration ──
+export interface TrainingConfig {
+  projectName: string;
+  baseModel: string;
+  datasetSource: 'local' | 'hub' | 'cloud';
+  localFile: File | null;
+  selectedHfDataset: string;
+  cloudLoadedDataset: string;
+  columnMapping: string;
+  systemPrompt: string;
+  apiKey: string;
+
+  // Training parameters
+  epochs: string;
+  batchSize: string;
+  learningRate: string;
+  blockSize: string;
+  modelMaxLength: string;
+  r: string;
+  loraAlpha: string;
+  loraDropout: string;
+  gradAccum: string;
+  warmupSteps: string;
+  weightDecay: string;
+  seed: string;
+  optim: string;
+  lrScheduler: string;
+
+  // HF Hub push
+  hfRepoId: string;
+  hfToken: string;
+}
+
+export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
+  projectName: 'my-first-lm-project',
+  baseModel: 'Qwen/Qwen3-0.6B',
+  datasetSource: 'local',
+  localFile: null,
+  selectedHfDataset: '',
+  cloudLoadedDataset: '',
+  columnMapping: 'text',
+  systemPrompt: '',
+  apiKey: '',
+
+  epochs: '3',
+  batchSize: '2',
+  learningRate: '0.00003',
+  blockSize: '512',
+  modelMaxLength: '1024',
+  r: '8',
+  loraAlpha: '8',
+  loraDropout: '0.05',
+  gradAccum: '4',
+  warmupSteps: '5',
+  weightDecay: '0.01',
+  seed: '3407',
+  optim: 'adamw_8bit',
+  lrScheduler: 'linear',
+
+  hfRepoId: '',
+  hfToken: '',
+};
+
+// ── Dataset Preview ──
+export interface PreviewData {
+  rows: PreviewRow[];
+  totalRecords: number | null;
+  totalTokens: number | null;
+  headers: string[];
+}
+
+export interface PreviewRow {
+  instruction: string;
+  input: string;
+  output: string;
+}
+
+export const EMPTY_PREVIEW: PreviewData = {
+  rows: [],
+  totalRecords: null,
+  totalTokens: null,
+  headers: [],
+};
+
+// ── Base Models ──
+export interface ModelOption {
+  id: string;
+  name: string;
+}
+
+export interface ModelGroup {
+  category: string;
+  models: ModelOption[];
+}
+
+export const BASE_MODEL_GROUPS: ModelGroup[] = [
+  {
+    category: "Lightweight (Quick experiments)",
+    models: [
+      { id: "Qwen/Qwen3-0.6B", name: "Qwen 3 (0.6B) — Runs on any machine" },
+      { id: "sshleifer/tiny-gpt2", name: "Tiny GPT-2 — Ultra fast" },
+      { id: "lightonai/LightOnOCR-2-1B", name: "LightOn OCR (1B)" }
+    ]
+  },
+  {
+    category: "Standard (Recommended)",
+    models: [
+      { id: "meta-llama/Llama-3.1-8B-Instruct", name: "Llama 3.1 (8B) — Great reasoning" },
+      { id: "Qwen/Qwen3-Coder-Next", name: "Qwen 3 Coder — Programming specialist" },
+      { id: "unsloth/gpt-oss-20b-unsloth-bnb-4bit", name: "GPT OSS 20B (4-bit) — VRAM optimized" },
+      { id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4", name: "Nemotron 3 Nano (30B)" },
+      { id: "MiniMaxAI/MiniMax-M2.1", name: "MiniMax M2.1" }
+    ]
+  },
+  {
+    category: "Premium / Online",
+    models: [
+      { id: "qwen-3.7-plus", name: "Qwen 3.7 Plus (Requires API Key)" },
+      { id: "zai-org/GLM-4.7", name: "GLM 4.7" },
+      { id: "stepfun-ai/Step-3.5-Flash", name: "Step 3.5 Flash" }
+    ]
+  }
+];
+
+// ── System Prompt Templates ──
+export interface PromptTemplate {
+  label: string;
+  text: string;
+}
+
+export const SYSTEM_PROMPT_TEMPLATES: PromptTemplate[] = [
+  { label: "Friendly Math Tutor", text: "You are a friendly Math tutor who always explains step by step clearly for elementary students." },
+  { label: "Strict Literature Teacher", text: "You are a strict Literature teacher grading assignments. Point out grammar and writing style errors in detail." },
+  { label: "Socratic Method", text: "You are a Socratic method teacher. Never give answers directly — ask guiding questions so students discover answers themselves." }
+];
+
+// ── Parameter Presets ──
+export interface ParamPreset {
+  epochs: number;
+  batchSize: number;
+  learningRate: number;
+  blockSize: number;
+  modelMaxLength: number;
+  r: number;
+  lora_alpha: number;
+  lora_dropout: number;
+  gradient_accumulation_steps: number;
+  warmup_steps: number;
+  weight_decay: number;
+  optim: string;
+  lr_scheduler_type: string;
+}
+
+export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
+  "Quick Training (~5 min)": {
+    epochs: 1, batchSize: 2, learningRate: 0.00002, blockSize: 256, modelMaxLength: 512,
+    r: 4, lora_alpha: 8, lora_dropout: 0.0, gradient_accumulation_steps: 8,
+    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
+  },
+  "Standard (Recommended ~15 min)": {
+    epochs: 3, batchSize: 2, learningRate: 0.00003, blockSize: 512, modelMaxLength: 1024,
+    r: 8, lora_alpha: 8, lora_dropout: 0.05, gradient_accumulation_steps: 4,
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
+  },
+  "High Quality (~45 min)": {
+    epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 512, modelMaxLength: 1024,
+    r: 32, lora_alpha: 64, lora_dropout: 0.1, gradient_accumulation_steps: 4,
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine"
+  }
+};
+
+// ── Wizard Step ──
+export type WizardStep = 1 | 2 | 3;
+
+// ── Toast ──
+export interface ToastMessage {
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
+// ── Training Job (from SSE) ──
+export interface TrainingJob {
+  id: string;
+  status: string;
+  progress: number;
+  current_epoch?: number;
+  total_epochs?: number;
+  current_step?: number;
+  total_steps?: number;
+  loss?: number;
+  eval_loss?: number;
+  vram_used?: string | number;
+  gpu_util?: string | number;
+  metrics?: {
+    loss?: number;
+    eval_loss?: number;
+    vram?: number | string;
+    gpu_util?: number | string;
+  };
+  logs?: string[];
+}
+
+
+export interface LossPoint {
+  progress: number;
+  loss: number;
+}
+
+// ── Helpers ──
+
+/** Normalize a dataset row into {instruction, input, output} for preview */
+export function formatRowPreview(r: any): PreviewRow {
+  if (!r) return { instruction: '', input: '', output: '' };
+
+  let messages: any[] | null = null;
+  if (Array.isArray(r)) {
+    messages = r;
+  } else if (r && typeof r === 'object') {
+    if (Array.isArray(r.messages)) messages = r.messages;
+    else if (Array.isArray(r.conversations)) messages = r.conversations;
+    else if (Array.isArray(r.turns)) messages = r.turns;
+  }
+
+  if (messages && messages.length > 0) {
+    const assistantTurns = messages.filter(m => {
+      const role = String(m.role || m.from || '').toLowerCase();
+      return role === 'assistant' || role === 'tutor' || role === 'gpt' || role === 'bot';
+    });
+    const userTurns = messages.filter(m => {
+      const role = String(m.role || m.from || '').toLowerCase();
+      return role === 'user' || role === 'human' || role === 'student';
+    });
+    const systemTurns = messages.filter(m => {
+      const role = String(m.role || m.from || '').toLowerCase();
+      return role === 'system';
+    });
+
+    const lastAssistant = assistantTurns[assistantTurns.length - 1];
+    const lastUser = userTurns[userTurns.length - 1];
+
+    const instruction = lastUser ? (lastUser.content || lastUser.value || '') : '';
+    const output = lastAssistant ? (lastAssistant.content || lastAssistant.value || '') : '';
+
+    const contextParts: string[] = [];
+    systemTurns.forEach(s => {
+      const content = s.content || s.value || '';
+      if (content) contextParts.push(`[System] ${content}`);
+    });
+    messages.forEach(m => {
+      if (m === lastUser || m === lastAssistant) return;
+      const role = String(m.role || m.from || '').toLowerCase();
+      if (role === 'system') return;
+      const content = m.content || m.value || '';
+      if (content) {
+        const displayRole = role === 'user' || role === 'human' ? 'Student' : 'Tutor';
+        contextParts.push(`[${displayRole}] ${content}`);
+      }
+    });
+
+    return {
+      instruction: instruction || 'ChatML Conversation',
+      input: contextParts.join('\n'),
+      output: output || ''
+    };
+  }
+
+  const instruction = r.instruction || r.text || r.prompt || r.question || '';
+  const input = r.input || r.context || '';
+  const output = r.output || r.response || r.answer || r.assistant || '';
+
+  if (instruction || input || output) {
+    return { instruction, input, output };
+  }
+
+  return {
+    instruction: typeof r === 'object' ? JSON.stringify(r) : String(r),
+    input: '',
+    output: ''
+  };
+}
+
+/** Estimate training time based on dataset size and preset */
+export function estimateTrainingTime(
+  totalRecords: number | null,
+  presetName: string
+): string {
+  if (!totalRecords) return 'Unknown';
+  const records = totalRecords;
+  
+  if (presetName.includes('Quick')) {
+    if (records < 100) return '~2 min';
+    if (records < 500) return '~5 min';
+    return '~10 min';
+  }
+  if (presetName.includes('High')) {
+    if (records < 100) return '~15 min';
+    if (records < 500) return '~30 min';
+    return '~45+ min';
+  }
+  // Standard
+  if (records < 100) return '~5 min';
+  if (records < 500) return '~15 min';
+  return '~25 min';
+}

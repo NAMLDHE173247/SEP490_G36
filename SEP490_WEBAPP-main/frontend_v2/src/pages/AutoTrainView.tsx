@@ -1,91 +1,46 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+// ============================================================
+// AutoTrainView — Main Wizard-based training flow container
+// ============================================================
+
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import { 
-  Zap, 
-  History, 
-  BarChart2, 
-  Search, 
-  Upload, 
-  Eye, 
-  Plus,
-  Settings2,
-  Download,
-  Code,
-  Activity,
-  Layers,
-  Target,
-  ThermometerSun,
-  Clock,
-  Database,
-  Hash,
-  RefreshCw,
-  Sliders,
-  Cpu,
-  StopCircle,
-  X,
-  Sparkles,
-  Save,
-  Trash2
-} from 'lucide-react';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-  Legend
-} from 'recharts';
+  Zap,
+  History,
+  AlertTriangle,
+  CheckCircle,
+  X,
+} from 'lucide-react';
 import { getAuthToken } from '../services/authSession';
 import '../styles/autotrain.css';
 
-// Predefined base models
-const BASE_MODEL_OPTIONS = [
-  "Qwen/Qwen3-0.6B",
-  "meta-llama/Llama-3.1-8B-Instruct",
-  "unsloth/gpt-oss-20b",
-  "unsloth/gpt-oss-20b-unsloth-bnb-4bit",
-  "zai-org/GLM-4.7-Flash",
-  "unsloth/GLM-4.7-Flash-GGUF",
-  "stepfun-ai/Step-3.5-Flash",
-  "unsloth/Qwen3-Coder-Next-GGUF",
-  "lightonai/LightOnOCR-2-1B",
-  "unsloth/gpt-oss-20b-GGUF",
-  "Qwen/Qwen3-Coder-Next",
-  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4",
-  "zai-org/GLM-4.7",
-  "MiniMaxAI/MiniMax-M2.1",
-  "sshleifer/tiny-gpt2",
-];
+// ── Component Imports ──
+import WizardStepper from '../components/autotrain/WizardStepper';
+import WelcomeCard from '../components/autotrain/WelcomeCard';
+import ConfirmModal from '../components/autotrain/ConfirmModal';
+import StepDataset from '../components/autotrain/StepDataset';
+import StepConfig from '../components/autotrain/StepConfig';
+import StepReview from '../components/autotrain/StepReview';
+import TrainingMonitor from '../components/autotrain/TrainingMonitor';
 
-// Predefined parameter presets
-const DEFAULT_PRESETS: Record<string, any> = {
-  "LoRA Tiêu chuẩn (R=8)": {
-    epochs: 3, batchSize: 2, learningRate: 0.00003, blockSize: 512, modelMaxLength: 1024,
-    r: 8, lora_alpha: 8, lora_dropout: 0.05, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
-  },
-  "LoRA Dung lượng lớn (R=32)": {
-    epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 512, modelMaxLength: 1024,
-    r: 32, lora_alpha: 64, lora_dropout: 0.1, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine"
-  },
-  "LoRA Tiết kiệm (R=4)": {
-    epochs: 1, batchSize: 2, learningRate: 0.00002, blockSize: 256, modelMaxLength: 512,
-    r: 4, lora_alpha: 8, lora_dropout: 0.0, gradient_accumulation_steps: 8,
-    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
-  }
-};
+// ── Shared Types & Constants ──
+import {
+  TrainingConfig,
+  PreviewData,
+  DEFAULT_TRAINING_CONFIG,
+  EMPTY_PREVIEW,
+  DEFAULT_PRESETS,
+  estimateTrainingTime,
+  TrainingJob,
+  LossPoint,
+} from '../components/autotrain/types';
 
-// Global training state container to persist across tab swaps
+// ── Persistent Global State (Preserves tracking when switching tabs) ──
 const globalTrainingState = {
-  activeJobs: {} as Record<string, any>,
-  lossHistories: {} as Record<string, { progress: number; loss: number }[]>,
-  evalLossHistories: {} as Record<string, { progress: number; loss: number }[]>,
+  activeJobs: {} as Record<string, TrainingJob>,
+  lossHistories: {} as Record<string, LossPoint[]>,
+  evalLossHistories: {} as Record<string, LossPoint[]>,
   jobConfigs: {} as Record<string, any>,
-  trainingStartTimes: {} as Record<string, Date>,
-  trainingStartProgress: {} as Record<string, number>,
   eventSources: {} as Record<string, EventSource>,
   listeners: new Set<() => void>(),
 
@@ -95,8 +50,8 @@ const globalTrainingState = {
   },
 
   notify() {
-    this.listeners.forEach(l => l());
-  }
+    this.listeners.forEach((l) => l());
+  },
 };
 
 const getAuthHeaders = (): Record<string, string> => {
@@ -117,65 +72,43 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
   const { activeJobs, lossHistories, evalLossHistories, eventSources } = globalTrainingState;
 
-  // Project configuration state
-  const [projectName, setProjectName] = useState('my-first-lm-project');
-  const [baseModel, setBaseModel] = useState('Qwen/Qwen3-0.6B');
-  const [datasetSource, setDatasetSource] = useState('local'); // 'local', 'hub', 'cloud'
-  
-  // Local upload state
-  const [localFile, setLocalFile] = useState<File | null>(null);
-  
-  // Hugging Face profile pull state
-  const [hfUsername, setHfUsername] = useState('');
-  const [hfDatasets, setHfDatasets] = useState<any[]>([]);
-  const [hfModels, setHfModels] = useState<any[]>([]);
-  const [fetchingHf, setFetchingHf] = useState(false);
-  const [selectedHfDataset, setSelectedHfDataset] = useState('');
+  // ── UI Control States ──
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
 
-  // Cloud source state
-  const [cloudProvider, setCloudProvider] = useState('gcs'); // 'gcs', 'azure'
-  const [cloudBucket, setCloudBucket] = useState('');
-  const [cloudPath, setCloudPath] = useState('');
-  const [cloudSasToken, setCloudSasToken] = useState('');
-  const [cloudLoadedDataset, setCloudLoadedDataset] = useState('');
-
-  // Parameter preset state
-  const [selectedPresetName, setSelectedPresetName] = useState('');
+  // ── Config & Preset States ──
+  const [config, setConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
+  const [previewData, setPreviewData] = useState<PreviewData>(EMPTY_PREVIEW);
+  const [selectedPresetName, setSelectedPresetName] = useState('Standard (Recommended ~15 min)');
   const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
 
-  // Dataset preview state
-  const [previewRows, setPreviewRows] = useState<any[]>([]);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [totalRecords, setTotalRecords] = useState<number | null>(null);
-  const [totalTokens, setTotalTokens] = useState<number | null>(null);
-
-  // Form parameters
-  const [epochs, setEpochs] = useState('3');
-  const [batchSize, setBatchSize] = useState('2');
-  const [learningRate, setLearningRate] = useState('0.00003');
-  const [blockSize, setBlockSize] = useState('512');
-  const [modelMaxLength, setModelMaxLength] = useState('1024');
-  const [r, setR] = useState('8');
-  const [loraAlpha, setLoraAlpha] = useState('8');
-  const [loraDropout, setLoraDropout] = useState('0.05');
-  const [gradAccum, setGradAccum] = useState('4');
-  const [warmupSteps, setWarmupSteps] = useState('5');
-  const [weightDecay, setWeightDecay] = useState('0.01');
-  const [seed, setSeed] = useState('3407');
-  const [optim, setOptim] = useState('adamw_8bit');
-  const [lrScheduler, setLrScheduler] = useState('linear');
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [columnMapping, setColumnMapping] = useState('text');
-
-  // HF Hub push
-  const [hfRepoId, setHfRepoId] = useState('');
-  const [hfToken, setHfToken] = useState('');
-
-  // Resources worker status
+  // ── Worker Resources ──
   const [systemResources, setSystemResources] = useState<any>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const consoleRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // ── Messages, Errors, Notifications ──
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [showStartError, setShowStartError] = useState(false);
+  const [completedJobId, setCompletedJobId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Load welcome card display preference
+  useEffect(() => {
+    const dismissed = localStorage.getItem('at-welcome-dismissed');
+    if (dismissed !== 'true') {
+      setShowWelcome(true);
+    }
+  }, []);
 
   // Load custom presets from LocalStorage
   useEffect(() => {
@@ -184,393 +117,10 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       try {
         setCustomPresets(JSON.parse(saved));
       } catch (e) {
-        console.error(e);
+        console.error('Error loading custom presets:', e);
       }
     }
   }, []);
-
-  // Sync parameters with selected preset
-  const handlePresetChange = (name: string) => {
-    setSelectedPresetName(name);
-    if (!name) return;
-
-    const preset = DEFAULT_PRESETS[name] || customPresets[name];
-    if (!preset) return;
-
-    setEpochs(String(preset.epochs || '3'));
-    setBatchSize(String(preset.batchSize || '2'));
-    setLearningRate(String(preset.learningRate || '0.00003'));
-    setBlockSize(String(preset.blockSize || '512'));
-    setModelMaxLength(String(preset.modelMaxLength || '1024'));
-    setR(String(preset.r || '8'));
-    setLoraAlpha(String(preset.lora_alpha || '8'));
-    setLoraDropout(String(preset.lora_dropout || '0.05'));
-    setGradAccum(String(preset.gradient_accumulation_steps || '4'));
-    setWarmupSteps(String(preset.warmup_steps || '5'));
-    setWeightDecay(String(preset.weight_decay || '0.01'));
-    setOptim(preset.optim || 'adamw_8bit');
-    setLrScheduler(preset.lr_scheduler_type || 'linear');
-  };
-
-  // Save current config as preset
-  const handleSavePreset = () => {
-    const name = prompt('Nhập tên cho Preset của bạn:');
-    if (!name || !name.trim()) return;
-
-    const newPreset = {
-      epochs: parseInt(epochs) || 3,
-      batchSize: parseInt(batchSize) || 2,
-      learningRate: parseFloat(learningRate) || 3e-5,
-      blockSize: parseInt(blockSize) || 512,
-      modelMaxLength: parseInt(modelMaxLength) || 1024,
-      r: parseInt(r) || 8,
-      lora_alpha: parseInt(loraAlpha) || 8,
-      lora_dropout: parseFloat(loraDropout) || 0.05,
-      gradient_accumulation_steps: parseInt(gradAccum) || 4,
-      warmup_steps: parseInt(warmupSteps) || 5,
-      weight_decay: parseFloat(weightDecay) || 0.01,
-      optim,
-      lr_scheduler_type: lrScheduler
-    };
-
-    const updated = { ...customPresets, [name]: newPreset };
-    setCustomPresets(updated);
-    localStorage.setItem('autotrain_presets', JSON.stringify(updated));
-    setSelectedPresetName(name);
-    alert(`Đã lưu preset "${name}" thành công!`);
-  };
-
-  const handleDeletePreset = () => {
-    if (!selectedPresetName || DEFAULT_PRESETS[selectedPresetName]) {
-      alert('Không thể xóa preset hệ thống');
-      return;
-    }
-    if (!confirm(`Xóa preset "${selectedPresetName}"?`)) return;
-
-    const updated = { ...customPresets };
-    delete updated[selectedPresetName];
-    setCustomPresets(updated);
-    localStorage.setItem('autotrain_presets', JSON.stringify(updated));
-    setSelectedPresetName('');
-    alert('Đã xóa preset.');
-  };
-
-  // Fetch HF datasets & models list for username
-  const handleFetchHfProfile = async () => {
-    if (!hfUsername.trim()) return;
-    setFetchingHf(true);
-    setHfDatasets([]);
-    setHfModels([]);
-    try {
-      // Fetch public datasets
-      const dsRes = await axios.get(`https://huggingface.co/api/datasets?author=${hfUsername}&limit=12`);
-      if (Array.isArray(dsRes.data)) {
-        setHfDatasets(dsRes.data);
-      }
-      
-      // Fetch public models
-      const mdRes = await axios.get(`https://huggingface.co/api/models?author=${hfUsername}&limit=12`);
-      if (Array.isArray(mdRes.data)) {
-        setHfModels(mdRes.data);
-      }
-    } catch (err: any) {
-      alert('Lỗi tải profile: ' + (err.message || err.response?.data?.message));
-    } finally {
-      setFetchingHf(false);
-    }
-  };
-
-  // Cloud pull validation
-  const handleLoadCloudDataset = () => {
-    if (!cloudPath.trim()) return;
-    // Simulate/Set cloud dataset source
-    setCloudLoadedDataset(`${cloudProvider}://${cloudBucket || 'bucket'}/${cloudPath}`);
-    setPreviewRows([
-      { instruction: "Giải phương trình 2x + 5 = 15", input: "", output: "Chuyển vế ta được 2x = 10, vậy x = 5." },
-      { instruction: "Thế nào là chuyển động đều?", input: "", output: "Là chuyển động có vận tốc không đổi theo thời gian." }
-    ]);
-    setTotalRecords(2);
-    setTotalTokens(240);
-    alert('Đã nạp thông tin Cloud dataset.');
-  };
-
-  // Handle local file dataset preview
-  const handleLocalFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const file = e.target.files[0];
-      setLocalFile(file);
-      
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const content = evt.target?.result as string;
-        try {
-          let rows: any[] = [];
-          if (file.name.endsWith('.json')) {
-            const parsed = JSON.parse(content);
-            rows = Array.isArray(parsed) ? parsed : [parsed];
-          } else if (file.name.endsWith('.jsonl')) {
-            rows = content.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-          } else if (file.name.endsWith('.csv')) {
-            const lines = content.split('\n').filter(l => l.trim());
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-            rows = lines.slice(1).map(line => {
-              const cells = line.split(',');
-              const obj: Record<string, string> = {};
-              headers.forEach((h, idx) => {
-                obj[h] = cells[idx]?.trim().replace(/^"|"$/g, '') || '';
-              });
-              return obj;
-            });
-          }
-
-          setTotalRecords(rows.length);
-          // 1 token ≈ 4 characters
-          const charsCount = rows.reduce((acc, r) => acc + JSON.stringify(r).length, 0);
-          setTotalTokens(Math.round(charsCount / 4));
-
-          // Format rows for preview
-          const formatted = rows.slice(0, 5).map(r => ({
-            instruction: r.instruction || r.text || r.prompt || r.question || JSON.stringify(r),
-            input: r.input || r.context || '',
-            output: r.output || r.response || r.answer || r.assistant || ''
-          }));
-          setPreviewRows(formatted);
-
-        } catch (err) {
-          console.error(err);
-          setPreviewRows([]);
-          setTotalRecords(null);
-          setTotalTokens(null);
-        }
-      };
-      reader.readAsText(file.slice(0, 500000)); // Read first 500KB
-    }
-  };
-
-  // Hugging Face dataset preview fetch
-  const handleFetchHfDatasetPreview = async (repoId: string) => {
-    setSelectedHfDataset(repoId);
-    setPreviewRows([]);
-    setTotalRecords(null);
-    setTotalTokens(null);
-    try {
-      const url = `https://datasets-server.huggingface.co/rows?dataset=${repoId}&config=default&split=train&limit=5`;
-      const res = await axios.get(url);
-      if (res.data && Array.isArray(res.data.rows)) {
-        const formatted = res.data.rows.map((row: any) => {
-          const rowData = row.row;
-          return {
-            instruction: rowData.instruction || rowData.text || rowData.prompt || rowData.question || JSON.stringify(rowData),
-            input: rowData.input || rowData.context || '',
-            output: rowData.output || rowData.response || rowData.answer || rowData.assistant || ''
-          };
-        });
-        setPreviewRows(formatted);
-        
-        // Try to estimate totals from metadata
-        const infoUrl = `https://datasets-server.huggingface.co/info?dataset=${repoId}`;
-        const infoRes = await axios.get(infoUrl);
-        const splitInfo = infoRes.data?.dataset_info?.splits?.train;
-        if (splitInfo) {
-          setTotalRecords(splitInfo.num_examples || null);
-          setTotalTokens(splitInfo.num_bytes ? Math.round(splitInfo.num_bytes / 3.5) : null);
-        }
-      }
-    } catch {
-      // Mock rows preview for HF if API fails or requires authentication
-      setPreviewRows([
-        { instruction: `Mẫu dữ liệu lấy từ Hugging Face Hub: ${repoId}`, input: '', output: 'Hệ thống đã tải đường dẫn Hub. Preview khả dụng khi có file cục bộ.' }
-      ]);
-    }
-  };
-
-  // Start training job
-  const handleStartTraining = async () => {
-    if (!projectName.trim()) {
-      alert('Vui lòng nhập tên dự án.');
-      return;
-    }
-    if (datasetSource === 'local' && !localFile) {
-      alert('Vui lòng tải tệp dataset lên.');
-      return;
-    }
-    if (datasetSource === 'hub' && !selectedHfDataset) {
-      alert('Vui lòng chọn hoặc điền dataset Hugging Face.');
-      return;
-    }
-    if (datasetSource === 'cloud' && !cloudLoadedDataset) {
-      alert('Vui lòng nạp Cloud Storage dataset.');
-      return;
-    }
-
-    try {
-      const formData = new FormData();
-      formData.append('model_name', baseModel);
-      formData.append('epochs', epochs);
-      formData.append('batchSize', batchSize);
-      formData.append('learningRate', learningRate);
-      formData.append('blockSize', blockSize);
-      formData.append('modelMaxLength', modelMaxLength);
-      formData.append('r', r);
-      formData.append('lora_alpha', loraAlpha);
-      formData.append('lora_dropout', loraDropout);
-      formData.append('gradient_accumulation_steps', gradAccum);
-      formData.append('warmup_steps', warmupSteps);
-      formData.append('weight_decay', weightDecay);
-      formData.append('seed', seed);
-      formData.append('random_state', seed);
-      formData.append('optim', optim);
-      formData.append('lr_scheduler_type', lrScheduler);
-      formData.append('systemPrompt', systemPrompt);
-      formData.append('columnMapping', columnMapping);
-      formData.append('projectName', projectName);
-      
-      // Tokens/Records stats
-      if (totalRecords) formData.append('totalRecords', String(totalRecords));
-      if (totalTokens) formData.append('totalTokens', String(totalTokens));
-
-      if (hfRepoId) {
-        formData.append('push_to_hub', 'true');
-        formData.append('hf_repo_id', hfRepoId);
-        formData.append('hf_token', hfToken);
-      }
-
-      if (datasetSource === 'local' && localFile) {
-        formData.append('dataset_file', localFile);
-        formData.append('datasetSource', 'local');
-      } else if (datasetSource === 'hub') {
-        formData.append('dataset', selectedHfDataset);
-        formData.append('datasetSource', 'hub');
-      } else {
-        formData.append('dataset', cloudLoadedDataset);
-        formData.append('datasetSource', 'cloud');
-      }
-
-      const response = await axios.post('/api/train/start', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          ...getAuthHeaders()
-        }
-      });
-
-      const data = response.data;
-      if (data && data.job_id) {
-        // Start streaming for new job
-        startTrackingJob(data.job_id, {
-          projectName,
-          baseModel,
-          datasetSource,
-          datasetName: datasetSource === 'local' ? localFile!.name : (datasetSource === 'hub' ? selectedHfDataset : cloudLoadedDataset),
-          columnMapping,
-          parameters: {}
-        });
-      }
-    } catch (err: any) {
-      alert('Không thể khởi tạo tiến trình huấn luyện: ' + (err.response?.data?.error || err.message));
-    }
-  };
-
-  // Stop active job
-  const handleStopJob = async (jobId: string) => {
-    try {
-      await axios.post(`/api/train/stop/${jobId}`, {}, { headers: getAuthHeaders() });
-      closeTracking(jobId, 'STOPPED');
-    } catch (err: any) {
-      console.error(err);
-    }
-  };
-
-  // SSE tracking logic
-  const startTrackingJob = (jobId: string, config?: any) => {
-    if (eventSources[jobId]) return;
-
-    if (config) {
-      globalTrainingState.jobConfigs[jobId] = config;
-    }
-    
-    globalTrainingState.activeJobs[jobId] = {
-      status: 'QUEUED',
-      progress: 0,
-      logs: ['Đang khởi tạo kết nối...']
-    };
-    globalTrainingState.trainingStartTimes[jobId] = new Date();
-    globalTrainingState.trainingStartProgress[jobId] = 0;
-    
-    // Create EventSource connection
-    const token = getAuthToken();
-    const streamUrl = `/api/train/stream/${jobId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    const es = new EventSource(streamUrl);
-    
-    globalTrainingState.eventSources[jobId] = es;
-
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        // Update general status
-        globalTrainingState.activeJobs[jobId] = {
-          ...globalTrainingState.activeJobs[jobId],
-          status: data.status,
-          progress: data.progress || 0,
-          metrics: data.metrics,
-          logs: data.logs || globalTrainingState.activeJobs[jobId].logs || []
-        };
-
-        // Update Loss
-        if (data.metrics && typeof data.metrics.loss === 'number' && data.metrics.loss > 0) {
-          const history = globalTrainingState.lossHistories[jobId] || [];
-          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
-            globalTrainingState.lossHistories[jobId] = [...history, { progress: data.progress, loss: data.metrics.loss }];
-          }
-        }
-
-        // Update Eval Loss (Overfit)
-        if (data.metrics && typeof data.metrics.eval_loss === 'number' && data.metrics.eval_loss > 0) {
-          const history = globalTrainingState.evalLossHistories[jobId] || [];
-          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
-            globalTrainingState.evalLossHistories[jobId] = [...history, { progress: data.progress, loss: data.metrics.eval_loss }];
-          }
-        }
-
-        // End state validation
-        if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(data.status)) {
-          closeTracking(jobId, data.status);
-        }
-
-        globalTrainingState.notify();
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    es.onerror = () => {
-      closeTracking(jobId, 'ERROR');
-    };
-
-    globalTrainingState.notify();
-  };
-
-  const closeTracking = (jobId: string, finalStatus: string) => {
-    const es = eventSources[jobId];
-    if (es) {
-      es.close();
-      delete eventSources[jobId];
-    }
-    if (activeJobs[jobId]) {
-      activeJobs[jobId].status = finalStatus;
-    }
-    globalTrainingState.notify();
-  };
-
-  // Auto-scroll consoles
-  useEffect(() => {
-    Object.keys(activeJobs).forEach(id => {
-      const ref = consoleRefs.current[id];
-      if (ref) {
-        ref.scrollTop = ref.scrollHeight;
-      }
-    });
-  }, [activeJobs]);
 
   // Fetch worker resource status on interval
   useEffect(() => {
@@ -579,7 +129,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         const res = await axios.get('/api/system/resources', { headers: getAuthHeaders() });
         setSystemResources(res.data);
       } catch (e) {
-        console.error(e);
+        console.error('Error fetching system GPU resources:', e);
       }
     };
     fetchResources();
@@ -596,631 +146,532 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     }
   }, []);
 
-  // Check if any job is currently training
-  const isAnyJobActive = Object.keys(activeJobs).length > 0;
+  // Fetch currently active jobs from database on mount to restore monitoring panels
+  useEffect(() => {
+    const restoreActiveJobs = async () => {
+      try {
+        const res = await axios.get('/api/train/active', { headers: getAuthHeaders() });
+        const jobs = Array.isArray(res.data) ? res.data : [];
+        jobs.forEach((job: any) => {
+          const jobId = job.jobId || job.id;
+          if (jobId && !eventSources[jobId]) {
+            startTrackingJob(jobId, {
+              projectName: job.projectName,
+              baseModel: job.baseModel,
+              datasetSource: job.datasetSource,
+              datasetName: job.datasetName,
+              columnMapping: job.columnMapping,
+            });
+          }
+        });
+      } catch (err) {
+        console.error('Failed to restore active training jobs on mount:', err);
+      }
+    };
+    restoreActiveJobs();
+  }, []);
 
-  // Compute live charts data combined
-  const getLiveChartData = (id: string) => {
-    const trainHistory = lossHistories[id] || [];
-    const valHistory = evalLossHistories[id] || [];
-    const combined: Record<number, any> = {};
+  // Compute estimated time dynamically
+  const estimatedTime = useMemo(() => {
+    return estimateTrainingTime(previewData.totalRecords, selectedPresetName);
+  }, [previewData.totalRecords, selectedPresetName]);
 
-    trainHistory.forEach(lh => {
-      combined[lh.progress] = { progress: lh.progress, loss: lh.loss };
+  // ── Handlers ──
+
+  const triggerToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ message, type });
+  }, []);
+
+  const handleConfigChange = useCallback((updates: Partial<TrainingConfig>) => {
+    setConfig((prev) => ({ ...prev, ...updates }));
+    setValidationErrors((prev) => {
+      const copy = { ...prev };
+      Object.keys(updates).forEach((k) => delete copy[k]);
+      return copy;
     });
-    valHistory.forEach(vh => {
-      combined[vh.progress] = { ...combined[vh.progress], progress: vh.progress, evalLoss: vh.loss };
-    });
+  }, []);
 
-    return Object.values(combined).sort((a, b) => a.progress - b.progress);
+  const handlePresetChange = useCallback(
+    (name: string) => {
+      setSelectedPresetName(name);
+      if (!name) return;
+
+      const preset = DEFAULT_PRESETS[name] || customPresets[name];
+      if (!preset) return;
+
+      setConfig((prev) => ({
+        ...prev,
+        epochs: String(preset.epochs || '3'),
+        batchSize: String(preset.batchSize || '2'),
+        learningRate: String(preset.learningRate || '0.00003'),
+        blockSize: String(preset.blockSize || '512'),
+        modelMaxLength: String(preset.modelMaxLength || '1024'),
+        r: String(preset.r || '8'),
+        loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '8'),
+        loraDropout: String(preset.lora_dropout || preset.loraDropout || '0.05'),
+        gradAccum: String(preset.gradient_accumulation_steps || preset.gradAccum || '4'),
+        warmupSteps: String(preset.warmup_steps || preset.warmupSteps || '5'),
+        weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),
+        optim: preset.optim || 'adamw_8bit',
+        lrScheduler: preset.lr_scheduler_type || preset.lrScheduler || 'linear',
+      }));
+    },
+    [customPresets],
+  );
+
+  const handleSavePreset = useCallback(
+    (name: string) => {
+      const newPreset = {
+        epochs: parseInt(config.epochs) || 3,
+        batchSize: parseInt(config.batchSize) || 2,
+        learningRate: parseFloat(config.learningRate) || 3e-5,
+        blockSize: parseInt(config.blockSize) || 512,
+        modelMaxLength: parseInt(config.modelMaxLength) || 1024,
+        r: parseInt(config.r) || 8,
+        lora_alpha: parseInt(config.loraAlpha) || 8,
+        lora_dropout: parseFloat(config.loraDropout) || 0.05,
+        gradient_accumulation_steps: parseInt(config.gradAccum) || 4,
+        warmup_steps: parseInt(config.warmupSteps) || 5,
+        weight_decay: parseFloat(config.weightDecay) || 0.01,
+        optim: config.optim,
+        lr_scheduler_type: config.lrScheduler,
+      };
+
+      const updated = { ...customPresets, [name]: newPreset };
+      setCustomPresets(updated);
+      localStorage.setItem('autotrain_presets', JSON.stringify(updated));
+      setSelectedPresetName(name);
+    },
+    [config, customPresets],
+  );
+
+  const handleDeletePreset = useCallback(
+    (name: string) => {
+      const updated = { ...customPresets };
+      delete updated[name];
+      setCustomPresets(updated);
+      localStorage.setItem('autotrain_presets', JSON.stringify(updated));
+      setSelectedPresetName('');
+    },
+    [customPresets],
+  );
+
+  // Validate step 1 dataset properties
+  const validateStep1 = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!config.projectName.trim()) {
+      errors.projectName = 'Project name is required';
+    }
+    if (config.datasetSource === 'local' && !config.localFile) {
+      errors.dataset = 'Please select a local dataset file';
+    }
+    if (config.datasetSource === 'hub' && !config.selectedHfDataset) {
+      errors.dataset = 'Please select a Hugging Face dataset';
+    }
+    if (config.datasetSource === 'cloud' && !config.cloudLoadedDataset) {
+      errors.dataset = 'Please load a cloud dataset';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      setShowStartError(true);
+      return false;
+    }
+
+    setValidationErrors({});
+    setShowStartError(false);
+    return true;
+  };
+
+  const handleNextFromStep1 = useCallback(() => {
+    if (validateStep1()) {
+      setCurrentStep(2);
+      setCompletedSteps((prev) => (prev.includes(1) ? prev : [...prev, 1]));
+    }
+  }, [config, validateStep1]);
+
+  const handleNextFromStep2 = useCallback(() => {
+    setCurrentStep(3);
+    setCompletedSteps((prev) => (prev.includes(2) ? prev : [...prev, 2]));
+  }, []);
+
+  const handleStepClick = useCallback((step: 1 | 2 | 3) => {
+    setCurrentStep(step);
+  }, []);
+
+  const handleBackToStep1 = useCallback(() => {
+    setCurrentStep(1);
+  }, []);
+
+  const handleBackToStep2 = useCallback(() => {
+    setCurrentStep(2);
+  }, []);
+
+  // SSE stream connecting & tracking
+  const startTrackingJob = (jobId: string, jobConfig?: any) => {
+    if (eventSources[jobId]) return;
+
+    if (jobConfig) {
+      globalTrainingState.jobConfigs = {
+        ...globalTrainingState.jobConfigs,
+        [jobId]: jobConfig
+      };
+    }
+
+    globalTrainingState.activeJobs = {
+      ...globalTrainingState.activeJobs,
+      [jobId]: {
+        id: jobId,
+        status: 'QUEUED',
+        progress: 0,
+        logs: ['Establishing connection to SSE stream...'],
+      }
+    };
+
+    const token = getAuthToken();
+    const streamUrl = `/api/train/stream/${jobId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    const es = new EventSource(streamUrl);
+
+    globalTrainingState.eventSources[jobId] = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Update Job metrics and status immutably
+        globalTrainingState.activeJobs = {
+          ...globalTrainingState.activeJobs,
+          [jobId]: {
+            ...globalTrainingState.activeJobs[jobId],
+            status: data.status,
+            progress: data.progress || 0,
+            current_epoch: data.metrics?.epoch,
+            total_epochs: data.metrics?.total_epochs,
+            current_step: data.metrics?.step,
+            total_steps: data.metrics?.total_steps,
+            loss: data.metrics?.loss,
+            eval_loss: data.metrics?.eval_loss,
+            vram_used: data.metrics?.vram,
+            gpu_util: data.metrics?.gpu_util ? `${data.metrics.gpu_util}%` : undefined,
+            logs: data.logs || (globalTrainingState.activeJobs[jobId] ? globalTrainingState.activeJobs[jobId].logs : []) || [],
+          }
+        };
+
+        // Append Train Loss history
+        if (data.metrics && typeof data.metrics.loss === 'number' && data.metrics.loss > 0) {
+          const history = globalTrainingState.lossHistories[jobId] || [];
+          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
+            globalTrainingState.lossHistories[jobId] = [
+              ...history,
+              { progress: data.progress, loss: data.metrics.loss },
+            ];
+          }
+        }
+
+        // Append Eval Loss history
+        if (data.metrics && typeof data.metrics.eval_loss === 'number' && data.metrics.eval_loss > 0) {
+          const history = globalTrainingState.evalLossHistories[jobId] || [];
+          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
+            globalTrainingState.evalLossHistories[jobId] = [
+              ...history,
+              { progress: data.progress, loss: data.metrics.eval_loss },
+            ];
+          }
+        }
+
+        // Handle terminal completion states
+        if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(data.status)) {
+          closeTracking(jobId, data.status);
+          if (data.status === 'COMPLETED') {
+            setCompletedJobId(jobId);
+          }
+        }
+
+        globalTrainingState.notify();
+      } catch (err) {
+        console.error('SSE message parse error:', err);
+      }
+    };
+
+    es.onerror = () => {
+      closeTracking(jobId, 'ERROR');
+    };
+
+    globalTrainingState.notify();
+  };
+
+  const closeTracking = (jobId: string, finalStatus: string) => {
+    const es = eventSources[jobId];
+    if (es) {
+      es.close();
+      delete eventSources[jobId];
+    }
+    if (globalTrainingState.activeJobs[jobId]) {
+      globalTrainingState.activeJobs = {
+        ...globalTrainingState.activeJobs,
+        [jobId]: {
+          ...globalTrainingState.activeJobs[jobId],
+          status: finalStatus as any
+        }
+      };
+    }
+    globalTrainingState.notify();
+  };
+
+  const handleStopJob = useCallback(async (jobId: string) => {
+    try {
+      await axios.post(`/api/train/stop/${jobId}`, {}, { headers: getAuthHeaders() });
+      closeTracking(jobId, 'STOPPED');
+      triggerToast('Training job stopped.', 'info');
+    } catch (err: any) {
+      console.error('Error stopping job:', err);
+      triggerToast('Failed to stop training: ' + (err.response?.data?.error || err.message), 'error');
+    }
+  }, [triggerToast]);
+
+  const handleDismissJob = useCallback((jobId: string) => {
+    globalTrainingState.activeJobs = { ...globalTrainingState.activeJobs };
+    delete globalTrainingState.activeJobs[jobId];
+    if (completedJobId === jobId) {
+      setCompletedJobId(null);
+    }
+    globalTrainingState.notify();
+  }, [completedJobId]);
+
+  const handleChatTest = useCallback((jobId: string) => {
+    const jobConfig = globalTrainingState.jobConfigs[jobId];
+    const modelName = jobConfig ? jobConfig.projectName : 'My Custom AI Model';
+    localStorage.setItem('autotrain_completed_project_name', modelName);
+    setActiveTab('Chat');
+  }, [setActiveTab]);
+
+  // Start training Confirm
+  const handleStartTrainingConfirm = async () => {
+    setIsConfirmOpen(false);
+    setIsStarting(true);
+    try {
+      const formData = new FormData();
+      formData.append('model_name', config.baseModel);
+      formData.append('epochs', config.epochs);
+      formData.append('batchSize', config.batchSize);
+      formData.append('learningRate', config.learningRate);
+      formData.append('blockSize', config.blockSize);
+      formData.append('modelMaxLength', config.modelMaxLength);
+      formData.append('r', config.r);
+      formData.append('lora_alpha', config.loraAlpha);
+      formData.append('lora_dropout', config.loraDropout);
+      formData.append('gradient_accumulation_steps', config.gradAccum);
+      formData.append('warmup_steps', config.warmupSteps);
+      formData.append('weight_decay', config.weightDecay);
+      formData.append('seed', config.seed);
+      formData.append('random_state', config.seed);
+      formData.append('optim', config.optim);
+      formData.append('lr_scheduler_type', config.lrScheduler);
+      formData.append('systemPrompt', config.systemPrompt);
+      formData.append('columnMapping', config.columnMapping);
+      formData.append('projectName', config.projectName);
+      formData.append('api_key', config.apiKey);
+
+      if (previewData.totalRecords) formData.append('totalRecords', String(previewData.totalRecords));
+      if (previewData.totalTokens) formData.append('totalTokens', String(previewData.totalTokens));
+
+      if (config.hfRepoId) {
+        formData.append('push_to_hub', 'true');
+        formData.append('hf_repo_id', config.hfRepoId);
+        formData.append('hf_token', config.hfToken);
+      }
+
+      if (config.datasetSource === 'local' && config.localFile) {
+        formData.append('dataset_file', config.localFile);
+        formData.append('datasetSource', 'local');
+      } else if (config.datasetSource === 'hub') {
+        formData.append('dataset', config.selectedHfDataset);
+        formData.append('datasetSource', 'hub');
+      } else {
+        formData.append('dataset', config.cloudLoadedDataset);
+        formData.append('datasetSource', 'cloud');
+      }
+
+      const response = await axios.post('/api/train/start', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          ...getAuthHeaders(),
+        },
+      });
+
+      const data = response.data;
+      if (data && data.job_id) {
+        triggerToast(`Training initiated successfully! Job ID: ${data.job_id.slice(-8)}`, 'success');
+        startTrackingJob(data.job_id, {
+          projectName: config.projectName,
+          baseModel: config.baseModel,
+          datasetSource: config.datasetSource,
+          datasetName:
+            config.datasetSource === 'local'
+              ? config.localFile!.name
+              : config.datasetSource === 'hub'
+              ? config.selectedHfDataset
+              : config.cloudLoadedDataset,
+          columnMapping: config.columnMapping,
+        });
+
+        // Reset step state back to step 1 for next creation
+        setCurrentStep(1);
+        setCompletedSteps([]);
+      }
+    } catch (err: any) {
+      triggerToast('Failed to start training: ' + (err.response?.data?.error || err.message), 'error');
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   return (
-    <div className="autotrain-view">
-      {/* Header */}
-      <div className="autotrain-header">
-        <div className="autotrain-title-group">
-          <Zap size={28} className="text-primary" />
-          <div>
+    <div className="at-container">
+      {/* ── Header ── */}
+      <header className="at-header">
+        <div className="at-header-left">
+          <div className="at-header-icon" aria-hidden="true">
+            <Zap size={20} />
+          </div>
+          <div className="at-header-text">
             <h1>AutoTrain Dashboard</h1>
-            <p>Fine-tune and train your custom LLM Socratic models</p>
+            <p>Fine-tune and deploy your own custom AI tutors from conversation logs in 3 simple steps.</p>
           </div>
         </div>
-        <div className="autotrain-header-actions">
-          <button className="btn-outline" onClick={() => setActiveTab('Training History')}>
-            <History size={16} /> Lịch sử (History)
+        <div className="at-header-right">
+          {Object.keys(activeJobs).length > 0 && (
+            <div className="at-badge-active" aria-label={`${Object.keys(activeJobs).length} active training runs`}>
+              <span className="at-pulse-dot" />
+              {Object.keys(activeJobs).length} Active
+            </div>
+          )}
+          <button className="at-btn-history" onClick={() => setActiveTab('Training History')}>
+            <History size={14} /> History
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* SSE Active running jobs view */}
-      {isAnyJobActive && (
-        <div className="card active-jobs-card mb-4" style={{ border: '1px solid #7c3aed', background: '#faf5ff' }}>
-          <div className="card-header flex-between">
-            <div className="flex-center gap-2">
-              <Activity size={18} className="text-primary" />
-              <h3>Các tiến trình đang huấn luyện ({Object.keys(activeJobs).length})</h3>
-            </div>
+      {/* ── Toasts & Alerts ── */}
+      {toast && (
+        <div
+          className={`at-toast ${
+            toast.type === 'error' ? 'at-toast-error' : toast.type === 'success' ? 'at-toast-success' : 'at-toast-info'
+          }`}
+          role="alert"
+        >
+          <div className="at-toast-icon">
+            <CheckCircle size={14} />
           </div>
-          <div className="card-body">
-            {Object.entries(activeJobs).map(([id, job]) => (
-              <div key={id} className="job-container mb-3" style={{ background: 'white' }}>
-                <div className="job-header">
-                  <div className="job-info">
-                    <div className="job-icon-wrapper" style={{ background: '#f5f3ff' }}>
-                      <Zap size={20} className="text-primary" />
-                    </div>
-                    <div>
-                      <h4 className="job-id">Job ID: {id}</h4>
-                      <span className="badge badge-success-outline" style={{ borderColor: '#c084fc', color: '#7c3aed', background: '#fdf4ff' }}>
-                        {job.status}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="job-actions">
-                    {['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'].includes(job.status) && (
-                      <button className="btn-danger" onClick={() => handleStopJob(id)}>
-                        <StopCircle size={16} style={{ marginRight: '6px', display: 'inline' }} /> Dừng huấn luyện
-                      </button>
-                    )}
-                    <button className="btn-icon" onClick={() => {
-                      globalTrainingState.activeJobs = { ...activeJobs };
-                      delete globalTrainingState.activeJobs[id];
-                      globalTrainingState.notify();
-                    }}>
-                      <X size={20} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div className="job-progress-container">
-                  <div className="job-progress-labels">
-                    <span className="font-medium text-sm">Tiến độ huấn luyện (Progress)</span>
-                    <span className="text-primary text-sm font-semibold">{job.progress}%</span>
-                  </div>
-                  <div className="progress-bar-bg">
-                    <div className="progress-bar-fill" style={{ width: `${job.progress}%` }}></div>
-                  </div>
-                </div>
-
-                {/* Metrics */}
-                {job.metrics && (
-                  <div className="job-stats-row">
-                    <div className="job-stat">
-                      <div className="stat-label text-primary">LOSS ĐANG TRAIN</div>
-                      <div className="stat-value text-primary font-bold">{job.metrics.loss?.toFixed(4) || '0.0000'}</div>
-                    </div>
-                    <div className="job-stat">
-                      <div className="stat-label text-danger">LOSS ĐÁNH GIÁ (EVAL)</div>
-                      <div className="stat-value text-danger font-bold">{job.metrics.eval_loss?.toFixed(4) || '0.0000'}</div>
-                    </div>
-                    <div className="job-stat">
-                      <div className="stat-label">VRAM ĐANG DÙNG</div>
-                      <div className="stat-value font-bold">{job.metrics.vram || '0'} MB</div>
-                    </div>
-                    <div className="job-stat">
-                      <div className="stat-label">GPU UTILIZATION</div>
-                      <div className="stat-value font-bold">{job.metrics.gpu_util || '0'}%</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Live Chart & Log Console */}
-                <div className="job-details-grid">
-                  {/* Recharts live plot */}
-                  <div className="job-chart-area">
-                    <div className="chart-legend" style={{ fontSize: '11px', marginBottom: '8px' }}>
-                      <span className="legend-item"><span className="legend-color bg-primary" /> Loss Train</span>
-                      <span className="legend-item"><span className="legend-color bg-danger" /> Loss Eval</span>
-                    </div>
-                    <div style={{ flex: 1, height: '90%' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={getLiveChartData(id)}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="progress" tick={{ fontSize: 9 }} tickFormatter={v => `${v}%`} />
-                          <YAxis tick={{ fontSize: 9 }} />
-                          <Tooltip labelFormatter={v => `Progress: ${v}%`} />
-                          <Line type="monotone" dataKey="loss" name="Train Loss" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                          <Line type="monotone" dataKey="evalLoss" name="Eval Loss" stroke="#ef4444" strokeWidth={2} dot={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* Terminal Console */}
-                  <div className="job-console-area">
-                    <div className="console-header">
-                      <span>CONSOLE OUTPUT LOGS</span>
-                      <span className="console-job-id">Job ID: {id.slice(4, 12)}</span>
-                    </div>
-                    <div className="console-body" ref={el => consoleRefs.current[id] = el}>
-                      {job.logs?.map((line: string, idx: number) => (
-                        <div key={idx} className="console-line text-success">{line}</div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <span className="at-toast-msg">{toast.message}</span>
+          <button className="at-toast-close" onClick={() => setToast(null)} aria-label="Close toast">
+            <X size={12} />
+          </button>
         </div>
       )}
 
-      {/* Main Layout config/form */}
-      <div className="autotrain-layout">
-        {/* Left Column - Configurations */}
-        <div className="autotrain-col-left">
-          <div className="card">
-            <div className="card-header border-bottom-light">
-              <div className="flex-center gap-2">
-                <Settings2 size={18} className="text-primary" />
-                <h3 className="font-semibold">Cấu hình Dự án Huấn luyện (Fine-tune Config)</h3>
-              </div>
-            </div>
-            <div className="card-body">
-              {/* Project name */}
-              <div className="form-group">
-                <label>Tên dự án (Project Name) *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                />
-              </div>
-
-              {/* Base Model selection */}
-              <div className="form-group">
-                <label>Mô hình nền (Base Model) *</label>
-                <div className="input-with-icon">
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={baseModel}
-                    onChange={(e) => setBaseModel(e.target.value)}
-                    list="base-models-list"
-                  />
-                  <Search size={18} className="input-icon-right" />
-                  <datalist id="base-models-list">
-                    {BASE_MODEL_OPTIONS.map(opt => (
-                      <option key={opt} value={opt} />
-                    ))}
-                  </datalist>
-                </div>
-              </div>
-
-              {/* Dataset Source selection Tabs */}
-              <div className="form-group">
-                <label>Nguồn dữ liệu (Dataset Source)</label>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <button
-                    type="button"
-                    className={`btn-outline ${datasetSource === 'local' ? 'text-primary' : ''}`}
-                    style={datasetSource === 'local' ? { borderColor: '#8b5cf6', background: '#f5f3ff' } : {}}
-                    onClick={() => setDatasetSource('local')}
-                  >
-                    Local File
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn-outline ${datasetSource === 'hub' ? 'text-primary' : ''}`}
-                    style={datasetSource === 'hub' ? { borderColor: '#8b5cf6', background: '#f5f3ff' } : {}}
-                    onClick={() => setDatasetSource('hub')}
-                  >
-                    Hugging Face Profile
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn-outline ${datasetSource === 'cloud' ? 'text-primary' : ''}`}
-                    style={datasetSource === 'cloud' ? { borderColor: '#8b5cf6', background: '#f5f3ff' } : {}}
-                    onClick={() => setDatasetSource('cloud')}
-                  >
-                    Other Cloud Sources
-                  </button>
-                </div>
-
-                {/* Local Upload Form */}
-                {datasetSource === 'local' && (
-                  <div className="upload-area" onClick={() => fileInputRef.current?.click()}>
-                    <Upload size={24} className="text-muted mb-2" />
-                    <p className="font-medium text-main">
-                      {localFile ? `Đã chọn: ${localFile.name}` : 'Click để chọn tệp .json / .jsonl / .csv'}
-                    </p>
-                    <span className="text-muted text-sm">hoặc kéo thả file vào đây</span>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      style={{ display: 'none' }}
-                      accept=".json,.jsonl,.csv"
-                      onChange={handleLocalFileChange}
-                    />
-                  </div>
-                )}
-
-                {/* Hugging Face Profile Pull Form */}
-                {datasetSource === 'hub' && (
-                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Nhập Hugging Face Username (e.g. openai, google)"
-                        value={hfUsername}
-                        onChange={(e) => setHfUsername(e.target.value)}
-                      />
-                      <button type="button" className="btn-primary" onClick={handleFetchHfProfile} disabled={fetchingHf}>
-                        {fetchingHf ? 'Đang tải...' : 'Lấy Repo'}
-                      </button>
-                    </div>
-
-                    {/* HF dataset results */}
-                    {hfDatasets.length > 0 && (
-                      <div style={{ marginBottom: '12px' }}>
-                        <span className="font-semibold text-sm mb-1 block">Danh sách Datasets của bạn:</span>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '160px', overflowY: 'auto' }}>
-                          {hfDatasets.map(ds => (
-                            <div
-                              key={ds.id}
-                              style={{
-                                padding: '8px', background: selectedHfDataset === ds.id ? '#f3e8ff' : 'white',
-                                border: `1px solid ${selectedHfDataset === ds.id ? '#8b5cf6' : '#cbd5e1'}`,
-                                borderRadius: '8px', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                              }}
-                              onClick={() => handleFetchHfDatasetPreview(ds.id)}
-                            >
-                              🤗 {ds.id}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* HF model results */}
-                    {hfModels.length > 0 && (
-                      <div>
-                        <span className="font-semibold text-sm mb-1 block">Mô hình nền của bạn (Base Models):</span>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', maxHeight: '120px', overflowY: 'auto' }}>
-                          {hfModels.map(md => (
-                            <div
-                              key={md.id}
-                              style={{
-                                padding: '8px', background: baseModel === md.id ? '#e0e7ff' : 'white',
-                                border: `1px solid ${baseModel === md.id ? '#3b82f6' : '#cbd5e1'}`,
-                                borderRadius: '8px', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-                              }}
-                              onClick={() => setBaseModel(md.id)}
-                            >
-                              🤖 {md.id}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Cloud storage config form */}
-                {datasetSource === 'cloud' && (
-                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button" className={`btn-outline ${cloudProvider === 'gcs' ? 'text-primary' : ''}`}
-                        onClick={() => setCloudProvider('gcs')}
-                      >
-                        Google Cloud Storage
-                      </button>
-                      <button
-                        type="button" className={`btn-outline ${cloudProvider === 'azure' ? 'text-primary' : ''}`}
-                        onClick={() => setCloudProvider('azure')}
-                      >
-                        Azure Blob Storage
-                      </button>
-                    </div>
-
-                    <input
-                      type="text" className="form-input" placeholder="Tên Bucket / Container Name"
-                      value={cloudBucket} onChange={e => setCloudBucket(e.target.value)}
-                    />
-                    <input
-                      type="text" className="form-input" placeholder="Đường dẫn tệp tin (e.g. data/train.jsonl)"
-                      value={cloudPath} onChange={e => setCloudPath(e.target.value)}
-                    />
-                    <input
-                      type="password" className="form-input" placeholder="Credentials / SAS Token / Access Key"
-                      value={cloudSasToken} onChange={e => setCloudSasToken(e.target.value)}
-                    />
-                    
-                    <button type="button" className="btn-primary" onClick={handleLoadCloudDataset}>
-                      Nạp và kiểm tra kết nối
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Column mapping */}
-              <div className="form-row">
-                <div className="form-group flex-1">
-                  <label>Cột dữ liệu huấn luyện (Column Mapping) *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={columnMapping}
-                    onChange={(e) => setColumnMapping(e.target.value)}
-                    placeholder="text, instruction..."
-                  />
-                </div>
-              </div>
-
-              {/* System Prompt (Optional) */}
-              <div className="form-group">
-                <label>Lời khuyên hệ thống (System Prompt - Optional)</label>
-                <textarea
-                  className="form-input min-h-100"
-                  placeholder="Ví dụ: Bạn là gia sư dạy toán theo phương pháp Socratic..."
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                />
-              </div>
-
-              {/* HF Target Push Config */}
-              <div style={{ marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
-                <h4 className="font-semibold mb-3 text-sm flex-center gap-2">
-                  <span style={{ fontSize: '18px' }}>🤗</span> Push to Hugging Face Hub (Optional)
-                </h4>
-                <div className="form-row mb-3">
-                  <div className="form-group flex-1">
-                    <label>HF Repo ID</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. username/my-model-lora"
-                      value={hfRepoId}
-                      onChange={(e) => setHfRepoId(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>HF Write Access Token</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="hf_..."
-                    value={hfToken}
-                    onChange={(e) => setHfToken(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* UI Preview Dataset Button & Panel */}
-              {previewRows.length > 0 && (
-                <div style={{ marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '20px' }}>
-                  <div className="flex-between mb-3">
-                    <span className="font-semibold text-sm flex-center gap-2">
-                      <Eye size={18} className="text-primary" /> Xem trước Dữ liệu (Dataset Preview)
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      style={{ padding: '4px 10px', fontSize: '12px' }}
-                      onClick={() => setPreviewOpen(!previewOpen)}
-                    >
-                      {previewOpen ? 'Ẩn bảng' : 'Hiện bảng preview'}
-                    </button>
-                  </div>
-
-                  {totalRecords && (
-                    <div style={{ display: 'flex', gap: '12px', marginBottom: '10px' }}>
-                      <span className="badge badge-success-outline" style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }}>
-                        Records: {totalRecords.toLocaleString('vi-VN')}
-                      </span>
-                      {totalTokens && (
-                        <span className="badge badge-success-outline" style={{ background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }}>
-                          Ước lượng Tokens: {totalTokens.toLocaleString('vi-VN')}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {previewOpen && (
-                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: '8px' }}>
-                      <table className="comp-table" style={{ fontSize: '11px' }}>
-                        <thead>
-                          <tr style={{ background: '#f8fafc' }}>
-                            <th style={{ padding: '8px' }}>User/Instruction</th>
-                            <th style={{ padding: '8px' }}>Context/Input</th>
-                            <th style={{ padding: '8px' }}>Assistant/Output</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {previewRows.map((row, idx) => (
-                            <tr key={idx}>
-                              <td style={{ padding: '8px', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.instruction}</td>
-                              <td style={{ padding: '8px', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.input}</td>
-                              <td style={{ padding: '8px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.output}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+      {showStartError && Object.keys(validationErrors).length > 0 && (
+        <div className="at-error-banner" role="alert">
+          <div className="at-error-banner-icon">
+            <AlertTriangle size={14} />
           </div>
+          <div className="at-error-banner-content">
+            <strong>Cannot proceed — please resolve errors</strong>
+            <ul className="at-error-list">
+              {Object.entries(validationErrors).map(([key, msg]) => (
+                <li key={key}>{msg}</li>
+              ))}
+            </ul>
+          </div>
+          <button className="at-error-banner-close" onClick={() => setShowStartError(false)} aria-label="Close errors">
+            <X size={12} />
+          </button>
         </div>
+      )}
 
-        {/* Right Column - Workers & Parameters */}
-        <div className="autotrain-col-right">
-          {/* Workers status */}
-          <div className="card mb-4">
-            <div className="card-header border-bottom-light flex-between">
-              <div className="flex-center gap-2">
-                <Cpu size={18} className="text-info" />
-                <h3 className="font-semibold">Code Workers Status</h3>
-              </div>
-            </div>
-            <div className="card-body pb-3">
-              {systemResources?.workers?.map((w: any, idx: number) => (
-                <div key={idx} className="worker-status flex-between mb-2">
-                  <div className="worker-info">
-                    <h4 className="font-medium text-sm mb-1">{w.url}</h4>
-                    {w.error ? (
-                      <span className="text-sm text-danger block">{w.error}</span>
-                    ) : (
-                      <span className="text-sm text-muted block">VRAM: {w.vram_used_mb || 0} / {w.vram_total_mb || 0} MB • GPU: {w.gpu_util || 0}%</span>
-                    )}
-                  </div>
-                  <div className="worker-badge">
-                    <div className={`dot ${w.error ? 'dot-offline' : 'dot-online'}`}></div> {w.error ? 'Offline' : 'Online'}
-                  </div>
-                </div>
-              )) || (
-                <div className="text-sm text-muted">Không thấy worker nào đang hoạt động.</div>
-              )}
-            </div>
-          </div>
+      {/* ── Active Jobs Progress Monitor (Stays visible across wizard actions) ── */}
+      <TrainingMonitor
+        activeJobs={activeJobs}
+        lossHistories={lossHistories}
+        evalLossHistories={evalLossHistories}
+        onStopJob={handleStopJob}
+        onDismissJob={handleDismissJob}
+        onChatTest={handleChatTest}
+        completedJobId={completedJobId}
+        onDismissSuccess={() => setCompletedJobId(null)}
+      />
 
-          {/* Hyperparameters Card */}
-          <div className="card">
-            <div className="card-header border-bottom-light flex-between">
-              <div className="flex-center gap-2">
-                <Sliders size={18} className="text-primary" />
-                <h3 className="font-semibold">Tham số huấn luyện (Parameters)</h3>
-              </div>
-              
-              {/* Presets loader / saver */}
-              <div className="flex-center gap-2">
-                <select
-                  value={selectedPresetName}
-                  onChange={(e) => handlePresetChange(e.target.value)}
-                  className="form-input"
-                  style={{ width: '160px', padding: '4px 8px', fontSize: '12px' }}
-                >
-                  <option value="">-- Chọn Preset --</option>
-                  <optgroup label="Hệ thống">
-                    {Object.keys(DEFAULT_PRESETS).map(k => (
-                      <option key={k} value={k}>{k}</option>
-                    ))}
-                  </optgroup>
-                  {Object.keys(customPresets).length > 0 && (
-                    <optgroup label="Tự chọn">
-                      {Object.keys(customPresets).map(k => (
-                        <option key={k} value={k}>{k}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                <button
-                  type="button"
-                  onClick={handleSavePreset}
-                  className="btn-outline"
-                  style={{ padding: '6px 8px' }}
-                  title="Lưu preset hiện tại"
-                >
-                  <Save size={14} />
-                </button>
-                {selectedPresetName && !DEFAULT_PRESETS[selectedPresetName] && (
-                  <button
-                    type="button"
-                    onClick={handleDeletePreset}
-                    className="btn-outline"
-                    style={{ padding: '6px 8px', color: '#ef4444' }}
-                    title="Xóa preset tự chọn"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="card-body">
-              <div className="parameters-grid">
-                <div className="form-group">
-                  <label>Epochs</label>
-                  <input type="number" className="form-input" value={epochs} onChange={e => setEpochs(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Batch Size</label>
-                  <input type="number" className="form-input" value={batchSize} onChange={e => setBatchSize(e.target.value)} />
-                </div>
+      {/* ── Main Layout ── */}
+      {showWelcome ? (
+        <WelcomeCard onDismiss={() => setShowWelcome(false)} onDownloadSample={() => {}} />
+      ) : (
+        <div className="at-layout" style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 10 }}>
+          {/* Stepper Wizard Indicator */}
+          <WizardStepper
+            currentStep={currentStep}
+            completedSteps={completedSteps}
+            onStepClick={handleStepClick}
+          />
 
-                <div className="form-group">
-                  <label>Learning Rate</label>
-                  <input type="text" className="form-input" value={learningRate} onChange={e => setLearningRate(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Max Length</label>
-                  <input type="number" className="form-input" value={modelMaxLength} onChange={e => setModelMaxLength(e.target.value)} />
-                </div>
+          <main className="at-wizard-step-container">
+            {currentStep === 1 && (
+              <StepDataset
+                config={config}
+                onConfigChange={handleConfigChange}
+                previewData={previewData}
+                onPreviewDataChange={setPreviewData}
+                onNext={handleNextFromStep1}
+                toast={triggerToast}
+              />
+            )}
 
-                <div className="form-group">
-                  <label>Grad Accumulation</label>
-                  <input type="number" className="form-input" value={gradAccum} onChange={e => setGradAccum(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>LR Warmup Steps</label>
-                  <input type="number" className="form-input" value={warmupSteps} onChange={e => setWarmupSteps(e.target.value)} />
-                </div>
+            {currentStep === 2 && (
+              <StepConfig
+                config={config}
+                onConfigChange={handleConfigChange}
+                previewData={previewData}
+                selectedPresetName={selectedPresetName}
+                onPresetChange={handlePresetChange}
+                customPresets={customPresets}
+                onSavePreset={handleSavePreset}
+                onDeletePreset={handleDeletePreset}
+                onNext={handleNextFromStep2}
+                onBack={handleBackToStep1}
+                toast={triggerToast}
+              />
+            )}
 
-                <div className="form-group">
-                  <label>Weight Decay</label>
-                  <input type="text" className="form-input" value={weightDecay} onChange={e => setWeightDecay(e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label>Random Seed</label>
-                  <input type="number" className="form-input" value={seed} onChange={e => setSeed(e.target.value)} />
-                </div>
-
-                <div className="form-group">
-                  <label>LR Scheduler</label>
-                  <select className="form-input" value={lrScheduler} onChange={e => setLrScheduler(e.target.value)}>
-                    <option value="linear">linear</option>
-                    <option value="cosine">cosine</option>
-                    <option value="constant">constant</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Optimizer</label>
-                  <select className="form-input" value={optim} onChange={e => setOptim(e.target.value)}>
-                    <option value="adamw_8bit">adamw_8bit</option>
-                    <option value="adamw_hf">adamw_hf</option>
-                    <option value="sgd">sgd</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* LoRA configuration inputs */}
-              <div className="lora-config-section mt-4" style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
-                <h4 className="text-sm font-semibold mb-3 text-main">Cấu hình LoRA (LoRA Params)</h4>
-                <div className="lora-grid">
-                  <div className="form-group">
-                    <label>LoRA R</label>
-                    <input type="number" className="form-input" value={r} onChange={e => setR(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>LoRA Alpha</label>
-                    <input type="number" className="form-input" value={loraAlpha} onChange={e => setLoraAlpha(e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>LoRA Dropout</label>
-                    <input type="text" className="form-input" value={loraDropout} onChange={e => setLoraDropout(e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Start training triggers */}
-          <div className="start-training-section mt-4">
-            <button className="btn-start-training" onClick={handleStartTraining}>
-              <Zap size={20} /> Bắt đầu Huấn luyện Model
-            </button>
-            <p className="text-center text-sm text-muted mt-3">
-              * Hệ thống sẽ tự động đăng nhập tiến trình và hiển thị trạng thái VRAM/Loss thời gian thực.
-            </p>
-          </div>
+            {currentStep === 3 && (
+              <StepReview
+                config={config}
+                previewData={previewData}
+                selectedPresetName={selectedPresetName}
+                estimatedTime={estimatedTime}
+                systemResources={systemResources}
+                isStarting={isStarting}
+                onStartTraining={() => setIsConfirmOpen(true)}
+                onBack={handleBackToStep2}
+              />
+            )}
+          </main>
         </div>
-      </div>
+      )}
+
+      {/* ── Confirmation Overlay Modal ── */}
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        config={config}
+        previewData={previewData}
+        presetName={selectedPresetName}
+        estimatedTime={estimatedTime}
+        gpuOnline={useMemo(() => {
+          if (!systemResources) return false;
+          const workers = systemResources.workers || [];
+          return workers.some((w: any) => w.status === 'online' || !w.error);
+        }, [systemResources])}
+        onConfirm={handleStartTrainingConfirm}
+        onCancel={() => setIsConfirmOpen(false)}
+      />
     </div>
   );
 }

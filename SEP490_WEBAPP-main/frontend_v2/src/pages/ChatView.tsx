@@ -49,6 +49,14 @@ function ChatView() {
 
   const allOptions = modelGroups.flatMap(g => g.options);
   const [singleModel, setSingleModel] = useState(allOptions[0] || '');
+  
+  React.useEffect(() => {
+    const completedName = localStorage.getItem('autotrain_completed_project_name');
+    if (completedName) {
+      localStorage.removeItem('autotrain_completed_project_name');
+      setSingleModel(completedName);
+    }
+  }, []);
 
   const sessions = [
     { id: 1, title: 'GPT-4 Code Review', messages: 12, time: '2h ago' },
@@ -146,6 +154,9 @@ function ChatView() {
                   style={{ width: '260px' }}
                 >
                   <option value="">Model ID (tùy chọn, VD: openai/gpt 4o)</option>
+                  {singleModel && !allOptions.includes(singleModel) && (
+                    <option value={singleModel}>{singleModel} (Vừa huấn luyện) 🎉</option>
+                  )}
                   {allOptions.map((opt, idx) => (
                     <option key={idx} value={opt}>{opt}</option>
                   ))}

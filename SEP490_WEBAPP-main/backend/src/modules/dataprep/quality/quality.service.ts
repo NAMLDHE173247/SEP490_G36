@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
+import { ConversationQualityReview } from '../../../models/ConversationQualityReview';
+import { ConversationQualityAdjudication } from '../../../models/ConversationQualityAdjudication';
+import { User } from '../../../models/User';
 import { QUALITY_AUTO_REJECT_MARKER } from './quality.constants';
 import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery } from '../../../services/labelAssignmentService';
 
@@ -78,6 +81,12 @@ export type QualityItem = {
   iar: Array<number | null>;
   criticalFailures: number;
   scorableTurns: number;
+  reviewStatus?: 'pending' | 'reviewed' | 'conflict';
+  reviewCount?: number;
+  conflict?: boolean;
+  note?: string;
+  adjudicatedBy?: string;
+  adjudicatedAt?: string;
   turnPairs: Array<{
     userMessageIndex: number;
     assistantMessageIndex: number;
@@ -249,19 +258,71 @@ export class QualityService {
     }
 
     const itemIds = items.map((item: any) => item._id);
-    const labels = (await getEffectiveSampleLabelsForVersion(version._id, itemIds)).filter(
+    const allLabels = await getEffectiveSampleLabelsForVersion(version._id, itemIds);
+    const labels = allLabels.filter(
       (label: any) => label.targetScope === 'message' && label.type === 'hard'
     );
     const labelMap = buildLabelMap(labels);
+
+    const SUBJECT_LABELS = new Set([
+      'MATH',
+      'PHYSICAL',
+      'CHEMISTRY',
+      'LITERATURE',
+      'BIOLOGY',
+    ]);
+
+    const sampleSubjectLabelsMap = new Map<string, Array<{ name: string; type: string; assignedUserCount: number }>>();
+    for (const label of allLabels) {
+      const sid = String((label as any).sampleId);
+      const entry = {
+        name: String((label as any).name || '').toUpperCase(),
+        type: String((label as any).type || ''),
+        assignedUserCount: Number((label as any).assignedUserCount || 0),
+      };
+      const list = sampleSubjectLabelsMap.get(sid) || [];
+      list.push(entry);
+      sampleSubjectLabelsMap.set(sid, list);
+    }
+
+    const resolveSubjectGroup = (sampleLabelsList: any[]): string => {
+      const subjectLabels = sampleLabelsList
+        .filter((l) => SUBJECT_LABELS.has(l.name))
+        .sort((a, b) => b.assignedUserCount - a.assignedUserCount);
+
+      if (subjectLabels.length > 0) {
+        return subjectLabels[0].name;
+      }
+      return 'OUT_OF_SCOPE';
+    };
     const configuredIncompleteBucket = isQualityBucket(String((version as any)?.operationParams?.qualityIncompleteBucket || ''))
       ? String((version as any).operationParams.qualityIncompleteBucket) as QualityBucket
       : null;
     const incompleteBucket = options.incompleteBucket ?? configuredIncompleteBucket;
 
+    const reviews = await ConversationQualityReview.find({ datasetVersionId: version._id }).lean();
+    const adjudications = await ConversationQualityAdjudication.find({ datasetVersionId: version._id }).lean();
+
+    const reviewsBySample = new Map<string, any[]>();
+    for (const r of reviews) {
+      const sid = String(r.sampleId);
+      const list = reviewsBySample.get(sid) || [];
+      list.push(r);
+      reviewsBySample.set(sid, list);
+    }
+
+    const adjudicationBySample = new Map<string, any>();
+    for (const adj of adjudications) {
+      adjudicationBySample.set(String(adj.sampleId), adj);
+    }
+
     const qualityItems: QualityItem[] = [];
     const wrongPairMap = new Map<string, QualityWrongPair>();
 
     for (const item of items as any[]) {
+      const itemSid = String(item._id);
+      const sampleSubjectLabels = sampleSubjectLabelsMap.get(itemSid) || [];
+      const resolvedSubject = resolveSubjectGroup(sampleSubjectLabels);
       const messages = serializeMessages(item.data || {});
       const vector = new Array(INTENTS.length).fill(0);
       const intentCounts = new Array(INTENTS.length).fill(0);
@@ -347,41 +408,116 @@ export class QualityService {
         });
       }
 
+      const sid = String(item._id);
+      const adj = adjudicationBySample.get(sid);
+      const sReviews = reviewsBySample.get(sid) || [];
+
+      let resolvedBucket: QualityBucket = 'Incomplete';
+      let reviewStatus: 'pending' | 'reviewed' | 'conflict' = 'pending';
+      let hasConflict = false;
+      let note = '';
+      let adjudicatedBy = '';
+      let adjudicatedAt = '';
+      let isClassified = false;
+
+      if (adj) {
+        resolvedBucket = adj.finalClassification === 'Bad' ? 'Reject' : adj.finalClassification;
+        hasConflict = adj.hasConflict;
+        reviewStatus = adj.hasConflict ? 'conflict' : 'reviewed';
+        note = adj.note || '';
+        adjudicatedBy = adj.adjudicatedBy ? String(adj.adjudicatedBy) : '';
+        adjudicatedAt = adj.updatedAt ? adj.updatedAt.toISOString() : '';
+        isClassified = true;
+      } else if (sReviews.length > 0) {
+        const classifications = new Set(sReviews.map((r) => r.qualityClassification));
+        if (classifications.size > 1) {
+          hasConflict = true;
+          reviewStatus = 'conflict';
+        } else {
+          reviewStatus = 'reviewed';
+        }
+        resolvedBucket = sReviews[0].qualityClassification === 'Bad' ? 'Reject' : sReviews[0].qualityClassification;
+        note = sReviews[0].note || '';
+        isClassified = true;
+      }
+
+      const iar = vector.map((value, index) => (
+        intentCounts[index] > 0 ? value / intentCounts[index] : null
+      ));
+      const score = scorableTurns > 0 ? totalTurnScore / scorableTurns : -1;
+
+      if (isClassified) {
+        qualityItems.push({
+          _id: sid,
+          sampleId: String(item.sampleId),
+          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+          bucket: resolvedBucket,
+          score: getBucketScore(resolvedBucket === 'Reject' ? 'Reject' : resolvedBucket),
+          scoreScale: 'turn-average-raw',
+          vector,
+          intentCounts,
+          iar,
+          criticalFailures,
+          scorableTurns,
+          reviewStatus,
+          reviewCount: sReviews.length,
+          conflict: hasConflict,
+          note,
+          adjudicatedBy,
+          adjudicatedAt,
+          turnPairs,
+        });
+        continue;
+      }
+
       const isIncomplete = requiredTurns === 0 || hasMissingLabeling;
       if (isIncomplete && incompleteBucket) {
         qualityItems.push({
-          _id: String(item._id),
+          _id: sid,
           sampleId: String(item.sampleId),
-          data: item.data || {},
+          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
           bucket: incompleteBucket,
           score: getBucketScore(incompleteBucket),
           scoreScale: 'turn-average-raw',
           vector,
           intentCounts,
-          iar: vector.map((value, index) => (
-            intentCounts[index] > 0 ? value / intentCounts[index] : null
-          )),
+          iar,
           criticalFailures,
           scorableTurns,
+          reviewStatus: 'pending',
+          reviewCount: 0,
+          conflict: false,
           turnPairs,
         });
         continue;
       }
 
       if (scorableTurns === 0) {
+        qualityItems.push({
+          _id: sid,
+          sampleId: String(item.sampleId),
+          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+          bucket: 'Incomplete',
+          score: 0,
+          scoreScale: 'turn-average-raw',
+          vector,
+          intentCounts,
+          iar,
+          criticalFailures,
+          scorableTurns,
+          reviewStatus: 'pending',
+          reviewCount: 0,
+          conflict: false,
+          turnPairs,
+        });
         continue;
       }
 
-      const score = totalTurnScore / scorableTurns;
       const bucket = resolveBucket(score);
-      const iar = vector.map((value, index) => (
-        intentCounts[index] > 0 ? value / intentCounts[index] : null
-      ));
-
       qualityItems.push({
-        _id: String(item._id),
+        _id: sid,
         sampleId: String(item.sampleId),
-        data: item.data || {},
+        data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
         bucket,
         score,
         scoreScale: 'turn-average-raw',
@@ -390,6 +526,9 @@ export class QualityService {
         iar,
         criticalFailures,
         scorableTurns,
+        reviewStatus: 'pending',
+        reviewCount: 0,
+        conflict: false,
         turnPairs,
       });
     }
@@ -573,5 +712,230 @@ export class QualityService {
 
     await insertAssignments(docs);
     return docs.length;
+  }
+
+  async submitReview(
+    versionId: string,
+    reviewerId: string,
+    sampleId: string,
+    reviewData: {
+      qualityClassification: 'Gold' | 'Rewrite' | 'Bad' | 'Incomplete';
+      ratings: {
+        knowledgeAccuracy: number;
+        socraticPedagogical: number;
+        encouragement: number;
+        vietnameseLanguage: number;
+        completeness: number;
+        trainingReadiness: number;
+      };
+      errors?: {
+        factualError: boolean;
+        directAnswerIssue: boolean;
+        languageIssue: boolean;
+        needSupervisorReview: boolean;
+      };
+      note?: string;
+    }
+  ) {
+    if (!mongoose.Types.ObjectId.isValid(versionId) || !mongoose.Types.ObjectId.isValid(sampleId)) {
+      throw Object.assign(new Error('Invalid ID parameter'), { statusCode: 400 });
+    }
+
+    const { errors, ...rest } = reviewData;
+    const review = await ConversationQualityReview.findOneAndUpdate(
+      {
+        datasetVersionId: new mongoose.Types.ObjectId(versionId),
+        sampleId: new mongoose.Types.ObjectId(sampleId),
+        reviewerId: new mongoose.Types.ObjectId(reviewerId),
+      },
+      {
+        ...rest,
+        errorFlags: errors,
+        datasetVersionId: new mongoose.Types.ObjectId(versionId),
+        sampleId: new mongoose.Types.ObjectId(sampleId),
+        reviewerId: new mongoose.Types.ObjectId(reviewerId),
+      },
+      { upsert: true, new: true }
+    );
+
+    await this.updateConflictStatus(versionId, sampleId);
+    return review;
+  }
+
+  async updateConflictStatus(versionId: string, sampleId: string) {
+    const reviews = await ConversationQualityReview.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      sampleId: new mongoose.Types.ObjectId(sampleId),
+    }).lean();
+
+    if (reviews.length <= 1) {
+      await ConversationQualityAdjudication.deleteOne({
+        datasetVersionId: new mongoose.Types.ObjectId(versionId),
+        sampleId: new mongoose.Types.ObjectId(sampleId),
+      });
+      return;
+    }
+
+    const classifications = new Set(reviews.map((r) => r.qualityClassification));
+    const hasConflict = classifications.size > 1;
+
+    if (hasConflict) {
+      await ConversationQualityAdjudication.findOneAndUpdate(
+        {
+          datasetVersionId: new mongoose.Types.ObjectId(versionId),
+          sampleId: new mongoose.Types.ObjectId(sampleId),
+        },
+        {
+          hasConflict: true,
+        },
+        { upsert: true }
+      );
+    } else {
+      await ConversationQualityAdjudication.findOneAndUpdate(
+        {
+          datasetVersionId: new mongoose.Types.ObjectId(versionId),
+          sampleId: new mongoose.Types.ObjectId(sampleId),
+        },
+        {
+          finalClassification: reviews[0].qualityClassification,
+          hasConflict: false,
+        },
+        { upsert: true }
+      );
+    }
+  }
+
+  async adjudicate(
+    versionId: string,
+    supervisorId: string,
+    sampleId: string,
+    finalClassification: 'Gold' | 'Rewrite' | 'Bad' | 'Incomplete',
+    note?: string
+  ) {
+    if (!mongoose.Types.ObjectId.isValid(versionId) || !mongoose.Types.ObjectId.isValid(sampleId)) {
+      throw Object.assign(new Error('Invalid ID parameter'), { statusCode: 400 });
+    }
+
+    const adjudication = await ConversationQualityAdjudication.findOneAndUpdate(
+      {
+        datasetVersionId: new mongoose.Types.ObjectId(versionId),
+        sampleId: new mongoose.Types.ObjectId(sampleId),
+      },
+      {
+        finalClassification,
+        adjudicatedBy: new mongoose.Types.ObjectId(supervisorId),
+        note: note || '',
+        hasConflict: false,
+      },
+      { upsert: true, new: true }
+    );
+
+    return adjudication;
+  }
+
+  async getSampleReviews(versionId: string, sampleId: string) {
+    const reviews = await ConversationQualityReview.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      sampleId: new mongoose.Types.ObjectId(sampleId),
+    }).populate('reviewerId', 'name email').lean();
+
+    const adjudication = await ConversationQualityAdjudication.findOne({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      sampleId: new mongoose.Types.ObjectId(sampleId),
+    }).populate('adjudicatedBy', 'name email').lean();
+
+    return {
+      reviews,
+      adjudication,
+    };
+  }
+
+  async getStatistics(versionId: string) {
+    const versionObjectId = new mongoose.Types.ObjectId(versionId);
+    const version = await DatasetVersion.findById(versionId).lean();
+    if (!version) {
+      throw Object.assign(new Error('Dataset version not found.'), { statusCode: 404 });
+    }
+
+    const items = await ProcessedDatasetItem.find({ datasetVersionId: versionObjectId }).lean();
+    const reviews = await ConversationQualityReview.find({ datasetVersionId: versionObjectId }).lean();
+    const adjudications = await ConversationQualityAdjudication.find({ datasetVersionId: versionObjectId }).lean();
+
+    const reviewsBySample = new Map<string, any[]>();
+    for (const r of reviews) {
+      const sid = String(r.sampleId);
+      const list = reviewsBySample.get(sid) || [];
+      list.push(r);
+      reviewsBySample.set(sid, list);
+    }
+
+    const adjudicationBySample = new Map<string, any>();
+    for (const adj of adjudications) {
+      adjudicationBySample.set(String(adj.sampleId), adj);
+    }
+
+    const counts = { Gold: 0, Rewrite: 0, Bad: 0, Incomplete: 0 };
+    const messageCounts = { Gold: 0, Rewrite: 0, Bad: 0, Incomplete: 0 };
+    let conflictCount = 0;
+
+    const ruleClassification = await this.classify(versionId, String(version.ownerId));
+    const ruleClassificationMap = new Map<string, string>();
+    for (const ri of ruleClassification.items) {
+      ruleClassificationMap.set(ri._id, ri.bucket);
+    }
+
+    for (const item of items) {
+      const sid = String(item._id);
+      const adj = adjudicationBySample.get(sid);
+      const sReviews = reviewsBySample.get(sid) || [];
+
+      let finalClass: 'Gold' | 'Rewrite' | 'Bad' | 'Incomplete';
+
+      if (adj && !adj.hasConflict) {
+        finalClass = adj.finalClassification;
+      } else if (adj && adj.hasConflict) {
+        conflictCount += 1;
+        finalClass = sReviews[0]?.qualityClassification || 'Incomplete';
+      } else if (sReviews.length === 1) {
+        finalClass = sReviews[0].qualityClassification;
+      } else {
+        const ruleBucket = ruleClassificationMap.get(sid);
+        finalClass = ruleBucket === 'Reject' ? 'Bad' : (ruleBucket as any) || 'Incomplete';
+      }
+
+      if (counts[finalClass] !== undefined) {
+        counts[finalClass] += 1;
+        const msgCount = Array.isArray(item.data?.messages) ? item.data.messages.length : 2;
+        messageCounts[finalClass] += msgCount;
+      }
+    }
+
+    const reviewerCountsMap = new Map<string, { name: string; count: number }>();
+    const reviewers = await User.find({}).select('name email').lean();
+    const reviewerNames = new Map(reviewers.map((u) => [String(u._id), u.name]));
+
+    for (const r of reviews) {
+      const rid = String(r.reviewerId);
+      const name = reviewerNames.get(rid) || 'Unknown Reviewer';
+      const stats = reviewerCountsMap.get(rid) || { name, count: 0 };
+      stats.count += 1;
+      reviewerCountsMap.set(rid, stats);
+    }
+
+    const totalMessages = Object.values(messageCounts).reduce((sum, c) => sum + c, 0);
+
+    return {
+      totalSamples: items.length,
+      reviewedSamples: reviewsBySample.size,
+      conflictCount,
+      totalMessages,
+      qualityDistribution: [
+        { group: 'Gold', count: counts.Gold, messageCount: messageCounts.Gold, percentage: items.length ? Math.round((counts.Gold / items.length) * 100) : 0 },
+        { group: 'Rewrite', count: counts.Rewrite, messageCount: messageCounts.Rewrite, percentage: items.length ? Math.round((counts.Rewrite / items.length) * 100) : 0 },
+        { group: 'Bad', count: counts.Bad, messageCount: messageCounts.Bad, percentage: items.length ? Math.round((counts.Bad / items.length) * 100) : 0 },
+        { group: 'Incomplete', count: counts.Incomplete, messageCount: messageCounts.Incomplete, percentage: items.length ? Math.round((counts.Incomplete / items.length) * 100) : 0 },
+      ],
+      reviewerStats: Array.from(reviewerCountsMap.values()),
+    };
   }
 }

@@ -894,13 +894,36 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                   Đăng ký Model vào Registry
                                 </button>
                               )}
-                              {(item.status === 'STOPPED' || item.status === 'FAILED' || item.status === 'RUNNING') && (
+                              {(item.status === 'STOPPED' || item.status === 'FAILED' || item.status === 'ERROR') && (
                                 <button
                                   className="btn-blue-outline"
                                   onClick={(e) => handleResume(e, item)}
                                   disabled={!(item.latest_checkpoint_file_id || (item.pushToHub && item.hfRepoId)) || resumeLoading === item.jobId}
                                 >
                                   {resumeLoading === item.jobId ? 'Đang khôi phục...' : 'Resume (Tiếp tục)'}
+                                </button>
+                              )}
+                              {(item.status === 'QUEUED' || item.status === 'TRAINING' || item.status === 'RUNNING' || item.status === 'LOADING_MODEL' || item.status === 'PENDING') && (
+                                <button
+                                  className="btn-indigo"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    localStorage.setItem('autotrain_resume_job_id', item.jobId);
+                                    setActiveTab('AutoTrain');
+                                  }}
+                                  style={{
+                                    background: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+                                    color: 'white',
+                                    padding: '8px 16px',
+                                    borderRadius: '6px',
+                                    fontSize: '13px',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontWeight: 600,
+                                    boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)',
+                                  }}
+                                >
+                                  Theo dõi tiến trình
                                 </button>
                               )}
                               <button
