@@ -235,7 +235,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rawPreviewOpen, setRawPreviewOpen] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('openai');
   const [removeThinkTags, setRemoveThinkTags] = useState(true);
-  const [cleaningEnabled, setCleaningEnabled] = useState(false);
+  const [cleaningEnabled, setCleaningEnabled] = useState(true);
   const [cleaningApplied, setCleaningApplied] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTab, setPreviewTab] = useState('before');
@@ -243,7 +243,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
   const [removeUnclosedThink, setRemoveUnclosedThink] = useState(true);
-  const [removeCompleteThink, setRemoveCompleteThink] = useState(false);
+  const [removeCompleteThink, setRemoveCompleteThink] = useState(true);
   const [minChars, setMinChars] = useState('5');
   const [maxChars, setMaxChars] = useState('4000');
   const [minPairs, setMinPairs] = useState('1');

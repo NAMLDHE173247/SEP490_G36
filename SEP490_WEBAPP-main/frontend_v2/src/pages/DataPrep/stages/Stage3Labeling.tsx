@@ -82,16 +82,7 @@ export const Stage3Labeling: React.FC = () => {
 
     const filteredRows = allConvRows
       .filter(r => !selectedGroup3 || r.groupId === selectedGroup3)
-      .filter(r => r.subGroup === stage3SubGroup)
-      .filter(r => {
-        if (!stage3Search.trim()) return true;
-        const q = stage3Search.toLowerCase();
-        return r.id.toLowerCase().includes(q) ||
-          r.messages.some(m =>
-            m.user.toLowerCase().includes(q) ||
-            m.assistant.toLowerCase().includes(q)
-          );
-      });
+      .filter(r => r.subGroup === stage3SubGroup);
 
     const stage3TotalPages = Math.ceil(filteredRows.length / stage3PerPage);
     const stage3PageRows = filteredRows.slice((stage3Page - 1) * stage3PerPage, stage3Page * stage3PerPage);
@@ -187,13 +178,6 @@ export const Stage3Labeling: React.FC = () => {
                   <option value={20}>20</option>
                   <option value={50}>50</option>
                 </select>
-                <input
-                  type="text"
-                  className="toolbar-search-input"
-                  placeholder="Search conversations..."
-                  value={stage3Search}
-                  onChange={(e) => { setStage3Search(e.target.value); setStage3Page(1); }}
-                />
               </div>
 
               <div className="preview-table-wrapper" style={{ maxHeight: '620px', overflowX: 'auto', whiteSpace: 'nowrap' }}>
