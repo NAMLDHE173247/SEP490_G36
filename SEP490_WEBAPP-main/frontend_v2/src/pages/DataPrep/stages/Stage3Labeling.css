@@ -89,6 +89,24 @@
   margin-bottom: 20px;
   max-height: 360px;
   overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  padding-right: 4px;
+}
+
+/* Custom scrollbar for container */
+.group-cards-container::-webkit-scrollbar {
+  width: 6px;
+}
+.group-cards-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.group-cards-container::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 10px;
+}
+.group-cards-container::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
 }
 
 .group-card-item {
@@ -100,12 +118,12 @@
   border-radius: 10px;
   background: white;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .group-card-item:hover {
   background: #f8fafc;
-  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 .group-card-active {
@@ -144,7 +162,7 @@
 }
 
 .group-card-label .inline-label-select {
-  padding: 4px 8px;
+  padding: 4px 6px;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   font-size: 12px;
@@ -153,7 +171,9 @@
   background: white;
   outline: none;
   cursor: pointer;
-  min-width: 120px;
+  min-width: 90px;
+  max-width: 110px;
+  text-overflow: ellipsis;
 }
 
 /* Colored auto-label pill in table */

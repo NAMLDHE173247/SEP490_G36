@@ -37,6 +37,8 @@ export const Stage3Labeling: React.FC = () => {
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
   const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
+  const [bulkSubject, setBulkSubject] = React.useState('');
+  const [newSubjectInput, setNewSubjectInput] = React.useState('');
 
   // renderStage3 body begins
     /* Group data — tự sinh từ dữ liệu thực tế, chỉ hiện nhóm có conversation */
@@ -81,7 +83,7 @@ export const Stage3Labeling: React.FC = () => {
     const allConvRows = stage3Convs;
 
     const filteredRows = allConvRows
-      .filter(r => !selectedGroup3 || r.groupId === selectedGroup3)
+      .filter(r => selectedGroup3 === null || r.groupId === selectedGroup3)
       .filter(r => r.subGroup === stage3SubGroup);
 
     const stage3TotalPages = Math.ceil(filteredRows.length / stage3PerPage);
@@ -113,7 +115,7 @@ export const Stage3Labeling: React.FC = () => {
               <div className="preview-header">
                 <h3>Converted Dataset Preview</h3>
                 <span className="record-count">
-                  {selectedGroup3
+                  {selectedGroup3 !== null
                     ? `Group ${selectedGroup3} — ${filteredRows.length} conversations`
                     : `Showing all ${allConvRows.length} conversations`
                   }
@@ -123,13 +125,76 @@ export const Stage3Labeling: React.FC = () => {
               {/* Bulk Label & Split Toolbar */}
               <div className="preview-toolbar" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <span className="toolbar-label" style={{ fontWeight: 600 }}>Bulk Actions:</span>
-                <select className="toolbar-select" style={{ minWidth: '150px' }}>
+                <select 
+                  className="toolbar-select" 
+                  style={{ minWidth: '150px' }}
+                  value={bulkSubject}
+                  onChange={e => setBulkSubject(e.target.value)}
+                >
                   <option value="">-- Select Subject --</option>
-                  <option value="MATH">Toán học (MATH)</option>
-                  <option value="CODING">Lập trình (CODING)</option>
-                  <option value="PHYSICS">Vật lý (PHYSICS)</option>
+                  <option value="MATH">MATH</option>
+                  <option value="CODING">CODING</option>
+                  <option value="PHYSICS">PHYSICS</option>
+                  <option value="PHYSICAL">PHYSICAL</option>
+                  <option value="CHEMISTRY">CHEMISTRY</option>
+                  <option value="BIOLOGY">BIOLOGY</option>
+                  <option value="HISTORY">HISTORY</option>
+                  <option value="LITERATURE">LITERATURE</option>
+                  <option value="GEOGRAPHY">GEOGRAPHY</option>
+                  <option value="OTHER">OTHER</option>
+                  <option value="NOISE">NOISE</option>
+                  {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
+                  {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                 </select>
-                <button style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', transition: 'background 0.15s' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Tên môn mới..." 
+                    value={newSubjectInput}
+                    onChange={e => setNewSubjectInput(e.target.value)}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '130px', outline: 'none' }}
+                  />
+                  <button 
+                    onClick={() => {
+                      if (newSubjectInput.trim() && !customSubjectLabels.includes(newSubjectInput.trim())) {
+                        setCustomSubjectLabels(prev => [...prev, newSubjectInput.trim()]);
+                        setBulkSubject(newSubjectInput.trim());
+                        setNewSubjectInput('');
+                      }
+                    }}
+                    style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center' }}
+                    title="Thêm môn học mới vào danh sách"
+                  >
+                    <Plus size={14} /> Add
+                  </button>
+                </div>
+                <button 
+                  onClick={() => {
+                    if (!bulkSubject || checkedConvIds.length === 0) return;
+                    const selectedGroups = new Set<number>();
+                    stage3Convs.forEach(c => {
+                      if (checkedConvIds.includes(c.id)) {
+                        selectedGroups.add(c.groupId);
+                      }
+                    });
+                    if (selectedGroups.size === 0) return;
+                    
+                    const newGroupLabels = { ...aiGroupLabels };
+                    selectedGroups.forEach(gId => {
+                      newGroupLabels[gId] = bulkSubject;
+                    });
+                    setAiGroupLabels(newGroupLabels);
+                    
+                    setStage3Convs(prev => prev.map(c =>
+                      selectedGroups.has(c.groupId) ? { ...c, groupLabel: bulkSubject } : c
+                    ));
+                    
+                    setCheckedConvIds([]);
+                    setBulkSubject('');
+                  }}
+                  disabled={!bulkSubject || checkedConvIds.length === 0}
+                  style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: (!bulkSubject || checkedConvIds.length === 0) ? '#94a3b8' : '#0f172a', color: '#fff', border: 'none', cursor: (!bulkSubject || checkedConvIds.length === 0) ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', transition: 'background 0.15s' }}
+                >
                   Apply Bulk Label
                 </button>
                 <div style={{ flex: 1 }}></div>
@@ -241,14 +306,13 @@ export const Stage3Labeling: React.FC = () => {
                             {conv.messages.length === 1 ? (
                               /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
                               <div style={{ fontSize: '15px', color: '#1e293b', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
-                                <span style={{ marginRight: '6px', fontSize: '14px' }}>📌</span>
                                 {highlightSearch(conv.messages[0].user, stage3Search)}
                               </div>
                             ) : (
                               /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
                               <>
                                 <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
-                                  <span style={{ fontSize: '14px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '14px' }}>Chủ đề:</span>
                                   <span style={{ fontSize: '15px', color: '#4f46e5' }}>
                                     {getConversationTopic(conv.messages)}
                                   </span>
@@ -277,14 +341,13 @@ export const Stage3Labeling: React.FC = () => {
                             {conv.messages.length === 1 ? (
                               /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
                               <div style={{ fontSize: '15px', color: '#334155', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
-                                <span style={{ marginRight: '6px', fontSize: '14px' }}>💡</span>
                                 {highlightSearch(conv.messages[0].assistant, stage3Search)}
                               </div>
                             ) : (
                               /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
                               <>
                                 <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
-                                  <span style={{ fontSize: '14px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '14px' }}>Phản hồi:</span>
                                   <span style={{ fontSize: '15px', color: '#0891b2' }}>
                                     {getAssistantSummary(conv.messages)}
                                   </span>
@@ -312,9 +375,9 @@ export const Stage3Labeling: React.FC = () => {
                           <select
                             className="toolbar-select"
                             style={{
-                              background: conv.groupBg,
-                              color: conv.groupColor,
-                              borderColor: conv.groupColor,
+                              background: (selectedGroup3 === conv.groupId) ? conv.groupBg : '#f1f5f9',
+                              color: (selectedGroup3 === conv.groupId) ? conv.groupColor : '#475569',
+                              borderColor: (selectedGroup3 === conv.groupId) ? conv.groupColor : '#cbd5e1',
                               fontWeight: 700,
                               padding: '2px 6px',
                               borderRadius: '8px',
@@ -326,10 +389,30 @@ export const Stage3Labeling: React.FC = () => {
                             value={aiGroupLabels[conv.groupId] || conv.groupLabel || ''}
                             onChange={e => {
                               const newLabel = e.target.value;
-                              setAiGroupLabels(prev => ({ ...prev, [conv.groupId]: newLabel }));
-                              setStage3Convs(prev => prev.map(c =>
-                                c.groupId === conv.groupId ? { ...c, groupLabel: newLabel } : c
-                              ));
+                              if (!newLabel) return;
+                              
+                              let targetGroupId = -2;
+                              if (newLabel === 'NOISE') {
+                                targetGroupId = -1;
+                              } else {
+                                const foundEntry = Object.entries(aiGroupLabels).find(([_, label]) => label === newLabel);
+                                if (foundEntry) {
+                                  targetGroupId = Number(foundEntry[0]);
+                                }
+                              }
+
+                              if (targetGroupId === -2) {
+                                const existingIds = stage3Convs.map(c => c.groupId);
+                                const newGroupId = existingIds.length > 0 ? Math.max(...existingIds, 0) + 1 : 1;
+                                setAiGroupLabels(prev => ({ ...prev, [newGroupId]: newLabel }));
+                                setStage3Convs(prev => prev.map(c => 
+                                  c.id === conv.id ? { ...c, groupId: newGroupId, groupLabel: newLabel } : c
+                                ));
+                              } else {
+                                setStage3Convs(prev => prev.map(c =>
+                                  c.id === conv.id ? { ...c, groupId: targetGroupId, groupLabel: newLabel } : c
+                                ));
+                              }
                             }}
                           >
                             <option value="">-- Select --</option>
@@ -472,6 +555,9 @@ export const Stage3Labeling: React.FC = () => {
                             setPendingAiLabels(Array.from(newLabels));
                           }
                           setAiGroupLabels(prev => ({ ...prev, ...labelMap }));
+                          setStage3Convs(prev => prev.map(c => 
+                            labelMap[c.groupId] ? { ...c, groupLabel: labelMap[c.groupId] } : c
+                          ));
                         } catch (err: any) {
                           const msg = err?.response?.data?.error || err?.message || 'AI labeling failed.';
                           alert(`Lỗi gán nhãn AI: ${msg}`);
@@ -535,10 +621,10 @@ export const Stage3Labeling: React.FC = () => {
                       {/* Show All button */}
                       <div
                         className={`group-card-item ${selectedGroup3 === null ? 'group-card-active' : ''}`}
-                        style={{ borderColor: '#94a3b8', '--group-accent': '#64748b' } as React.CSSProperties}
+                        style={{ '--group-accent': '#64748b' } as React.CSSProperties}
                         onClick={() => { setSelectedGroup3(null); setStage3Page(1); }}
                       >
-                        <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
+                        <div className="group-card-name" style={{ color: selectedGroup3 === null ? '#0f172a' : '#64748b', fontWeight: 700 }}>All Groups</div>
                         <div className="group-card-count">{allConvRows.length}</div>
                       </div>
 
@@ -553,14 +639,18 @@ export const Stage3Labeling: React.FC = () => {
                         <div
                           key={g.id}
                           className={`group-card-item ${selectedGroup3 === g.id ? 'group-card-active' : ''}`}
-                          style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
+                          style={{ '--group-accent': g.color } as React.CSSProperties}
                           onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
                         >
-                          <div className="group-card-name" style={{ color: g.color, fontWeight: 700 }}>Group {g.id}</div>
+                          <div className="group-card-name" style={{ color: selectedGroup3 === g.id ? g.color : '#64748b', fontWeight: 700 }}>Group {g.id}</div>
                           <div className="group-card-count">{g.count}</div>
                           <div className="group-card-label">
                             <select
                               className="inline-label-select"
+                              style={{
+                                color: selectedGroup3 === g.id ? g.color : '#334155',
+                                borderColor: selectedGroup3 === g.id ? g.color : '#e2e8f0',
+                              }}
                               onClick={e => e.stopPropagation()}
                               value={aiGroupLabels[g.id] || g.label}
                               onChange={e => {
@@ -696,7 +786,7 @@ export const Stage3Labeling: React.FC = () => {
                   <MessageSquare size={20} />
                   <div>
                     <h2>Conversation Detail</h2>
-                    <p>{selectedConv3.id} · {selectedConv3.messages.length} messages · <span style={{ color: selectedConv3.groupColor, fontWeight: 700 }}>Group {selectedConv3.groupId} — {selectedConv3.groupLabel}</span></p>
+                    <p>{selectedConv3.id} · {selectedConv3.messages.length} messages · <span style={{ color: selectedConv3.groupColor, fontWeight: 700 }}>Group {selectedConv3.groupId} — {aiGroupLabels[selectedConv3.groupId] || selectedConv3.groupLabel}</span></p>
                   </div>
                 </div>
                 <button className="cluster-popup-close-btn" onClick={() => setSelectedConv3(null)}>
