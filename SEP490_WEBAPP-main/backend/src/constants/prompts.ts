@@ -300,6 +300,7 @@ DỮ LIỆU CẦN ĐÁNH GIÁ:
 Yêu cầu output:
 - Chỉ trả về một JSON object hợp lệ duy nhất, tuyệt đối không kèm từ giải thích nào khác ngoài JSON.
 {
+  "reason": "chuỗi nhận xét bằng tiếng Việt (PHẢI VIẾT LÝ DO TRƯỚC ĐỂ SUY LUẬN)",
   "socratic": number,
   "encouragement": number,
   "factuality": number,
@@ -308,8 +309,6 @@ Yêu cầu output:
   "completeness": number,
   "readiness": number,
   "overall": number,
-  "reason": "chuỗi nhận xét bằng tiếng Việt",
   "recommendation": "Pass" | "Need Rewrite" | "Reject"
 }
 `;
-

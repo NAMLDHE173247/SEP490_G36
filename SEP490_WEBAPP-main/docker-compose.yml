@@ -63,6 +63,11 @@ services:
     image: dothang2504/sep490-be:latest
     container_name: sep490_backend
     restart: unless-stopped
+    # Expose 3000 to host so the Vite dev server on Windows can proxy /api → localhost:3000.
+    # In production the frontend nginx container reaches backend over the internal app_network
+    # and this mapping is unnecessary; leave it here for local dev convenience.
+    ports:
+      - "3000:3000"
     env_file:
       - .env
     environment:

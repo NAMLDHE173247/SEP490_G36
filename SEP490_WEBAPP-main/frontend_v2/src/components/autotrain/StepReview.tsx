@@ -247,7 +247,7 @@ const StepReview: React.FC<StepReviewProps> = ({
           <div style={{ display: 'flex', gap: 8, padding: 12, background: '#FFF1F2', border: '1px solid #FECACA', borderRadius: 'var(--at-radius)', color: '#EF4444', fontSize: 12 }}>
             <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>
-              <strong>Lỗi cấu hình:</strong> Không thể huấn luyện mô hình trực tuyến <strong>{config.baseModel}</strong> cục bộ. Vui lòng quay lại Bước 2 và chọn mô hình mã nguồn mở hợp lệ để tiến hành huấn luyện.
+              <strong>Configuration Error:</strong> Cannot train online model <strong>{config.baseModel}</strong> locally. Please go back to Step 2 and select a valid open-source model to proceed.
             </span>
           </div>
         )}

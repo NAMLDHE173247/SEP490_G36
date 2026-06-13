@@ -8,6 +8,7 @@ import { GeminiProvider } from '../../../services/providers/GeminiProvider';
 import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
+import { QualityService } from './quality.service';
 
 export class MultiEvalService {
   private getProvider(modelName: string) {
@@ -82,6 +83,10 @@ export class MultiEvalService {
       let evaluatedCount = 0;
       let failedCount = 0;
       let conflictCount = 0;
+
+      const qualityService = new QualityService();
+      const qualityResult = await qualityService.classify(job.datasetVersionId.toString());
+      const humanScoresMap = new Map(qualityResult.items.map((i: any) => [String(i.sampleId), i.score]));
 
       for (const sample of samples) {
         // Mark sample as processing in job progress
@@ -160,7 +165,8 @@ export class MultiEvalService {
             };
 
             const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', JSON.stringify(inputData, null, 2));
-            const rawResponse = await provider.generateContent(prompt);
+            const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
+            const rawResponse = await provider.generateContent(prompt, undefined, systemPrompt);
 
             const firstBracket = rawResponse.indexOf('{');
             const lastBracket = rawResponse.lastIndexOf('}');
@@ -271,7 +277,8 @@ export class MultiEvalService {
         }
 
         // Detect Conflict
-        const hasConflict = this.detectConflict(modelScores);
+        const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
+        const hasConflict = this.detectConflict(modelScores, humanScore);
         if (hasConflict) {
           conflictCount += 1;
         }
@@ -299,7 +306,8 @@ export class MultiEvalService {
             }];
 
             const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
-            const rawResponse = await refineProvider.generateContent(prompt);
+            const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
+            const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
             
             const firstBracket = rawResponse.indexOf('[');
             const lastBracket = rawResponse.lastIndexOf(']');
@@ -383,9 +391,9 @@ export class MultiEvalService {
     }
   }
 
-  private detectConflict(scorecards: Record<string, ILlmScorecard>): boolean {
+  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null): boolean {
     const models = Object.keys(scorecards);
-    if (models.length <= 1) return false;
+    if (models.length <= 1 && humanScore === null) return false;
 
     let hasPass = false;
     let hasReject = false;
@@ -410,6 +418,14 @@ export class MultiEvalService {
       const maxScore = Math.max(...overallScores);
       const minScore = Math.min(...overallScores);
       if (maxScore - minScore > 1.5) {
+        return true;
+      }
+    }
+
+    // Conflict 3: Difference between Avg AI and Human score >= 2.0
+    if (overallScores.length > 0 && humanScore !== null && humanScore >= 0) {
+      const avgAI = overallScores.reduce((a, b) => a + b, 0) / overallScores.length;
+      if (Math.abs(avgAI - humanScore) >= 2.0) {
         return true;
       }
     }

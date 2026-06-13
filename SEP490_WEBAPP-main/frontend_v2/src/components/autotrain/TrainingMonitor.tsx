@@ -2,7 +2,7 @@
 // TrainingMonitor — AutoTrain Wizard: Training Job Monitor
 // ============================================================
 
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo, useState } from 'react';
 import {
   LineChart,
   Line,
@@ -22,6 +22,11 @@ import {
   Play,
   Terminal,
   MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  TrendingDown,
+  TrendingUp,
+  Loader2,
 } from 'lucide-react';
 import { TrainingJob, LossPoint } from './types';
 
@@ -36,6 +41,106 @@ interface TrainingMonitorProps {
   completedJobId: string | null;
   onDismissSuccess: () => void;
 }
+
+// ── Friendly summary derivation ──
+// Returns a short human-readable sentence + a trend hint, so a non-ML user
+// can tell at a glance whether training is healthy without staring at loss numbers.
+interface FriendlySummary {
+  headline: string;
+  trend: 'improving' | 'stalled' | 'diverging' | 'unknown';
+  trendIcon: typeof TrendingDown;
+  trendLabel: string;
+  tone: 'info' | 'good' | 'warn' | 'bad';
+}
+
+function deriveFriendlySummary(
+  job: TrainingJob,
+  trainHistory: LossPoint[],
+  evalHistory: LossPoint[],
+): FriendlySummary {
+  // Terminal states first
+  if (job.status === 'COMPLETED') {
+    return { headline: 'Training finished — your AI tutor is ready to test.', trend: 'improving', trendIcon: TrendingDown, trendLabel: 'Done', tone: 'good' };
+  }
+  if (job.status === 'STOPPED') {
+    return { headline: 'Training stopped by user. Progress was saved up to the last checkpoint.', trend: 'unknown', trendIcon: AlertTriangle, trendLabel: 'Stopped', tone: 'warn' };
+  }
+  if (job.status === 'ERROR' || job.status === 'FAILED') {
+    return { headline: 'Training failed. Check the log below for details.', trend: 'unknown', trendIcon: AlertTriangle, trendLabel: 'Error', tone: 'bad' };
+  }
+  if (job.status === 'QUEUED') {
+    return { headline: 'Waiting in queue — a GPU worker will pick this up shortly.', trend: 'unknown', trendIcon: Loader2, trendLabel: 'Queued', tone: 'info' };
+  }
+
+  // Active training — derive a trend from the last few loss points.
+  if (trainHistory.length < 3) {
+    return { headline: 'Training is warming up — first checkpoints will appear shortly.', trend: 'unknown', trendIcon: Loader2, trendLabel: 'Starting', tone: 'info' };
+  }
+
+  const recent = trainHistory.slice(-5);
+  const first = recent[0].loss;
+  const last = recent[recent.length - 1].loss;
+  const trainDelta = last - first;
+  const trainImproving = trainDelta < -0.001;
+  const trainStalled = Math.abs(trainDelta) <= 0.001;
+
+  // Check for divergence between train and eval (overfitting signal)
+  let evalDiverging = false;
+  if (evalHistory.length >= 2) {
+    const recentEval = evalHistory.slice(-3);
+    const evalDelta = recentEval[recentEval.length - 1].loss - recentEval[0].loss;
+    if (evalDelta > 0.05 && trainImproving) {
+      evalDiverging = true;
+    }
+  }
+
+  const epochPart =
+    job.current_epoch && job.total_epochs
+      ? `Currently on epoch ${job.current_epoch} of ${job.total_epochs}.`
+      : '';
+
+  if (evalDiverging) {
+    return {
+      headline: `AI is starting to memorize the training data instead of generalizing. ${epochPart} Consider stopping early.`,
+      trend: 'diverging',
+      trendIcon: TrendingUp,
+      trendLabel: 'Overfitting risk',
+      tone: 'warn',
+    };
+  }
+  if (trainStalled) {
+    return {
+      headline: `Loss has plateaued — the AI may have learned what it can from this dataset. ${epochPart}`,
+      trend: 'stalled',
+      trendIcon: TrendingDown,
+      trendLabel: 'Plateau',
+      tone: 'info',
+    };
+  }
+  if (trainImproving) {
+    return {
+      headline: `AI is learning well — quality is improving. ${epochPart}`,
+      trend: 'improving',
+      trendIcon: TrendingDown,
+      trendLabel: 'Improving',
+      tone: 'good',
+    };
+  }
+  return {
+    headline: `Loss is unstable — try lowering the learning rate next time. ${epochPart}`,
+    trend: 'diverging',
+    trendIcon: TrendingUp,
+    trendLabel: 'Unstable',
+    tone: 'warn',
+  };
+}
+
+const TONE_PALETTE = {
+  good: { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', accent: '#059669' },
+  info: { bg: '#EFF6FF', border: '#BFDBFE', text: '#1E40AF', accent: '#3B82F6' },
+  warn: { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', accent: '#F59E0B' },
+  bad:  { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', accent: '#EF4444' },
+};
 
 // ── Console Console Logger (Auto-Scroll) ──
 const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
@@ -91,6 +196,42 @@ const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ── Collapsible wrapper around ConsoleTerminal ──
+// Hides the dev-style log behind a toggle so non-technical users aren't
+// confronted with a Hacker-News-style terminal by default.
+const CollapsibleConsole: React.FC<{ logs: string[] }> = ({ logs }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        className="at-btn-icon-sm"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 10px',
+          fontSize: 12,
+          fontWeight: 600,
+          color: '#475569',
+          background: '#F1F5F9',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          marginBottom: open ? 10 : 0,
+          width: 'auto',
+        }}
+      >
+        <Terminal size={12} />
+        {open ? 'Hide technical log' : `Show technical log${logs.length ? ` (${logs.length} lines)` : ''}`}
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+      </button>
+      {open && <ConsoleTerminal logs={logs} />}
     </div>
   );
 };
@@ -255,7 +396,40 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
 
             {/* Body */}
             <div className="at-panel-body" style={{ padding: '20px' }}>
-              
+
+              {/* Friendly status summary — designed for non-ML teachers */}
+              {(() => {
+                const summary = deriveFriendlySummary(job, lossHistories[job.id] || [], evalLossHistories[job.id] || []);
+                const palette = TONE_PALETTE[summary.tone];
+                const TrendIcon = summary.trendIcon;
+                return (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 12,
+                      alignItems: 'flex-start',
+                      padding: '12px 14px',
+                      marginBottom: 16,
+                      background: palette.bg,
+                      border: `1px solid ${palette.border}`,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <TrendIcon size={18} style={{ color: palette.accent, flexShrink: 0, marginTop: 1, animation: summary.trendLabel === 'Queued' || summary.trendLabel === 'Starting' ? 'spin 2s linear infinite' : undefined }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                        <strong style={{ fontSize: 12, fontWeight: 700, color: palette.text, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {summary.trendLabel}
+                        </strong>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 13, color: palette.text, lineHeight: 1.5 }}>
+                        {summary.headline}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Progress bar */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: '13px', fontWeight: 600 }}>
@@ -403,7 +577,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
 
                 {/* Console Log window */}
                 <div>
-                  <ConsoleTerminal logs={job.logs || []} />
+                  <CollapsibleConsole logs={job.logs || []} />
                 </div>
               </div>
 

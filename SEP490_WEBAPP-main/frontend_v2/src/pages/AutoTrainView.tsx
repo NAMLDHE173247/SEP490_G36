@@ -33,6 +33,7 @@ import {
   estimateTrainingTime,
   TrainingJob,
   LossPoint,
+  downloadSampleCSV,
 } from '../components/autotrain/types';
 
 // ── Persistent Global State (Preserves tracking when switching tabs) ──
@@ -603,7 +604,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
       {/* ── Main Layout ── */}
       {showWelcome ? (
-        <WelcomeCard onDismiss={() => setShowWelcome(false)} onDownloadSample={() => {}} />
+        <WelcomeCard
+          onDismiss={() => setShowWelcome(false)}
+          onDownloadSample={() => {
+            downloadSampleCSV();
+            triggerToast('Sample CSV downloaded!', 'info');
+          }}
+        />
       ) : (
         <div className="at-layout" style={{ display: 'flex', flexDirection: 'column', gap: 24, marginTop: 10 }}>
           {/* Stepper Wizard Indicator */}

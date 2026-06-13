@@ -1,0 +1,69 @@
+
+/* --- Stage 4 UX/UI Enhancements --- */
+
+/* Smooth Step Transitions */
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* Pulsing Progress Bar */
+.progress-bar-pulse {
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%, transparent 25%, transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%, rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%, transparent
+  );
+  background-size: 1rem 1rem;
+  animation: progressPulse 1s linear infinite;
+}
+
+@keyframes progressPulse {
+  0% { background-position: 1rem 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Empty State Styling */
+.empty-state-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: #f8fafc;
+  border: 2px dashed #e2e8f0;
+  border-radius: 12px;
+  text-align: center;
+  gap: 12px;
+}
+.empty-state-icon {
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #334155;
+  margin: 0;
+}
+.empty-state-desc {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  max-width: 320px;
+}
+
+/* Premium Table Row Hover */
+.premium-table-row {
+  transition: all 0.2s ease;
+}
+.premium-table-row:hover {
+  background-color: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
