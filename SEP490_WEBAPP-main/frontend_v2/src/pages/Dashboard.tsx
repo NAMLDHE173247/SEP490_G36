@@ -42,26 +42,6 @@ function Dashboard() {
     }
   };
 
-  const [activeTab, setActiveTabState] = useState(() => {
-    // Restore the last active tab from localStorage on reload
-    const saved = localStorage.getItem('dashboard_active_tab');
-    if (saved) return saved;
-    return getDefaultTab();
-  });
-
-  // Wrapper: update state AND persist to localStorage
-  const setActiveTab = (tab: string) => {
-    localStorage.setItem('dashboard_active_tab', tab);
-    setActiveTabState(tab);
-  };
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
-
-  if (!user) {
-    return null;
-  }
-
   const allMenuItems = [
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -76,6 +56,40 @@ function Dashboard() {
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
   ];
+
+  const [activeTab, setActiveTabState] = useState(() => {
+    // Restore the last active tab from localStorage on reload
+    const saved = localStorage.getItem('dashboard_active_tab');
+    if (saved) return saved;
+    return getDefaultTab();
+  });
+
+  // Wrapper: update state AND persist to localStorage
+  const setActiveTab = (tab: string) => {
+    localStorage.setItem('dashboard_active_tab', tab);
+    setActiveTabState(tab);
+  };
+
+  React.useEffect(() => {
+    if (user) {
+      const isValid = 
+        (activeTab === 'Staff Label' && user.role === 'staff') ||
+        (activeTab === 'Task Detail' && ['admin', 'supervisor'].includes(user.role)) ||
+        allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
+      
+      if (!isValid) {
+        setActiveTab(getDefaultTab());
+      }
+    }
+  }, [user, activeTab]);
+
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
+
+  if (!user) {
+    return null;
+  }
 
   const menuItems = allMenuItems.filter(item => item.roles.includes(user.role));
 
