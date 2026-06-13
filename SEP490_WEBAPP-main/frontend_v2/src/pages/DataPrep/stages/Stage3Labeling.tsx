@@ -76,6 +76,13 @@ export const Stage3Labeling: React.FC = () => {
   const [drawerStep, setDrawerStep] = React.useState<1 | 2>(1);
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
 
+  const isStepCompleted = (num: number) => {
+    if (num < currentSubStep3) return true;
+    if (num === 5 && Object.keys(aiGroupLabels).length > 0) return true;
+    if (num === 6 && assignmentSamples.some((s: any) => s.assignees && s.assignees.length > 0)) return true;
+    return false;
+  };
+
   React.useEffect(() => {
     if (currentSubStep3 === 6) {
       const fetchAssignmentData = async () => {
@@ -326,11 +333,11 @@ export const Stage3Labeling: React.FC = () => {
           {SUB_STEPS_STAGE3.map((step, idx) => (
             <React.Fragment key={step.num}>
               <div
-                className={`sub-step ${step.num === currentSubStep3 ? 'active' : ''} ${step.num < currentSubStep3 ? 'completed' : ''}`}
+                className={`sub-step ${step.num === currentSubStep3 ? 'active' : ''} ${isStepCompleted(step.num) ? 'completed' : ''}`}
                 onClick={() => setCurrentSubStep3(step.num)}
               >
                 <div className="sub-step-circle">
-                  {step.num}
+                  {isStepCompleted(step.num) ? <Check size={14} /> : step.num}
                 </div>
                 <div className="sub-step-label">{step.label}</div>
               </div>

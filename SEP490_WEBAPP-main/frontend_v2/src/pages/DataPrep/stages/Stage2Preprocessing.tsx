@@ -59,6 +59,14 @@ export const Stage2Preprocessing: React.FC = () => {
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = React.useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = React.useState<any[]>([]);
 
+  const isStepCompleted = (num: number) => {
+    if (num < currentSubStep) return true;
+    if (num === 1 && cleaningApplied) return true;
+    if (num === 2 && findKResults !== null) return true;
+    if (num === 3 && clusterRan) return true;
+    return false;
+  };
+
   const handleApplyCleaning = async () => {
     if (!file || !file.fileId) {
       alert('Vui lòng tải tệp lên trước.');
@@ -373,11 +381,11 @@ const totalConvs = conversationsList.length;
           {SUB_STEPS_STAGE2.map((step, idx) => (
             <React.Fragment key={step.num}>
               <div
-                className={`sub-step ${step.num === currentSubStep ? 'active' : ''} ${step.num < currentSubStep ? 'completed' : ''}`}
+                className={`sub-step ${step.num === currentSubStep ? 'active' : ''} ${isStepCompleted(step.num) ? 'completed' : ''}`}
                 onClick={() => setCurrentSubStep(step.num)}
               >
                 <div className="sub-step-circle">
-                  {step.num < currentSubStep ? <Check size={14} /> : step.num}
+                  {isStepCompleted(step.num) ? <Check size={14} /> : step.num}
                 </div>
                 <div className="sub-step-label">{step.label}</div>
               </div>

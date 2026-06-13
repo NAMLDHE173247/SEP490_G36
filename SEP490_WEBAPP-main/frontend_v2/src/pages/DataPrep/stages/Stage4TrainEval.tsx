@@ -33,7 +33,15 @@ export const Stage4TrainEval: React.FC = () => {
     stage3Convs
   } = dataPrep;
 
-  
+  const isStepCompleted = (num: number) => {
+    if (num < currentSubStep4) return true;
+    if (num === 8 && sepSubjectFilter !== 'ALL') return true;
+    if (num === 9 && Object.keys(sepQualityLabels).length > 0) return true;
+    if (num === 10 && sepBalanceApplied) return true;
+    if (num === 11 && sepRewriteDecision === 'ai') return true;
+    return false;
+  };
+
     const baseSubjects = sepBalanceApplied ? [
       { group: 'MATH', label: 'Math', count: 300, percentage: 42, color: '#6366f1' },
       { group: 'PHYSICAL', label: 'Physics', count: 280, percentage: 40, color: '#06b6d4' },
@@ -224,11 +232,11 @@ export const Stage4TrainEval: React.FC = () => {
           {SUB_STEPS_STAGE4.map((step, idx) => (
             <React.Fragment key={step.num}>
               <div
-                className={`sub-step ${step.num === currentSubStep4 ? 'active' : ''} ${step.num < currentSubStep4 ? 'completed' : ''}`}
+                className={`sub-step ${step.num === currentSubStep4 ? 'active' : ''} ${isStepCompleted(step.num) ? 'completed' : ''}`}
                 onClick={() => setCurrentSubStep4(step.num)}
               >
                 <div className="sub-step-circle">
-                  {step.num < currentSubStep4 ? <Check size={14} /> : step.num}
+                  {isStepCompleted(step.num) ? <Check size={14} /> : step.num}
                 </div>
                 <div className="sub-step-label">{step.label}</div>
               </div>

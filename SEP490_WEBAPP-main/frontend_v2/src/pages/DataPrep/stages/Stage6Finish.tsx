@@ -23,7 +23,12 @@ export const Stage6Finish: React.FC = () => {
     cloudProvider, setCloudProvider
   } = dataPrep;
 
-  
+  const isStepCompleted = (num: number) => {
+    if (num < currentSubStep6) return true;
+    if (num === 13 && promptText && promptText.trim() !== '') return true;
+    return false;
+  };
+
     const livePreviewJSON = {
       messages: [
         { role: 'system', content: promptText || '[No system prompt yet]' },
@@ -39,11 +44,11 @@ export const Stage6Finish: React.FC = () => {
           {SUB_STEPS_STAGE6.map((step, idx) => (
             <React.Fragment key={step.num}>
               <div
-                className={`sub-step ${step.num === currentSubStep6 ? 'active' : ''} ${step.num < currentSubStep6 ? 'completed' : ''}`}
+                className={`sub-step ${step.num === currentSubStep6 ? 'active' : ''} ${isStepCompleted(step.num) ? 'completed' : ''}`}
                 onClick={() => setCurrentSubStep6(step.num)}
               >
                 <div className="sub-step-circle">
-                  {step.num < currentSubStep6 ? <Check size={14} /> : step.num}
+                  {isStepCompleted(step.num) ? <Check size={14} /> : step.num}
                 </div>
                 <div className="sub-step-label" style={{ whiteSpace: 'pre-line', textAlign: 'center' }}>{step.label}</div>
               </div>
