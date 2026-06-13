@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 
 function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, login, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -135,6 +135,8 @@ function Navbar() {
 
       {user ? (
         <>
+
+
           {/* Middle: Resources (Only shown when logged in) */}
           <div style={{ display: 'flex', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
             {gpuStats ? (

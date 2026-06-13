@@ -139,3 +139,38 @@ export const deleteSession = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Failed to delete session', details: error.message });
   }
 };
+
+// Update session title (Rename)
+export const updateSessionTitle = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const { id } = req.params;
+    const { title } = req.body;
+
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      res.status(400).json({ error: 'Title is required' });
+      return;
+    }
+
+    const session = await ChatSession.findOneAndUpdate(
+      { _id: id, ownerId },
+      { title: title.trim(), updatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+
+    res.json(session);
+  } catch (error: any) {
+    console.error('Update Session Title Error:', error);
+    res.status(500).json({ error: 'Failed to update session title', details: error.message });
+  }
+};

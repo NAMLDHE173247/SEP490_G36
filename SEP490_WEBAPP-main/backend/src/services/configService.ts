@@ -11,7 +11,7 @@ class ConfigService {
   }
 
   getGpuUrl(instanceId?: number): string {
-    if (!this.gpuUrls.length) return '';
+    if (!this.gpuUrls.length) return 'http://localhost:5000';
     if (instanceId && instanceId > 0 && instanceId <= this.gpuUrls.length) {
       return this.gpuUrls[instanceId - 1];
     }

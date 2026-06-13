@@ -12,6 +12,7 @@ import {
   getSystemResources,
   resumeTraining,
   getDashboardStats,
+  downloadCloudDataset,
 } from '../controllers/trainController';
 import {
   saveTrainingHistory,
@@ -26,7 +27,8 @@ import {
   getSessionById,
   createSession,
   appendMessageToSession,
-  deleteSession
+  deleteSession,
+  updateSessionTitle
 } from '../controllers/chatSessionController';
 import { clusterData, clusterFilter, deleteClusterCache, clusterVisualize, removeNoise, deduplicate, safeSplit } from '../controllers/clusterController';
 import { ModelRegistryController } from '../controllers/modelRegistryController';
@@ -118,6 +120,7 @@ router.get('/chat/sessions/:id', getSessionById);
 router.post('/chat/sessions', createSession);
 router.put('/chat/sessions/:id', appendMessageToSession);
 router.delete('/chat/sessions/:id', deleteSession);
+router.patch('/chat/sessions/:id/title', updateSessionTitle);
 
 
 // Hugging Face Routes
@@ -162,6 +165,7 @@ router.post('/config/gpu-url', updateGpuConfig);
 
 // Training Routes
 router.post('/train/start', upload.single('dataset_file'), startTraining);
+router.post('/train/download-cloud', downloadCloudDataset);
 router.get('/train/active', getActiveTrainingJobs);
 router.get('/train/status/:jobId', getTrainingStatus);
 router.get('/train/stream/:jobId', streamTrainingStatus);

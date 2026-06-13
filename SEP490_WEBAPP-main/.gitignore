@@ -40,3 +40,12 @@ yarn-error.log*
 # Docker secrets (KHÔNG commit lên git)
 secrets/
 .env
+
+# Agents and skills (taste-skill)
+frontend_v2/.agents/
+frontend_v2/skills-lock.json
+**/frontend_v2/.agents/
+**/frontend_v2/skills-lock.json
+**/skills-lock.json
+**/.agents/
+

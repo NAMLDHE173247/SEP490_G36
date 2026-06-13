@@ -345,6 +345,10 @@ export const apiService = {
     const response = await api.delete(`/chat/sessions/${id}`);
     return response.data;
   },
+  updateChatSessionTitle: async (id: string, title: string): Promise<any> => {
+    const response = await api.patch(`/chat/sessions/${id}/title`, { title });
+    return response.data;
+  },
   getDatasetPrompts: async (): Promise<{ prompts: any[] }> => {
     const response = await api.get('/dataset-prompts');
     return response.data;

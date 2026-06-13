@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
@@ -34,26 +34,20 @@ function Dashboard() {
 
   // Default tab per role
   const getDefaultTab = () => {
-    if (!user) return 'Dashboard';
-    switch (user.role) {
-      case 'admin': return 'Dashboard';
-      case 'supervisor': return 'Chat';
-      case 'staff': return 'My Tasks';
-      default: return 'Dashboard';
-    }
+    return 'Dashboard';
   };
 
   const [activeTab, setActiveTab] = useState(getDefaultTab());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
   const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
 
   if (!user) {
-    return null;
+    return <Navigate to="/login" replace />;
   }
 
   const allMenuItems = [
-    { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor', 'staff'] },
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },

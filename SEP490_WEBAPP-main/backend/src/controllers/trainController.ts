@@ -191,6 +191,7 @@ export const startTraining = async (req: Request, res: Response) => {
       systemPromptVersion,
       totalTokens,
       totalRecords,
+      cloudLoadedDataset,
     } = req.body;
 
     console.log('[Backend] Received columnMapping:', columnMapping);
@@ -228,14 +229,15 @@ export const startTraining = async (req: Request, res: Response) => {
       }
     }
 
-    // ── Local File Column Validation ──────────────────────────────────────────
-    if (datasetFile) {
+    // ── Local File/Cloud File Column Validation ──────────────────────────────────────────
+    const validationFilePath = datasetFile ? datasetFile.path : (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset) ? cloudLoadedDataset : null);
+    if (validationFilePath) {
       try {
-        const filePath = datasetFile.path;
-        const fileContent = fs.readFileSync(filePath, { encoding: 'utf-8', flag: 'r' });
+        const fileContent = fs.readFileSync(validationFilePath, { encoding: 'utf-8', flag: 'r' });
+        const nameToCheck = datasetFile ? datasetFile.originalname : path.basename(validationFilePath);
 
         let columns: string[] = [];
-        if (datasetFile.originalname.endsWith('.json')) {
+        if (nameToCheck.endsWith('.json') || nameToCheck.endsWith('.jsonl')) {
           try {
             const parsed = JSON.parse(fileContent);
             const item = Array.isArray(parsed) ? parsed[0] : parsed;
@@ -250,7 +252,7 @@ export const startTraining = async (req: Request, res: Response) => {
               columns = Object.keys(parsed);
             }
           }
-        } else if (datasetFile.originalname.endsWith('.csv')) {
+        } else if (nameToCheck.endsWith('.csv')) {
           const firstLine = fileContent.split('\n')[0];
           columns = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
         }
@@ -265,7 +267,7 @@ export const startTraining = async (req: Request, res: Response) => {
       }
     }
 
-    // ── Validation ──────────────────────────────────────────────────────────
+    // ── Validation ────────────────------------------------------------------
     if (!model_name || typeof model_name !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid model_name' });
     }
@@ -275,9 +277,9 @@ export const startTraining = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing or invalid epochs (must be >= 1)' });
     }
 
-    if (!datasetFile && !dataset) {
+    if (!datasetFile && !dataset && !cloudLoadedDataset) {
       return res.status(400).json({
-        error: "Provide either a 'dataset_file' upload or a 'dataset' HuggingFace Hub ID.",
+        error: "Provide either a 'dataset_file' upload, a 'cloudLoadedDataset' file path, or a 'dataset' HuggingFace Hub ID.",
       });
     }
 
@@ -327,7 +329,7 @@ export const startTraining = async (req: Request, res: Response) => {
     };
 
     // If no file uploaded, embed HF Hub ID directly into config
-    if (!datasetFile) {
+    if (!datasetFile && !cloudLoadedDataset) {
       config.dataset_hf_id = dataset as string;
     }
 
@@ -342,6 +344,13 @@ export const startTraining = async (req: Request, res: Response) => {
         filename: datasetFile.originalname,
         contentType: datasetFile.mimetype || 'application/octet-stream',
         knownLength: datasetFile.size,
+      });
+    } else if (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset)) {
+      const stats = fs.statSync(cloudLoadedDataset);
+      form.append('file', fs.createReadStream(cloudLoadedDataset), {
+        filename: path.basename(cloudLoadedDataset),
+        contentType: 'application/json',
+        knownLength: stats.size,
       });
     }
 
@@ -369,21 +378,24 @@ export const startTraining = async (req: Request, res: Response) => {
     let savedDatasetPath: string | undefined;
 
     // Clean up the temporary upload file on the backend to save disk space
-    if (datasetFile) {
+    if (datasetFile || (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset))) {
       // Create a persistent directory for datasets if it doesn't exist
       const persistentDir = path.join(process.cwd(), 'uploads', 'persistent_datasets');
       if (!fs.existsSync(persistentDir)) {
         fs.mkdirSync(persistentDir, { recursive: true });
       }
 
-      savedDatasetPath = path.join(persistentDir, `${job_id}_${datasetFile.originalname}`);
+      const srcPath = datasetFile ? datasetFile.path : cloudLoadedDataset;
+      const srcName = datasetFile ? datasetFile.originalname : path.basename(cloudLoadedDataset);
+
+      savedDatasetPath = path.join(persistentDir, `${job_id}_${srcName}`);
 
       // Move the file instead of deleting it
-      fs.rename(datasetFile.path, savedDatasetPath, (err) => {
+      fs.rename(srcPath, savedDatasetPath, (err) => {
         if (err) {
-          console.warn(`[Backend] Could not move dataset file: ${datasetFile.path}`, err);
+          console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
           savedDatasetPath = undefined;
-          fs.unlink(datasetFile.path, () => { }); // Fallback to delete
+          fs.unlink(srcPath, () => { }); // Fallback to delete
         } else {
           console.log(`[Backend] Dataset saved persistently for Resume: ${savedDatasetPath}`);
         }
@@ -401,8 +413,8 @@ export const startTraining = async (req: Request, res: Response) => {
         systemPrompt: systemPrompt || zipMetadata?.systemPrompt || '',
         systemPromptVersion: systemPromptVersion || zipMetadata?.systemPromptVersion || '',
         datasetVersionId: zipMetadata?.datasetVersionId || undefined,
-        datasetSource: (datasetSource as string) || (datasetFile ? 'local' : 'hub'),
-        datasetName: datasetFile ? datasetFile.originalname : dataset,
+        datasetSource: (datasetSource as string) || (datasetFile ? 'local' : cloudLoadedDataset ? 'cloud' : 'hub'),
+        datasetName: datasetFile ? datasetFile.originalname : cloudLoadedDataset ? path.basename(cloudLoadedDataset) : dataset,
         columnMapping: (columnMapping as string) || 'text',
         parameters: {
           batchSize: parseInt(batchSize as string) || 1,
@@ -555,6 +567,24 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
       });
       const data: any = await response.json();
 
+      if (data.status === 'NOT_FOUND') {
+        const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
+        if (jobAgeMs > 15000) {
+          data.status = 'ERROR';
+          data.logs = ['[System] Lỗi: Kết nối huấn luyện bị mất. Trạng thái công việc không tìm thấy trên GPU Worker (có thể Worker đã bị khởi động lại hoặc ngắt kết nối).'];
+        } else {
+          data.status = 'QUEUED';
+        }
+      }
+
+      // Update DB status in real-time to keep History and Dashboard in sync
+      if (data.status) {
+        TrainingHistory.updateOne(
+          { jobId, ownerId },
+          { status: data.status }
+        ).catch(err => console.error('[Backend] Failed to update status in DB during stream:', err));
+      }
+
       // IF latest_checkpoint exists, update the DB so we can resume later
       if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
         const updateFields: any = {};
@@ -680,14 +710,20 @@ export const getSystemResources = async (_req: Request, res: Response) => {
   try {
     const urls = workerManager.getUrls();
     const resourcePromises = urls.map(async (url) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
+
       try {
         const response = await fetch(`${url}/api/system/resources`, {
-          headers: { 'ngrok-skip-browser-warning': 'true' }
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+          signal: controller.signal as any
         });
         const data: any = await response.json();
         return { url, ...data };
       } catch (err) {
         return { url, error: 'Worker unreachable' };
+      } finally {
+        clearTimeout(timeoutId);
       }
     });
 
@@ -908,5 +944,203 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Backend] getDashboardStats error:', err);
     return res.status(500).json({ error: err.message || 'Failed to get dashboard stats' });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/train/download-cloud
+// Downloads a dataset from Google Drive or custom URL, saving it locally
+// and returning a statistics and preview analysis.
+// ---------------------------------------------------------------------------
+export const downloadCloudDataset = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid URL' });
+    }
+
+    console.log(`[Backend] Downloading dataset from Cloud URL: ${url}`);
+
+    // 1. Convert Google Drive link if applicable
+    let downloadUrl = url;
+    let fileIdMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+                      url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+    
+    if (fileIdMatch) {
+      const fileId = fileIdMatch[1];
+      downloadUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
+      console.log(`[Backend] Detected Google Drive URL. Converted to: ${downloadUrl}`);
+    }
+
+    // 2. Fetch the file
+    const downloadRes = await fetch(downloadUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    if (!downloadRes.ok) {
+      return res.status(400).json({ 
+        error: `Failed to download file: Status ${downloadRes.status} ${downloadRes.statusText}` 
+      });
+    }
+
+    // Determine filename
+    let filename = 'cloud_dataset.json';
+    const contentDisposition = downloadRes.headers.get('content-disposition');
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+      if (filenameMatch) filename = filenameMatch[1];
+    } else {
+      // Parse from URL
+      try {
+        const parsedUrl = new URL(url);
+        const pathname = parsedUrl.pathname;
+        const lastSegment = pathname.substring(pathname.lastIndexOf('/') + 1);
+        if (lastSegment && lastSegment.includes('.')) {
+          filename = lastSegment;
+        }
+      } catch {}
+    }
+
+    // Ensure uploads/cloud_datasets directory exists
+    const persistentDir = path.join(process.cwd(), 'uploads', 'cloud_datasets');
+    if (!fs.existsSync(persistentDir)) {
+      fs.mkdirSync(persistentDir, { recursive: true });
+    }
+
+    const fileUuid = uuidv4();
+    const ext = filename.split('.').pop()?.toLowerCase() || 'json';
+    const savedPath = path.join(persistentDir, `${fileUuid}.${ext}`);
+
+    // Buffer the file content
+    const buffer = await downloadRes.buffer();
+    fs.writeFileSync(savedPath, buffer);
+    const size = buffer.length;
+
+    console.log(`[Backend] Cloud dataset saved to: ${savedPath} (${size} bytes)`);
+
+    // 3. Parse content
+    const text = buffer.toString('utf-8');
+    let records: any[] = [];
+    if (ext === 'json') {
+      try {
+        const parsed = JSON.parse(text);
+        records = Array.isArray(parsed) ? parsed : [parsed];
+      } catch (jsonErr: any) {
+        // Fallback to JSONL
+        try {
+          records = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+        } catch {
+          throw new Error('Failed to parse JSON: ' + jsonErr.message);
+        }
+      }
+    } else if (ext === 'jsonl') {
+      records = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+    } else if (ext === 'csv') {
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (lines.length > 0) {
+        const headers = lines[0].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        records = lines.slice(1).map(line => {
+          const values: string[] = [];
+          let insideQuote = false;
+          let currentVal = '';
+          for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            if (char === '"') {
+              insideQuote = !insideQuote;
+            } else if (char === ',' && !insideQuote) {
+              values.push(currentVal.trim().replace(/^"|"$/g, ''));
+              currentVal = '';
+            } else {
+              currentVal += char;
+            }
+          }
+          values.push(currentVal.trim().replace(/^"|"$/g, ''));
+          
+          const obj: any = {};
+          headers.forEach((h, idx) => {
+            obj[h] = values[idx] || '';
+          });
+          return obj;
+        });
+      }
+    } else {
+      throw new Error(`Unsupported file extension: .${ext}. Only .json, .jsonl, and .csv are supported.`);
+    }
+
+    if (records.length === 0) {
+      throw new Error('Parsed dataset contains 0 records.');
+    }
+
+    // Extract headers
+    const headers = (records.length > 0 && typeof records[0] === 'object' && !Array.isArray(records[0]))
+      ? Object.keys(records[0])
+      : [];
+
+    const detectColumn = (headers: string[]): string | null => {
+      const matchKeywords = ['message', 'messages', 'text', 'conversations', 'instruction', 'prompt'];
+      for (const kw of matchKeywords) {
+        const found = headers.find(h => h.toLowerCase() === kw);
+        if (found) return found;
+      }
+      return headers[0] || null;
+    };
+
+    const detected = detectColumn(headers);
+    const formatRowPreview = (r: any) => {
+      if (r && typeof r === 'object') {
+        if (Array.isArray(r.messages)) {
+          const systemMsg = r.messages.find((m: any) => m.role === 'system')?.content || '';
+          const userMsg = r.messages.find((m: any) => m.role === 'user')?.content || '';
+          const assistantMsg = r.messages.find((m: any) => m.role === 'assistant')?.content || '';
+          return { instruction: systemMsg || userMsg, input: systemMsg ? userMsg : '', output: assistantMsg };
+        }
+        return {
+          instruction: r.instruction || r.prompt || r.text || r.message || JSON.stringify(r),
+          input: r.input || '',
+          output: r.output || r.response || r.target || ''
+        };
+      }
+      return { instruction: String(r), input: '', output: '' };
+    };
+
+    const previewRows = records.slice(0, 5).map(r => {
+      if (detected && r[detected]) {
+        const val = r[detected];
+        if (typeof val === 'string') {
+          try {
+            const parsed = JSON.parse(val);
+            return formatRowPreview(parsed);
+          } catch {
+            return formatRowPreview(r);
+          }
+        }
+        if (Array.isArray(val)) {
+          return formatRowPreview(val);
+        }
+      }
+      return formatRowPreview(r);
+    });
+
+    const totalRecords = records.length;
+    const totalTokens = Math.round(text.length / 4);
+
+    return res.json({
+      tempFilePath: savedPath,
+      filename,
+      size,
+      totalRecords,
+      totalTokens,
+      headers,
+      previewRows,
+      columnMapping: detected || 'text'
+    });
+  } catch (err: any) {
+    console.error('[Backend] downloadCloudDataset error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to download cloud file' });
   }
 };

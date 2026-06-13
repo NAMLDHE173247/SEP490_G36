@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  Plus, 
-  MessageSquare, 
-  GitCompare, 
-  ChevronDown, 
-  TerminalSquare, 
-  Send, 
-  Upload, 
-  X, 
+import {
+  Plus,
+  MessageSquare,
+  GitCompare,
+  ChevronDown,
+  TerminalSquare,
+  Send,
+  Upload,
+  X,
   Sparkles,
   Terminal,
   RotateCcw,
@@ -17,7 +17,9 @@ import {
   AlertCircle,
   Loader2,
   BookOpen,
-  Settings2
+  Settings2,
+  Pencil,
+  Check
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
@@ -199,12 +201,12 @@ function ParamsDropdown({
     placeholder: string;
     step?: number;
   }[] = [
-    { key: "maxNewTokens", label: "MAX TOKENS", placeholder: "512" },
-    { key: "temperature", label: "TEMPERATURE", placeholder: "0.7", step: 0.1 },
-    { key: "topK", label: "TOP K", placeholder: "50" },
-    { key: "topP", label: "TOP P", placeholder: "0.95", step: 0.05 },
-    { key: "repetitionPenalty", label: "REP. PENALTY", placeholder: "1.1", step: 0.1 },
-  ];
+      { key: "maxNewTokens", label: "MAX TOKENS", placeholder: "512" },
+      { key: "temperature", label: "TEMPERATURE", placeholder: "0.7", step: 0.1 },
+      { key: "topK", label: "TOP K", placeholder: "50" },
+      { key: "topP", label: "TOP P", placeholder: "0.95", step: 0.05 },
+      { key: "repetitionPenalty", label: "REP. PENALTY", placeholder: "1.1", step: 0.1 },
+    ];
 
   const set = (key: keyof InferenceParams, raw: string) => {
     const val = raw === "" ? "" : Number(raw);
@@ -317,14 +319,14 @@ function LogsSidePanel({
 
   const typeColorClass = (t: LogEntry["type"]) =>
     t === "error" ? "error" :
-    t === "success" ? "success" :
-    t === "warning" ? "warning" : "info";
+      t === "success" ? "success" :
+        t === "warning" ? "warning" : "info";
 
   if (collapsed) {
     return (
-      <div 
-        style={{ width: '32px', backgroundColor: '#0f172a', borderLeft: '1px solid #334155', display: 'flex', flexDirection: 'column', alignItems: 'center', py: '12px', gap: '12px', flexShrink: 0, cursor: 'pointer', height: '100%' }} 
-        onClick={onToggleCollapse} 
+      <div
+        style={{ width: '32px', backgroundColor: '#0f172a', borderLeft: '1px solid #334155', display: 'flex', flexDirection: 'column', alignItems: 'center', py: '12px', gap: '12px', flexShrink: 0, cursor: 'pointer', height: '100%' }}
+        onClick={onToggleCollapse}
         title="Mở Logs"
       >
         <button
@@ -437,6 +439,8 @@ function ChatPanel({
   const [localInput, setLocalInput] = useState("");
   const [isInferring, setIsInferring] = useState(false);
   const [showUnloadMenu, setShowUnloadMenu] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
   const unloadMenuRef = useRef<HTMLDivElement>(null);
 
   // Quick model picker dropdown
@@ -559,6 +563,41 @@ function ChatPanel({
   };
 
   const handleNewChat = () => { setMessages([]); setCurrentSessionId(null); };
+
+  const handleRenameSession = async (id: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      toast.error("Tên cuộc hội thoại không được để trống");
+      return;
+    }
+    try {
+      await apiService.updateChatSessionTitle(id, newTitle);
+      toast.success("Đã đổi tên cuộc hội thoại");
+      setEditingSessionId(null);
+      fetchChatSessions();
+    } catch (error: any) {
+      console.error("Failed to rename session:", error);
+      toast.error("Không thể đổi tên cuộc hội thoại");
+    }
+  };
+
+  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Ngăn chặn việc load session vừa xóa
+    if (!window.confirm("Bạn có chắc chắn muốn xóa cuộc hội thoại này không?")) {
+      return;
+    }
+    try {
+      await apiService.deleteChatSession(id);
+      toast.success("Đã xóa cuộc hội thoại");
+      if (currentSessionId === id) {
+        setMessages([]);
+        setCurrentSessionId(null);
+      }
+      fetchChatSessions();
+    } catch (error: any) {
+      console.error("Failed to delete session:", error);
+      toast.error("Không thể xóa cuộc hội thoại");
+    }
+  };
 
   const sendMessage = useCallback(
     async (textOverride?: string) => {
@@ -807,16 +846,81 @@ function ChatPanel({
             {chatSessions.length === 0 ? (
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '16px', textAlign: 'center' }}>Chưa có lịch sử</div>
             ) : (
-              chatSessions.map(session => (
-                <div 
-                  key={session._id} 
-                  className={`session-item ${currentSessionId === session._id ? 'active' : ''}`}
-                  onClick={() => handleLoadSession(session)}
-                >
-                  <div className="session-title">{session.title || "Hội thoại"}</div>
-                  <div className="session-meta">{getSessionMeta(session).preview}</div>
-                </div>
-              ))
+              chatSessions.map(session => {
+                if (editingSessionId === session._id) {
+                  return (
+                    <div
+                      key={session._id}
+                      className="session-item active editing"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="session-rename-wrapper">
+                        <input
+                          type="text"
+                          className="session-rename-input"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleRenameSession(session._id, editTitle);
+                            } else if (e.key === 'Escape') {
+                              setEditingSessionId(null);
+                            }
+                          }}
+                          autoFocus
+                        />
+                        <div className="session-rename-actions">
+                          <button
+                            className="session-rename-btn save"
+                            onClick={() => handleRenameSession(session._id, editTitle)}
+                            title="Lưu"
+                          >
+                            <Check size={14} />
+                          </button>
+                          <button
+                            className="session-rename-btn cancel"
+                            onClick={() => setEditingSessionId(null)}
+                            title="Hủy"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="session-meta">{getSessionMeta(session).preview}</div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={session._id}
+                    className={`session-item ${currentSessionId === session._id ? 'active' : ''}`}
+                    onClick={() => handleLoadSession(session)}
+                  >
+                    <div className="session-title">{session.title || "Hội thoại"}</div>
+                    <div className="session-meta">{getSessionMeta(session).preview}</div>
+                    <div className="session-actions" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        className="session-action-btn edit"
+                        onClick={() => {
+                          setEditingSessionId(session._id);
+                          setEditTitle(session.title || "Hội thoại");
+                        }}
+                        title="Đổi tên"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        className="session-action-btn delete"
+                        onClick={(e) => handleDeleteSession(session._id, e)}
+                        title="Xóa"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -1161,22 +1265,22 @@ function ChatView() {
         <div className="chat-header">
           <div className="chat-header-left">
             <div className="mode-toggle">
-              <button 
+              <button
                 className={`mode-btn ${mode === 'single' ? 'active' : ''}`}
                 onClick={() => setMode('single')}
               >
                 <MessageSquare size={16} /> Single Chat
               </button>
-              <button 
+              <button
                 className={`mode-btn ${mode === 'compare' ? 'active' : ''}`}
                 onClick={() => setMode('compare')}
               >
                 <GitCompare size={16} /> Compare Models
               </button>
             </div>
-            
+
             {mode === 'compare' && (
-              <select 
+              <select
                 className="models-dropdown"
                 value={compareCount}
                 onChange={(e) => setCompareCount(Number(e.target.value))}
@@ -1187,7 +1291,7 @@ function ChatView() {
             )}
           </div>
           <div className="chat-header-right">
-            <button 
+            <button
               className={`icon-btn ${rightSidebar === 'logs' ? 'active' : ''}`}
               onClick={() => toggleRightSidebar('logs')}
               title="Inference Logs"
@@ -1246,12 +1350,12 @@ function ChatView() {
                 <AlertCircle size={14} /> Vui lòng load model trước khi chat.
               </div>
             )}
-            
+
             <ParamsSummaryBar params={params} />
 
             <div className="message-input-wrapper" ref={settingsRef}>
-              <button 
-                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`} 
+              <button
+                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`}
                 onClick={() => setShowInferencePopup(!showInferencePopup)}
                 style={{ zIndex: 10 }}
               >
@@ -1266,7 +1370,7 @@ function ChatView() {
                 />
               )}
 
-              <textarea 
+              <textarea
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -1274,22 +1378,22 @@ function ChatView() {
                   e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={model1Loaded ? "Nhập câu lệnh..." : "Load model để bắt đầu..."} 
+                placeholder={model1Loaded ? "Nhập câu lệnh..." : "Load model để bắt đầu..."}
                 style={{ minHeight: '60px', padding: '16px 60px 16px 56px', fontSize: '15px', borderRadius: '12px' }}
                 disabled={!model1Loaded || model1Inferring}
               />
-              
+
               {model1Inferring ? (
-                <button 
-                  className="send-btn" 
+                <button
+                  className="send-btn"
                   onClick={() => apiService.stopInference(1)}
                   style={{ width: '40px', height: '40px', right: '12px', bottom: '10px', borderRadius: '8px', background: 'var(--danger)' }}
                 >
                   <Square size={18} />
                 </button>
               ) : (
-                <button 
-                  className="send-btn" 
+                <button
+                  className="send-btn"
                   onClick={handleSend}
                   disabled={!input.trim() || !model1Loaded}
                   style={{ width: '40px', height: '40px', right: '12px', bottom: '10px', borderRadius: '8px', opacity: (!input.trim() || !model1Loaded) ? 0.5 : 1 }}
@@ -1307,7 +1411,7 @@ function ChatView() {
           <div className="global-bottom-bar" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             {!bothLoaded && (
               <div className="global-hint" style={{ color: 'var(--danger)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <AlertCircle size={14} /> 
+                <AlertCircle size={14} />
                 {!model1Loaded && !model2Loaded
                   ? "Vui lòng load các model trước khi so sánh."
                   : !model1Loaded
@@ -1318,14 +1422,14 @@ function ChatView() {
                 }
               </div>
             )}
-            
+
             <div style={{ width: '65%' }}>
               <ParamsSummaryBar params={params} />
             </div>
 
             <div className="message-input-wrapper" style={{ width: '65%', position: 'relative' }} ref={settingsRef}>
-              <button 
-                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`} 
+              <button
+                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`}
                 onClick={() => setShowInferencePopup(!showInferencePopup)}
                 style={{ zIndex: 10 }}
               >
@@ -1340,7 +1444,7 @@ function ChatView() {
                 />
               )}
 
-              <textarea 
+              <textarea
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -1348,22 +1452,22 @@ function ChatView() {
                   e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={bothLoaded ? "Nhập câu hỏi — sẽ gửi đến các model cùng lúc..." : "Load đủ các model để bắt đầu..."} 
+                placeholder={bothLoaded ? "Nhập câu hỏi — sẽ gửi đến các model cùng lúc..." : "Load đủ các model để bắt đầu..."}
                 style={{ minHeight: '60px', padding: '16px 60px 16px 56px', fontSize: '15px', borderRadius: '12px' }}
                 disabled={!bothLoaded || eitherInferring}
               />
-              
+
               {eitherInferring ? (
-                <button 
-                  className="send-btn" 
+                <button
+                  className="send-btn"
                   onClick={handleStopBoth}
                   style={{ width: '40px', height: '40px', right: '12px', bottom: '10px', borderRadius: '8px', background: 'var(--danger)' }}
                 >
                   <Square size={18} />
                 </button>
               ) : (
-                <button 
-                  className="send-btn" 
+                <button
+                  className="send-btn"
                   onClick={handleSend}
                   disabled={!input.trim() || !bothLoaded}
                   style={{ width: '40px', height: '40px', right: '12px', bottom: '10px', borderRadius: '8px', opacity: (!input.trim() || !bothLoaded) ? 0.5 : 1 }}

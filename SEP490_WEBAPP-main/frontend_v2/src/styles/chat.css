@@ -83,6 +83,8 @@
   padding: 12px 16px;
   cursor: pointer;
   border-left: 3px solid transparent;
+  position: relative;
+  transition: background-color 0.2s ease;
 }
 
 .session-item:hover {
@@ -99,11 +101,127 @@
   font-size: 14px;
   color: var(--text-main);
   margin-bottom: 4px;
+  padding-right: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-meta {
   font-size: 12px;
   color: var(--text-muted);
+  padding-right: 50px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session Actions on Hover */
+.session-actions {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  gap: 4px;
+  z-index: 5;
+}
+
+.session-item:hover .session-actions {
+  display: flex;
+}
+
+.session-action-btn {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.session-item.active .session-action-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.session-action-btn:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background-color: #f5f3ff;
+}
+
+.session-action-btn.delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background-color: #fef2f2;
+}
+
+/* Session Inline Renaming */
+.session-rename-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.session-rename-input {
+  flex: 1;
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1.5px solid var(--primary);
+  border-radius: 4px;
+  background: white;
+  color: var(--text-main);
+  outline: none;
+  min-width: 0;
+}
+
+.session-rename-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.session-rename-btn {
+  border: 1px solid var(--border);
+  background: white;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.session-rename-btn.save {
+  color: var(--success);
+  border-color: #bbf7d0;
+  background-color: #f0fdf4;
+}
+
+.session-rename-btn.save:hover {
+  background-color: #dcfce7;
+  border-color: var(--success);
+}
+
+.session-rename-btn.cancel {
+  color: var(--danger);
+  border-color: #fecaca;
+  background-color: #fef2f2;
+}
+
+.session-rename-btn.cancel:hover {
+  background-color: #fee2e2;
+  border-color: var(--danger);
 }
 
 /* Main Chat Area */
