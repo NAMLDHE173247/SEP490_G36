@@ -1454,6 +1454,17 @@ function DataPrepInner() {
       conv_010: 'clean',
     };
 
+  const isStageCompleted = (num: number) => {
+    if (num < currentStage) return true;
+    if (num === 1) return conversationsList && conversationsList.length > 0;
+    if (num === 2) return clusterRan;
+    if (num === 3) return Object.keys(aiGroupLabels).length > 0;
+    if (num === 4) return Object.keys(sepQualityLabels).length > 0 || sepRewriteDecision !== 'ai';
+    if (num === 5) return currentStage > 5;
+    if (num === 6) return promptText && promptText.trim() !== '';
+    return false;
+  };
+
     return (
       <>
         {/* Sub-stepper */}
@@ -4201,11 +4212,11 @@ function DataPrepInner() {
         {STAGES.map((stage, idx) => (
           <React.Fragment key={stage.num}>
             <div
-              className={`stepper-step ${stage.num === currentStage ? 'active' : ''} ${stage.num < currentStage ? 'completed' : ''}`}
+              className={`stepper-step ${stage.num === currentStage ? 'active' : ''} ${isStageCompleted(stage.num) ? 'completed' : ''}`}
               onClick={() => setCurrentStage(stage.num)}
             >
               <div className="stepper-circle">
-                {stage.num < currentStage ? <Check size={16} /> : stage.num}
+                {isStageCompleted(stage.num) ? <Check size={16} /> : stage.num}
               </div>
               <div className="stepper-label">
                 <span className="stepper-stage-tag">STAGE {stage.num}</span>
