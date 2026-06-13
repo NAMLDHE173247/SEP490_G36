@@ -66,8 +66,8 @@ function Dashboard() {
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -91,14 +91,21 @@ function Dashboard() {
     setActiveTab('My Tasks');
   };
 
+  const [managerSelectedTask, setManagerSelectedTask] = useState(null);
+  const [managerSelectedBatchId, setManagerSelectedBatchId] = useState(null);
+
   // Handle Supervisor viewing task detail
-  const handleViewTaskDetail = (task) => {
+  const handleViewTaskDetail = (task, batchId = null) => {
+    setManagerSelectedTask(task);
+    setManagerSelectedBatchId(batchId);
     setViewingTaskDetail(true);
     setActiveTab('Task Detail');
   };
 
   const handleBackFromDetail = () => {
     setViewingTaskDetail(false);
+    setManagerSelectedTask(null);
+    setManagerSelectedBatchId(null);
     setActiveTab('Assign Labeling');
   };
 
@@ -121,7 +128,7 @@ function Dashboard() {
       case 'Assign Labeling':
         return <ManagerAssignLabelingView onViewDetail={handleViewTaskDetail} />;
       case 'Task Detail':
-        return <LabelingTaskDetailView onBack={handleBackFromDetail} />;
+        return <LabelingTaskDetailView onBack={handleBackFromDetail} task={managerSelectedTask} initialBatchId={managerSelectedBatchId} />;
       case 'Manager Account':
         return <AdminAccountView />;
       case 'My Tasks':

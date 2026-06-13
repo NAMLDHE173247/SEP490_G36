@@ -493,15 +493,6 @@ const totalConvs = conversationsList.length;
                   <option value="15">15</option>
                 </select>
               </div>
-              <div className="toolbar-search">
-                <input
-                  type="text"
-                  className="toolbar-search-input"
-                  placeholder="Search conversations..."
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                />
-              </div>
               <div className="toolbar-stats">
                 <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                 <span className="toolbar-stat-tag">{totalMessages} messages</span>

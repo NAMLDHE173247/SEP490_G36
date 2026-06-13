@@ -24,7 +24,6 @@ import axios from 'axios';
  */
 
 const SUBJECT_LABELS = ['MATH', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'CODING', 'OTHER'] as const;
-type SubjectLabel = typeof SUBJECT_LABELS[number];
 
 interface GroupSample {
   user: string;

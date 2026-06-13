@@ -25,9 +25,7 @@ export type AutoLabelSuggestion = {
   sampleCount: number;
 };
 
-function isSubjectLabel(value: string): value is SubjectLabel {
-  return (SUBJECT_LABELS as readonly string[]).includes(value);
-}
+
 
 function normalizeSubjectLabel(value: unknown): string {
   const raw = String(value || '').trim().toUpperCase();
@@ -223,7 +221,7 @@ export class AutoLabelingService {
 
     const version = await this.loadAuthorizedVersion(versionId, userId);
 
-    const subjectNames = [...SUBJECT_LABELS];
+
     const userOid = new mongoose.Types.ObjectId(userId);
     let insertedCount = 0;
 

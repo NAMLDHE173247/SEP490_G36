@@ -169,9 +169,9 @@ export const CONVERSATIONS = [
 ];
 
 export const SUB_STEPS_STAGE3 = [
-  { num: 5, label: 'Auto Labeling' },
-  { num: 6, label: 'Save & Assign' },
-  { num: 7, label: 'Intent-Action' }
+  { num: 5, label: 'Phân loại & Lọc nhiễu' },
+  { num: 6, label: 'Giao việc (Assign)' },
+  { num: 7, label: 'Kết quả & Export' }
 ];
 
 export const SUB_STEPS_STAGE4 = [
@@ -562,6 +562,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [trialResponse, setTrialResponse] = useState('');
   const [exportPage, setExportPage] = useState(1);
   const [cloudProvider, setCloudProvider] = useState('gcloud');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -570,6 +571,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (uploaded) {
       localStorage.removeItem('current_version_id');
       try {
+        setUploadProgress(0);
         setFile({
           name: uploaded.name,
           format: 'Đang tải lên và phân tích...',
@@ -580,7 +582,12 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        });
 
         setFile({
           fileId: res.fileId,
@@ -867,6 +874,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       trialResponse, setTrialResponse,
       exportPage, setExportPage,
       cloudProvider, setCloudProvider,
+      uploadProgress, setUploadProgress,
       fileInputRef,
       handleFileUpload,
       handleRemoveFile,

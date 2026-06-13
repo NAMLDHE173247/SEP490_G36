@@ -1097,6 +1097,8 @@
   border-bottom: 1px solid #f1f5f9;
   vertical-align: top;
   color: var(--text-main);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .preview-modal-table tbody tr:last-child td {

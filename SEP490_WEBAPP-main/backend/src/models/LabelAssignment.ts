@@ -5,15 +5,15 @@ export type LabelAssignmentScope = 'sample' | 'message';
 export type LabelAssignmentMessageRole = 'user' | 'assistant';
 
 export interface ILabelAssignment extends Document {
-  sampleId: Types.ObjectId;
+  sampleId: Types.ObjectId | string;
   name: string;
   type: LabelAssignmentType;
   targetScope: LabelAssignmentScope;
   messageIndex?: number | null;
   messageRole?: LabelAssignmentMessageRole | null;
   targetTextSnapshot?: string;
-  createdBy: Types.ObjectId;
-  legacyLabelId?: Types.ObjectId | null;
+  createdBy: Types.ObjectId | string;
+  legacyLabelId?: Types.ObjectId | string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,8 +21,7 @@ export interface ILabelAssignment extends Document {
 const LabelAssignmentSchema = new Schema<ILabelAssignment>(
   {
     sampleId: {
-      type: Schema.Types.ObjectId,
-      ref: 'ProcessedDatasetItem',
+      type: Schema.Types.Mixed,
       required: true,
       index: true,
     },
@@ -47,14 +46,12 @@ const LabelAssignmentSchema = new Schema<ILabelAssignment>(
     },
     targetTextSnapshot: { type: String },
     createdBy: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
+      type: Schema.Types.Mixed,
       required: true,
       index: true,
     },
     legacyLabelId: {
-      type: Schema.Types.ObjectId,
-      ref: 'Label',
+      type: Schema.Types.Mixed,
       default: null,
       index: true,
     },

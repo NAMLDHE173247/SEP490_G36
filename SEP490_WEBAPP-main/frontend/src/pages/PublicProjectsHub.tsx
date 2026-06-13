@@ -32,7 +32,7 @@ export const PublicProjectsHub: React.FC = () => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const token = useAuthStore((state) => state.token);
-  const [activeTab, setActiveTab] = useState<'accessible' | 'owned'>('accessible');
+  const [activeTab, setActiveTab] = useState<'public' | 'labeling' | 'cross-check' | 'owned'>('labeling');
   const currentUserId = String(user?.id || '');
 
   const hubQuery = useQuery<{ projects: PublicProject[] }>({
@@ -42,12 +42,22 @@ export const PublicProjectsHub: React.FC = () => {
   });
 
   const projects = hubQuery.data?.projects || [];
-  const accessibleProjects = projects.filter((project) => project.accessType !== 'owned');
+  const publicProjects = projects.filter((project) => project.accessType === 'public');
+  const labelingTasks = projects.filter((project) => project.accessType === 'assigned');
+  // Currently mock cross-check tasks as empty until backend supports cross-check assignment type
+  const crossCheckTasks = projects.filter((project) => project.accessType === 'assigned' && false); 
   const ownedProjects = projects.filter((project) => project.accessType === 'owned');
-  const visibleProjects = activeTab === 'owned' ? ownedProjects : accessibleProjects;
-  const emptyMessage = activeTab === 'owned'
-    ? 'No owned datasets available.'
-    : 'No public or assigned projects found.';
+
+  let visibleProjects = publicProjects;
+  if (activeTab === 'labeling') visibleProjects = labelingTasks;
+  if (activeTab === 'cross-check') visibleProjects = crossCheckTasks;
+  if (activeTab === 'owned') visibleProjects = ownedProjects;
+
+  let emptyMessage = 'No projects found.';
+  if (activeTab === 'public') emptyMessage = 'No public projects available.';
+  if (activeTab === 'labeling') emptyMessage = 'Không có task gắn nhãn nào được giao cho bạn.';
+  if (activeTab === 'cross-check') emptyMessage = 'Không có task kiểm tra chéo nào.';
+  if (activeTab === 'owned') emptyMessage = 'No owned projects available.';
 
   const accessBadgeClass = (accessType?: PublicProject['accessType']) => {
     if (accessType === 'assigned') return 'border-violet-200 bg-violet-50 text-violet-700';
@@ -92,19 +102,53 @@ export const PublicProjectsHub: React.FC = () => {
         <div className="mb-5 inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
           <button
             type="button"
-            onClick={() => setActiveTab('accessible')}
+            onClick={() => setActiveTab('labeling')}
             className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
-              activeTab === 'accessible'
+              activeTab === 'labeling'
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            Task Gắn nhãn
+            <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+              activeTab === 'labeling' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+            >
+              {labelingTasks.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('cross-check')}
+            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+              activeTab === 'cross-check'
+                ? 'bg-amber-600 text-white'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            Task Kiểm tra chéo
+            <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
+              activeTab === 'cross-check' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+            }`}
+            >
+              {crossCheckTasks.length}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('public')}
+            className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors ${
+              activeTab === 'public'
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
-            Public / Assigned
+            Public Projects
             <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
-              activeTab === 'accessible' ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'
+              activeTab === 'public' ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'
             }`}
             >
-              {accessibleProjects.length}
+              {publicProjects.length}
             </span>
           </button>
           <button
@@ -116,7 +160,7 @@ export const PublicProjectsHub: React.FC = () => {
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
-            My Assignments
+            My Projects
             <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${
               activeTab === 'owned' ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'
             }`}

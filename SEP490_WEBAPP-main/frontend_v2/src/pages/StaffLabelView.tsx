@@ -1,61 +1,13 @@
 import React, { useState } from 'react';
 import {
-  ArrowLeft, Save, Send, ChevronDown, ChevronRight, CheckCircle,
-  AlertCircle, MessageSquare, Sparkles, FileText, X, Clock
+  MessageSquare, Save, Send, Flag, Play, CheckCircle, Clock,
+  ChevronLeft, ChevronRight, Check, AlertCircle, RefreshCw, Star, ArrowRight, Zap, Lightbulb,
+  ArrowLeft, ChevronDown, FileText, X, Sparkles
 } from 'lucide-react';
 import '../styles/stafflabel.css';
+import { api } from '../services/api';
 
-/* ── Demo sample data ── */
-const DEMO_SAMPLES = [
-  {
-    id: 1,
-    messages: [
-      { role: 'user', content: 'Em không hiểu chuyển động thẳng đều là gì ạ.' },
-      { role: 'assistant', content: 'Không sao, mình đi từng bước nhé. Em thử nghĩ xem: khi nói một vật chuyển động, điều đó có nghĩa là gì?' },
-      { role: 'user', content: 'Là vật đang di chuyển ạ.' },
-      { role: 'assistant', content: 'Đúng rồi! Bây giờ em thử nghĩ thêm: nếu một xe ô tô chạy trên đường thẳng và luôn giữ nguyên tốc độ, em nghĩ ta gọi đó là loại chuyển động gì?' },
-    ]
-  },
-  {
-    id: 2,
-    messages: [
-      { role: 'user', content: 'Công thức x = x0 + vt có nghĩa là gì ạ?' },
-      { role: 'assistant', content: 'Câu hỏi hay! Trước khi giải thích, em cho thầy biết: trong công thức đó, em đoán x và x0 biểu diễn điều gì?' },
-      { role: 'user', content: 'x là vị trí còn x0 là vị trí ban đầu ạ?' },
-      { role: 'assistant', content: 'Đúng rồi! Vậy vt là gì? Nếu v là vận tốc và t là thời gian, tích v nhân t sẽ cho ta biết điều gì?' },
-      { role: 'user', content: 'Quãng đường đi được ạ?' },
-      { role: 'assistant', content: 'Chính xác! Vậy công thức x = x0 + vt có nghĩa là: vị trí hiện tại = vị trí ban đầu + quãng đường đã đi. Rất logic phải không?' },
-    ]
-  },
-  {
-    id: 3,
-    messages: [
-      { role: 'user', content: 'Cho em đáp án luôn đi, em không có thời gian.' },
-      { role: 'assistant', content: 'Thầy hiểu em đang bận, nhưng nếu đưa đáp án ngay thì em sẽ khó nhớ lâu. Mình chỉ cần một câu thôi: em nghĩ chuyển động thẳng đều khác chuyển động cong ở điểm gì?' },
-      { role: 'user', content: 'Thẳng thì đi thẳng còn cong thì đi cong.' },
-      { role: 'assistant', content: 'Đúng vậy! Thêm nữa, chuyển động thẳng đều còn có đặc điểm gì về vận tốc?' },
-    ]
-  },
-  {
-    id: 4,
-    messages: [
-      { role: 'user', content: 'Thầy ơi, gia tốc là gì ạ? Em đọc sách không hiểu.' },
-      { role: 'assistant', content: 'Em hãy tưởng tượng: khi em đạp xe, ban đầu xe chậm, sau đó nhanh dần. Sự thay đổi vận tốc đó chính là có gia tốc. Em nghĩ gia tốc liên quan đến gì?' },
-      { role: 'user', content: 'Liên quan đến tốc độ thay đổi ạ?' },
-      { role: 'assistant', content: 'Chính xác! Gia tốc = (vận tốc cuối - vận tốc đầu) / thời gian. Nó cho biết vận tốc thay đổi nhanh hay chậm.' },
-    ]
-  },
-  {
-    id: 5,
-    messages: [
-      { role: 'user', content: 'Em muốn biết về lực ma sát ạ.' },
-      { role: 'assistant', content: 'Được! Em thử trượt tay trên mặt bàn xem. Em cảm thấy gì?' },
-      { role: 'user', content: 'Em thấy có gì đó cản lại tay em.' },
-      { role: 'assistant', content: 'Đúng rồi! Cái "cản lại" đó chính là lực ma sát. Nó luôn ngược chiều chuyển động. Em thử nghĩ xem: nếu không có ma sát thì sao?' },
-    ]
-  },
-];
-
+// Removed DEMO_SAMPLES
 const SUBJECT_OPTIONS = ['Toán', 'Vật lý', 'Hóa học', 'Sinh học', 'Tiếng Anh', 'Lịch sử', 'Địa lý', 'GDCD', 'Tin học', 'Multi-subject', 'Unclear'];
 const INTENT_OPTIONS = ['Ask Explanation', 'Solve Exercise', 'Request Formula', 'Confirm Understanding', 'Ask Example', 'Other'];
 const ACTION_OPTIONS = ['Guide Step-by-step', 'Give Hint', 'Ask Probing Question', 'Provide Formula', 'Encourage', 'Correct Error', 'Summarize', 'Other'];
@@ -72,11 +24,80 @@ function StaffLabelView({ task, onBack }) {
   const [showGuideline, setShowGuideline] = useState(false);
 
   const taskName = task?.name || 'Gán nhãn Toán 11 — Batch 1';
-  const samples = DEMO_SAMPLES;
+  
+  const [samples, setSamples] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  React.useEffect(() => {
+    if (!task) return;
+    const fetchSamples = async () => {
+      try {
+        setLoading(true);
+        const res = await api.get(`/dataprep/assignments/my-task/${task.id}/samples`);
+        if (res.data.success) {
+          setSamples(res.data.data.samples);
+          
+          // Populate existing labels if any
+          const initialLabels = {};
+          res.data.data.samples.forEach(s => {
+            if (s.savedLabel) {
+              initialLabels[s.id] = s.savedLabel;
+            }
+          });
+          setLabels(initialLabels);
+        }
+      } catch (e) {
+        console.error('Failed to fetch samples', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSamples();
+  }, [task]);
 
   const getLabel = (sampleId, field) => labels[sampleId]?.[field] || '';
   const getMsgLabel = (sampleId, msgIdx, field) => labels[sampleId]?.messages?.[msgIdx]?.[field] || '';
   const getFlags = (sampleId) => labels[sampleId]?.flags || [];
+  
+  const setMsgLabel = (sampleId, msgIdx, field, value) => {
+    setLabels(prev => {
+      const current = prev[sampleId] || { subject: '', status: 'draft', messages: {} };
+      return {
+        ...prev,
+        [sampleId]: {
+          ...current,
+          messages: {
+            ...current.messages,
+            [msgIdx]: {
+              ...current.messages[msgIdx],
+              [field]: value
+            }
+          }
+        }
+      };
+    });
+    setSavedDraft(false);
+  };
+
+  const handleAIAssist = (sampleId) => {
+    // Fake AI Assist filling out labels
+    const sample = samples.find(s => s.id === sampleId);
+    if (!sample) return;
+    const aiLabels = {
+      subject: 'Toán học',
+      status: 'reviewing',
+      messages: {}
+    };
+    sample.messages.forEach((msg, idx) => {
+      if (msg.role === 'user') {
+        aiLabels.messages[idx] = { intent: 'Ask Explanation' };
+      } else {
+        aiLabels.messages[idx] = { action: 'Ask Probing Question' };
+      }
+    });
+    setLabels(prev => ({ ...prev, [sampleId]: { ...prev[sampleId], ...aiLabels } }));
+    setSavedDraft(false);
+  };
 
   const setLabel = (sampleId, field, value) => {
     setLabels(prev => ({
@@ -86,15 +107,22 @@ function StaffLabelView({ task, onBack }) {
     setSavedDraft(false);
   };
 
-  const setMsgLabel = (sampleId, msgIdx, field, value) => {
+  const handleMessageLabelChange = (sampleId, msgIdx, field, value) => {
+    if (submitted) return;
     setLabels(prev => {
-      const existing = prev[sampleId] || {};
-      const msgs = existing.messages || {};
+      const sampleLabels = prev[sampleId] || {};
+      const msgs = sampleLabels.messages || {};
       return {
         ...prev,
         [sampleId]: {
-          ...existing,
-          messages: { ...msgs, [msgIdx]: { ...msgs[msgIdx], [field]: value } }
+          ...sampleLabels,
+          messages: {
+            ...msgs,
+            [msgIdx]: {
+              ...msgs[msgIdx],
+              [field]: value
+            }
+          }
         }
       };
     });
@@ -102,6 +130,7 @@ function StaffLabelView({ task, onBack }) {
   };
 
   const toggleFlag = (sampleId, flag) => {
+    if (submitted) return;
     setLabels(prev => {
       const existing = prev[sampleId] || {};
       const flags = existing.flags || [];
@@ -112,6 +141,7 @@ function StaffLabelView({ task, onBack }) {
   };
 
   const applyAiSuggestion = (sampleId, sample) => {
+    if (task?.disableAi || submitted) return;
     const aiLabels = {
       subject: 'Vật lý',
       completion: 'Completed',
@@ -134,20 +164,61 @@ function StaffLabelView({ task, onBack }) {
   const labeledCount = samples.filter(s => labels[s.id]?.subject).length;
   const progress = Math.round((labeledCount / samples.length) * 100);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
+    // Optionally save labels to Backend
+    if (task) {
+      const currentSampleId = samples[expandedSample]?.id;
+      if (currentSampleId) {
+        const currentLabel = labels[currentSampleId];
+        const isComplete = currentLabel?.subject && currentLabel?.completion && currentLabel?.quality;
+        try {
+          await api.post(`/dataprep/assignments/my-task/${task.id}/save-label`, {
+            sampleId: currentSampleId,
+            label: currentLabel,
+            isComplete: !!isComplete
+          });
+        } catch (e) {
+          console.error('Failed to save label', e);
+        }
+      }
+    }
+    
     setSavedDraft(true);
     setTimeout(() => setSavedDraft(false), 3000);
   };
 
-  const handleSubmit = () => {
-    setSubmitted(true);
-    setShowSubmitModal(false);
+  const handleSubmit = async () => {
+    
+    // Update task status via Backend API
+    if (task) {
+      try {
+        const res = await api.post(`/dataprep/versions/${task.datasetVersionId || 'default'}/assignments/submit`, {
+          submissionId: task.id // Using task.id as submissionId because of the way we mapped it in StaffTasksView
+        });
+        if (res.data.success) {
+          setSubmitted(true);
+          setShowSubmitModal(false);
+          alert('Nộp bài thành công!');
+        } else {
+          alert('Có lỗi xảy ra: ' + res.data.error);
+        }
+      } catch (e) {
+        console.error('Failed to submit task', e);
+        alert('Lỗi kết nối khi nộp bài.');
+      }
+    }
   };
 
   const unlabeledCount = samples.length - labeledCount;
 
   return (
     <div className="sl-container">
+      {loading ? (
+        <div className="flex items-center justify-center h-full w-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      ) : (
+        <>
       {/* Top bar */}
       <div className="sl-topbar">
         <div className="sl-topbar-left">
@@ -408,6 +479,8 @@ function StaffLabelView({ task, onBack }) {
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

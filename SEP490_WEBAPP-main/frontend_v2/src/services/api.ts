@@ -18,6 +18,122 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export type ModelRegistryItem = {
+  _id: string;
+  projectId: string;
+  modelName: string;
+  source: 'huggingface' | 'local';
+  hfRepoId?: string;
+  localPath?: string;
+  status: 'available' | 'downloading' | 'error';
+  createdAt: string;
+};
+
+// --- Added for Assignment & Task Allocation ---
+export type ShareUser = {
+  _id: string;
+  username: string;
+  name: string;
+};
+
+export type DatasetAssignmentSample = {
+  sampleId: string;
+  sampleKey: string;
+  sampleIndex: number;
+  preview: string;
+  assignees: ShareUser[];
+  assignee: ShareUser | null;
+  hasConflict?: boolean;
+  lowestAgreementScore?: number | null;
+  pendingAdjudicationCount?: number;
+};
+
+export type AssignmentSubmissionProgress = {
+  assignedSamples: number;
+  requiredMessages: number;
+  completedMessages: number;
+  missingMessages: Array<{
+    sampleId: string;
+    sampleIndex: number;
+    sampleKey: string;
+    messageIndex: number;
+    role: string;
+  }>;
+  percent: number;
+  isComplete: boolean;
+};
+
+export type AssignmentSubmissionStatus = {
+  status: 'draft' | 'submitted';
+  submittedAt?: string | null;
+  progress: AssignmentSubmissionProgress;
+};
+
+export type DatasetAssignmentSummary = {
+  user: ShareUser;
+  count: number;
+  ranges: string[];
+  reviewAvailable?: boolean;
+  submission?: AssignmentSubmissionStatus;
+};
+
+export type DatasetAssignmentsResponse = {
+  datasetVersion: {
+    _id: string;
+    projectName: string;
+    versionName: string;
+    totalSamples: number;
+  };
+  samples: DatasetAssignmentSample[];
+  summary: DatasetAssignmentSummary[];
+  totals: {
+    totalSamples: number;
+    assigned: number;
+    unassigned: number;
+    pendingConflicts?: number;
+  };
+};
+
+export type AssignmentConflictItem = {
+  sampleId: string;
+  sampleKey: string;
+  sampleIndex: number;
+  assigneeCount: number;
+  agreementScore: number | null;
+  pendingAdjudicationCount: number;
+  resolvedAdjudicationCount: number;
+  status: 'pending' | 'resolved_unpublished' | 'published';
+};
+
+export type AssignmentDashboardResponse = {
+  overview: {
+    totalAssignedSamples: number;
+    totalAssignees: number;
+    inProgressAssignees: number;
+    submittedAssignees: number;
+    savedDecisionCount: number;
+    publishedDecisionCount: number;
+    pendingConflicts: number;
+  };
+  users: Array<{
+    user: ShareUser;
+    assignedSamples: number;
+    completedTargets: number;
+    totalTargets: number;
+    completionPercent: number;
+    labelsPerHour: number;
+    latestActivityAt: string | null;
+    reviewAvailable?: boolean;
+    submission: {
+      status: 'draft' | 'submitted';
+      submittedAt?: string | null;
+    } | null;
+  }>;
+  conflicts: AssignmentConflictItem[];
+  refreshedAt: string;
+};
+// ----------------------------------------------
+
 export interface User {
   id: string;
   name: string;
@@ -63,13 +179,14 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File): Promise<any> => {
+  uploadFile: async (file: File, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      onUploadProgress,
     });
     return response.data;
   },
@@ -195,4 +312,45 @@ export const apiService = {
     const response = await api.post('/dataprep/versions', payload);
     return response.data;
   },
+
+  // --- Added for Assignment & Task Allocation ---
+  getDatasetVersionAssignments: async (id: string): Promise<DatasetAssignmentsResponse> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments`);
+    return response.data;
+  },
+
+  getDatasetVersionAssignmentDashboard: async (id: string): Promise<AssignmentDashboardResponse> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments/dashboard`);
+    return response.data;
+  },
+
+  assignDatasetVersionRange: async (
+    id: string,
+    payload: { assigneeId: string; startIndex: number; count: number }
+  ): Promise<{ message: string; assignedCount: number }> => {
+    const response = await api.post(`/dataprep/versions/${id}/assignments/range`, payload);
+    return response.data;
+  },
+
+  clearDatasetVersionAssignmentRange: async (
+    id: string,
+    payload: { startIndex: number; count: number }
+  ): Promise<{ message: string; deletedCount: number }> => {
+    const response = await api.delete(`/dataprep/versions/${id}/assignments/range`, { data: payload });
+    return response.data;
+  },
+
+  clearDatasetVersionUserAssignments: async (
+    id: string,
+    userId: string
+  ): Promise<{ message: string; deletedCount: number }> => {
+    const response = await api.delete(`/dataprep/versions/${id}/assignments/users/${userId}`);
+    return response.data;
+  },
+
+  getDatasetVersionDetail: async (id: string): Promise<any> => {
+    const response = await api.get(`/dataprep/versions/${id}`);
+    return response.data;
+  },
+  // ----------------------------------------------
 };

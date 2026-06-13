@@ -1,5 +1,11 @@
-import React from 'react';
-import { Check, Eye, X, Settings, Database, Plus, Search, HelpCircle, BarChart2, RefreshCw, Calendar, FileText, Sparkles, MessageSquare } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import { api } from '../../../services/api';
+import { 
+  Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
+  Search, Users, Star, Plus, Upload, Link as LinkIcon, Trash2, Edit3, X, Eye, 
+  MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2
+} from 'lucide-react';
 import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
@@ -39,6 +45,231 @@ export const Stage3Labeling: React.FC = () => {
   const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
   const [bulkSubject, setBulkSubject] = React.useState('');
   const [newSubjectInput, setNewSubjectInput] = React.useState('');
+  const [apiKey, setApiKey] = React.useState('');
+  const [useCustomApi, setUseCustomApi] = React.useState(false);
+
+  // --- Added for Assignment Dashboard ---
+  const [assignmentTotals, setAssignmentTotals] = React.useState<any>(null);
+  const [assignmentSamples, setAssignmentSamples] = React.useState<any[]>([]);
+  const [assignmentDashboard, setAssignmentDashboard] = React.useState<any>(null);
+  const [shareUsers, setShareUsers] = React.useState<any[]>([]);
+  const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
+  const [isAssigning, setIsAssigning] = React.useState(false);
+  
+  // Create Task Modal States
+  const [taskBatchSize, setTaskBatchSize] = React.useState(30);
+  const [taskAssigneeId, setTaskAssigneeId] = React.useState('');
+  
+  // Assign Samples Pagination
+  const [samplesPage, setSamplesPage] = React.useState(1);
+  const [samplesPerPage, setSamplesPerPage] = React.useState(10);
+  const [selectedSamplesForBatch, setSelectedSamplesForBatch] = React.useState<number[]>([]);
+
+  // Auto Split States
+  const [assignActiveTab, setAssignActiveTab] = React.useState<'manual' | 'auto'>('manual');
+  const [autoSplitMode, setAutoSplitMode] = React.useState<'by_batch_count' | 'by_batch_size'>('by_batch_count');
+  const [autoSplitValue, setAutoSplitValue] = React.useState(3);
+  const [autoSplitPrefix, setAutoSplitPrefix] = React.useState('Batch');
+  const [autoSplitPreview, setAutoSplitPreview] = React.useState<{id: string, name: string, samples: any[]}[]>([]);
+
+  // Wizard Step 2 States
+  const [drawerStep, setDrawerStep] = React.useState<1 | 2>(1);
+  const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
+
+  React.useEffect(() => {
+    if (currentSubStep3 === 6) {
+      const fetchAssignmentData = async () => {
+        setIsFetchingDashboard(true);
+        try {
+          const versionId = localStorage.getItem('current_version_id');
+          if (versionId) {
+            const [dash, assign, detail] = await Promise.all([
+              apiService.getDatasetVersionAssignmentDashboard(versionId),
+              apiService.getDatasetVersionAssignments(versionId),
+              apiService.getDatasetVersionDetail(versionId)
+            ]);
+            setAssignmentDashboard(dash);
+            setAssignmentTotals(assign.totals);
+            setAssignmentSamples(assign.samples || []);
+            let users = detail?.datasetVersion?.sharedWithUsers || [];
+            if (users.length === 0) {
+              users = [
+                { _id: '6a293e9365e356a409f3023f', name: 'System Staff', email: 'staff@example.com' },
+                { _id: 'fake-staff-2', name: 'Trần Thị B', email: 'ttb@example.com' },
+                { _id: 'fake-staff-3', name: 'Lê Văn C', email: 'lvc@example.com' },
+                { _id: 'fake-staff-4', name: 'Phạm Thị D', email: 'ptd@example.com' }
+              ];
+            }
+            setShareUsers(users);
+            if (users.length > 0) {
+              setTaskAssigneeId(users[0]._id);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to fetch assignment data:', err);
+        } finally {
+          setIsFetchingDashboard(false);
+        }
+      };
+      fetchAssignmentData();
+    }
+  }, [currentSubStep3]);
+  // --------------------------------------
+
+  const handleCreateTask = async () => {
+    if (!taskAssigneeId) {
+      alert('Please select an assignee.');
+      return;
+    }
+    const versionId = localStorage.getItem('current_version_id');
+    if (!versionId) return;
+
+    setIsAssigning(true);
+    try {
+      // Find the first unassigned index
+      let startIndex = 1;
+      const unassignedSample = assignmentSamples.find(s => !s.assignees || s.assignees.length === 0);
+      if (unassignedSample) {
+        startIndex = unassignedSample.sampleIndex;
+      }
+
+      await apiService.assignDatasetVersionRange(versionId, {
+        assigneeId: taskAssigneeId,
+        startIndex: startIndex,
+        count: Number(taskBatchSize)
+      });
+      // Refresh dashboard
+      const [dash, assign] = await Promise.all([
+        apiService.getDatasetVersionAssignmentDashboard(versionId),
+        apiService.getDatasetVersionAssignments(versionId)
+      ]);
+      setAssignmentDashboard(dash);
+      setAssignmentTotals(assign.totals);
+      setAssignmentSamples(assign.samples || []);
+      setShowCreateTaskModal(false);
+      alert('Task created successfully!');
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.response?.data?.error || err.message || 'Failed to create task');
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const handleGenerateAutoSplit = () => {
+    if (assignmentSamples.length === 0) return;
+    
+    let batches = [];
+    if (autoSplitMode === 'by_batch_count') {
+      const numBatches = autoSplitValue;
+      if (numBatches <= 0) return;
+      const baseSize = Math.floor(assignmentSamples.length / numBatches);
+      let remainder = assignmentSamples.length % numBatches;
+      
+      let startIdx = 0;
+      for (let i = 0; i < numBatches; i++) {
+        let size = baseSize + (remainder > 0 ? 1 : 0);
+        remainder--;
+        if (size > 0) {
+          batches.push({
+            id: `batch-${i}`,
+            name: `${autoSplitPrefix} ${i + 1}`,
+            samples: assignmentSamples.slice(startIdx, startIdx + size)
+          });
+        }
+        startIdx += size;
+      }
+    } else {
+      const batchSize = autoSplitValue;
+      if (batchSize <= 0) return;
+      let startIdx = 0;
+      let count = 1;
+      while (startIdx < assignmentSamples.length) {
+        batches.push({
+          id: `batch-${count}`,
+          name: `${autoSplitPrefix} ${count}`,
+          samples: assignmentSamples.slice(startIdx, startIdx + batchSize)
+        });
+        startIdx += batchSize;
+        count++;
+      }
+    }
+    setAutoSplitPreview(batches);
+  };
+
+  const handleNextToStep2 = () => {
+    if (assignActiveTab === 'manual') {
+      if (selectedSamplesForBatch.length === 0) {
+        alert('Vui lòng chọn ít nhất 1 Sample để giao việc!');
+        return;
+      }
+      setAutoSplitPreview([{
+        id: 'manual-batch',
+        name: 'Lô Tùy Chỉnh (Manual)',
+        samples: assignmentSamples.filter(s => selectedSamplesForBatch.includes(s.sampleIndex))
+      }]);
+    } else {
+      if (autoSplitPreview.length === 0) {
+        alert('Vui lòng Tạo trước danh sách lô trước khi tiếp tục!');
+        return;
+      }
+    }
+    
+    // Khởi tạo staffAssignments
+    const initAssignments: Record<string, string[]> = {};
+    shareUsers.forEach(u => initAssignments[u._id] = []);
+    setStaffAssignments(initAssignments);
+    setDrawerStep(2);
+  };
+
+  const toggleStaffBatch = (staffId: string, batchId: string) => {
+    setStaffAssignments(prev => {
+      const current = prev[staffId] || [];
+      if (current.includes(batchId)) {
+        return { ...prev, [staffId]: current.filter(id => id !== batchId) };
+      } else {
+        return { ...prev, [staffId]: [...current, batchId] };
+      }
+    });
+  };
+
+  const handleBulkAssign = async () => {
+    // Check if any assignment is made
+    const hasAssignments = Object.values(staffAssignments).some(batches => batches.length > 0);
+    if (!hasAssignments) {
+      alert('Vui lòng gán ít nhất 1 Lô cho Nhân viên trước khi hoàn tất!');
+      return;
+    }
+
+    try {
+      // Loop over batches and make API calls
+      for (let i = 0; i < autoSplitPreview.length; i++) {
+        const batch = autoSplitPreview[i];
+        const assignees = Object.keys(staffAssignments).filter(staffId => 
+          staffAssignments[staffId].includes(batch.id)
+        );
+
+        if (assignees.length > 0) {
+          const versionId = localStorage.getItem('current_version_id') || 'default';
+          await api.post(`/dataprep/versions/${versionId}/assignments/batch`, {
+            assigneeIds: assignees,
+            sampleStartIndex: batch.samples.length > 0 ? batch.samples[0].sampleIndex : 0,
+            sampleCount: batch.samples.length,
+            taskType: 'labeling',
+            priority: 'medium',
+            batchName: batch.name
+          });
+        }
+      }
+
+      alert('Đã Giao Việc thành công (Backend Integration)!');
+      setShowCreateTaskModal(false);
+    } catch (err) {
+      console.error('Error assigning task:', err);
+      alert('Có lỗi xảy ra khi giao việc. Vui lòng thử lại.');
+    }
+    setDrawerStep(1);
+  };
 
   // renderStage3 body begins
     /* Group data — tự sinh từ dữ liệu thực tế, chỉ hiện nhóm có conversation */
@@ -464,92 +695,105 @@ export const Stage3Labeling: React.FC = () => {
             {/* Right: Sidebar */}
             <div className="stage2-sidebar">
               <div className="cleaning-pipeline-card">
-                <div className="auto-labeling-header" style={{ paddingBottom: '0', borderBottom: 'none' }}>
-                  <div className="auto-labeling-actions" style={{ width: '100%', display: 'flex', gap: '8px' }}>
-                    <select
-                      className="label-model-select"
-                      style={{ flex: 1 }}
-                      value={aiProvider}
-                      onChange={e => setAiProvider(e.target.value as any)}
-                      disabled={isLabelingWithAI}
-                    >
-                      <option value="deepseek">Deepseek</option>
-                      <option value="openai">ChatGPT</option>
-                      <option value="gemini">Gemini</option>
-                    </select>
-                    <button
-                      className="label-ai-btn"
-                      style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
-                      disabled={!clusterRan || isLabelingWithAI}
-                      onClick={async () => {
-                        if (!clusterRan) return;
+                <div className="pipeline-header" style={{ marginBottom: '16px' }}>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={16} color="#6366f1" />
+                    Pipeline 2 Bước
+                  </h3>
+                </div>
 
-                        const hasExistingLabels = Object.values(aiGroupLabels).some(val => val !== '' && val !== undefined);
-                        if (hasExistingLabels) {
-                          const confirmRelabel = window.confirm('Dữ liệu này đã được gán nhãn. Bạn có muốn yêu cầu AI chạy lại và ghi đè nhãn mới không?');
-                          if (!confirmRelabel) return;
-                          
-                          // Xóa nhãn hiện tại trên UI để chạy lại
-                          setAiGroupLabels({});
-                          setPendingAiLabels([]);
-                        }
+                {/* Step 1: Phân loại chủ đề */}
+                <div className="pipeline-step">
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+                    1. Phân loại chủ đề
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <select
+                        className="label-model-select"
+                        style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                        value={aiProvider}
+                        onChange={e => setAiProvider(e.target.value as any)}
+                        disabled={isLabelingWithAI}
+                      >
+                        <option value="deepseek">Deepseek</option>
+                        <option value="openai">ChatGPT</option>
+                        <option value="gemini">Gemini</option>
+                      </select>
+                      <button
+                        className="label-ai-btn"
+                        style={{ flex: 1, padding: '8px', borderRadius: '6px', background: '#6366f1', color: 'white', border: 'none', cursor: 'pointer', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
+                        disabled={!clusterRan || isLabelingWithAI}
+                        onClick={async () => {
+                          if (!clusterRan) return;
 
-                        setIsLabelingWithAI(true);
-                        try {
-                          // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
-                          let versionId: string =
-                            (stage3Convs[0] as any)?.datasetVersionId ||
-                            (stage3Convs[0] as any)?.versionId ||
-                            localStorage.getItem('current_version_id') ||
-                            '';
-
-                          // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
-                          if (!versionId) {
-                            const payload = {
-                              projectName: 'Auto-Label Dataset',
-                              operationType: 'labeling_base' as const,
-                              similarityThreshold: 0.85,
-                              format: 'openai' as const,
-                              data: stage3Convs.map((conv, idx) => {
-                                const messages = conv.messages.flatMap((m: any) => [
-                                  { role: 'user', content: m.user },
-                                  { role: 'assistant', content: m.assistant }
-                                ]).filter((m: any) => m.content && String(m.content).trim() !== '');
-
-                                return {
-                                  sourceKey: `conv-${idx}`,
-                                  data: {
-                                    messages,
-                                    cluster: conv.groupId,
-                                    conversation_id: `conv-${idx}`
-                                  }
-                                };
-                              })
-                            };
-                            const created = await apiService.createDatasetVersion(payload);
-                            versionId = created.datasetVersion._id;
-                            localStorage.setItem('current_version_id', versionId);
+                          const hasExistingLabels = Object.values(aiGroupLabels).some(val => val !== '' && val !== undefined);
+                          if (hasExistingLabels) {
+                            const confirmRelabel = window.confirm('Dữ liệu này đã được gán nhãn. Bạn có muốn yêu cầu AI chạy lại và ghi đè nhãn mới không?');
+                            if (!confirmRelabel) return;
+                            
+                            // Xóa nhãn hiện tại trên UI để chạy lại
+                            setAiGroupLabels({});
+                            setPendingAiLabels([]);
                           }
 
-                          // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
-                          const res = await apiService.previewAutoLabels(versionId, aiProvider);
-                          const suggestions = res.suggestions || [];
+                          setIsLabelingWithAI(true);
+                          try {
+                            // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
+                            let versionId: string =
+                              (stage3Convs[0] as any)?.datasetVersionId ||
+                              (stage3Convs[0] as any)?.versionId ||
+                              localStorage.getItem('current_version_id') ||
+                              '';
 
-                          // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
-                          const labelMap: Record<number, string> = {};
-                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
-                          const newLabels = new Set<string>();
+                            // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
+                            if (!versionId) {
+                              const payload = {
+                                projectName: 'Auto-Label Dataset',
+                                operationType: 'labeling_base' as const,
+                                similarityThreshold: 0.85,
+                                format: 'openai' as const,
+                                data: stage3Convs.map((conv, idx) => {
+                                  const messages = conv.messages.flatMap((m: any) => [
+                                    { role: 'user', content: m.user },
+                                    { role: 'assistant', content: m.assistant }
+                                  ]).filter((m: any) => m.content && String(m.content).trim() !== '');
 
-                          suggestions.forEach((s: any) => {
-                            // clusterId từ BE có thể là 0,1,2... còn groupId trong UI là 1,2,3...
-                            const groupId = (s.clusterId ?? s.groupId);
-                            if (groupId !== undefined) {
-                              labelMap[groupId] = s.label;
-                              if (s.label && !predefinedLabels.includes(s.label) && !customSubjectLabels.includes(s.label)) {
-                                newLabels.add(s.label);
-                              }
+                                  return {
+                                    sourceKey: `conv-${idx}`,
+                                    data: {
+                                      messages,
+                                      cluster: conv.groupId,
+                                      conversation_id: `conv-${idx}`
+                                    }
+                                  };
+                                })
+                              };
+                              const created = await apiService.createDatasetVersion(payload);
+                              versionId = created.datasetVersion._id;
+                              localStorage.setItem('current_version_id', versionId);
                             }
-                          });
+
+                            // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
+                            const res = await apiService.previewAutoLabels(versionId, aiProvider);
+                            const suggestions = res.suggestions || [];
+
+                            // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
+                            const labelMap: Record<number, string> = {};
+                            const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                            const newLabels = new Set<string>();
+
+                            suggestions.forEach((s: any) => {
+                              // clusterId từ BE có thể là 0,1,2... còn groupId trong UI là 1,2,3...
+                              const groupId = (s.clusterId ?? s.groupId);
+                              if (groupId !== undefined) {
+                                labelMap[groupId] = s.label;
+                                if (s.label && !predefinedLabels.includes(s.label) && !customSubjectLabels.includes(s.label)) {
+                                  newLabels.add(s.label);
+                                }
+                              }
+                            });
+
                           
                           if (newLabels.size > 0) {
                             setPendingAiLabels(Array.from(newLabels));
@@ -571,7 +815,51 @@ export const Stage3Labeling: React.FC = () => {
                         : <><Sparkles size={14} /> Label with AI</>
                       }
                     </button>
+                    </div>
+
+                    {/* API Key Toggle */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px' }}>
+                      <input 
+                        type="checkbox" 
+                        id="useCustomApi" 
+                        checked={useCustomApi}
+                        onChange={(e) => setUseCustomApi(e.target.checked)}
+                      />
+                      <label htmlFor="useCustomApi" style={{ fontSize: '12px', color: '#64748b', cursor: 'pointer' }}>Sử dụng API Key cá nhân</label>
+                    </div>
+                    {useCustomApi && (
+                      <input 
+                        type="password" 
+                        placeholder="Nhập API Key..." 
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        style={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '12px', width: '100%', marginTop: '6px' }}
+                      />
+                    )}
                   </div>
+                </div>
+
+                {/* Step 2: Lọc nhiễu */}
+                <div className="pipeline-step" style={{ marginTop: '20px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+                    2. Lọc nhiễu (Noise Filter)
+                  </h4>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '10px' }}>
+                    Loại bỏ các dữ liệu được gán nhãn NOISE ra khỏi tập dữ liệu.
+                  </div>
+                  <button
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#ef4444', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px' }}
+                    onClick={() => {
+                      if(window.confirm('Bạn có chắc muốn loại bỏ các dữ liệu được đánh dấu là NOISE không?')) {
+                        // Demo action
+                        setStage3Convs(prev => prev.filter(c => c.groupLabel !== 'NOISE' && c.subject !== 'NOISE'));
+                        alert('Đã lọc bỏ các dữ liệu NOISE thành công!');
+                      }
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    Xóa dữ liệu nhiễu (NOISE)
+                  </button>
                 </div>
 
                 {pendingAiLabels.length > 0 && (
@@ -828,12 +1116,25 @@ export const Stage3Labeling: React.FC = () => {
 
             {/* Status Cards Row */}
             <div className="sa-status-row">
-              {['ASSIGNED','ASSIGNEES','IN PROGRESS','SUBMITTED','SAVED DECISIONS','NEEDS REVIEW','PUBLISHED'].map(label => (
-                <div key={label} className="sa-status-card">
-                  <span className="sa-status-label">{label}</span>
-                  <span className="sa-status-value">0</span>
-                </div>
-              ))}
+              {['ASSIGNED','ASSIGNEES','IN PROGRESS','SUBMITTED','SAVED DECISIONS','NEEDS REVIEW','PUBLISHED'].map(label => {
+                let val = 0;
+                if (assignmentDashboard?.overview) {
+                  const ov = assignmentDashboard.overview;
+                  if (label === 'ASSIGNED') val = ov.totalAssignedSamples;
+                  if (label === 'ASSIGNEES') val = ov.totalAssignees;
+                  if (label === 'IN PROGRESS') val = ov.inProgressAssignees;
+                  if (label === 'SUBMITTED') val = ov.submittedAssignees;
+                  if (label === 'SAVED DECISIONS') val = ov.savedDecisionCount;
+                  if (label === 'NEEDS REVIEW') val = ov.pendingConflicts;
+                  if (label === 'PUBLISHED') val = ov.publishedDecisionCount;
+                }
+                return (
+                  <div key={label} className="sa-status-card">
+                    <span className="sa-status-label">{label}</span>
+                    <span className="sa-status-value">{isFetchingDashboard ? '...' : val}</span>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="sa-main-layout">
@@ -843,28 +1144,31 @@ export const Stage3Labeling: React.FC = () => {
                 <div className="sa-section-card">
                   <div className="sa-section-header">
                     <div>
-                      <h4>Task Allocation Dashboard</h4>
-                      <p>Divide your unassigned dataset into batches and assign to annotation.</p>
+                      <h4>Phân bổ Lô giao việc (Batch)</h4>
+                      <p>Chia nhỏ tập dữ liệu thành các lô (batch) để giao cho nhân sự gán nhãn.</p>
                     </div>
-                    <button className="sa-create-task-btn" onClick={() => setShowCreateTaskModal(true)}><Plus size={14} /> Create Task</button>
+                    <button className="sa-create-task-btn" onClick={() => {
+                      setSelectedSamplesForBatch([]);
+                      setShowCreateTaskModal(true);
+                    }}><Plus size={14} /> Tạo Lô mới</button>
                   </div>
 
                   <div className="sa-alloc-cards">
                     <div className="sa-alloc-card">
                       <span className="sa-alloc-label">Total Samples</span>
-                      <span className="sa-alloc-value sa-dark">120</span>
+                      <span className="sa-alloc-value sa-dark">{isFetchingDashboard ? '...' : (assignmentTotals?.totalSamples || stage3Convs.length)}</span>
                     </div>
                     <div className="sa-alloc-card sa-alloc-green">
                       <span className="sa-alloc-label sa-green-text">Assigned</span>
-                      <span className="sa-alloc-value sa-green-text">30</span>
+                      <span className="sa-alloc-value sa-green-text">{isFetchingDashboard ? '...' : (assignmentTotals?.assigned || 0)}</span>
                     </div>
                     <div className="sa-alloc-card sa-alloc-orange">
                       <span className="sa-alloc-label sa-orange-text">Unassigned</span>
-                      <span className="sa-alloc-value sa-orange-text">90</span>
+                      <span className="sa-alloc-value sa-orange-text">{isFetchingDashboard ? '...' : (assignmentTotals?.unassigned || 0)}</span>
                     </div>
                   </div>
 
-                  <h5 className="sa-sub-title">Active Tasks</h5>
+                  <h5 className="sa-sub-title">Các Lô đang hoạt động (Active Batches)</h5>
                   <div className="sa-tasks-table-wrap">
                     <table className="sa-tasks-table">
                       <thead>
@@ -877,13 +1181,25 @@ export const Stage3Labeling: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td><span className="sa-link">batch1</span></td>
-                          <td>hoang22_nmgf</td>
-                          <td>30 samples assigned</td>
-                          <td className="sa-date">June 8, 2026</td>
-                          <td><span className="sa-badge-pending">Pending</span></td>
-                        </tr>
+                        {isFetchingDashboard ? (
+                          <tr><td colSpan={5} style={{textAlign:'center', padding: '20px'}}><Loader2 size={16} className="animate-spin inline mr-2" /> Loading...</td></tr>
+                        ) : assignmentDashboard?.users && assignmentDashboard.users.length > 0 ? (
+                          assignmentDashboard.users.map((u: any, i: number) => (
+                            <tr key={i}>
+                              <td><span className="sa-link">Batch {i+1}</span></td>
+                              <td>{u.user.name || u.user.username}</td>
+                              <td>{u.assignedSamples} samples assigned</td>
+                              <td className="sa-date">-</td>
+                              <td>
+                                {u.submission?.status === 'submitted' 
+                                  ? <span className="sa-badge-published">Submitted</span> 
+                                  : <span className="sa-badge-pending">Pending</span>}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan={5} style={{textAlign:'center', padding: '20px', color: '#64748b'}}>Không có Lô nào đang hoạt động</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -892,6 +1208,52 @@ export const Stage3Labeling: React.FC = () => {
                 {/* Samples */}
                 <div className="sa-section-card">
                   <h4 className="sa-section-title">Samples</h4>
+                  {/* Samples Pagination */}
+                  {!isFetchingDashboard && assignmentSamples && assignmentSamples.length > 0 && (
+                    <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px'}}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                        <span style={{fontSize: '13px', color: '#64748b'}}>Rows per page:</span>
+                        <select 
+                          className="sa-select"
+                          value={samplesPerPage}
+                          onChange={(e) => {
+                            setSamplesPerPage(Number(e.target.value));
+                            setSamplesPage(1);
+                          }}
+                          style={{padding: '4px 8px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '13px'}}
+                        >
+                          <option value={5}>5</option>
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                        </select>
+                      </div>
+                      <div className="preview-pagination" style={{marginTop: 0}}>
+                        <button 
+                          className="pagination-arrow" 
+                          disabled={samplesPage <= 1} 
+                          onClick={() => setSamplesPage(samplesPage - 1)}
+                        >‹</button>
+                        {getPageNumbers(samplesPage, Math.ceil(assignmentSamples.length / samplesPerPage)).map((page, idx) =>
+                          page === '...' ? (
+                            <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+                          ) : (
+                            <button
+                              key={page}
+                              className={`pagination-page-btn ${page === samplesPage ? 'active' : ''}`}
+                              onClick={() => setSamplesPage(Number(page))}
+                            >
+                              {page}
+                            </button>
+                          )
+                        )}
+                        <button 
+                          className="pagination-arrow" 
+                          disabled={samplesPage >= Math.ceil(assignmentSamples.length / samplesPerPage)} 
+                          onClick={() => setSamplesPage(samplesPage + 1)}
+                        >›</button>
+                      </div>
+                    </div>
+                  )}
                   <div className="sa-tasks-table-wrap">
                     <table className="sa-tasks-table sa-samples-table">
                       <thead>
@@ -902,36 +1264,45 @@ export const Stage3Labeling: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="sa-id-cell">#1</td>
-                          <td>
-                            <div className="sa-sample-key">
-                              <span className="sa-conv-name">conv-1</span>
-                              <span className="sa-conflict-badge">⊘ Conflict</span>
-                            </div>
-                            <div className="sa-sample-content">Em không hiểu hàm số bậc nhất là gì. Em cứ nhìn thế nào dạng tổng quát của đường thẳng trên mặt phẳng tọa độ không? Thử đoán hàm số bậc nhất có dạng y = ax + b với a như thế nào?</div>
-                            <div className="sa-sample-meta">IAA 0.11 · 3 pending adjudication</div>
-                          </td>
-                          <td>
-                            <div className="sa-assignee">hoang22</div>
-                            <div className="sa-assignee-email">hoangndnhe180790@fpt.edu.vn</div>
-                            <div className="sa-assignee">uhhgf</div>
-                            <div className="sa-assignee-email">hoangndnhe180790@fpt.edu.vn</div>
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="sa-id-cell">#2</td>
-                          <td>
-                            <div className="sa-sample-key">
-                              <span className="sa-conv-name">conv-2</span>
-                            </div>
-                            <div className="sa-sample-content">Hệ số góc của đường thẳng là gì? Khi x tăng 1 đơn vị mà y thay đổi bao nhiêu đơn vị, em nghĩ đại lượng nào đang có là góc dốc của đường thẳng đó?</div>
-                          </td>
-                          <td><span className="sa-unassigned-tag">Unassigned</span></td>
-                        </tr>
+                        {isFetchingDashboard ? (
+                          <tr><td colSpan={3} style={{textAlign:'center', padding: '20px'}}><Loader2 size={16} className="animate-spin inline mr-2" /> Loading...</td></tr>
+                        ) : assignmentSamples && assignmentSamples.length > 0 ? (
+                          assignmentSamples.slice((samplesPage - 1) * samplesPerPage, samplesPage * samplesPerPage).map((s, idx) => (
+                            <tr key={idx}>
+                              <td className="sa-id-cell">#{s.sampleIndex}</td>
+                              <td>
+                                <div className="sa-sample-key">
+                                  <span className="sa-conv-name">{s.sampleKey}</span>
+                                  {s.hasConflict && <span className="sa-conflict-badge">⊘ Conflict</span>}
+                                </div>
+                                <div className="sa-sample-content">{truncateText(s.preview, 100)}</div>
+                                <div className="sa-sample-meta">
+                                  {s.lowestAgreementScore !== null && `IAA ${s.lowestAgreementScore?.toFixed(2)}`}
+                                  {s.pendingAdjudicationCount ? ` · ${s.pendingAdjudicationCount} pending adjudication` : ''}
+                                </div>
+                              </td>
+                              <td>
+                                {s.assignees && s.assignees.length > 0 ? (
+                                  s.assignees.map((u: any, j: number) => (
+                                    <React.Fragment key={j}>
+                                      <div className="sa-assignee">{u.name || u.username}</div>
+                                      <div className="sa-assignee-email">@{u.username}</div>
+                                    </React.Fragment>
+                                  ))
+                                ) : (
+                                  <span className="sa-unassigned-tag">Unassigned</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr><td colSpan={3} style={{textAlign:'center', padding: '20px', color: '#64748b'}}>No samples available</td></tr>
+                        )}
                       </tbody>
                     </table>
                   </div>
+
+
                 </div>
               </div>
 
@@ -939,12 +1310,17 @@ export const Stage3Labeling: React.FC = () => {
               <div className="sa-right">
                 <div className="sa-section-card">
                   <h4 className="sa-section-title"><FileText size={14} /> Realtime Productivity</h4>
-                  <div className="sa-productivity-info">
-                    <span className="sa-prod-name">hoang22</span>
-                    <span className="sa-prod-detail">Last active: 0 seconds ago</span>
-                    <span className="sa-prod-detail">0/30 pages · 05:0h samples</span>
-                    <span className="sa-prod-detail">0.00s/page (avg. 0 samples)</span>
-                  </div>
+                  {assignmentDashboard?.users && assignmentDashboard.users.length > 0 ? (
+                    assignmentDashboard.users.map((u: any, i: number) => (
+                      <div className="sa-productivity-info" key={i} style={{marginBottom: '12px'}}>
+                        <span className="sa-prod-name">{u.user.name || u.user.username}</span>
+                        <span className="sa-prod-detail">Last active: {u.latestActivityAt ? new Date(u.latestActivityAt).toLocaleString() : 'N/A'}</span>
+                        <span className="sa-prod-detail">{u.completedTargets}/{u.totalTargets} targets · {u.labelsPerHour.toFixed(1)} labels/h</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="sa-productivity-info" style={{color: '#64748b'}}>No productivity data.</div>
+                  )}
                 </div>
 
                 <div className="sa-section-card sa-conflict-card">
@@ -1161,7 +1537,7 @@ export const Stage3Labeling: React.FC = () => {
                     <button className="ia-cl-remove"><X size={14} /></button>
                   </div>
                   <div className="ia-label-actions-row">
-                    <button className="ia-add-label-btn">Add Label</button>
+                    <button className="ia-add-label-btn">Thêm Nhãn</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
                       <option>Gemini</option>
@@ -1355,6 +1731,50 @@ export const Stage3Labeling: React.FC = () => {
                     <button className="ia-soft-add-btn">Add</button>
                   </div>
                 </div>
+
+                {/* Result Pipeline & Export */}
+                <div className="ia-section-card" style={{ marginTop: '16px', borderTop: '2px dashed #e2e8f0', paddingTop: '16px' }}>
+                  <h5 className="ia-section-subtitle" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Download size={14} /> KẾT QUẢ & EXPORT
+                  </h5>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px', lineHeight: '1.5' }}>
+                    Export kết quả gán nhãn ra file hoặc chuyển tiếp sang giai đoạn Training/Evaluation.
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button 
+                      style={{ padding: '8px 12px', borderRadius: '6px', background: '#3b82f6', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 500, fontSize: '13px' }}
+                      onClick={async () => {
+                        try {
+                          const versionId = localStorage.getItem('current_version_id');
+                          if (!versionId) return alert('Không tìm thấy Version ID');
+                          
+                          // Demo
+                          alert(`Đang lấy dữ liệu từ /dataprep/export/${versionId} và tải xuống...`);
+                        } catch (err) {
+                          console.error(err);
+                        }
+                      }}
+                    >
+                      <Download size={16} />
+                      Export Data (JSON)
+                    </button>
+                    
+                    <button 
+                      style={{ padding: '8px 12px', borderRadius: '6px', background: '#10b981', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 500, fontSize: '13px' }}
+                      onClick={() => {
+                        if(window.confirm('Bạn có chắc chắn muốn đẩy lô dữ liệu này sang Stage 4 (Training/Evaluation)?')) {
+                          alert('Đã đẩy dữ liệu thành công!');
+                          setCurrentStage(4);
+                        }
+                      }}
+                    >
+                      <ArrowRight size={16} />
+                      Đẩy sang Stage 4
+                    </button>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
@@ -1546,162 +1966,333 @@ export const Stage3Labeling: React.FC = () => {
   return (
     <>
       {renderedContent}
-            {/* Compare AI Labels Modal */}
-      {showCompareLabels && (
-        <div className="compare-modal-overlay" onClick={() => setShowCompareLabels(false)}>
-          <div className="cl-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="cl-header">
-              <div>
-                <h2>Compare AI Labels</h2>
-                <p>Select two AI providers to compare their auto-labeling results.</p>
-              </div>
-              <button className="cl-close" onClick={() => setShowCompareLabels(false)}><X size={18} /></button>
-            </div>
 
-            <div className="cl-providers">
-              <span className="cl-prov-label">Provider A:</span>
-              <select className="cl-prov-select"><option>Gemini</option><option>Deepseek</option></select>
-              <span className="cl-prov-arrow">›</span>
-              <span className="cl-prov-label">Provider B:</span>
-              <select className="cl-prov-select"><option>Deepseek</option><option>Gemini</option></select>
-            </div>
 
-            <div className="cl-stats">
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-green">100%</span>
-                <span className="cl-stat-label">AGREEMENT RATE</span>
-              </div>
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-blue">120</span>
-                <span className="cl-stat-label">MATCHES</span>
-              </div>
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-red">0</span>
-                <span className="cl-stat-label">MISMATCHES</span>
-              </div>
-            </div>
-
-            <div className="cl-table-wrap">
-              <table className="cl-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '40%' }}>CONVERSATION</th>
-                    <th style={{ width: '20%' }}>GEMINI LABEL</th>
-                    <th style={{ width: '20%' }}>DEEPSEEK LABEL</th>
-                    <th style={{ width: '20%' }}>STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { user: 'Em không hiểu chuyển động thẳng đều là gì.', asst: 'Không sao, mình đi từng bước nhé. Em thử nghĩ xem: khi nói một vật chuyển động, điều đó có nghĩa là gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Là vật đang đi chuyển a.', asst: 'Đúng rồi. Bây giờ em thử nghĩ thêm: nếu một xe ô tô chạy trên đường thẳng và luôn giữ nguyên tốc độ, em nghĩ là gọi đó là loại chuyển động gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Chuyển động đều a?', asst: 'Rất gần rồi! Đầy đủ hơn là \'chuyển động thẳng đều\'. Em thử đoán xem \'thẳng\' ở đây có nghĩa là gì trong chuyển động?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Công thức x = x0 + vt có nghĩa là gì a?', asst: 'Câu hỏi hay. Trước khi giải thích, em đoán xem \'x\' và \'x0\' biểu diễn điều gì?', gLabel: 'PHYSICAL', gConf: 98, dLabel: 'MATH', dConf: 90, match: false },
-                    { user: 'x là vị trí còn x0 là vị trí ban đầu a?', asst: 'Đúng rồi! Vậy vt là gì? Nếu v là vận tốc và t là thời gian, tích v nhân t sẽ cho ta biết điều gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Tính đạo hàm của hàm số f(x) = x² - 3x + 2.', asst: 'f\'(x) = 2x - 3. Áp dụng quy tắc đạo hàm lũy thừa.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 97, match: true },
-                    { user: 'Tính tích phân ∫x² dx.', asst: '∫x² dx = x³/3 + C. Áp dụng công thức ∫xⁿ dx = xⁿ⁺¹/(n+1) + C.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 96, match: true },
-                    { user: 'Giải hệ phương trình: x + y = 5 và x - y = 1.', asst: 'Cộng hai phương trình: 2x = 6 → x = 3, y = 2.', gLabel: 'MATH', gConf: 99, dLabel: 'MATH', dConf: 95, match: true },
-                    { user: 'Tính xác suất để tung đồng xu 3 lần ra đúng 2 mặt ngửa.', asst: 'P(X=2) = C(3,2) · (1/2)² · (1/2)¹ = 3/8.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 94, match: true },
-                  ].map((row, i) => (
-                    <tr key={i}>
-                      <td>
-                        <div className="cl-conv-user">{row.user}</div>
-                        <div className="cl-conv-asst">{row.asst}</div>
-                      </td>
-                      <td><span className={`cl-pill cl-pill-${row.gLabel.toLowerCase()}`}>{row.gLabel} ({row.gConf}%)</span></td>
-                      <td><span className={`cl-pill cl-pill-${row.dLabel.toLowerCase()}`}>{row.dLabel} ({row.dConf}%)</span></td>
-                      <td><span className={`cl-status ${row.match ? 'cl-match' : 'cl-mismatch'}`}>{row.match ? 'Match' : 'Mismatch'}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Labeling Task Modal */}
+      {/* Create Labeling Task Drawer */}
       {showCreateTaskModal && (
-        <div className="compare-modal-overlay" onClick={() => setShowCreateTaskModal(false)}>
-          <div className="ct-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="ct-header">
-              <h2>Create Labeling Task</h2>
-              <p>Divide unassigned samples into a new task. (Unassigned samples left: 4)</p>
+        <div className="ct-drawer-overlay" onClick={() => setShowCreateTaskModal(false)}>
+          <div className="ct-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="ct-drawer-header" style={{ flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                <div>
+                  <h2>{drawerStep === 1 ? 'Bước 1: Chia Lô (Batching)' : 'Bước 2: Phân công Nhân viên (Assigning)'}</h2>
+                  <p>{drawerStep === 1 ? 'Chọn hoặc tự động cắt các mẫu thành các lô dữ liệu.' : 'Giao các Lô vừa tạo cho Nhân viên phụ trách.'}</p>
+                </div>
+                <button className="ct-drawer-close" onClick={() => setShowCreateTaskModal(false)}><X size={20} /></button>
+              </div>
+              {drawerStep === 1 && (
+                <div className="ct-drawer-tabs">
+                  <button 
+                    className={`ct-drawer-tab ${assignActiveTab === 'manual' ? 'active' : ''}`}
+                    onClick={() => setAssignActiveTab('manual')}
+                  >Giao việc Thủ công (Manual)</button>
+                  <button 
+                    className={`ct-drawer-tab ${assignActiveTab === 'auto' ? 'active' : ''}`}
+                    onClick={() => setAssignActiveTab('auto')}
+                  >Chia lô Tự động (Auto-Split)</button>
+                </div>
+              )}
             </div>
 
-            <div className="ct-body">
-              <div className="ct-form-group">
-                <label>Task Name</label>
-                <input type="text" placeholder="e.g. Batch 1 - Math Labeling" className="ct-input" />
-              </div>
-
-              <div className="ct-form-row">
-                <div className="ct-form-group">
-                  <label>Batch Size</label>
-                  <input type="number" defaultValue={30} className="ct-input" />
-                </div>
-                <div className="ct-form-group">
-                  <label>Priority</label>
-                  <select className="ct-select" defaultValue="Medium">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="ct-form-row">
-                <div className="ct-form-group">
-                  <label>Review Mode</label>
-                  <select className="ct-select" defaultValue="Single Review (1 Annotator)">
-                    <option>Single Review (1 Annotator)</option>
-                    <option>Double Review (2 Annotators)</option>
-                    <option>Triple Review (3 Annotators)</option>
-                  </select>
-                </div>
-                <div className="ct-form-group">
-                  <label>Deadline (Optional)</label>
-                  <div className="ct-date-input">
-                    <input type="text" placeholder="dd/mm/yyyy" className="ct-input" />
-                    <Calendar size={14} className="ct-date-icon" />
+            {drawerStep === 1 ? (
+              assignActiveTab === 'manual' ? (
+              <>
+                <div className="ct-drawer-body">
+                  {/* Left Column: Sample Selection */}
+                  <div className="ct-drawer-left">
+                    <div className="ct-drawer-left-header">
+                      <div>
+                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#0f172a' }}>Danh sách Samples</span>
+                        <span style={{ fontSize: '13px', color: '#64748b', marginLeft: '8px' }}>
+                          ({selectedSamplesForBatch.length} đã chọn / {assignmentSamples.length} tổng số)
+                        </span>
+                      </div>
+                      <button 
+                        style={{ fontSize: '13px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+                        onClick={() => {
+                          if (selectedSamplesForBatch.length === assignmentSamples.length) {
+                            setSelectedSamplesForBatch([]);
+                          } else {
+                            setSelectedSamplesForBatch(assignmentSamples.map(s => s.sampleIndex));
+                          }
+                        }}
+                      >
+                        {selectedSamplesForBatch.length === assignmentSamples.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                      </button>
+                    </div>
+                    <div className="ct-drawer-left-content">
+                      {assignmentSamples.map((s, idx) => {
+                        const isSelected = selectedSamplesForBatch.includes(s.sampleIndex);
+                        return (
+                          <div 
+                            key={idx} 
+                            className={`ct-sample-item ${isSelected ? 'selected' : ''}`}
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedSamplesForBatch(prev => prev.filter(id => id !== s.sampleIndex));
+                              } else {
+                                setSelectedSamplesForBatch(prev => [...prev, s.sampleIndex]);
+                              }
+                            }}
+                          >
+                            <input 
+                              type="checkbox" 
+                              className="ct-sample-checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // Handle click on the wrapper
+                            />
+                            <div className="ct-sample-content">
+                              <div className="ct-sample-key">#{s.sampleIndex} - {s.sampleKey}</div>
+                              <div className="ct-sample-text">{truncateText(s.preview, 150)}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="ct-form-group">
-                <label>Assignees</label>
-                <div className="ct-assignees-box">
-                  <label className="ct-checkbox-label">
-                    <input type="checkbox" />
-                    <span><strong>hoang22</strong> (hoangndnhe180790@fpt.edu.vn)</span>
-                  </label>
-                  <label className="ct-checkbox-label">
-                    <input type="checkbox" />
-                    <span><strong>uhhgf</strong> (hoangndhhefff180790@fpt.edu.vn)</span>
-                  </label>
+                <div className="ct-drawer-footer">
+                  <button 
+                    className="ct-btn-cancel" 
+                    style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600 }}
+                    onClick={() => setShowCreateTaskModal(false)}
+                  >
+                    Hủy (Cancel)
+                  </button>
+                  <button 
+                    className="ct-btn-create"
+                    style={{ padding: '10px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                    onClick={handleNextToStep2}
+                  >
+                    Tiếp tục: Phân công <ChevronRight size={16} />
+                  </button>
                 </div>
-              </div>
+              </>
+            ) : (
+              <>
+                <div className="ct-auto-split-container">
+                  <div className="ct-auto-split-top">
+                    <div className="ct-auto-split-config">
+                      <div style={{ display: 'flex', gap: '24px' }}>
+                        <div className="ct-form-group">
+                          <label>Chiến lược chia lô</label>
+                          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="splitMode" 
+                                checked={autoSplitMode === 'by_batch_count'}
+                                onChange={() => setAutoSplitMode('by_batch_count')}
+                              />
+                              Chia đều cho N lô
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                              <input 
+                                type="radio" 
+                                name="splitMode" 
+                                checked={autoSplitMode === 'by_batch_size'}
+                                onChange={() => setAutoSplitMode('by_batch_size')}
+                              />
+                              Chia theo N câu / lô
+                            </label>
+                          </div>
+                        </div>
+                        <div className="ct-form-group" style={{ maxWidth: '120px' }}>
+                          <label>Số N</label>
+                          <input 
+                            type="number" 
+                            className="ct-input" 
+                            value={autoSplitValue}
+                            onChange={(e) => setAutoSplitValue(Number(e.target.value))}
+                            min={1}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="ct-form-group" style={{ maxWidth: '300px' }}>
+                        <label>Tiền tố Tên lô (Prefix)</label>
+                        <input 
+                          type="text" 
+                          className="ct-input" 
+                          value={autoSplitPrefix}
+                          onChange={(e) => setAutoSplitPrefix(e.target.value)}
+                          placeholder="VD: Batch Toán Học"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="ct-auto-split-actions">
+                      <button 
+                        className="ct-btn-create" 
+                        style={{ padding: '10px 20px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600 }}
+                        onClick={handleGenerateAutoSplit}
+                      >
+                        <Sparkles size={14} className="inline mr-2" /> Tạo trước danh sách Lô
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="ct-form-group">
-                <label>Guideline (URL or Instructions)</label>
-                <textarea placeholder="Link to Notion/Google Doc, or short text..." className="ct-textarea"></textarea>
-              </div>
+                  <div className="ct-auto-split-preview">
+                    {autoSplitPreview.length > 0 ? (
+                      <table className="ct-preview-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '80px' }}>STT</th>
+                            <th>Tên Lô (Sẽ tạo)</th>
+                            <th>Số lượng Sample</th>
+                            <th>Mẫu Dữ Liệu (ID)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {autoSplitPreview.map((batch, idx) => (
+                            <tr key={idx}>
+                              <td style={{ fontWeight: 600 }}>{idx + 1}</td>
+                              <td style={{ fontWeight: 600, color: '#3b82f6' }}>{batch.name}</td>
+                              <td>{batch.samples.length} samples</td>
+                              <td style={{ color: '#64748b' }}>
+                                #{batch.samples[0]?.sampleIndex} ... #{batch.samples[batch.samples.length - 1]?.sampleIndex}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+                        <Database size={48} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
+                        <p style={{ fontSize: '15px', fontWeight: 500, color: '#475569', marginBottom: '8px' }}>Chưa có danh sách lô nào được tạo.</p>
+                        <p style={{ fontSize: '13px' }}>Vui lòng cấu hình chiến lược chia lô ở trên và bấm "Tạo trước danh sách Lô" để xem trước.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="ct-drawer-footer">
+                  <button 
+                    className="ct-btn-cancel" 
+                    style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600 }}
+                    onClick={() => setShowCreateTaskModal(false)}
+                  >
+                    Hủy (Cancel)
+                  </button>
+                  <button 
+                    className="ct-btn-create"
+                    style={{ padding: '10px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', opacity: autoSplitPreview.length > 0 ? 1 : 0.5 }}
+                    disabled={autoSplitPreview.length === 0}
+                    onClick={handleNextToStep2}
+                  >
+                    Tiếp tục: Phân công <ChevronRight size={16} />
+                  </button>
+                </div>
+              </>
+            )
+            ) : (
+              /* Step 2: Assigning Staff */
+              <>
+                <div className="ct-wizard-step2">
+                  <div className="ct-wizard-config">
+                    <div className="ct-form-group">
+                      <label>Mức độ ưu tiên (Priority)</label>
+                      <select className="ct-select" defaultValue="Medium">
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </div>
 
-              <div className="ct-form-group">
-                <label className="ct-checkbox-label" style={{ marginTop: '8px' }}>
-                  <input type="checkbox" />
-                  <strong>Tắt gợi ý nhãn từ AI (Disable AI Suggestion)</strong>
-                </label>
-              </div>
-            </div>
 
-            <div className="ct-footer">
-              <button className="ct-btn-cancel" onClick={() => setShowCreateTaskModal(false)}>Cancel</button>
-              <button className="ct-btn-create">Create Task</button>
-            </div>
+                    <div className="ct-form-group">
+                      <label>Hạn chót chung (Deadline)</label>
+                      <div className="ct-date-input">
+                        <input type="date" className="ct-input" />
+                      </div>
+                    </div>
+
+                    <div className="ct-form-group">
+                      <label>Hướng dẫn chi tiết (Guideline)</label>
+                      <textarea placeholder="Link to Notion/Google Doc..." className="ct-textarea"></textarea>
+                    </div>
+
+                    <div className="ct-form-group">
+                      <label className="ct-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input type="checkbox" />
+                        <strong style={{ fontSize: '13px' }}>Tắt gợi ý nhãn từ AI</strong>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="ct-wizard-staff">
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Phân công Lô cho Nhân viên</h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
+                      Click vào các Lô (Batches) bên dưới tên mỗi nhân viên để giao việc cho họ. Một Lô có thể được giao cho nhiều nhân viên.
+                    </p>
+                    <table className="ct-staff-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '250px' }}>Nhân viên</th>
+                          <th>Chọn Lô phụ trách (Click để chọn/bỏ)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shareUsers.length > 0 ? shareUsers.map(user => (
+                          <tr key={user._id}>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontWeight: 600, color: '#0f172a' }}>{user.name || user.username}</span>
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>{user.email}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <div className="ct-batch-pills">
+                                {autoSplitPreview.map(batch => {
+                                  const isAssigned = (staffAssignments[user._id] || []).includes(batch.id);
+                                  return (
+                                    <div 
+                                      key={batch.id} 
+                                      className={`ct-batch-pill ${isAssigned ? 'active' : ''}`}
+                                      onClick={() => toggleStaffBatch(user._id, batch.id)}
+                                    >
+                                      {isAssigned ? <Check size={12} style={{ display: 'inline', marginRight: '4px' }} /> : <Plus size={12} style={{ display: 'inline', marginRight: '4px' }} />}
+                                      {batch.name}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan={2} style={{ textAlign: 'center', color: '#64748b', padding: '30px' }}>Chưa có thành viên nào trong dự án</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="ct-drawer-footer" style={{ justifyContent: 'space-between' }}>
+                  <button 
+                    className="ct-btn-cancel" 
+                    style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                    onClick={() => setDrawerStep(1)}
+                  >
+                    <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} /> Quay lại Bước 1
+                  </button>
+                  <button 
+                    className="ct-btn-create"
+                    style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                    onClick={handleBulkAssign}
+                  >
+                    <Check size={16} /> Hoàn tất & Giao việc
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
     </>
   );
 };
+
+export default Stage3Labeling;

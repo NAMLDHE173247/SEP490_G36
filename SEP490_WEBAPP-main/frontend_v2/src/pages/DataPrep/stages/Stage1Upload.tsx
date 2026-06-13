@@ -42,7 +42,8 @@ export const Stage1Upload: React.FC = () => {
     rawPreviewOpen, setRawPreviewOpen,
     selectedFormat, setSelectedFormat,
     rawPreviewText, sampleOutputText,
-    fileInputRef, handleFileUpload, handleRemoveFile, handleConvert
+    fileInputRef, handleFileUpload, handleRemoveFile, handleConvert,
+    uploadProgress
   } = useDataPrep();
 
   return (
@@ -51,7 +52,7 @@ export const Stage1Upload: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.csv,.jsonl"
+        accept=".json,.csv,.jsonl,.xlsx,.xls,.txt"
         style={{ display: 'none' }}
         onChange={handleFileUpload}
       />
@@ -61,7 +62,12 @@ export const Stage1Upload: React.FC = () => {
         <div className="dataprep-upload-zone" onClick={() => fileInputRef.current?.click()}>
           <Upload size={36} className="upload-icon" />
           <div className="upload-title">Drop your file here, or click to browse</div>
-          <div className="upload-sub">Supports .jsonl, .json, .csv files up to 100MB</div>
+          <div className="upload-sub">Supports .json, .jsonl, .csv, .xlsx, .xls, .txt files up to 100MB</div>
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div style={{ marginTop: '15px', width: '80%', background: '#eee', borderRadius: '4px', height: '10px', overflow: 'hidden' }}>
+              <div style={{ width: `${uploadProgress}%`, background: '#2563eb', height: '100%', transition: 'width 0.2s ease-in-out' }}></div>
+            </div>
+          )}
           <button className="upload-select-btn" type="button">Select File</button>
         </div>
       ) : (

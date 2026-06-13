@@ -4,10 +4,42 @@ import { EvaluationController } from '../../../controllers/evaluationController'
 import { getAuthUserId } from '../../../utils/auth';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { versionService } from './version.service';
+import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
+import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 
 const legacyEvaluationController = new EvaluationController();
 
 export class DataPrepVersionController {
+  async listVersions(req: Request, res: Response): Promise<void> {
+    try {
+      const versions = await DatasetVersion.find().sort({ createdAt: -1 });
+      const versionsWithStats = await Promise.all(versions.map(async (v) => {
+        const tasksCount = await DatasetAssignmentSubmission.countDocuments({ datasetVersionId: v._id });
+        return {
+          id: v._id,
+          projectName: v.projectName,
+          description: v.versionName,
+          status: 'completed',
+          createdAt: v.createdAt,
+          updatedAt: v.updatedAt,
+          stage: 'Labeling (Stage 4)', 
+          conversations: v.totalSamples,
+          messages: 0,
+          author: 'admin',
+          tags: [],
+          accuracy: null,
+          labeling: tasksCount > 0 ? 'in_progress' : 'completed',
+          labelingTasks: tasksCount,
+          labelingTasksDone: 0
+        };
+      }));
+      res.status(200).json({ success: true, data: versionsWithStats });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
   async createVersion(req: Request, res: Response): Promise<void> {
     return legacyEvaluationController.createDatasetVersion(req, res);
   }
@@ -25,6 +57,16 @@ export class DataPrepVersionController {
       }
 
       const { id } = req.params;
+      
+      const activeTasks = await DatasetAssignmentSubmission.countDocuments({ 
+        datasetVersionId: id,
+        status: { $nin: ['approved', 'completed', 'rejected'] } 
+      });
+      if (activeTasks > 0) {
+        res.status(400).json({ error: 'Không thể xóa Version đang có task giao việc hoạt động.' });
+        return;
+      }
+
       const result = await versionService.deleteVersionTree(ownerId, id);
 
       res.json({
@@ -109,6 +151,43 @@ export class DataPrepVersionController {
 
   async deleteSample(req: Request, res: Response): Promise<void> {
     return legacyEvaluationController.deleteDatasetVersionSample(req, res);
+  }
+
+  async exportOriginal(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
+      const data = items.map(item => item.originalData);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename=version_${id}_original.json`);
+      res.send(JSON.stringify(data, null, 2));
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async exportLabeled(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
+      const data = items.map(item => item.processedData || item.originalData);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename=version_${id}_labeled.json`);
+      res.send(JSON.stringify(data, null, 2));
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async clearAllAssignments(req: Request, res: Response): Promise<void> {
+    try {
+      const { id } = req.params;
+      await DatasetAssignmentSubmission.deleteMany({ datasetVersionId: id });
+      await DatasetSampleAssignment.deleteMany({ datasetVersionId: id });
+      res.status(200).json({ success: true, message: 'Đã hủy toàn bộ task giao việc của Version này.' });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   }
 
   private async cloneCheckpoint(

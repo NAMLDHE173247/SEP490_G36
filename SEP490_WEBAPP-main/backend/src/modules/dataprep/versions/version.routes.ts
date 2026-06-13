@@ -4,9 +4,12 @@ import { DataPrepVersionController } from './version.controller';
 const router = express.Router();
 const controller = new DataPrepVersionController();
 
+router.get('/', (req, res) => controller.listVersions(req, res));
 router.post('/', (req, res) => controller.createVersion(req, res));
 router.get('/:id', (req, res) => controller.getVersion(req, res));
 router.delete('/:id', (req, res) => controller.deleteVersion(req, res));
+router.get('/:id/export-original', (req, res) => controller.exportOriginal(req, res));
+router.get('/:id/export-labeled', (req, res) => controller.exportLabeled(req, res));
 router.post('/:id/checkpoints/classification-balance', (req, res) => controller.createClassificationBalanceCheckpoint(req, res));
 router.post('/:id/checkpoints/evaluation-filter', (req, res) => controller.createEvaluationFilterCheckpoint(req, res));
 router.post('/:id/checkpoints/refine-accept', (req, res) => controller.createRefineAcceptCheckpoint(req, res));
@@ -25,6 +28,7 @@ router.get('/:id/assignments/me/status', (req, res) => controller.getMyAssignmen
 router.post('/:id/assignments/me/submit', (req, res) => controller.submitMyAssignment(req, res));
 router.post('/:id/assignments/range', (req, res) => controller.assignRange(req, res));
 router.post('/:id/assignments/users/:userId/approve', (req, res) => controller.approveUserAssignment(req, res));
+router.delete('/:id/assignments/all', (req, res) => controller.clearAllAssignments(req, res));
 router.delete('/:id/assignments/range', (req, res) => controller.clearAssignmentRange(req, res));
 router.delete('/:id/assignments/users/:userId', (req, res) => controller.clearUserAssignments(req, res));
 router.delete('/items/:sampleId', (req, res) => controller.deleteSample(req, res));

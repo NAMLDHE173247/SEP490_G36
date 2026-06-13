@@ -761,6 +761,7 @@ function DataPrepInner() {
   ];
 
   const fileInputRef = useRef(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
@@ -774,10 +775,16 @@ function DataPrepInner() {
           conversations: 0,
           size: '...'
         });
+        setUploadProgress(0);
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        });
 
         setFile({
           fileId: res.fileId,
@@ -1262,7 +1269,7 @@ function DataPrepInner() {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.csv,.jsonl"
+        accept=".json,.csv,.jsonl,.xlsx,.xls,.txt"
         style={{ display: 'none' }}
         onChange={handleFileUpload}
       />
@@ -1272,7 +1279,12 @@ function DataPrepInner() {
         <div className="dataprep-upload-zone" onClick={() => fileInputRef.current?.click()}>
           <Upload size={36} className="upload-icon" />
           <div className="upload-title">Drop your file here, or click to browse</div>
-          <div className="upload-sub">Supports .jsonl, .json, .csv files up to 100MB</div>
+          <div className="upload-sub">Supports .json, .jsonl, .csv, .xlsx, .xls, .txt files up to 100MB</div>
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div style={{ marginTop: '15px', width: '80%', background: '#eee', borderRadius: '4px', height: '10px', overflow: 'hidden' }}>
+              <div style={{ width: `${uploadProgress}%`, background: '#2563eb', height: '100%', transition: 'width 0.2s ease-in-out' }}></div>
+            </div>
+          )}
           <button className="upload-select-btn" type="button">Select File</button>
         </div>
       ) : (
@@ -1569,15 +1581,7 @@ function DataPrepInner() {
                   <option value="15">15</option>
                 </select>
               </div>
-              <div className="toolbar-search">
-                <input
-                  type="text"
-                  className="toolbar-search-input"
-                  placeholder="Search conversations..."
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                />
-              </div>
+
               <div className="toolbar-stats">
                 <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                 <span className="toolbar-stat-tag">{totalMessages} messages</span>
@@ -2272,15 +2276,7 @@ function DataPrepInner() {
                   <button className="toolbar-btn-sm" onClick={expandAll} title="Expand all">Expand All</button>
                   <button className="toolbar-btn-sm" onClick={collapseAll} title="Collapse all">Collapse All</button>
                 </div>
-                <div className="toolbar-search">
-                  <input
-                    type="text"
-                    className="toolbar-search-input"
-                    placeholder="Search conversations..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                  />
-                </div>
+
                 <div className="toolbar-stats">
                   <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                   <span className="toolbar-stat-tag">{totalMessages} messages</span>

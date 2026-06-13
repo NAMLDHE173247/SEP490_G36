@@ -2050,4 +2050,334 @@
   color: #94a3b8;
   font-size: 12px;
 }
+
+/* ============================================
+   Create Task Drawer (70% screen width)
+   ============================================ */
+.ct-drawer-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(2px);
+  z-index: 1000;
+  display: flex;
+  justify-content: flex-end; /* Align right */
+  animation: fadeIn 0.2s ease;
+}
+
+.ct-drawer {
+  background: #f8fafc;
+  width: 70%; /* 70% width */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.ct-drawer-header {
+  padding: 20px 28px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.ct-drawer-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+}
+
+.ct-drawer-header p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+}
+
+.ct-drawer-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+.ct-drawer-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.ct-drawer-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden; /* Two scrollable columns */
+}
+
+.ct-drawer-left {
+  flex: 1;
+  border-right: 1px solid #e2e8f0;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ct-drawer-left-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ct-drawer-left-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+.ct-drawer-right {
+  width: 380px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 24px;
+  gap: 20px;
+}
+
+.ct-sample-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background: #fff;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.ct-sample-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.ct-sample-item.selected {
+  border-color: #3b82f6;
+  background: #f0f9ff;
+}
+
+.ct-sample-checkbox {
+  margin-top: 2px;
+}
+
+.ct-sample-content {
+  flex: 1;
+}
+
+.ct-sample-key {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.ct-sample-text {
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ct-drawer-footer {
+  padding: 20px 24px;
+  background: white;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* ============================================
+   Tabs in Drawer
+   ============================================ */
+.ct-drawer-tabs {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ct-drawer-tab {
+  padding: 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ct-drawer-tab:hover {
+  color: #334155;
+}
+
+.ct-drawer-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+/* ============================================
+   Auto-Split Layout
+   ============================================ */
+.ct-auto-split-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.ct-auto-split-top {
+  padding: 24px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  gap: 24px;
+}
+
+.ct-auto-split-config {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ct-auto-split-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
+.ct-auto-split-preview {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.ct-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.ct-preview-table th, .ct-preview-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.ct-preview-table th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #475569;
+}
+
+.ct-preview-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* ============================================
+   Wizard Step 2 (Assign)
+   ============================================ */
+.ct-wizard-step2 {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.ct-wizard-config {
+  width: 350px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ct-wizard-staff {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.ct-staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+}
+
+.ct-staff-table th, .ct-staff-table td {
+  padding: 16px;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+
+.ct-staff-table th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #475569;
+}
+
+.ct-batch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ct-batch-pill {
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.ct-batch-pill:hover {
+  background: #e2e8f0;
+}
+
+.ct-batch-pill.active {
+  background: #eff6ff;
+  color: #3b82f6;
+  border-color: #bfdbfe;
+}
 
