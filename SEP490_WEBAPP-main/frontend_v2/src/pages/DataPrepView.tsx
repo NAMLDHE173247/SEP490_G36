@@ -740,6 +740,18 @@ function DataPrepInner() {
   ];
   const [currentSubStep6, setCurrentSubStep6] = useState(13);
   const [promptText, setPromptText] = useState('');
+
+  const isStageCompleted = (num: number) => {
+    if (num < currentStage) return true;
+    if (num === 1) return conversationsList && conversationsList.length > 0;
+    if (num === 2) return clusterRan;
+    if (num === 3) return Object.keys(aiGroupLabels).length > 0;
+    if (num === 4) return Object.keys(sepQualityLabels).length > 0 || sepRewriteDecision !== 'ai';
+    if (num === 5) return currentStage > 5;
+    if (num === 6) return promptText && promptText.trim() !== '';
+    return false;
+  };
+
   const [promptName, setPromptName] = useState('Project_27/05_11:11');
   const [promptDesc, setPromptDesc] = useState('Example: Added Socratic method');
   const [selectedVersion, setSelectedVersion] = useState(null);
@@ -1453,17 +1465,6 @@ function DataPrepInner() {
       conv_009: 'fixed',
       conv_010: 'clean',
     };
-
-  const isStageCompleted = (num: number) => {
-    if (num < currentStage) return true;
-    if (num === 1) return conversationsList && conversationsList.length > 0;
-    if (num === 2) return clusterRan;
-    if (num === 3) return Object.keys(aiGroupLabels).length > 0;
-    if (num === 4) return Object.keys(sepQualityLabels).length > 0 || sepRewriteDecision !== 'ai';
-    if (num === 5) return currentStage > 5;
-    if (num === 6) return promptText && promptText.trim() !== '';
-    return false;
-  };
 
     return (
       <>
