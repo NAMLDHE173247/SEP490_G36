@@ -210,7 +210,7 @@ export const Stage3Labeling: React.FC = () => {
       }]);
     } else {
       if (autoSplitPreview.length === 0) {
-        alert('Vui lòng Tạo trước danh sách lô trước khi tiếp tục!');
+        alert('Vui lòng Tạo trước danh sách batch trước khi tiếp tục!');
         return;
       }
     }
@@ -237,7 +237,7 @@ export const Stage3Labeling: React.FC = () => {
     // Check if any assignment is made
     const hasAssignments = Object.values(staffAssignments).some(batches => batches.length > 0);
     if (!hasAssignments) {
-      alert('Vui lòng gán ít nhất 1 Lô cho Nhân viên trước khi hoàn tất!');
+      alert('Vui lòng gán ít nhất 1 Batch cho Nhân viên trước khi hoàn tất!');
       return;
     }
 
@@ -1144,13 +1144,13 @@ export const Stage3Labeling: React.FC = () => {
                 <div className="sa-section-card">
                   <div className="sa-section-header">
                     <div>
-                      <h4>Phân bổ Lô giao việc (Batch)</h4>
-                      <p>Chia nhỏ tập dữ liệu thành các lô (batch) để giao cho nhân sự gán nhãn.</p>
+                      <h4>Phân bổ Batch giao việc</h4>
+                      <p>Chia nhỏ tập dữ liệu thành các batch (batch) để giao cho nhân sự gán nhãn.</p>
                     </div>
                     <button className="sa-create-task-btn" onClick={() => {
                       setSelectedSamplesForBatch([]);
                       setShowCreateTaskModal(true);
-                    }}><Plus size={14} /> Tạo Lô mới</button>
+                    }}><Plus size={14} /> Tạo Batch mới</button>
                   </div>
 
                   <div className="sa-alloc-cards">
@@ -1168,7 +1168,7 @@ export const Stage3Labeling: React.FC = () => {
                     </div>
                   </div>
 
-                  <h5 className="sa-sub-title">Các Lô đang hoạt động (Active Batches)</h5>
+                  <h5 className="sa-sub-title">Các Batch đang hoạt động (Active Batches)</h5>
                   <div className="sa-tasks-table-wrap">
                     <table className="sa-tasks-table">
                       <thead>
@@ -1198,7 +1198,7 @@ export const Stage3Labeling: React.FC = () => {
                             </tr>
                           ))
                         ) : (
-                          <tr><td colSpan={5} style={{textAlign:'center', padding: '20px', color: '#64748b'}}>Không có Lô nào đang hoạt động</td></tr>
+                          <tr><td colSpan={5} style={{textAlign:'center', padding: '20px', color: '#64748b'}}>Không có Batch nào đang hoạt động</td></tr>
                         )}
                       </tbody>
                     </table>
@@ -1763,7 +1763,7 @@ export const Stage3Labeling: React.FC = () => {
                     <button 
                       style={{ padding: '8px 12px', borderRadius: '6px', background: '#10b981', color: 'white', border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 500, fontSize: '13px' }}
                       onClick={() => {
-                        if(window.confirm('Bạn có chắc chắn muốn đẩy lô dữ liệu này sang Stage 4 (Training/Evaluation)?')) {
+                        if(window.confirm('Bạn có chắc chắn muốn đẩy batch dữ liệu này sang Stage 4 (Training/Evaluation)?')) {
                           alert('Đã đẩy dữ liệu thành công!');
                           setCurrentStage(4);
                         }
@@ -1975,8 +1975,8 @@ export const Stage3Labeling: React.FC = () => {
             <div className="ct-drawer-header" style={{ flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                 <div>
-                  <h2>{drawerStep === 1 ? 'Bước 1: Chia Lô (Batching)' : 'Bước 2: Phân công Nhân viên (Assigning)'}</h2>
-                  <p>{drawerStep === 1 ? 'Chọn hoặc tự động cắt các mẫu thành các lô dữ liệu.' : 'Giao các Lô vừa tạo cho Nhân viên phụ trách.'}</p>
+                  <h2>{drawerStep === 1 ? 'Bước 1: Chia Batch (Batching)' : 'Bước 2: Phân công Nhân viên (Assigning)'}</h2>
+                  <p>{drawerStep === 1 ? 'Chọn hoặc tự động cắt các mẫu thành các batch dữ liệu.' : 'Giao các Batch vừa tạo cho Nhân viên phụ trách.'}</p>
                 </div>
                 <button className="ct-drawer-close" onClick={() => setShowCreateTaskModal(false)}><X size={20} /></button>
               </div>
@@ -1989,7 +1989,7 @@ export const Stage3Labeling: React.FC = () => {
                   <button 
                     className={`ct-drawer-tab ${assignActiveTab === 'auto' ? 'active' : ''}`}
                     onClick={() => setAssignActiveTab('auto')}
-                  >Chia lô Tự động (Auto-Split)</button>
+                  >Chia batch Tự động (Auto-Split)</button>
                 </div>
               )}
             </div>
@@ -2076,7 +2076,7 @@ export const Stage3Labeling: React.FC = () => {
                     <div className="ct-auto-split-config">
                       <div style={{ display: 'flex', gap: '24px' }}>
                         <div className="ct-form-group">
-                          <label>Chiến lược chia lô</label>
+                          <label>Chiến lược chia batch</label>
                           <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
                               <input 
@@ -2085,7 +2085,7 @@ export const Stage3Labeling: React.FC = () => {
                                 checked={autoSplitMode === 'by_batch_count'}
                                 onChange={() => setAutoSplitMode('by_batch_count')}
                               />
-                              Chia đều cho N lô
+                              Chia đều cho N batch
                             </label>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
                               <input 
@@ -2094,7 +2094,7 @@ export const Stage3Labeling: React.FC = () => {
                                 checked={autoSplitMode === 'by_batch_size'}
                                 onChange={() => setAutoSplitMode('by_batch_size')}
                               />
-                              Chia theo N câu / lô
+                              Chia theo N câu / batch
                             </label>
                           </div>
                         </div>
@@ -2111,7 +2111,7 @@ export const Stage3Labeling: React.FC = () => {
                       </div>
                       
                       <div className="ct-form-group" style={{ maxWidth: '300px' }}>
-                        <label>Tiền tố Tên lô (Prefix)</label>
+                        <label>Tiền tố Tên batch (Prefix)</label>
                         <input 
                           type="text" 
                           className="ct-input" 
@@ -2128,7 +2128,7 @@ export const Stage3Labeling: React.FC = () => {
                         style={{ padding: '10px 20px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600 }}
                         onClick={handleGenerateAutoSplit}
                       >
-                        <Sparkles size={14} className="inline mr-2" /> Tạo trước danh sách Lô
+                        <Sparkles size={14} className="inline mr-2" /> Tạo trước danh sách Batch
                       </button>
                     </div>
                   </div>
@@ -2139,7 +2139,7 @@ export const Stage3Labeling: React.FC = () => {
                         <thead>
                           <tr>
                             <th style={{ width: '80px' }}>STT</th>
-                            <th>Tên Lô (Sẽ tạo)</th>
+                            <th>Tên Batch (Sẽ tạo)</th>
                             <th>Số lượng Sample</th>
                             <th>Mẫu Dữ Liệu (ID)</th>
                           </tr>
@@ -2160,8 +2160,8 @@ export const Stage3Labeling: React.FC = () => {
                     ) : (
                       <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
                         <Database size={48} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
-                        <p style={{ fontSize: '15px', fontWeight: 500, color: '#475569', marginBottom: '8px' }}>Chưa có danh sách lô nào được tạo.</p>
-                        <p style={{ fontSize: '13px' }}>Vui lòng cấu hình chiến lược chia lô ở trên và bấm "Tạo trước danh sách Lô" để xem trước.</p>
+                        <p style={{ fontSize: '15px', fontWeight: 500, color: '#475569', marginBottom: '8px' }}>Chưa có danh sách batch nào được tạo.</p>
+                        <p style={{ fontSize: '13px' }}>Vui lòng cấu hình chiến lược chia batch ở trên và bấm "Tạo trước danh sách Batch" để xem trước.</p>
                       </div>
                     )}
                   </div>
@@ -2222,15 +2222,15 @@ export const Stage3Labeling: React.FC = () => {
                   </div>
 
                   <div className="ct-wizard-staff">
-                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Phân công Lô cho Nhân viên</h3>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Phân công Batch cho Nhân viên</h3>
                     <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
-                      Click vào các Lô (Batches) bên dưới tên mỗi nhân viên để giao việc cho họ. Một Lô có thể được giao cho nhiều nhân viên.
+                      Click vào các Batch bên dưới tên mỗi nhân viên để giao việc cho họ. Một Batch có thể được giao cho nhiều nhân viên.
                     </p>
                     <table className="ct-staff-table">
                       <thead>
                         <tr>
                           <th style={{ width: '250px' }}>Nhân viên</th>
-                          <th>Chọn Lô phụ trách (Click để chọn/bỏ)</th>
+                          <th>Chọn Batch phụ trách (Click để chọn/bỏ)</th>
                         </tr>
                       </thead>
                       <tbody>

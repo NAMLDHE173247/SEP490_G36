@@ -110,7 +110,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           <div className="al-icon-wrapper"><ClipboardList size={24} /></div>
           <div>
             <h2>Quản lý Task (Theo file dữ liệu)</h2>
-            <p className="al-subtitle">Theo dõi và giám sát tiến độ các Lô (Batch) bên trong từng Task</p>
+            <p className="al-subtitle">Theo dõi và giám sát tiến độ các Batch bên trong từng Task</p>
           </div>
         </div>
       </div>
@@ -121,7 +121,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           <div className="al-stat-icon total"><ClipboardList size={20} /></div>
           <div className="al-stat-info">
             <span className="al-stat-value">{TASKS.length}</span>
-            <span className="al-stat-label">Tổng số Lô</span>
+            <span className="al-stat-label">Tổng số Batch</span>
           </div>
         </div>
         <div className="al-stat-card">
@@ -179,7 +179,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
       {/* Task List */}
       <div className="al-task-list">
         {filtered.length === 0 && (
-          <div className="al-empty"><ClipboardList size={48} /><p>Không tìm thấy lô dữ liệu nào.</p></div>
+          <div className="al-empty"><ClipboardList size={48} /><p>Không tìm thấy batch dữ liệu nào.</p></div>
         )}
 
         {filtered.map((task) => {
@@ -194,7 +194,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                 <div className="al-task-id"><span>{task.id}</span></div>
                 <div className="al-task-title-col">
                   <span className="al-task-title">{task.name}</span>
-                  <span className="al-task-desc">Tổng cộng: {task.totalSamples} samples · {task.batches.length} Lô (Batches)</span>
+                  <span className="al-task-desc">Tổng cộng: {task.totalSamples} samples · {task.batches.length} Batch</span>
                 </div>
 
                 <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>

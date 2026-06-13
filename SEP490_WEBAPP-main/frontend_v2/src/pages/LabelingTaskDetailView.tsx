@@ -104,7 +104,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             </div>
 
             <div className="td-menu-section-title">
-              DANH SÁCH LÔ ({batches.length})
+              DANH SÁCH BATCH ({batches.length})
             </div>
 
             {batches.map(b => (
