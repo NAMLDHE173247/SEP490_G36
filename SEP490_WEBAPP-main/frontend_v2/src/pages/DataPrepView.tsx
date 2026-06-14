@@ -1,6 +1,3 @@
-import { Stage4Labeling } from '../components/dataprep/Stage4Labeling';
-import { Stage5AIJudges } from '../components/dataprep/Stage5AIJudges';
-import { Stage6Finish } from '../components/dataprep/Stage6Finish';
 import React, { useState, useRef } from 'react';
 import { apiService } from '../services/api';
 import {
@@ -20,35 +17,28 @@ import {
   Calendar,
   BarChart2,
   AlertCircle,
-  AlertTriangle,
   Filter,
   Download,
   RefreshCw,
   MessageSquare,
-  HelpCircle,
-  Search,
-  User,
-  Zap,
-  Inbox,
-  Award,
-  Bot,
-  BookOpen,
-  CheckCircle,
-  Pencil,
-  Ban,
-  Info,
-  MousePointer2,
+  HelpCircle
 } from 'lucide-react';
 import '../styles/dataprep.css';
-import { useStage4Data } from '../hooks/useStage4Data';
+import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
+import { Stage1Upload } from './DataPrep/stages/Stage1Upload';
+import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
+import { Stage3Labeling } from './DataPrep/stages/Stage3Labeling';
+import { Stage4TrainEval } from './DataPrep/stages/Stage4TrainEval';
+import { Stage5Evaluation } from './DataPrep/stages/Stage5Evaluation';
+import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Clustering', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 7-12' },
-  { num: 5, label: 'Evaluation', sub: 'Step 11-13' },
-  { num: 6, label: 'Finish', sub: 'Complete' },
+  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
+  { num: 4, label: 'Classification', sub: 'Step 8-11' },
+  { num: 5, label: 'Evaluation', sub: 'Step 12' },
+  { num: 6, label: 'Finish', sub: 'Step 13-15' },
 ];
 
 const SUB_STEPS_STAGE2 = [
@@ -234,54 +224,22 @@ const Tooltip = ({ children, text }) => {
   );
 };
 
-interface DataPrepViewProps {
-  setActiveTab?: (tab: string) => void;
-}
-
-function DataPrepView({ setActiveTab }: DataPrepViewProps) {
-  const [activeVersionId] = useState<string>('60c72b2f9b1d8e25b8888888');
+function DataPrepInner() {
   const {
-    labelingStatus,
-    qualityResult,
-    statistics,
-    results,
-    latestJob,
-    isLoading: isStage4Loading,
-    error: stage4Error,
-    updateIncompleteBucket,
-    runMultiEval,
-    submitReview,
-    adjudicateQuality,
-    adjudicateMultiEvalResult,
-    refreshData,
-  } = useStage4Data(activeVersionId);
+    currentStage, setCurrentStage, currentSubStep, setCurrentSubStep,
+    file, setFile, rawPreviewText, setRawPreviewText,
+    sampleOutputText, setSampleOutputText, projectName, setProjectName,
+    rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList,
+    selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags,
+    cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied,
+    showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab,
+    conversionStats, setConversionStats, isCleaningLoading, setIsCleaningLoading,
+    pendingCleanedList, setPendingCleanedList
+  } = useDataPrep();
 
-  const [currentStage, setCurrentStage] = useState(1);
-  const [currentSubStep, setCurrentSubStep] = useState(1);
-  const [file, setFile] = useState(null);
-  const [rawPreviewText, setRawPreviewText] = useState('');
-  const [sampleOutputText, setSampleOutputText] = useState('');
-  const [projectName, setProjectName] = useState(() => {
-    const today = new Date();
-    const dd = String(today.getDate()).padStart(2, '0');
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const yyyy = today.getFullYear();
-    return `Project Dataset ${dd}/${mm}/${yyyy}`;
-  });
-  const [rawPreviewOpen, setRawPreviewOpen] = useState(false);
-  const [conversationsList, setConversationsList] = useState<any[]>(CONVERSATIONS);
-  const [selectedFormat, setSelectedFormat] = useState('openai');
-  const [removeThinkTags, setRemoveThinkTags] = useState(true);
-  const [cleaningEnabled, setCleaningEnabled] = useState(false);
-  const [cleaningApplied, setCleaningApplied] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [previewTab, setPreviewTab] = useState('before');
-  const [conversionStats, setConversionStats] = useState<any>(null);
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
-  const [isCleaningLoading, setIsCleaningLoading] = useState(false);
-  const [pendingCleanedList, setPendingCleanedList] = useState<any[]>([]);
 
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
@@ -343,6 +301,8 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
   const [stage3Page, setStage3Page] = useState(1);
   const [stage3PerPage, setStage3PerPage] = useState(10);
   const [stage3Search, setStage3Search] = useState('');
+  const [customSubjectLabels, setCustomSubjectLabels] = useState<string[]>([]);
+  const [pendingAiLabels, setPendingAiLabels] = useState<string[]>([]);
   const [showCompareLabels, setShowCompareLabels] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
   const [iaActiveTab, setIaActiveTab] = useState('assignment');
@@ -350,40 +310,12 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
   const [selectedGroup3, setSelectedGroup3] = useState(null);
   const [selectedConv3, setSelectedConv3] = useState(null);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
-  const [stage3Convs, setStage3Convs] = useState<any[]>(() => {
-    const INITIAL_GROUP_DATA = [
-      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
-      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
-      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
-      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' },
-      { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
-      { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
-      { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
-      { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
-      { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
-      { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
-      { id: 12, label: 'Group -1', color: '#e11d48', bg: '#fff1f2' },
-      { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
-      { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
-      { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
-    ];
-    const multipliedConvs = [...CONVERSATIONS, ...CONVERSATIONS, ...CONVERSATIONS, ...CONVERSATIONS];
-    return multipliedConvs.map((conv, idx) => {
-      const gIdx = idx % INITIAL_GROUP_DATA.length;
-      const group = INITIAL_GROUP_DATA[gIdx];
-      return {
-        ...conv,
-        id: `conv_${String(idx + 1).padStart(3, '0')}`,
-        groupId: group.id,
-        groupLabel: group.label,
-        groupColor: group.color,
-        groupBg: group.bg,
-        subGroup: 'A',
-        confidence: Math.floor(Math.random() * 10 + 90),
-      };
-    });
-  });
+  /* AI Labeling state */
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
+  const [isSavingLabels, setIsSavingLabels] = useState(false);
+  const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
+  const [stage3Convs, setStage3Convs] = useState<any[]>([]);
   const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
 
   const cleanVietnameseGreetings = (text: string): string => {
@@ -767,26 +699,16 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
 
   /* Stage 4 state */
   const SUB_STEPS_STAGE4 = [
-    { num: 7, label: 'Awaiting Staff' },
-    { num: 8, label: 'AI Scoring' },
-    { num: 9, label: 'Quality Review' },
-    { num: 10, label: 'Assign Rewrite' },
-    { num: 11, label: 'Review Submissions' },
-    { num: 12, label: 'Dataset Distribution' },
+    { num: 8, label: 'Classification' },
+    { num: 9, label: 'Quality Management' },
+    { num: 10, label: 'Distribution' },
+    { num: 11, label: 'Rewrite' },
   ];
-  const [currentSubStep4, setCurrentSubStep4] = useState(7);
+  const [currentSubStep4, setCurrentSubStep4] = useState(8);
   const [classPage, setClassPage] = useState(1);
   const [qualityTab, setQualityTab] = useState('all');
-  const [rewriteConvIdx, setRewriteConvIdx] = useState(0);
+  const [rewriteConvIdx, setRewriteConvIdx] = useState(8);
   const [rewriteTab, setRewriteTab] = useState('original');
-  const [rewriteTextContent, setRewriteTextContent] = useState('');
-  const [reviewDetailModal, setReviewDetailModal] = useState(null);
-  const [selectedRewriteIds, setSelectedRewriteIds] = useState([]);
-  const [bulkAssignStaff, setBulkAssignStaff] = useState('');
-  const [reassignStaff, setReassignStaff] = useState({});
-  const [confirmedConvs, setconfirmedConvs] = useState({});
-  const [completedRewrites, setCompletedRewrites] = useState({});
-  const [stage4StaffReady, setStage4StaffReady] = useState(false);
 
   /* Stage 5 state */
   const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
@@ -804,47 +726,59 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
   const [sepSelectedDistQuality, setSepSelectedDistQuality] = useState('Rewrite');
   const [sepSelectedError, setSepSelectedError] = useState('');
   const [sepBalanceApplied, setSepBalanceApplied] = useState(false);
-  const [balancedSubject, setBalancedSubject] = useState(false);
-  const [balancedQuality, setBalancedQuality] = useState(false);
-  const [aiScoringDone, setAiScoringDone] = useState(false);
   const [sepRewriteGenerated, setSepRewriteGenerated] = useState(false);
   const [sepRewriteDecision, setSepRewriteDecision] = useState('ai');
   const [sepQualityRatings, setSepQualityRatings] = useState({});
   const [sepQualityLabels, setSepQualityLabels] = useState({});
 
-  /* Stage 5 state (Finish) */
-  const SUB_STEPS_STAGE5 = [
-    { num: 11, label: 'System Prompt' },
-    { num: 12, label: 'Split Guard' },
-    { num: 13, label: 'Export' },
+
+  /* Stage 6 state */
+  const SUB_STEPS_STAGE6 = [
+    { num: 13, label: 'System Prompt' },
+    { num: 14, label: 'Split Guard' },
+    { num: 15, label: 'Export' },
   ];
-  const [currentSubStep5, setCurrentSubStep5] = useState(13);
+  const [currentSubStep6, setCurrentSubStep6] = useState(13);
   const [promptText, setPromptText] = useState('');
+
+  const isStageCompleted = (num: number) => {
+    if (num < currentStage) return true;
+    if (num === 1) return conversationsList && conversationsList.length > 0;
+    if (num === 2) return clusterRan;
+    if (num === 3) return Object.keys(aiGroupLabels).length > 0;
+    if (num === 4) return Object.keys(sepQualityLabels).length > 0 || sepRewriteDecision !== 'ai';
+    if (num === 5) return currentStage > 5;
+    if (num === 6) return promptText && promptText.trim() !== '';
+    return false;
+  };
+
   const [promptName, setPromptName] = useState('Project_27/05_11:11');
   const [promptDesc, setPromptDesc] = useState('Example: Added Socratic method');
   const [selectedVersion, setSelectedVersion] = useState(null);
-  const [sampleQuestion, setSampleQuestion] = useState('HÃ£y giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai sau Ä‘Ã¢y: xÂ² - 5x + 6 = 0');
+  const [sampleQuestion, setSampleQuestion] = useState('Hãy giải phương trình bậc hai sau đây: x² - 5x + 6 = 0');
   const [trialResponse, setTrialResponse] = useState('');
   const PROMPT_VERSIONS = [
-    { id: 1, name: 'Project 27/05 09:30', desc: 'Printitial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
+    { id: 1, name: 'Project 27/05 09:30', desc: 'Initial baseline prompt', date: '2026-05-27 09:30', content: 'You are a Socratic tutor. Guide students through questions without giving direct answers.' },
     { id: 2, name: 'Project_27/05_10:15', desc: 'Added encouragement phrases', date: '2026-05-27 10:15', content: 'You are a Socratic tutor. Guide students through questions. Use encouraging phrases like "Great thinking!" and "You\'re on the right track!"' },
     { id: 3, name: 'Project 27/05 11:11', desc: 'Added Socratic method', date: '2026-05-27 11:11', content: 'You are a Socratic tutor specializing in STEM education. Always ask guiding questions. Never give direct answers. Encourage step-by-step reasoning.' },
   ];
   const [exportPage, setExportPage] = useState(1);
   const [cloudProvider, setCloudProvider] = useState('gcloud');
   const EXPORT_ROWS = [
-    { user: 'HÃ£y giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai sau Ä‘Ã¢y: x^2 - 5x + 6 = 0', assistant: 'Äá»ƒ giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai nÃ y, mÃ¬nh sáº½ há»i má»™t sá»‘ cÃ¢u há»i...' },
-    { user: 'Giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ chá»©a tham sá»‘ m', assistant: 'Má»‘i giÃ¡ trá»‹ cá»§a tham sá»‘ báº­c hai nhÆ° tháº¿ nÃ o vá»›i thi dÃ¹ng chÆ°a cÃ³ má»™t...' },
-    { user: 'CÃ¡ch tÃ­nh biá»‡t thá»©c delta vÃ  delta pháº©y cá»§a phÆ°Æ¡ng trÃ¬nh báº­c hai', assistant: 'Biá»‡t thá»©c Delta Ä‘Æ°á»£c tÃ­nh báº±ng cÃ´ng thá»©c b^2 - 4ac...' },
-    { user: 'PhÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ hai nghiá»‡m phÃ¢n biá»‡t khi nÃ o?', assistant: 'Äá»ƒ hiá»ƒu ká»¹ hÆ¡n phÆ°Æ¡ng trÃ¬nh cÃ³ hai nghiá»‡m phÃ¢n biá»‡t, Ä‘iá»u nÃ y cÃ³ Ã½...' },
-    { user: 'Giáº£i phÆ°Æ¡ng trÃ¬nh báº­c hai cÃ³ chá»©a tham sá»‘ m', assistant: 'Má»‘i giÃ¡ trá»‹ cá»§a tham sá»‘ báº­c hai nhÆ° tháº¿ nÃ o vá»›i thi dÃ¹ng chÆ°a cÃ³ má»™t...' },
+    { user: 'Hãy giải phương trình bậc hai sau đây: x^2 - 5x + 6 = 0', assistant: 'Để giải phương trình bậc hai này, mình sẽ hỏi một số câu hỏi...' },
+    { user: 'Giải phương trình bậc hai có chứa tham số m', assistant: 'Mối giá trị của tham số bậc hai như thế nào với thi dùng chưa có một...' },
+    { user: 'Cách tính biệt thức delta và delta phẩy của phương trình bậc hai', assistant: 'Biệt thức Delta được tính bằng công thức b^2 - 4ac...' },
+    { user: 'Phương trình bậc hai có hai nghiệm phân biệt khi nào?', assistant: 'Để hiểu kỹ hơn phương trình có hai nghiệm phân biệt, điều này có ý...' },
+    { user: 'Giải phương trình bậc hai có chứa tham số m', assistant: 'Mối giá trị của tham số bậc hai như thế nào với thi dùng chưa có một...' },
   ];
 
   const fileInputRef = useRef(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
+      localStorage.removeItem('current_version_id');
       try {
         setFile({
           name: uploaded.name,
@@ -853,10 +787,16 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
           conversations: 0,
           size: '...'
         });
+        setUploadProgress(0);
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+          if (progressEvent.total) {
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percentCompleted);
+          }
+        });
 
         setFile({
           fileId: res.fileId,
@@ -1011,21 +951,15 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
 
       // Cập nhật cả danh sách Stage 3
       setStage3Convs(mapped.map((c, idx) => {
-        const INITIAL_GROUP_DATA = [
-          { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
-          { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
-          { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
-          { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-          { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
-        ];
-        const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+        const gId = (idx % 15) + 1;
         return {
           ...c,
-          groupId: group.id,
-          groupLabel: group.label,
-          groupColor: group.color,
-          groupBg: group.bg,
-          confidence: Math.floor(Math.random() * 10 + 90)
+          groupId: gId,
+          groupLabel: '',
+          groupColor: '#64748b',
+          groupBg: '#f8fafc',
+          subGroup: 'A',
+          confidence: 0
         };
       }));
 
@@ -1233,10 +1167,11 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
           return {
             ...c,
             groupId: groupId,
-            groupLabel: groupId === -1 ? 'Group -1' : `Group ${groupId}`,
+            groupLabel: '',
             // assign random color or keep existing logic
             groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
             groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            subGroup: c.subGroup || 'A',
             confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
           };
         });
@@ -1250,34 +1185,6 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
     } finally {
       setIsClustering(false);
     }
-  };
-
-  const handleStartScoring = async () => {
-    const selectedModels = Object.keys(judgeModels).filter(k => judgeModels[k]);
-    if (selectedModels.length === 0) {
-      alert('Please select at least 1 AI Judge model.');
-      return;
-    }
-    try {
-      setSepRunningEval(true);
-      await runMultiEval(selectedModels, 'No Context');
-    } catch (err: any) {
-      alert(err.message || 'Failed to start scoring');
-    } finally {
-      setSepRunningEval(false);
-    }
-  };
-
-  const handleAdjudicateQuality = async (sampleId: string, finalClassification: any, note?: string) => {
-    try {
-      await adjudicateQuality({ sampleId, finalClassification, note });
-    } catch (err: any) {
-      alert(err.message || 'Failed to adjudicate quality');
-    }
-  };
-
-  const handleExportDataset = () => {
-    window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/dataprep/export/${activeVersionId}`, '_blank');
   };
 
   const handleRemoveNoise = () => {
@@ -1374,7 +1281,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.csv,.jsonl"
+        accept=".json,.csv,.jsonl,.xlsx,.xls,.txt"
         style={{ display: 'none' }}
         onChange={handleFileUpload}
       />
@@ -1384,7 +1291,12 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
         <div className="dataprep-upload-zone" onClick={() => fileInputRef.current?.click()}>
           <Upload size={36} className="upload-icon" />
           <div className="upload-title">Drop your file here, or click to browse</div>
-          <div className="upload-sub">Supports .jsonl, .json, .csv files up to 100MB</div>
+          <div className="upload-sub">Supports .json, .jsonl, .csv, .xlsx, .xls, .txt files up to 100MB</div>
+          {uploadProgress > 0 && uploadProgress < 100 && (
+            <div style={{ marginTop: '15px', width: '80%', background: '#eee', borderRadius: '4px', height: '10px', overflow: 'hidden' }}>
+              <div style={{ width: `${uploadProgress}%`, background: '#2563eb', height: '100%', transition: 'width 0.2s ease-in-out' }}></div>
+            </div>
+          )}
           <button className="upload-select-btn" type="button">Select File</button>
         </div>
       ) : (
@@ -1395,20 +1307,20 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
               <FileText size={24} />
             </div>
             <div className="file-details">
-              <div className="file-name" style={{ fontWeight: '700', color: '#1e293b' }}>{file.name}</div>
-              <div className="file-meta-list" style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '6px' }}>
-                <div className="file-meta-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
-                  <MessageSquare size={14} color="#6366f1" />
-                  {file.messages} messages
+              <div className="file-name">{file.name}</div>
+              <div className="file-meta-list">
+                <div className="file-meta-item">
+                  <span className="meta-emoji">📋</span>
+                  {file.messages} tin nhắn
                 </div>
-                <span className="meta-dot" style={{ color: '#cbd5e1' }}>•</span>
-                <div className="file-meta-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
-                  <Bot size={14} color="#10b981" />
-                  {file.conversations} conversations
+                <span className="meta-dot">•</span>
+                <div className="file-meta-item">
+                  <span className="meta-emoji">💬</span>
+                  {file.conversations} hội thoại
                 </div>
-                <span className="meta-dot" style={{ color: '#cbd5e1' }}>•</span>
-                <div className="file-meta-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '13px', fontWeight: '500' }}>
-                  <Inbox size={14} color="#f59e0b" />
+                <span className="meta-dot">•</span>
+                <div className="file-meta-item">
+                  <span className="meta-emoji">📦</span>
                   {file.size}
                 </div>
               </div>
@@ -1681,15 +1593,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                   <option value="15">15</option>
                 </select>
               </div>
-              <div className="toolbar-search">
-                <input
-                  type="text"
-                  className="toolbar-search-input"
-                  placeholder="Search conversations..."
-                  value={searchQuery}
-                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                />
-              </div>
+
               <div className="toolbar-stats">
                 <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                 <span className="toolbar-stat-tag">{totalMessages} messages</span>
@@ -1700,8 +1604,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
               <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
-                    <th style={{ width: '10%', textAlign: 'center' }}>Conv ID</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>Conv ID</th>
                     <th style={{ width: '3%', textAlign: 'center' }}>#</th>
                     <th style={{ width: '30%' }}>User</th>
                     <th style={{ width: '43%' }}>Assistant</th>
@@ -1711,7 +1614,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                 <tbody>
                   {pageConvs.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                         No conversations match your search.
                       </td>
                     </tr>
@@ -1726,9 +1629,8 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                         key={conv.id}
                         className={`conv-row conv-first conv-last ${groupClass} conv-clickable`}
                       >
-                        <td className="col-conv-num-cell">{convGlobalIdx}</td>
                         <td className="col-conv-id-cell">
-                          <span className="conv-id-badge">{conv.id}</span>
+                          <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} messages</span>
                           {cleaningApplied && (
                             <span className={`conv-status-badge badge-${status}`}>
@@ -2166,21 +2068,15 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                       if (pendingCleanedList.length > 0) {
                         setConversationsList(pendingCleanedList);
                         setStage3Convs(pendingCleanedList.map((c, idx) => {
-                          const INITIAL_GROUP_DATA = [
-                            { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
-                            { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
-                            { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
-                            { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-                            { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' }
-                          ];
-                          const group = INITIAL_GROUP_DATA[idx % INITIAL_GROUP_DATA.length];
+                          const gId = (idx % 15) + 1;
                           return {
                             ...c,
-                            groupId: group.id,
-                            groupLabel: group.label,
-                            groupColor: group.color,
-                            groupBg: group.bg,
-                            confidence: Math.floor(Math.random() * 10 + 90)
+                            groupId: gId,
+                            groupLabel: '',
+                            groupColor: '#64748b',
+                            groupBg: '#f8fafc',
+                            subGroup: c.subGroup || 'A',
+                            confidence: 0
                           };
                         }));
                       }
@@ -2392,15 +2288,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                   <button className="toolbar-btn-sm" onClick={expandAll} title="Expand all">Expand All</button>
                   <button className="toolbar-btn-sm" onClick={collapseAll} title="Collapse all">Collapse All</button>
                 </div>
-                <div className="toolbar-search">
-                  <input
-                    type="text"
-                    className="toolbar-search-input"
-                    placeholder="Search conversations..."
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
-                  />
-                </div>
+
                 <div className="toolbar-stats">
                   <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                   <span className="toolbar-stat-tag">{totalMessages} messages</span>
@@ -2693,29 +2581,44 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
   ];
 
   const renderStage3 = () => {
-    /* Group data with distinct colors */
-    const INITIAL_GROUP_DATA = [
-      { id: 1, label: 'MATH', color: '#6366f1', bg: '#eef2ff' },
-      { id: 2, label: 'CODING', color: '#0891b2', bg: '#ecfeff' },
-      { id: 3, label: 'PHYSICS', color: '#059669', bg: '#ecfdf5' },
-      { id: 4, label: 'MATH', color: '#d97706', bg: '#fffbeb' },
-      { id: 5, label: 'Group -1', color: '#dc2626', bg: '#fef2f2' },
-      { id: 6, label: 'PHYSICS', color: '#7c3aed', bg: '#f5f3ff' },
-      { id: 7, label: 'CODING', color: '#2563eb', bg: '#eff6ff' },
-      { id: 8, label: 'HISTORY', color: '#9333ea', bg: '#faf5ff' },
-      { id: 9, label: 'MATH', color: '#ea580c', bg: '#fff7ed' },
-      { id: 10, label: 'BIOLOGY', color: '#16a34a', bg: '#f0fdf4' },
-      { id: 11, label: 'CODING', color: '#0284c7', bg: '#f0f9ff' },
-      { id: 12, label: 'Group -1', color: '#e11d48', bg: '#fff1f2' },
-      { id: 13, label: 'PHYSICS', color: '#4f46e5', bg: '#eef2ff' },
-      { id: 14, label: 'CHEMISTRY', color: '#c026d3', bg: '#fdf4ff' },
-      { id: 15, label: 'MATH', color: '#b45309', bg: '#fef3c7' },
+    /* Group data — tự sinh từ dữ liệu thực tế, chỉ hiện nhóm có conversation */
+    const GROUP_COLORS = [
+      { color: '#6366f1', bg: '#eef2ff' },
+      { color: '#0891b2', bg: '#ecfeff' },
+      { color: '#059669', bg: '#ecfdf5' },
+      { color: '#d97706', bg: '#fffbeb' },
+      { color: '#dc2626', bg: '#fef2f2' },
+      { color: '#7c3aed', bg: '#f5f3ff' },
+      { color: '#2563eb', bg: '#eff6ff' },
+      { color: '#9333ea', bg: '#faf5ff' },
+      { color: '#ea580c', bg: '#fff7ed' },
+      { color: '#16a34a', bg: '#f0fdf4' },
+      { color: '#0284c7', bg: '#f0f9ff' },
+      { color: '#e11d48', bg: '#fff1f2' },
+      { color: '#4f46e5', bg: '#eef2ff' },
+      { color: '#c026d3', bg: '#fdf4ff' },
+      { color: '#b45309', bg: '#fef3c7' },
     ];
 
-    const GROUP_DATA = INITIAL_GROUP_DATA.map(g => ({
-      ...g,
-      count: stage3Convs.filter(c => c.groupId === g.id).length
-    }));
+    // Đếm conversations theo groupId, chỉ lấy nhóm có ít nhất 1 conversation
+    const groupCountMap = new Map<number, number>();
+    stage3Convs.forEach(c => {
+      groupCountMap.set(c.groupId, (groupCountMap.get(c.groupId) || 0) + 1);
+    });
+
+    const GROUP_DATA = Array.from(groupCountMap.entries())
+      .sort((a, b) => a[0] - b[0]) // sắp xếp theo groupId
+      .map(([groupId, count]) => {
+        const colorIdx = groupId === -1 ? 4 : (groupId - 1) % GROUP_COLORS.length;
+        const palette = GROUP_COLORS[colorIdx >= 0 ? colorIdx : 0];
+        return {
+          id: groupId,
+          label: groupId === -1 ? 'NOISE' : (aiGroupLabels[groupId] || ''),
+          color: groupId === -1 ? '#dc2626' : palette.color,
+          bg: groupId === -1 ? '#fef2f2' : palette.bg,
+          count,
+        };
+      });
 
     const allConvRows = stage3Convs;
 
@@ -2777,7 +2680,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                   <option value="CODING">Lập trình (CODING)</option>
                   <option value="PHYSICS">Vật lý (PHYSICS)</option>
                 </select>
-                <button style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: '#0ea5e9', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', transition: 'background 0.15s' }}>
                   Apply Bulk Label
                 </button>
                 <div style={{ flex: 1 }}></div>
@@ -2857,10 +2760,9 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                           }}
                         />
                       </th>
-                      <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
-                      <th style={{ width: '10%', textAlign: 'center' }}>Conv ID</th>
-                      <th style={{ width: '27%' }}>User</th>
-                      <th style={{ width: '35%' }}>Assistant</th>
+                      <th style={{ width: '15%', textAlign: 'center' }}>Conv ID</th>
+                      <th style={{ width: '25%' }}>User</th>
+                      <th style={{ width: '36%' }}>Assistant</th>
                       <th style={{ width: '12%', textAlign: 'center' }}>Subject Label</th>
                       <th style={{ width: '8%', textAlign: 'center' }}></th>
                     </tr>
@@ -2868,7 +2770,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                   <tbody>
                     {stage3PageRows.length === 0 && (
                       <tr>
-                        <td colSpan={7} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                        <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                           No conversations in this group.
                         </td>
                       </tr>
@@ -2888,39 +2790,38 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                             }}
                           />
                         </td>
-                        <td className="col-conv-num-cell" style={{ verticalAlign: 'middle' }}>{(stage3Page - 1) * stage3PerPage + idx + 1}</td>
                         <td className="col-conv-id-cell">
-                          <span className="conv-id-badge">{conv.id}</span>
+                          <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
                           <span className="conv-msg-count">{conv.messages.length} msgs</span>
                         </td>
                         <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
                           <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {conv.messages.length === 1 ? (
                               /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
-                              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                              <div style={{ fontSize: '15px', color: '#1e293b', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
+                                <span style={{ marginRight: '6px', fontSize: '14px' }}>📌</span>
                                 {highlightSearch(conv.messages[0].user, stage3Search)}
                               </div>
                             ) : (
                               /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
                               <>
-                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
-                                  <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
-                                  <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '14px' }}>📌 Chủ đề:</span>
+                                  <span style={{ fontSize: '15px', color: '#4f46e5' }}>
                                     {getConversationTopic(conv.messages)}
                                   </span>
                                 </div>
-                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
                                   {conv.messages.slice(0, 3).map((msg, idx) => (
-                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
-                                      <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
-                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                    <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
+                                      <span style={{ fontWeight: '700', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ color: '#1e293b', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
                                         {highlightSearch(truncateText(msg.user, 150), stage3Search)}
                                       </span>
                                     </div>
                                   ))}
                                   {conv.messages.length > 3 && (
-                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic' }}>
                                       + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
                                     </div>
                                   )}
@@ -2933,30 +2834,30 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                           <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             {conv.messages.length === 1 ? (
                               /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
-                              <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                              <div style={{ fontSize: '15px', color: '#334155', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 500 }}>
+                                <span style={{ marginRight: '6px', fontSize: '14px' }}>💡</span>
                                 {highlightSearch(conv.messages[0].assistant, stage3Search)}
                               </div>
                             ) : (
                               /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
                               <>
-                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
-                                  <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
-                                  <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
+                                <div className="conv-topic-title" style={{ fontWeight: '700', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'normal' }}>
+                                  <span style={{ fontSize: '14px' }}>💡 Phản hồi:</span>
+                                  <span style={{ fontSize: '15px', color: '#0891b2' }}>
                                     {getAssistantSummary(conv.messages)}
                                   </span>
                                 </div>
-                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
                                   {conv.messages.slice(0, 3).map((msg, idx) => (
-                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
-                                      <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
-                                      <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                    <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
+                                      <span style={{ fontWeight: '700', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
                                         {highlightSearch(truncateText(msg.assistant, 150), stage3Search)}
                                       </span>
                                     </div>
                                   ))}
                                   {conv.messages.length > 3 && (
-                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    <div style={{ fontSize: '12.5px', color: '#94a3b8', fontStyle: 'italic' }}>
                                       + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
                                     </div>
                                   )}
@@ -2980,15 +2881,27 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                               minWidth: '90px',
                               cursor: 'pointer'
                             }}
-                            defaultValue={conv.groupLabel}
+                            value={aiGroupLabels[conv.groupId] || conv.groupLabel || ''}
+                            onChange={e => {
+                              const newLabel = e.target.value;
+                              setAiGroupLabels(prev => ({ ...prev, [conv.groupId]: newLabel }));
+                              setStage3Convs(prev => prev.map(c =>
+                                c.groupId === conv.groupId ? { ...c, groupLabel: newLabel } : c
+                              ));
+                            }}
                           >
+                            <option value="">-- Select --</option>
                             <option value="MATH">MATH</option>
                             <option value="CODING">CODING</option>
                             <option value="PHYSICS">PHYSICS</option>
-                            <option value="NOISE">NOISE</option>
-                            <option value="HISTORY">HISTORY</option>
-                            <option value="BIOLOGY">BIOLOGY</option>
                             <option value="CHEMISTRY">CHEMISTRY</option>
+                            <option value="BIOLOGY">BIOLOGY</option>
+                            <option value="HISTORY">HISTORY</option>
+                            <option value="LITERATURE">LITERATURE</option>
+                            <option value="OTHER">OTHER</option>
+                            <option value="NOISE">NOISE</option>
+                            {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
+                            {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                           </select>
                         </td>
                         <td className="col-action-cell" style={{ verticalAlign: 'middle' }}>
@@ -3028,61 +2941,301 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
               <div className="cleaning-pipeline-card">
                 <div className="auto-labeling-header" style={{ paddingBottom: '0', borderBottom: 'none' }}>
                   <div className="auto-labeling-actions" style={{ width: '100%', display: 'flex', gap: '8px' }}>
-                    <select className="label-model-select" style={{ flex: 1 }}>
-                      <option>Deepseek</option>
-                      <option>ChatGPT</option>
+                    <select
+                      className="label-model-select"
+                      style={{ flex: 1 }}
+                      value={aiProvider}
+                      onChange={e => setAiProvider(e.target.value as any)}
+                      disabled={isLabelingWithAI}
+                    >
+                      <option value="deepseek">Deepseek</option>
+                      <option value="openai">ChatGPT</option>
+                      <option value="gemini">Gemini</option>
                     </select>
-                    <button className="label-ai-btn" style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                      <Sparkles size={14} /> Label with AI
+                    <button
+                      className="label-ai-btn"
+                      style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
+                      disabled={!clusterRan || isLabelingWithAI}
+                      onClick={async () => {
+                        if (!clusterRan) return;
+
+                        const hasExistingLabels = Object.values(aiGroupLabels).some(val => val !== '' && val !== undefined);
+                        if (hasExistingLabels) {
+                          const confirmRelabel = window.confirm('Dữ liệu này đã được gán nhãn. Bạn có muốn yêu cầu AI chạy lại và ghi đè nhãn mới không?');
+                          if (!confirmRelabel) return;
+                          
+                          // Xóa nhãn hiện tại trên UI để chạy lại
+                          setAiGroupLabels({});
+                          setPendingAiLabels([]);
+                        }
+
+                        setIsLabelingWithAI(true);
+                        try {
+                          // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
+                          let versionId: string =
+                            (stage3Convs[0] as any)?.datasetVersionId ||
+                            (stage3Convs[0] as any)?.versionId ||
+                            localStorage.getItem('current_version_id') ||
+                            '';
+
+                          // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
+                          if (!versionId) {
+                            const payload = {
+                              projectName: 'Auto-Label Dataset',
+                              operationType: 'labeling_base' as const,
+                              similarityThreshold: 0.85,
+                              format: 'openai' as const,
+                              data: stage3Convs.map((conv, idx) => {
+                                const messages = conv.messages.flatMap((m: any) => [
+                                  { role: 'user', content: m.user },
+                                  { role: 'assistant', content: m.assistant }
+                                ]).filter((m: any) => m.content && String(m.content).trim() !== '');
+
+                                return {
+                                  sourceKey: `conv-${idx}`,
+                                  data: {
+                                    messages,
+                                    cluster: conv.groupId,
+                                    conversation_id: `conv-${idx}`
+                                  }
+                                };
+                              })
+                            };
+                            const created = await apiService.createDatasetVersion(payload);
+                            versionId = created.datasetVersion._id;
+                            localStorage.setItem('current_version_id', versionId);
+                          }
+
+                          // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
+                          const res = await apiService.previewAutoLabels(versionId, aiProvider);
+                          const suggestions = res.suggestions || [];
+
+                          // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
+                          const labelMap: Record<number, string> = {};
+                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                          const newLabels = new Set<string>();
+
+                          suggestions.forEach((s: any) => {
+                            // clusterId từ BE có thể là 0,1,2... còn groupId trong UI là 1,2,3...
+                            const groupId = (s.clusterId ?? s.groupId);
+                            if (groupId !== undefined) {
+                              labelMap[groupId] = s.label;
+                              if (s.label && !predefinedLabels.includes(s.label) && !customSubjectLabels.includes(s.label)) {
+                                newLabels.add(s.label);
+                              }
+                            }
+                          });
+                          
+                          if (newLabels.size > 0) {
+                            setPendingAiLabels(Array.from(newLabels));
+                          }
+                          setAiGroupLabels(prev => ({ ...prev, ...labelMap }));
+                        } catch (err: any) {
+                          const msg = err?.response?.data?.error || err?.message || 'AI labeling failed.';
+                          alert(`Lỗi gán nhãn AI: ${msg}`);
+                        } finally {
+                          setIsLabelingWithAI(false);
+                        }
+                      }}
+                    >
+                      {isLabelingWithAI
+                        ? <><RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> Đang xử lý...</>
+                        : <><Sparkles size={14} /> Label with AI</>
+                      }
                     </button>
                   </div>
                 </div>
 
-                {/* Group Cards */}
-                <div className="group-cards-container">
-                  {/* Show All button */}
-                  <div
-                    className={`group-card-item ${selectedGroup3 === null ? 'group-card-active' : ''}`}
-                    style={{ borderColor: '#94a3b8', '--group-accent': '#64748b' } as React.CSSProperties}
-                    onClick={() => { setSelectedGroup3(null); setStage3Page(1); }}
-                  >
-                    <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
-                    <div className="group-card-count">{allConvRows.length}</div>
-                  </div>
-                  
-                  {/* Legend Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 16px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    <div style={{ flex: 1 }}>Group Name</div>
-                    <div style={{ width: '24px', textAlign: 'center', marginRight: '24px' }}>Count</div>
-                    <div style={{ width: '90px', textAlign: 'left', paddingLeft: '4px' }}>Label</div>
-                  </div>
-
-                  {GROUP_DATA.map(g => (
-                    <div
-                      key={g.id}
-                      className={`group-card-item ${selectedGroup3 === g.id ? 'group-card-active' : ''}`}
-                      style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
-                      onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
-                    >
-                      <div className="group-card-name" style={{ color: g.color, fontWeight: 700 }}>Group {g.id}</div>
-                      <div className="group-card-count">{g.count}</div>
-                      <div className="group-card-label">
-                        <select className="inline-label-select" onClick={e => e.stopPropagation()} defaultValue={g.label}>
-                          <option>PHYSICAL</option>
-                          <option>MATH</option>
-                          <option>CODING</option>
-                        </select>
+                {pendingAiLabels.length > 0 && (
+                  <div style={{ padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                      <div style={{ color: '#d97706', marginTop: '2px' }}><Sparkles size={16} /></div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>
+                          AI phát hiện môn học mới
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#b45309', marginBottom: '10px' }}>
+                          Có vẻ dữ liệu của bạn có các môn: <strong>{pendingAiLabels.join(', ')}</strong>. Bạn có muốn thêm vào danh sách lựa chọn?
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            style={{ padding: '4px 10px', fontSize: '12px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
+                            onClick={() => {
+                              setCustomSubjectLabels(prev => [...new Set([...prev, ...pendingAiLabels])]);
+                              setPendingAiLabels([]);
+                            }}
+                          >
+                            Thêm & Áp dụng
+                          </button>
+                          <button
+                            style={{ padding: '4px 10px', fontSize: '12px', background: 'transparent', color: '#b45309', border: '1px solid #fcd34d', borderRadius: '4px', cursor: 'pointer', fontWeight: 500 }}
+                            onClick={() => setPendingAiLabels([])}
+                          >
+                            Bỏ qua
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                )}
+
+                {/* Group Cards */}
+                <div className="group-cards-container" style={{ maxHeight: '550px', overflowY: 'auto' }}>
+                  {!clusterRan ? (
+                    /* Placeholder: chưa chạy cluster */
+                    <div style={{ padding: '32px 16px', textAlign: 'center', color: '#94a3b8' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔬</div>
+                      <div style={{ fontWeight: 600, fontSize: '13px', color: '#64748b', marginBottom: '6px' }}>Chưa có dữ liệu phân cụm</div>
+                      <div style={{ fontSize: '12px', lineHeight: '1.6' }}>Vui lòng quay lại <strong>Stage 2 → K-means Cluster</strong> và chạy phân cụm trước khi gán nhãn.</div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* Show All button */}
+                      <div
+                        className={`group-card-item ${selectedGroup3 === null ? 'group-card-active' : ''}`}
+                        style={{ borderColor: '#94a3b8', '--group-accent': '#64748b' } as React.CSSProperties}
+                        onClick={() => { setSelectedGroup3(null); setStage3Page(1); }}
+                      >
+                        <div className="group-card-name" style={{ color: '#64748b' }}>All Groups</div>
+                        <div className="group-card-count">{allConvRows.length}</div>
+                      </div>
+
+                      {/* Legend Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 8px 16px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <div style={{ flex: 1 }}>Group Name</div>
+                        <div style={{ width: '36px', textAlign: 'center', marginRight: '12px' }}>Count</div>
+                        <div style={{ width: '120px', textAlign: 'left', paddingLeft: '4px' }}>Label</div>
+                      </div>
+
+                      {GROUP_DATA.map(g => (
+                        <div
+                          key={g.id}
+                          className={`group-card-item ${selectedGroup3 === g.id ? 'group-card-active' : ''}`}
+                          style={{ borderColor: g.color, '--group-accent': g.color } as React.CSSProperties}
+                          onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
+                        >
+                          <div className="group-card-name" style={{ color: g.color, fontWeight: 700 }}>Group {g.id}</div>
+                          <div className="group-card-count">{g.count}</div>
+                          <div className="group-card-label">
+                            <select
+                              className="inline-label-select"
+                              onClick={e => e.stopPropagation()}
+                              value={aiGroupLabels[g.id] || g.label}
+                              onChange={e => {
+                                const newLabel = e.target.value;
+                                setAiGroupLabels(prev => ({ ...prev, [g.id]: newLabel }));
+                                setStage3Convs(prev => prev.map(c =>
+                                  c.groupId === g.id ? { ...c, groupLabel: newLabel } : c
+                                ));
+                              }}
+                            >
+                              <option value="">-- Select --</option>
+                              <option value="MATH">MATH</option>
+                              <option value="CODING">CODING</option>
+                              <option value="PHYSICS">PHYSICS</option>
+                              <option value="PHYSICAL">PHYSICAL</option>
+                              <option value="CHEMISTRY">CHEMISTRY</option>
+                              <option value="BIOLOGY">BIOLOGY</option>
+                              <option value="HISTORY">HISTORY</option>
+                              <option value="LITERATURE">LITERATURE</option>
+                              <option value="OTHER">OTHER</option>
+                              <option value="NOISE">NOISE</option>
+                              {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
+                              {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+
+                      {isLabelingWithAI && (
+                        <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: '12px', color: '#6366f1', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                          AI đang phân tích và gán nhãn...
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
-                <div className="label-bottom-actions">
-                  <button className="compare-labels-btn" onClick={() => setShowCompareLabels(true)}>
-                    <FileText size={14} /> Compare Labels
-                  </button>
-                  <button className="save-labels-btn">
-                    <Check size={14} /> Save
+                <div className="label-bottom-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                  {/* Clear button — luôn hiển thị khi đã chạy cluster */}
+                  {clusterRan && (
+                    <button
+                      onClick={() => {
+                        setAiGroupLabels({});
+                        setStage3Convs(prev => prev.map(c => ({ ...c, groupLabel: '' })));
+                      }}
+                      disabled={Object.keys(aiGroupLabels).length === 0}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        background: 'white', border: '1.5px solid #e2e8f0',
+                        color: Object.keys(aiGroupLabels).length > 0 ? '#64748b' : '#cbd5e1',
+                        padding: '8px 16px', borderRadius: '6px',
+                        fontSize: '13px', fontWeight: 600, cursor: Object.keys(aiGroupLabels).length > 0 ? 'pointer' : 'not-allowed',
+                        transition: 'all 0.15s',
+                        opacity: Object.keys(aiGroupLabels).length > 0 ? 1 : 0.5
+                      }}
+                      onMouseEnter={e => {
+                        if (Object.keys(aiGroupLabels).length === 0) return;
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#ef4444';
+                        (e.currentTarget as HTMLButtonElement).style.color = '#ef4444';
+                        (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2';
+                      }}
+                      onMouseLeave={e => {
+                        (e.currentTarget as HTMLButtonElement).style.borderColor = '#e2e8f0';
+                        (e.currentTarget as HTMLButtonElement).style.color = Object.keys(aiGroupLabels).length > 0 ? '#64748b' : '#cbd5e1';
+                        (e.currentTarget as HTMLButtonElement).style.background = 'white';
+                      }}
+                      title="Xóa toàn bộ nhãn AI đã gán"
+                    >
+                      <X size={14} /> Clear
+                    </button>
+                  )}
+                  <button
+                    className="save-labels-btn"
+                    disabled={!clusterRan || isSavingLabels}
+                    style={{ opacity: (clusterRan && !isSavingLabels) ? 1 : 0.5 }}
+                    onClick={async () => {
+                      if (!clusterRan || isSavingLabels) return;
+                      setIsSavingLabels(true);
+                      try {
+                        const versionId = localStorage.getItem('current_version_id');
+                        if (!versionId) {
+                          alert('Không tìm thấy versionId, không thể lưu nhãn lên DB.');
+                          setIsSavingLabels(false);
+                          return;
+                        }
+
+                        // Payload: { clusterId, label }
+                        const payloadLabels = Object.entries(aiGroupLabels).map(([groupId, label]) => ({
+                          clusterId: Number(groupId),
+                          label
+                        }));
+
+                        if (payloadLabels.length === 0) {
+                          alert('Chưa có nhãn nào được gắn.');
+                          setIsSavingLabels(false);
+                          return;
+                        }
+
+                        await apiService.saveAutoLabels(versionId, payloadLabels);
+                        
+                        // Cập nhật giao diện cục bộ sau khi lưu thành công
+                        setStage3Convs(prev => prev.map(c => ({
+                          ...c,
+                          groupLabel: aiGroupLabels[c.groupId] || c.groupLabel
+                        })));
+                        alert('Đã lưu nhãn thành công vào Database!');
+                      } catch (err: any) {
+                        console.error('Save labels error:', err);
+                        alert(`Lỗi khi lưu nhãn: ${err.message || 'Unknown error'}`);
+                      } finally {
+                        setIsSavingLabels(false);
+                      }
+                    }}
+                  >
+                    {isSavingLabels ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={14} />} 
+                    {isSavingLabels ? 'Saving...' : 'Save'}
                   </button>
                 </div>
               </div>
@@ -3843,9 +3996,6 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
           }}>
             Back
           </button>
-          <button className="dataprep-btn-reset" onClick={handleRemoveFile}>
-            <RotateCcw size={16} /> Reset & Upload New
-          </button>
           <button className="dataprep-btn-next" onClick={() => {
             if (currentSubStep3 < 7) {
               setCurrentSubStep3(currentSubStep3 + 1);
@@ -3861,12 +4011,11 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
   };
 
   const QUALITY_CONVS = [
-    { id: 'CONV-1', hash: '(Há»˜I THOáº I #42D67D)', label: 'MATH_ADVANCED', desc: 'NÃ³ theo xuáº¥t sáº¯c...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.80 },
-    { id: 'CONV-2', hash: '(Há»˜I THOáº I #42D4E)', label: 'OUT_OF_SCOPE', desc: 'Chá»‰ viáº¿t láº¡i pháº§n NÃ³ A...', quality: 'REWRITE', msgs: 4, turns: 2, score: 2.50 },
-    { id: 'CONV-3', hash: '(Há»˜I THOáº I #42DE5T)', label: 'OUT_OF_SCOPE', desc: 'AI pháº£n há»“i sai kiáº¿n thá»©c...', quality: 'BAD', msgs: 4, turns: 2, score: 1.20 },
-    { id: 'CONV-4', hash: '(Há»˜I THOáº I #42D68B)', label: 'PHYSICS_MOTION', desc: 'Giáº£i thÃ­ch rÃµ rÃ ng...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.50 },
+    { id: 'CONV-1', hash: '(HỘI THOẠI #42D67D)', label: 'MATH_ADVANCED', desc: 'Nó theo xuất sắc...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.80 },
+    { id: 'CONV-2', hash: '(HỘI THOẠI #42D4E)', label: 'OUT_OF_SCOPE', desc: 'Chỉ viết lại phần Nó A...', quality: 'REWRITE', msgs: 4, turns: 2, score: 2.50 },
+    { id: 'CONV-3', hash: '(HỘI THOẠI #42DE5T)', label: 'OUT_OF_SCOPE', desc: 'AI phản hồi sai kiến thức...', quality: 'BAD', msgs: 4, turns: 2, score: 1.20 },
+    { id: 'CONV-4', hash: '(HỘI THOẠI #42D68B)', label: 'PHYSICS_MOTION', desc: 'Giải thích rõ ràng...', quality: 'GOLD', msgs: 4, turns: 2, score: 4.50 },
   ];
-
 
   return (
     <div className="dataprep-view">
@@ -4043,6 +4192,7 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
                       groupLabel: group.label,
                       groupColor: group.color,
                       groupBg: group.bg,
+                      subGroup: c.subGroup || 'A',
                       confidence: Math.floor(Math.random() * 10 + 90)
                     };
                   }));
@@ -4063,11 +4213,11 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
         {STAGES.map((stage, idx) => (
           <React.Fragment key={stage.num}>
             <div
-              className={`stepper-step ${stage.num === currentStage ? 'active' : ''} ${stage.num < currentStage ? 'completed' : ''}`}
+              className={`stepper-step ${stage.num === currentStage ? 'active' : ''} ${isStageCompleted(stage.num) ? 'completed' : ''}`}
               onClick={() => setCurrentStage(stage.num)}
             >
               <div className="stepper-circle">
-                {stage.num < currentStage ? <Check size={16} /> : stage.num}
+                {isStageCompleted(stage.num) ? <Check size={16} /> : stage.num}
               </div>
               <div className="stepper-label">
                 <span className="stepper-stage-tag">STAGE {stage.num}</span>
@@ -4081,12 +4231,12 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
       </div>
 
       {/* Stage Content */}
-      {currentStage === 1 && renderStage1()}
-      {currentStage === 2 && renderStage2()}
-      {currentStage === 3 && renderStage3()}
-              {currentStage === 4 && <Stage4Labeling SUB_STEPS_STAGE4={SUB_STEPS_STAGE4} balancedQuality={balancedQuality} balancedSubject={balancedSubject} bulkAssignStaff={bulkAssignStaff} classPage={classPage} completedRewrites={completedRewrites} currentSubStep4={currentSubStep4} handleAdjudicateQuality={handleAdjudicateQuality} handleExportDataset={handleExportDataset} handleStartScoring={handleStartScoring} isStage4Loading={isStage4Loading} judgeModels={judgeModels} latestJob={latestJob} name={name} qualityResult={qualityResult} qualityTab={qualityTab} reassignStaff={reassignStaff} refreshData={refreshData} results={results} reviewDetailModal={reviewDetailModal} rewriteConvIdx={rewriteConvIdx} rewriteTextContent={rewriteTextContent} selectedRewriteIds={selectedRewriteIds} sepBalanceApplied={sepBalanceApplied} sepQualityLabels={sepQualityLabels} sepQualityRatings={sepQualityRatings} sepRewriteDecision={sepRewriteDecision} sepRunningEval={sepRunningEval} sepSelectedDistQuality={sepSelectedDistQuality} sepSelectedDistSubject={sepSelectedDistSubject} sepSelectedError={sepSelectedError} sepSubjectFilter={sepSubjectFilter} setBalancedQuality={setBalancedQuality} setBalancedSubject={setBalancedSubject} setBulkAssignStaff={setBulkAssignStaff} setCompletedRewrites={setCompletedRewrites} setCurrentStage={setCurrentStage} setCurrentSubStep4={setCurrentSubStep4} setCurrentSubStep5={setCurrentSubStep5} setJudgeModels={setJudgeModels} setQualityTab={setQualityTab} setReassignStaff={setReassignStaff} setReviewDetailModal={setReviewDetailModal} setRewriteConvIdx={setRewriteConvIdx} setRewriteTextContent={setRewriteTextContent} setSelectedRewriteIds={setSelectedRewriteIds} setStage4StaffReady={setStage4StaffReady} stage4Error={stage4Error} statistics={statistics} status={status} />}
-              {currentStage === 5 && <Stage5AIJudges EXPORT_ROWS={EXPORT_ROWS} PROMPT_VERSIONS={PROMPT_VERSIONS} SUB_STEPS_STAGE5={SUB_STEPS_STAGE5} cloudProvider={cloudProvider} currentSubStep5={currentSubStep5} exportPage={exportPage} name={name} promptDesc={promptDesc} promptName={promptName} promptText={promptText} sampleQuestion={sampleQuestion} selectedVersion={selectedVersion} setCloudProvider={setCloudProvider} setCurrentStage={setCurrentStage} setCurrentSubStep5={setCurrentSubStep5} setExportPage={setExportPage} setPromptDesc={setPromptDesc} setPromptName={setPromptName} setPromptText={setPromptText} setSampleQuestion={setSampleQuestion} setSelectedVersion={setSelectedVersion} trialResponse={trialResponse} />}
-              {currentStage === 6 && <Stage6Finish setActiveTab={setActiveTab} setCurrentStage={setCurrentStage} setCurrentSubStep5={setCurrentSubStep5} />}
+      {currentStage === 1 && <Stage1Upload />}
+      {currentStage === 2 && <Stage2Preprocessing />}
+      {currentStage === 3 && <Stage3Labeling />}
+      {currentStage === 4 && <Stage4TrainEval />}
+      {currentStage === 5 && <Stage5Evaluation />}
+      {currentStage === 6 && <Stage6Finish />}
 
       {/* Compare Groups Modal */}
       {showCompareModal && (
@@ -4223,164 +4373,14 @@ function DataPrepView({ setActiveTab }: DataPrepViewProps) {
         </div>
       )}
 
-      {/* Compare AI Labels Modal */}
-      {showCompareLabels && (
-        <div className="compare-modal-overlay" onClick={() => setShowCompareLabels(false)}>
-          <div className="cl-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="cl-header">
-              <div>
-                <h2>Compare AI Labels</h2>
-                <p>Select two AI providers to compare their auto-labeling results.</p>
-              </div>
-              <button className="cl-close" onClick={() => setShowCompareLabels(false)}><X size={18} /></button>
-            </div>
-
-            <div className="cl-providers">
-              <span className="cl-prov-label">Provider A:</span>
-              <select className="cl-prov-select"><option>Gemini</option><option>Deepseek</option></select>
-              <span className="cl-prov-arrow">›</span>
-              <span className="cl-prov-label">Provider B:</span>
-              <select className="cl-prov-select"><option>Deepseek</option><option>Gemini</option></select>
-            </div>
-
-            <div className="cl-stats">
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-green">100%</span>
-                <span className="cl-stat-label">AGREEMENT RATE</span>
-              </div>
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-blue">120</span>
-                <span className="cl-stat-label">MATCHES</span>
-              </div>
-              <div className="cl-stat-card">
-                <span className="cl-stat-value cl-red">0</span>
-                <span className="cl-stat-label">MISMATCHES</span>
-              </div>
-            </div>
-
-            <div className="cl-table-wrap">
-              <table className="cl-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '40%' }}>CONVERSATION</th>
-                    <th style={{ width: '20%' }}>GEMINI LABEL</th>
-                    <th style={{ width: '20%' }}>DEEPSEEK LABEL</th>
-                    <th style={{ width: '20%' }}>STATUS</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    { user: 'Em không hiểu chuyển động thẳng đều là gì.', asst: 'Không sao, mình đi từng bước nhé. Em thử nghĩ xem: khi nói một vật chuyển động, điều đó có nghĩa là gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Là vật đang đi chuyển a.', asst: 'Đúng rồi. Bây giờ em thử nghĩ thêm: nếu một xe ô tô chạy trên đường thẳng và luôn giữ nguyên tốc độ, em nghĩ là gọi đó là loại chuyển động gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Chuyển động đều a?', asst: 'Rất gần rồi! Đầy đủ hơn là \'chuyển động thẳng đều\'. Em thử đoán xem \'thẳng\' ở đây có nghĩa là gì trong chuyển động?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Công thức x = x0 + vt có nghĩa là gì a?', asst: 'Câu hỏi hay. Trước khi giải thích, em đoán xem \'x\' và \'x0\' biểu diễn điều gì?', gLabel: 'PHYSICAL', gConf: 98, dLabel: 'MATH', dConf: 90, match: false },
-                    { user: 'x là vị trí còn x0 là vị trí ban đầu a?', asst: 'Đúng rồi! Vậy vt là gì? Nếu v là vận tốc và t là thời gian, tích v nhân t sẽ cho ta biết điều gì?', gLabel: 'PHYSICAL', gConf: 100, dLabel: 'PHYSICAL', dConf: 95, match: true },
-                    { user: 'Tính đạo hàm của hàm số f(x) = x² - 3x + 2.', asst: 'f\'(x) = 2x - 3. Áp dụng quy tắc đạo hàm lũy thừa.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 97, match: true },
-                    { user: 'Tính tích phân ∫x² dx.', asst: '∫x² dx = x³/3 + C. Áp dụng công thức ∫xⁿ dx = xⁿ⁺¹/(n+1) + C.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 96, match: true },
-                    { user: 'Giải hệ phương trình: x + y = 5 và x - y = 1.', asst: 'Cộng hai phương trình: 2x = 6 → x = 3, y = 2.', gLabel: 'MATH', gConf: 99, dLabel: 'MATH', dConf: 95, match: true },
-                    { user: 'Tính xác suất để tung đồng xu 3 lần ra đúng 2 mặt ngửa.', asst: 'P(X=2) = C(3,2) · (1/2)² · (1/2)¹ = 3/8.', gLabel: 'MATH', gConf: 100, dLabel: 'MATH', dConf: 94, match: true },
-                  ].map((row, i) => (
-                    <tr key={i}>
-                      <td>
-                        <div className="cl-conv-user">{row.user}</div>
-                        <div className="cl-conv-asst">{row.asst}</div>
-                      </td>
-                      <td><span className={`cl-pill cl-pill-${row.gLabel.toLowerCase()}`}>{row.gLabel} ({row.gConf}%)</span></td>
-                      <td><span className={`cl-pill cl-pill-${row.dLabel.toLowerCase()}`}>{row.dLabel} ({row.dConf}%)</span></td>
-                      <td><span className={`cl-status ${row.match ? 'cl-match' : 'cl-mismatch'}`}>{row.match ? 'Match' : 'Mismatch'}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Create Labeling Task Modal */}
-      {showCreateTaskModal && (
-        <div className="compare-modal-overlay" onClick={() => setShowCreateTaskModal(false)}>
-          <div className="ct-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="ct-header">
-              <h2>Create Labeling Task</h2>
-              <p>Divide unassigned samples into a new task. (Unassigned samples left: 4)</p>
-            </div>
-
-            <div className="ct-body">
-              <div className="ct-form-group">
-                <label>Task Name</label>
-                <input type="text" placeholder="e.g. Batch 1 - Math Labeling" className="ct-input" />
-              </div>
-
-              <div className="ct-form-row">
-                <div className="ct-form-group">
-                  <label>Batch Size</label>
-                  <input type="number" defaultValue={30} className="ct-input" />
-                </div>
-                <div className="ct-form-group">
-                  <label>Priority</label>
-                  <select className="ct-select" defaultValue="Medium">
-                    <option>Low</option>
-                    <option>Medium</option>
-                    <option>High</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="ct-form-row">
-                <div className="ct-form-group">
-                  <label>Review Mode</label>
-                  <select className="ct-select" defaultValue="Single Review (1 Annotator)">
-                    <option>Single Review (1 Annotator)</option>
-                    <option>Double Review (2 Annotators)</option>
-                    <option>Triple Review (3 Annotators)</option>
-                  </select>
-                </div>
-                <div className="ct-form-group">
-                  <label>Deadline (Optional)</label>
-                  <div className="ct-date-input">
-                    <input type="text" placeholder="dd/mm/yyyy" className="ct-input" />
-                    <Calendar size={14} className="ct-date-icon" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="ct-form-group">
-                <label>Assignees</label>
-                <div className="ct-assignees-box">
-                  <label className="ct-checkbox-label">
-                    <input type="checkbox" />
-                    <span><strong>hoang22</strong> (hoangndnhe180790@fpt.edu.vn)</span>
-                  </label>
-                  <label className="ct-checkbox-label">
-                    <input type="checkbox" />
-                    <span><strong>uhhgf</strong> (hoangndhhefff180790@fpt.edu.vn)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="ct-form-group">
-                <label>Guideline (URL or Instructions)</label>
-                <textarea placeholder="Link to Notion/Google Doc, or short text..." className="ct-textarea"></textarea>
-              </div>
-
-              <div className="ct-form-group">
-                <label className="ct-checkbox-label" style={{ marginTop: '8px' }}>
-                  <input type="checkbox" />
-                  <strong>Tắt gợi ý nhãn từ AI (Disable AI Suggestion)</strong>
-                </label>
-              </div>
-            </div>
-
-            <div className="ct-footer">
-              <button className="ct-btn-cancel" onClick={() => setShowCreateTaskModal(false)}>Cancel</button>
-              <button className="ct-btn-create">Create Task</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-export default DataPrepView;
+export default function DataPrepView() {
+  return (
+    <DataPrepProvider>
+      <DataPrepInner />
+    </DataPrepProvider>
+  );
+}

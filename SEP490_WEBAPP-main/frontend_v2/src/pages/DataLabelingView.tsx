@@ -79,6 +79,25 @@ function DataLabelingView({ onBack }) {
   /* Per-message action overrides: { 'convId-msgIdx': 'OK' } */
   const [msgActions, setMsgActions] = useState({});
   const [submitStatus, setSubmitStatus] = useState('draft');
+  const [selectedMessageIndex, setSelectedMessageIndex] = useState(null);
+
+  // New states for the requirements
+  const [subject, setSubject] = useState('');
+  const [completion, setCompletion] = useState('');
+  const [quality, setQuality] = useState('');
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const SUBJECT_LABELS = ['MATH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'OUT_OF_SCOPE'];
+  const COMPLETION_LABELS = ['COMPLETE', 'INCOMPLETE'];
+  const QUALITY_LABELS = ['GOOD', 'BAD', 'AVERAGE'];
+  const COMBINED_MESSAGE_HARD_LABELS = [
+    'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
+    'REQUEST_SIMPLER', 'SKIP_EXERCISE', 'ENCOURAGE', 'OFF_TOPIC', 'NEXT_SECTION'
+  ];
+
+  const isSubmitDisabled = !subject || !completion || !quality;
+
 
   const ACTION_OPTIONS = ['OK', 'LOG', 'NEXT', 'WAIT', 'SKIP', 'MOT'];
   const ACTION_COLOR_MAP = { OK: 'green', LOG: 'purple', NEXT: 'blue', WAIT: 'gray', SKIP: 'orange', MOT: 'red' };
@@ -145,6 +164,17 @@ function DataLabelingView({ onBack }) {
     const key = `${convId}-${msgIdx}`;
     return msgActions[key] || conv.messages[msgIdx].action;
   };
+
+  const handleRejectSubmit = () => {
+    if (!rejectReason.trim()) return;
+    setIsRejectModalOpen(false);
+    setRejectReason('');
+    // Optionally move to next sample
+    if (currentConv < CONVERSATIONS.length - 1) {
+      setCurrentConv(currentConv + 1);
+    }
+  };
+
 
   return (
     <div className="dl-container">
@@ -215,7 +245,14 @@ function DataLabelingView({ onBack }) {
                   </span>
                   <span className="dl-msg-turn-badge">{Math.floor(idx / 2) + 1}</span>
                 </div>
-                <div className={`dl-msg-bubble ${msg.role}`}>
+                <div 
+                  className={`dl-msg-bubble ${msg.role} ${selectedMessageIndex === idx ? 'ring-2 ring-blue-500' : ''}`}
+                  onClick={() => {
+                    setSelectedMessageIndex(idx);
+                    setLabelTab('message');
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   <p>{msg.content}</p>
                 </div>
                 {action && (
@@ -310,27 +347,66 @@ function DataLabelingView({ onBack }) {
               </button>
             </div>
 
-            {/* Hard Labels */}
-            <div className="dl-hard-labels-section">
-              <span className="dl-label-section-title">CONVERSATION HARD LABELS</span>
-              <div className="dl-hard-labels-grid">
-                {HARD_LABELS.map(label => (
-                  <button
-                    key={label.key}
-                    className={`dl-hard-label-chip ${currentHard.includes(label.key) ? 'active' : ''}`}
-                    onClick={() => toggleHardLabel(label.key)}
-                    style={{
-                      '--label-color': label.color,
-                      '--label-bg': label.bg,
-                    } as React.CSSProperties}
+            {labelTab === 'conversation' ? (
+              <div className="dl-hard-labels-section flex flex-col gap-3">
+                <span className="dl-label-section-title">CONVERSATION ATTRIBUTES</span>
+                {/* Subject */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Nhãn môn học <span className="text-red-500">*</span>
+                  </label>
+                  <select 
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:ring-2 focus:ring-blue-200"
                   >
-                    <span className="dl-chip-icon">{label.icon}</span>
-                    <span className="dl-chip-name">{label.label}</span>
-                    <span className="dl-chip-count">{currentHard.includes(label.key) ? 1 : 0}</span>
-                  </button>
-                ))}
+                    <option value="">-- Chọn môn học --</option>
+                    {SUBJECT_LABELS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                {/* Completion */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Completion <span className="text-red-500">*</span>
+                  </label>
+                  <select 
+                    value={completion}
+                    onChange={(e) => setCompletion(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="">-- Chọn trạng thái --</option>
+                    {COMPLETION_LABELS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
+                {/* Quality */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Quality <span className="text-red-500">*</span>
+                  </label>
+                  <select 
+                    value={quality}
+                    onChange={(e) => setQuality(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="">-- Chọn chất lượng --</option>
+                    {QUALITY_LABELS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="dl-hard-labels-section">
+                <span className="dl-label-section-title">MESSAGE INTENT</span>
+                <select 
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs focus:ring-2 focus:ring-blue-200 mt-2"
+                >
+                  <option value="">-- Chọn Intent --</option>
+                  {COMBINED_MESSAGE_HARD_LABELS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+                <div className="mt-2 text-right">
+                  <button className="text-[10px] font-medium text-blue-600 hover:underline">+ Thêm option mới</button>
+                </div>
+              </div>
+            )}
 
             {/* Soft Labels */}
             <div className="dl-soft-labels-section">
@@ -389,21 +465,24 @@ function DataLabelingView({ onBack }) {
       </div>
 
       {/* Bottom: Submit bar */}
-      <div className="dl-submit-bar">
-        <div className="dl-submit-info">
-          <h4>Submit Assignment</h4>
-          <div className="dl-submit-meta">
-            <span>Progress: {labeledMessages} / {totalMessages} messages ({progress}%)</span>
-            <span className="dl-submit-status">· Status: <strong>{submitStatus}</strong></span>
-          </div>
-          <span className="dl-submit-more">({labeledConvCount}/{CONVERSATIONS.length} conversations labeled)</span>
-        </div>
+      <div className="dl-submit-bar flex gap-2 justify-end bg-white p-4 border-t border-gray-200">
         <button
-          className={`dl-submit-btn ${labeledConvCount > 0 ? 'ready' : ''}`}
-          onClick={() => setSubmitStatus(submitStatus === 'draft' ? 'submitted' : 'draft')}
+          className="flex-1 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          disabled={isSubmitDisabled}
+          onClick={() => {
+            setSubmitStatus('submitted');
+            if (currentConv < CONVERSATIONS.length - 1) setCurrentConv(currentConv + 1);
+          }}
         >
           <CheckCircle size={16} />
-          {submitStatus === 'submitted' ? 'Submitted ✓' : 'Submit Result'}
+          Hoàn thành (Submit)
+        </button>
+        <button
+          className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 flex items-center justify-center gap-2"
+          onClick={() => setIsRejectModalOpen(true)}
+        >
+          <X size={16} />
+          Loại bỏ (Reject)
         </button>
       </div>
 
@@ -450,6 +529,38 @@ function DataLabelingView({ onBack }) {
                   <li><strong>MOT</strong> — Motivational response</li>
                 </ul>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Reject Modal */}
+      {isRejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Loại bỏ Hội thoại</h3>
+            <p className="text-sm text-slate-600 mb-4">Vui lòng nhập lý do loại bỏ (dữ liệu mã hóa lỗi, không liên quan, v.v.):</p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:ring-2 focus:ring-red-200 min-h-[100px]"
+              placeholder="Nhập lý do..."
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRejectModalOpen(false)}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={!rejectReason.trim()}
+                onClick={handleRejectSubmit}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Xác nhận Loại bỏ
+              </button>
             </div>
           </div>
         </div>

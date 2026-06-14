@@ -396,6 +396,9 @@
 .al-status-in-progress { background: #fef3c7; color: #d97706; }
 .al-status-pending { background: #f1f5f9; color: #94a3b8; }
 .al-status-overdue { background: #fee2e2; color: #dc2626; }
+.al-status-draft { background: #f3f4f6; color: #6b7280; }
+.al-status-submitted { background: #dbeafe; color: #2563eb; }
+.al-status-review { background: #ffedd5; color: #ea580c; }
 
 /* Progress Bar */
 .al-task-progress-col {

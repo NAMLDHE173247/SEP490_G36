@@ -26,94 +26,8 @@ import {
   Play
 } from 'lucide-react';
 import '../styles/versiondataprep.css';
+import { api } from '../services/api';
 
-const VERSIONS = [
-  {
-    id: 'v1.0.0',
-    projectName: 'Project_01/06_16:14',
-    description: 'Initial dataset upload & conversion — baseline',
-    status: 'completed',
-    createdAt: '2026-06-01 16:14',
-    updatedAt: '2026-06-01 17:30',
-    stage: 'Finish (Stage 6)',
-    conversations: 120,
-    messages: 586,
-    author: 'admin',
-    tags: ['baseline', 'v1'],
-    accuracy: 87.2,
-    labeling: 'completed',
-    labelingTasks: 2,
-    labelingTasksDone: 2,
-  },
-  {
-    id: 'v1.1.0',
-    projectName: 'Project_02/06_09:00',
-    description: 'Applied data cleaning pipeline — removed error keywords & fixed think tags',
-    status: 'completed',
-    createdAt: '2026-06-02 09:00',
-    updatedAt: '2026-06-02 11:45',
-    stage: 'Finish (Stage 6)',
-    conversations: 115,
-    messages: 564,
-    author: 'admin',
-    tags: ['cleaned', 'v1.1'],
-    accuracy: 91.5,
-    labeling: 'completed',
-    labelingTasks: 1,
-    labelingTasksDone: 1,
-  },
-  {
-    id: 'v1.2.0',
-    projectName: 'Project_02/06_14:20',
-    description: 'Re-clustered with K=14, added Socratic method system prompt',
-    status: 'completed',
-    createdAt: '2026-06-02 14:20',
-    updatedAt: '2026-06-02 16:00',
-    stage: 'Labeling (Stage 4)',
-    conversations: 115,
-    messages: 564,
-    author: 'admin',
-    tags: ['socratic', 'clustered'],
-    accuracy: null,
-    labeling: 'in_progress',
-    labelingTasks: 3,
-    labelingTasksDone: 1,
-  },
-  {
-    id: 'v2.0.0',
-    projectName: 'Project_03/06_08:30',
-    description: 'New dataset with 200 conversations — expanded physics topics',
-    status: 'in-progress',
-    createdAt: '2026-06-03 08:30',
-    updatedAt: '2026-06-03 09:00',
-    stage: 'Labeling (Stage 4)',
-    conversations: 200,
-    messages: 980,
-    author: 'admin',
-    tags: ['expanded', 'v2'],
-    accuracy: null,
-    labeling: 'waiting',
-    labelingTasks: 0,
-    labelingTasksDone: 0,
-  },
-  {
-    id: 'v1.0.1-hotfix',
-    projectName: 'Project_01/06_18:00',
-    description: 'Hotfix: removed 5 duplicate conversations from v1.0.0',
-    status: 'archived',
-    createdAt: '2026-06-01 18:00',
-    updatedAt: '2026-06-01 18:30',
-    stage: 'Finish (Stage 6)',
-    conversations: 115,
-    messages: 572,
-    author: 'admin',
-    tags: ['hotfix'],
-    accuracy: 87.5,
-    labeling: 'not_started',
-    labelingTasks: 0,
-    labelingTasksDone: 0,
-  },
-];
 
 const STATUS_CONFIG = {
   'completed': { label: 'Completed', icon: <CheckCircle size={14} />, className: 'status-completed' },
@@ -123,6 +37,7 @@ const STATUS_CONFIG = {
 };
 
 function VersionDataPrepView() {
+  const [VERSIONS, setVersions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
@@ -130,7 +45,43 @@ function VersionDataPrepView() {
   const [selectedVersions, setSelectedVersions] = useState([]);
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const perPage = 5;
+
+  const fetchVersions = async () => {
+    try {
+      const res = await api.get('/dataprep/versions');
+      if (res.data.success) {
+        setVersions(res.data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch versions', error);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchVersions();
+  }, []);
+
+  const handleDeleteVersion = async (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa Version này và toàn bộ dữ liệu liên quan?')) return;
+    try {
+      await api.delete(`/dataprep/versions/${id}`);
+      setToastMessage('Xóa Version thành công!');
+      fetchVersions();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Xóa Version thất bại');
+    }
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleExportOriginal = (id: string) => {
+    window.open(`${api.defaults.baseURL}/dataprep/versions/${id}/export-original`, '_blank');
+  };
+
+  const handleExportLabeled = (id: string) => {
+    window.open(`${api.defaults.baseURL}/dataprep/versions/${id}/export-labeled`, '_blank');
+  };
 
   /* Filter & Sort */
   let filtered = VERSIONS.filter(v => {
@@ -171,6 +122,13 @@ function VersionDataPrepView() {
 
   return (
     <div className="version-dp-container">
+      {toastMessage && (
+        <div style={{ position: 'fixed', top: 20, right: 20, background: '#10b981', color: 'white', padding: '10px 20px', borderRadius: 8, zIndex: 1000 }}>
+          <CheckCircle size={16} style={{ display: 'inline', marginRight: 8 }} />
+          {toastMessage}
+        </div>
+      )}
+
       {/* Header */}
       <div className="version-dp-header">
         <div className="version-dp-header-left">
@@ -396,11 +354,14 @@ function VersionDataPrepView() {
                         <Play size={14} /> Tiếp tục Pipeline →
                       </button>
                     )}
-                    <button className="vdp-action-btn export">
-                      <Download size={14} /> Export
+                    <button className="vdp-action-btn export" onClick={() => handleExportOriginal(version.id)}>
+                      <Download size={14} /> Dữ liệu gốc
                     </button>
-                    <button className="vdp-action-btn delete">
-                      <Trash2 size={14} /> Delete
+                    <button className="vdp-action-btn export" onClick={() => handleExportLabeled(version.id)}>
+                      <Download size={14} /> Đã gán nhãn
+                    </button>
+                    <button className="vdp-action-btn delete" onClick={() => handleDeleteVersion(version.id)}>
+                      <Trash2 size={14} /> Xóa Version
                     </button>
                   </div>
                 </div>

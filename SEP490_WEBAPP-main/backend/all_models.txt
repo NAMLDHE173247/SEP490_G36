@@ -1,0 +1,1199 @@
+﻿import mongoose, { Schema } from 'mongoose';
+
+export interface IChatHistory {
+    ownerId: mongoose.Types.ObjectId;
+    userMessage: string;
+    aiMessage: string;
+    model: string;
+    responseTime: number;
+    createdAt: Date;
+}
+
+const chatHistorySchema = new Schema<IChatHistory>({
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    userMessage: { type: String, required: true },
+    aiMessage: { type: String, required: true },
+    model: { type: String, required: true },
+    responseTime: { type: Number, required: true },
+    createdAt: { type: Date, default: Date.now },
+});
+
+export const ChatHistory = mongoose.model<IChatHistory>('ChatHistory', chatHistorySchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IMessage {
+    role: "user" | "ai";
+    content: string;
+    model?: string;
+    responseTime?: number;
+    createdAt?: Date;
+}
+
+export interface IChatSession extends Document {
+    ownerId: mongoose.Types.ObjectId;
+    title: string;
+    messages: IMessage[];
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const messageSchema = new Schema<IMessage>({
+    role: { type: String, enum: ["user", "ai"], required: true },
+    content: { type: String, required: true },
+    model: { type: String },
+    responseTime: { type: Number },
+    createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const chatSessionSchema = new Schema<IChatSession>({
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true },
+    messages: [messageSchema],
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now }
+});
+
+export const ChatSession = mongoose.model<IChatSession>('ChatSession', chatSessionSchema);
+import mongoose, { Document, Schema } from 'mongoose';
+
+export type DataPrepSourceType = 'chat' | 'lesson';
+
+export interface IDataPrepProject extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  name: string;
+  sourceType: DataPrepSourceType;
+  rootVersionId?: mongoose.Types.ObjectId;
+  latestVersionId?: mongoose.Types.ObjectId;
+  isArchived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const DataPrepProjectSchema = new Schema<IDataPrepProject>(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    name: { type: String, required: true, trim: true },
+    sourceType: { type: String, enum: ['chat', 'lesson'], required: true, default: 'chat' },
+    rootVersionId: { type: Schema.Types.ObjectId, ref: 'DatasetVersion' },
+    latestVersionId: { type: Schema.Types.ObjectId, ref: 'DatasetVersion' },
+    isArchived: { type: Boolean, default: false, index: true },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DataPrepProjectSchema.index({ ownerId: 1, name: 1 });
+DataPrepProjectSchema.index({ ownerId: 1, updatedAt: -1 });
+
+export const DataPrepProject = mongoose.model<IDataPrepProject>('DataPrepProject', DataPrepProjectSchema);
+import mongoose, { Document, Schema, Types } from 'mongoose';
+
+export type DatasetAssignmentActivityType = 'assign' | 'unassign';
+
+export interface IDatasetAssignmentActivity extends Document {
+  datasetVersionId: Types.ObjectId;
+  sampleId: Types.ObjectId;
+  annotatorId: Types.ObjectId;
+  labelName: string;
+  labelType: 'hard' | 'soft';
+  targetScope: 'sample' | 'message';
+  messageIndex?: number | null;
+  messageRole?: 'user' | 'assistant' | null;
+  activityType: DatasetAssignmentActivityType;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const DatasetAssignmentActivitySchema = new Schema<IDatasetAssignmentActivity>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    annotatorId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    labelName: { type: String, required: true, trim: true },
+    labelType: {
+      type: String,
+      enum: ['hard', 'soft'] as const,
+      required: true,
+    },
+    targetScope: {
+      type: String,
+      enum: ['sample', 'message'] as const,
+      required: true,
+    },
+    messageIndex: { type: Number, min: 0, default: null },
+    messageRole: {
+      type: String,
+      enum: ['user', 'assistant'] as const,
+      default: null,
+    },
+    activityType: {
+      type: String,
+      enum: ['assign', 'unassign'] as const,
+      required: true,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetAssignmentActivitySchema.index({ datasetVersionId: 1, annotatorId: 1, createdAt: -1 });
+
+export const DatasetAssignmentActivity = mongoose.model<IDatasetAssignmentActivity>(
+  'DatasetAssignmentActivity',
+  DatasetAssignmentActivitySchema
+);
+import mongoose, { Document, Schema, Types } from 'mongoose';
+
+export interface IDatasetAssignmentAdjudication extends Document {
+  datasetVersionId: Types.ObjectId;
+  sampleId: Types.ObjectId;
+  targetScope: 'sample' | 'message';
+  messageIndex?: number | null;
+  messageRole?: 'user' | 'assistant' | null;
+  status: 'pending' | 'resolved_unpublished' | 'published';
+  threshold: number;
+  agreementScore?: number | null;
+  majorityLabels: string[];
+  labelCounts: Array<{ name: string; count: number }>;
+  annotatorSets: Array<{ annotatorId: string; labels: string[] }>;
+  finalLabels: string[];
+  resolvedBy?: Types.ObjectId | null;
+  resolvedAt?: Date | null;
+  publishedBy?: Types.ObjectId | null;
+  publishedAt?: Date | null;
+  note?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const DatasetAssignmentAdjudicationSchema = new Schema<IDatasetAssignmentAdjudication>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    targetScope: {
+      type: String,
+      enum: ['sample', 'message'] as const,
+      required: true,
+      index: true,
+    },
+    messageIndex: { type: Number, min: 0, default: null },
+    messageRole: {
+      type: String,
+      enum: ['user', 'assistant'] as const,
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ['pending', 'resolved_unpublished', 'published'] as const,
+      default: 'pending',
+      index: true,
+    },
+    threshold: { type: Number, default: 0.6 },
+    agreementScore: { type: Number, default: null },
+    majorityLabels: { type: [String], default: [] },
+    labelCounts: {
+      type: [
+        new Schema(
+          {
+            name: { type: String, required: true },
+            count: { type: Number, required: true },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+    annotatorSets: {
+      type: [
+        new Schema(
+          {
+            annotatorId: { type: String, required: true },
+            labels: { type: [String], default: [] },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+    finalLabels: { type: [String], default: [] },
+    resolvedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    resolvedAt: { type: Date, default: null },
+    publishedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    publishedAt: { type: Date, default: null },
+    note: { type: String, default: '' },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetAssignmentAdjudicationSchema.index(
+  { datasetVersionId: 1, sampleId: 1, targetScope: 1, messageIndex: 1, messageRole: 1 },
+  { unique: true }
+);
+
+export const DatasetAssignmentAdjudication = mongoose.model<IDatasetAssignmentAdjudication>(
+  'DatasetAssignmentAdjudication',
+  DatasetAssignmentAdjudicationSchema
+);
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export type AssignmentSubmissionStatus = 'draft' | 'submitted' | 'approved';
+
+export interface IDatasetAssignmentSubmission extends Document {
+  datasetVersionId: Types.ObjectId;
+  assigneeId: Types.ObjectId;
+  status: AssignmentSubmissionStatus;
+  progressSnapshot?: Record<string, unknown>;
+  submittedAt?: Date;
+  approvedAt?: Date;
+  approvedBy?: Types.ObjectId;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmission>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    assigneeId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['draft', 'submitted', 'approved'] as const,
+      default: 'draft',
+      index: true,
+    },
+    progressSnapshot: { type: Schema.Types.Mixed },
+    submittedAt: { type: Date },
+    approvedAt: { type: Date },
+    approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetAssignmentSubmissionSchema.index({ datasetVersionId: 1, assigneeId: 1 }, { unique: true });
+
+export const DatasetAssignmentSubmission = mongoose.model<IDatasetAssignmentSubmission>(
+  'DatasetAssignmentSubmission',
+  DatasetAssignmentSubmissionSchema
+);
+import mongoose, { Document, Schema, Types } from 'mongoose';
+
+export interface IDatasetCanonicalLabel extends Document {
+  datasetVersionId: Types.ObjectId;
+  sampleId: Types.ObjectId;
+  targetScope: 'sample' | 'message';
+  messageIndex?: number | null;
+  messageRole?: 'user' | 'assistant' | null;
+  labels: string[];
+  targetTextSnapshot?: string;
+  sourceType: 'owner_manual_resolution';
+  resolutionRef?: Types.ObjectId | null;
+  sourceAnnotatorIds: string[];
+  publishedBy: Types.ObjectId;
+  publishedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const DatasetCanonicalLabelSchema = new Schema<IDatasetCanonicalLabel>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    targetScope: {
+      type: String,
+      enum: ['sample', 'message'] as const,
+      required: true,
+      index: true,
+    },
+    messageIndex: { type: Number, min: 0, default: null },
+    messageRole: {
+      type: String,
+      enum: ['user', 'assistant'] as const,
+      default: null,
+    },
+    labels: { type: [String], default: [] },
+    targetTextSnapshot: { type: String, default: '' },
+    sourceType: {
+      type: String,
+      enum: ['owner_manual_resolution'] as const,
+      default: 'owner_manual_resolution',
+    },
+    resolutionRef: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetAssignmentAdjudication',
+      default: null,
+    },
+    sourceAnnotatorIds: { type: [String], default: [] },
+    publishedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    publishedAt: {
+      type: Date,
+      required: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetCanonicalLabelSchema.index(
+  { datasetVersionId: 1, sampleId: 1, targetScope: 1, messageIndex: 1, messageRole: 1 },
+  { unique: true }
+);
+
+export const DatasetCanonicalLabel = mongoose.model<IDatasetCanonicalLabel>(
+  'DatasetCanonicalLabel',
+  DatasetCanonicalLabelSchema
+);
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export interface IDatasetSampleAssignment extends Document {
+  datasetVersionId: Types.ObjectId;
+  sampleId: Types.ObjectId;
+  assigneeId: Types.ObjectId;
+  assignedBy: Types.ObjectId;
+  sampleIndex: number;
+  taskType?: 'labeling' | 'cross-check';
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+const DatasetSampleAssignmentSchema = new Schema<IDatasetSampleAssignment>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    assigneeId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    assignedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    sampleIndex: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+    taskType: {
+      type: String,
+      enum: ['labeling', 'cross-check'],
+      default: 'labeling',
+    },
+    priority: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'urgent'],
+      default: 'medium',
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetSampleAssignmentSchema.index({ datasetVersionId: 1, assigneeId: 1, sampleIndex: 1 });
+DatasetSampleAssignmentSchema.index({ datasetVersionId: 1, sampleIndex: 1 });
+
+export const DatasetSampleAssignment = mongoose.model<IDatasetSampleAssignment>(
+  'DatasetSampleAssignment',
+  DatasetSampleAssignmentSchema
+);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IDatasetVersion extends Document {
+  projectId?: mongoose.Types.ObjectId;
+  ownerId: mongoose.Types.ObjectId;
+  projectName: string;
+  isPublic?: boolean;
+  sharedWithUserIds?: mongoose.Types.ObjectId[];
+  parentVersionId?: mongoose.Types.ObjectId;
+  createdFromVersionId?: mongoose.Types.ObjectId;
+  versionNo?: number;
+  versionName: string;
+  operationType?:
+    | 'upload'
+    | 'clean'
+    | 'cluster'
+    | 'labeling_base'
+    | 'classification_balanced'
+    | 'evaluation_filtered'
+    | 'refine_approved'
+    | 'manual_edit'
+    | 'legacy';
+  operationParams?: Record<string, unknown>;
+  prepareResumeStep?: number;
+  promptId?: mongoose.Types.ObjectId;
+  promptContentSnapshot?: string;
+  similarityThreshold: number;
+  totalSamples: number;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+const DatasetVersionSchema = new Schema<IDatasetVersion>(
+  {
+    projectId: { type: Schema.Types.ObjectId, ref: 'DataPrepProject', index: true },
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    projectName: { type: String, required: true, index: true, trim: true },
+    isPublic: { type: Boolean, default: false, index: true },
+    sharedWithUserIds: [{ type: Schema.Types.ObjectId, ref: 'User', index: true }],
+    parentVersionId: { type: Schema.Types.ObjectId, ref: 'DatasetVersion', index: true },
+    createdFromVersionId: { type: Schema.Types.ObjectId, ref: 'DatasetVersion', index: true },
+    versionNo: { type: Number, min: 1 },
+    versionName: { type: String, required: true, trim: true },
+    operationType: {
+      type: String,
+      enum: [
+        'upload',
+        'clean',
+        'cluster',
+        'labeling_base',
+        'classification_balanced',
+        'evaluation_filtered',
+        'refine_approved',
+        'manual_edit',
+        'legacy',
+      ],
+      default: 'legacy',
+    },
+    operationParams: { type: Schema.Types.Mixed },
+    prepareResumeStep: { type: Number, min: 1, max: 14, default: 5 },
+    promptId: { type: mongoose.Schema.Types.ObjectId, ref: 'PromptLibraryItem' },
+    promptContentSnapshot: { type: String },
+    similarityThreshold: { type: Number, required: true, min: 0, max: 1 },
+    totalSamples: { type: Number, required: true, min: 0 },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+DatasetVersionSchema.index({ projectName: 1, createdAt: -1 });
+DatasetVersionSchema.index({ projectId: 1, versionNo: 1 }, { unique: true, sparse: true });
+
+export const DatasetVersion = mongoose.model<IDatasetVersion>('DatasetVersion', DatasetVersionSchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+// Per-conversation result (1 entry = 1 conversation Ä‘Æ°á»£c replay + cháº¥m)
+export interface IEvalResult {
+  conv_index: number;
+  num_turns: number;
+  avg_latency_ms: number;
+  replay_turns?: {               // â† thÃªm
+    user: string;
+    model: string;
+    latency_ms: number;
+  }[];
+  criteria_scores: {
+    A1: number; A2: number; A3: number;
+    B1: number; B2: number;
+    C1: number; C2: number; C3: number;
+    D1: number; D2: number;
+  };
+  criteria_reasons: Record<string, string>;
+  group_scores: {
+    group_a: number;
+    group_b: number;
+    group_c: number;
+    group_d: number;
+    overall: number;
+    a1_hard_constraint_triggered: boolean;
+  };
+  non_scoring: {
+    bleu: number;
+    rouge_l: number;
+    question_detection_rate: number;
+  };
+  confidence?: {
+    overall: number;
+    by_group: Record<string, number>;
+    is_low: boolean;
+  };
+  human_review?: {
+    verdict: 'agree' | 'disagree' | 'skip';
+    note?: string;
+    reviewer?: string;
+    reviewed_at: Date;
+  };
+}
+
+export interface IEvaluation extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  modelEvalId: string;
+  jobId: string;
+  status: string;
+  evalMode: 'single' | 'paired';
+  ftModelRepo?: string;
+  baseModelRepo?: string;
+  totalConversations: number;
+  validConversations: number;
+  results: IEvalResult[];           // FT results
+  baseResults?: IEvalResult[];      // Base results (paired only)
+  summary: Record<string, any>;     // FT summary
+  baseSummary?: Record<string, any>;// Base summary (paired only)
+  delta?: Record<string, any>;      // FT - Base delta (paired only)
+  gpuResult?: Record<string, any>;
+  judgeModel?: string;
+  startedAt: Date;
+  completedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  flags?: string[];
+  // Dataset & Prompt traceability
+  systemPrompt?: string;
+  systemPromptVersion?: string;
+  datasetVersionId?: string;
+  datasetVersionName?: string;
+}
+
+const EvaluationResultSchema = new Schema<IEvalResult>(
+  {
+    conv_index: { type: Number },
+    num_turns: { type: Number },
+    avg_latency_ms: { type: Number },
+    replay_turns: { type: Schema.Types.Mixed, default: [] },
+    criteria_scores: { type: Schema.Types.Mixed, default: {} },
+    criteria_reasons: { type: Schema.Types.Mixed, default: {} },
+    group_scores: { type: Schema.Types.Mixed, default: {} },
+    non_scoring: { type: Schema.Types.Mixed, default: {} },
+    human_review: { type: Schema.Types.Mixed, default: null },
+  },
+  { _id: false }
+);
+
+const EvaluationSchema = new Schema<IEvaluation>(
+  {
+    ownerId:           { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    modelEvalId:       { type: String, required: true, unique: true, index: true },
+    jobId:             { type: String, required: true, index: true },
+    status:            { type: String, required: true },
+    evalMode:          { type: String, enum: ['single', 'paired'], default: 'single' },
+    ftModelRepo:       { type: String },
+    baseModelRepo:     { type: String },
+    totalConversations:{ type: Number, default: 0 },
+    validConversations:{ type: Number, default: 0 },
+    results:           { type: [EvaluationResultSchema], default: [] },
+    baseResults:       { type: [EvaluationResultSchema], default: [] },
+    summary:           { type: Schema.Types.Mixed, default: {} },
+    baseSummary:       { type: Schema.Types.Mixed, default: null },
+    delta:             { type: Schema.Types.Mixed, default: null },
+    gpuResult:         { type: Schema.Types.Mixed, default: {} },
+    startedAt:         { type: Date, required: true },
+    completedAt:       { type: Date, required: true },
+    judgeModel:        { type: String, default: 'claude-sonnet-4-5-20251001' },
+    flags:             { type: [String], default: [] },
+    // Dataset & Prompt traceability
+    systemPrompt:       { type: String, default: '' },
+    systemPromptVersion:{ type: String, default: '' },
+    datasetVersionId:   { type: String, default: '' },
+    datasetVersionName: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+
+export const ModelEvaluation = mongoose.model<IEvaluation>('ModelEvaluation', EvaluationSchema);
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export interface IEvaluationScore {
+  accuracy?: number | null;
+  clarity?: number | null;
+  completeness?: number | null;
+  socratic?: number | null;
+  encouragement?: number | null;
+  factuality?: number | null;
+  overall: number | null;
+  reason: string;
+}
+
+export interface IEvaluationHistory extends Document {
+  ownerId: Types.ObjectId;
+  sampleId: Types.ObjectId;
+  evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+  results: IEvaluationScore;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+const EvaluationScoreSchema = new Schema<IEvaluationScore>(
+  {
+    accuracy: { type: Number, min: 0 },
+    clarity: { type: Number, min: 0 },
+    completeness: { type: Number, min: 0 },
+    socratic: { type: Number, min: 0 },
+    encouragement: { type: Number, min: 0 },
+    factuality: { type: Number, min: 0 },
+    overall: { type: Number },
+    reason: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
+const EvaluationHistorySchema = new Schema<IEvaluationHistory>(
+  {
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    evaluatedBy: { type: String, required: true, enum: ['manual', 'gemini', 'openai', 'deepseek', 'none'] },
+    results: { type: EvaluationScoreSchema, required: true },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export const EvaluationHistory = mongoose.model<IEvaluationHistory>('EvaluationHistory', EvaluationHistorySchema);
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export type LabelType = 'hard' | 'soft';
+export type LabelTargetScope = 'sample' | 'message';
+export type LabelMessageRole = 'user' | 'assistant';
+
+export interface ILabel extends Document {
+  sampleId: Types.ObjectId;
+  name: string;
+  type: LabelType;
+  targetScope: LabelTargetScope;
+  messageIndex?: number;
+  messageRole?: LabelMessageRole;
+  targetTextSnapshot?: string;
+  createdBy: Types.ObjectId;
+  upvotes: Types.ObjectId[];
+  downvotes: Types.ObjectId[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const LabelSchema = new Schema<ILabel>(
+  {
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    name: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ['hard', 'soft'] as const,
+      required: true,
+    },
+    targetScope: {
+      type: String,
+      enum: ['sample', 'message'] as const,
+      default: 'sample',
+      index: true,
+    },
+    messageIndex: { type: Number, min: 0 },
+    messageRole: {
+      type: String,
+      enum: ['user', 'assistant'] as const,
+    },
+    targetTextSnapshot: { type: String },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    upvotes: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: [],
+    },
+    downvotes: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+      default: [],
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+LabelSchema.index({ sampleId: 1, targetScope: 1, messageIndex: 1, createdAt: -1 });
+
+export const Label = mongoose.model<ILabel>('Label', LabelSchema);
+import mongoose, { Document, Schema, Types } from 'mongoose';
+
+export type LabelAssignmentType = 'hard' | 'soft';
+export type LabelAssignmentScope = 'sample' | 'message';
+export type LabelAssignmentMessageRole = 'user' | 'assistant';
+
+export interface ILabelAssignment extends Document {
+  sampleId: Types.ObjectId;
+  name: string;
+  type: LabelAssignmentType;
+  targetScope: LabelAssignmentScope;
+  messageIndex?: number | null;
+  messageRole?: LabelAssignmentMessageRole | null;
+  targetTextSnapshot?: string;
+  createdBy: Types.ObjectId;
+  legacyLabelId?: Types.ObjectId | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const LabelAssignmentSchema = new Schema<ILabelAssignment>(
+  {
+    sampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      required: true,
+      index: true,
+    },
+    name: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ['hard', 'soft'] as const,
+      required: true,
+      index: true,
+    },
+    targetScope: {
+      type: String,
+      enum: ['sample', 'message'] as const,
+      default: 'sample',
+      index: true,
+    },
+    messageIndex: { type: Number, min: 0, default: null },
+    messageRole: {
+      type: String,
+      enum: ['user', 'assistant'] as const,
+      default: null,
+    },
+    targetTextSnapshot: { type: String },
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    legacyLabelId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Label',
+      default: null,
+      index: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+LabelAssignmentSchema.index(
+  { sampleId: 1, createdBy: 1, type: 1, name: 1, targetScope: 1, messageIndex: 1, messageRole: 1 },
+  { unique: true }
+);
+
+LabelAssignmentSchema.index({ sampleId: 1, targetScope: 1, messageIndex: 1, createdAt: -1 });
+
+export const LabelAssignment = mongoose.model<ILabelAssignment>('LabelAssignment', LabelAssignmentSchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IModelRegistry extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  name: string;
+  description?: string;
+  baseModel: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const ModelRegistrySchema = new Schema<IModelRegistry>(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    name: { type: String, required: true, trim: true },
+    description: { type: String },
+    baseModel: { type: String, required: true },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+ModelRegistrySchema.index({ ownerId: 1, name: 1 }, { unique: true });
+
+export const ModelRegistry = mongoose.model<IModelRegistry>('ModelRegistry', ModelRegistrySchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export enum ModelVersionStatus {
+  USE = 'Use',
+  NOT_USE = 'Not Use',
+}
+
+export interface IModelVersion extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  modelRegistryId: mongoose.Types.ObjectId;
+  version: string; // e.g., "v1.0.0"
+  trainingHistoryId?: mongoose.Types.ObjectId;
+  evaluationId?: mongoose.Types.ObjectId;
+  hfRepoId?: string;
+  status: ModelVersionStatus;
+  metrics?: {
+    loss?: number;
+    accuracy?: number;
+    overallScore?: number;
+    [key: string]: any;
+  };
+  configSnapshot?: any;
+  datasetInfo?: {
+    name: string;
+    source: string;
+    [key: string]: any;
+  };
+  promptVersion?: string;
+  systemPrompt?: string;
+  notes?: string;
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const ModelVersionSchema = new Schema<IModelVersion>(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    modelRegistryId: { type: Schema.Types.ObjectId, ref: 'ModelRegistry', required: true },
+    version: { type: String, required: true },
+    trainingHistoryId: { type: Schema.Types.ObjectId, ref: 'TrainingHistory' },
+    evaluationId: { type: Schema.Types.ObjectId, ref: 'ModelEvaluation' },
+    hfRepoId: { type: String },
+    status: {
+      type: String,
+      enum: Object.values(ModelVersionStatus),
+      default: ModelVersionStatus.NOT_USE,
+    },
+    metrics: { type: Schema.Types.Mixed },
+    configSnapshot: { type: Schema.Types.Mixed },
+    datasetInfo: {
+      name: { type: String },
+      source: { type: String },
+    },
+    promptVersion: { type: String },
+    systemPrompt: { type: String },
+    notes: { type: String },
+    createdBy: { type: String },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Ensure unique version per model registry
+ModelVersionSchema.index({ ownerId: 1, modelRegistryId: 1, version: 1 }, { unique: true });
+
+export const ModelVersion = mongoose.model<IModelVersion>('ModelVersion', ModelVersionSchema);
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export interface IProcessedDatasetItem extends Document {
+  datasetVersionId: Types.ObjectId;
+  sampleId: string;
+  sourceSampleId?: Types.ObjectId;
+  rootSampleKey?: string;
+  data: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt?: Date;
+}
+
+const ProcessedDatasetItemSchema = new Schema<IProcessedDatasetItem>(
+  {
+    datasetVersionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'DatasetVersion',
+      required: true,
+      index: true,
+    },
+    sampleId: { type: String, required: true, trim: true },
+    sourceSampleId: {
+      type: Schema.Types.ObjectId,
+      ref: 'ProcessedDatasetItem',
+      index: true,
+    },
+    rootSampleKey: { type: String, trim: true, index: true },
+    data: { type: Schema.Types.Mixed, required: true },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+ProcessedDatasetItemSchema.index({ datasetVersionId: 1, sampleId: 1 }, { unique: true });
+
+export const ProcessedDatasetItem = mongoose.model<IProcessedDatasetItem>('ProcessedDatasetItem', ProcessedDatasetItemSchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IPromptLibraryItem extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  name: string;
+  content: string;
+  description?: string;
+  isPublic: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const PromptLibraryItemSchema = new Schema<IPromptLibraryItem>(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    name: { type: String, required: true, trim: true },
+    content: { type: String, required: true },
+    description: { type: String, default: '' },
+    isPublic: { type: Boolean, default: false },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+PromptLibraryItemSchema.index({ ownerId: 1, name: 1 }, { unique: true });
+PromptLibraryItemSchema.index({ createdAt: -1 });
+
+export const PromptLibraryItem = mongoose.model<IPromptLibraryItem>('PromptLibraryItem', PromptLibraryItemSchema);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface ITrainingHistory extends Document {
+  ownerId: mongoose.Types.ObjectId;
+  jobId: string;
+  projectName: string;
+  baseModel: string;
+  systemPrompt?: string;
+  systemPromptVersion?: string;
+  datasetVersionId?: mongoose.Types.ObjectId | string;
+  datasetSource: string;       // 'local' | 'hub'
+  datasetName: string;         // filename hoáº·c HuggingFace Hub ID
+  columnMapping: string;
+  parameters: {
+    batchSize: number;
+    epochs: number;
+    learningRate: number;
+    blockSize: number;
+    modelMaxLength: number;
+    r: number;                          // LoRA attention dimension
+    lora_alpha: number;                 // Alpha parameter for LoRA scaling
+    lora_dropout: number;               // Dropout probability for LoRA
+    random_state: number;               // Random state seed
+    gradient_accumulation_steps: number; // Gradient accumulation steps
+    warmup_steps: number;               // LR warmup steps
+    weight_decay: number;               // Weight decay for AdamW
+    seed: number;                       // Random seed
+    early_stopping_loss: number;        // Stop if loss < this
+    early_stopping_patience: number;    // Steps to wait for loss decrease
+    optim: string;                      // Optimizer type
+    lr_scheduler_type: string;          // LR scheduler type
+  };
+  pushToHub: boolean;
+  hfRepoId: string;
+  hfToken: string;
+  status: string;              // 'COMPLETED' | 'STOPPED' | 'FAILED'
+  finalMetrics?: {
+    loss: number;
+    accuracy: number;
+    vram: number;
+    gpu_util: number;
+  };
+  lastLogLine?: string;         // e.g. "Epoch 3/3 [Step 150/150] loss: 0.1693 - acc: 94.36%"
+  trainingDuration: number;    // thá»i gian thá»±c táº¿ (milliseconds)
+  startedAt: Date;
+  completedAt?: Date;
+  lossHistory?: { progress: number; loss: number; timestamp?: Date }[];
+  evalLossHistory?: { progress: number; loss: number; timestamp?: Date }[];
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Model Evaluation
+  pinnedEvalId?: string;       // modelEvalId cá»§a eval Ä‘Æ°á»£c chá»n lÃ m official (hiá»ƒn thá»‹ trÃªn leaderboard)
+
+  // Added for Resume Checkpoint
+  latest_checkpoint_file_id?: string;
+  drive_folder_id?: string;
+  config_snapshot?: any;
+  datasetPath?: string;
+  datasetFileId?: string; // ID tá»« Multer hoáº·c File System
+  workerUrl?: string;
+}
+
+const TrainingHistorySchema = new Schema<ITrainingHistory>(
+  {
+    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    jobId: { type: String, required: true, unique: true, index: true },
+    projectName: { type: String, required: true },
+    baseModel: { type: String, required: true, index: true },
+    systemPrompt: { type: String, default: '' },
+    systemPromptVersion: { type: String, default: '' },
+    datasetVersionId: { type: Schema.Types.ObjectId, ref: 'DatasetVersion' },
+    datasetSource: { type: String, required: true },
+    datasetName: { type: String, required: true },
+    columnMapping: { type: String, default: 'text' },
+    parameters: {
+      batchSize: { type: Number, required: true },
+      epochs: { type: Number, required: true },
+      learningRate: { type: Number, required: true },
+      blockSize: { type: Number, required: true },
+      modelMaxLength: { type: Number, required: true },
+      r: { type: Number, default: 8 },
+      lora_alpha: { type: Number, default: 8 },
+      lora_dropout: { type: Number, default: 0 },
+      random_state: { type: Number, default: 3407 },
+      gradient_accumulation_steps: { type: Number, default: 4 },
+      warmup_steps: { type: Number, default: 5 },
+      weight_decay: { type: Number, default: 0.01 },
+      seed: { type: Number, default: 3407 },
+      early_stopping_loss: { type: Number, default: 0.5 },
+      early_stopping_patience: { type: Number, default: 100 },
+      optim: { type: String, default: 'adamw_8bit' },
+      lr_scheduler_type: { type: String, default: 'linear' },
+    },
+    pushToHub: { type: Boolean, default: false },
+    hfRepoId: { type: String, default: '' },
+    hfToken: { type: String, default: '' },
+    status: { type: String, required: true },
+    finalMetrics: {
+      loss: { type: Number },
+      eval_loss: { type: Number },
+      accuracy: { type: Number },
+      vram: { type: Number },
+      gpu_util: { type: Number },
+    },
+    lastLogLine: { type: String, default: '' },
+    trainingDuration: { type: Number, default: 0 },  // ms
+    startedAt: { type: Date, required: true },
+    completedAt: { type: Date },
+    lossHistory: [
+      {
+        progress: { type: Number },
+        loss: { type: Number },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+    evalLossHistory: [
+      {
+        progress: { type: Number },
+        loss: { type: Number },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
+
+    // Model Evaluation
+    pinnedEvalId: { type: String, default: null },
+
+    // Added for Resume Checkpoint
+    latest_checkpoint_file_id: { type: String },
+    drive_folder_id: { type: String },
+    config_snapshot: { type: Schema.Types.Mixed }, // Store arbitrary JSON config
+    datasetPath: { type: String },
+    datasetFileId: { type: String },
+    workerUrl: { type: String },
+  },
+  {
+    timestamps: true, // tá»± táº¡o createdAt, updatedAt
+  }
+);
+
+export const TrainingHistory = mongoose.model<ITrainingHistory>(
+  'TrainingHistory',
+  TrainingHistorySchema
+);
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IUser extends Document {
+  email: string;
+  passwordHash: string;
+  name: string;
+  role: 'admin' | 'supervisor' | 'staff';
+  status: 'active' | 'pending' | 'banned' | 'inactive';
+  lastLogin?: Date;
+  createdAt: Date;
+}
+
+const UserSchema: Schema = new Schema({
+  email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+  passwordHash: { type: String, required: true },
+  name: { type: String, required: true, trim: true },
+  role: { type: String, required: true, enum: ['admin', 'supervisor', 'staff'], default: 'staff' },
+  status: { type: String, required: true, enum: ['active', 'pending', 'banned', 'inactive'], default: 'active' },
+  lastLogin: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const User = mongoose.model<IUser>('User', UserSchema);

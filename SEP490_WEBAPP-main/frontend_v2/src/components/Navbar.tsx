@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
 
 function Navbar() {
-  const { user, login, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -135,8 +135,6 @@ function Navbar() {
 
       {user ? (
         <>
-
-
           {/* Middle: Resources (Only shown when logged in) */}
           <div style={{ display: 'flex', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
             {gpuStats ? (
@@ -162,7 +160,15 @@ function Navbar() {
                 <div className="resources-item">
                   <span className="status-dot" style={{ background: '#cbd5e1', boxShadow: 'none' }}></span>
                   <Activity size={16} className="icon-blue" style={{ filter: 'grayscale(100%)' }} />
-                  <span>GPU chua ket noi</span>
+                  <span>Offline</span>
+                </div>
+                <div className="divider"></div>
+                <div className="resources-item">
+                  <span className="vram-text">VRAM:</span>
+                  <span className="vram-value">-- / -- GB</span>
+                  <div className="progress-bar-container">
+                    <div className="progress-bar-fill" style={{ width: '0%', background: '#cbd5e1' }}></div>
+                  </div>
                 </div>
               </div>
             )}
