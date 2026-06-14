@@ -4,6 +4,7 @@ import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { DatasetVersion } from '../../../models/DatasetVersion';
+import { User } from '../../../models/User';
 import mongoose from 'mongoose';
 
 export class AssignmentController {
@@ -138,16 +139,30 @@ export class AssignmentController {
       const versions = await DatasetVersion.find({ _id: { $in: versionIds } });
       const versionMap = new Map(versions.map(v => [String(v._id), v]));
 
+      const assigneeIds = [...new Set(submissions.map(s => String(s.assigneeId)))];
+      const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+      const users = await User.find({ _id: { $in: validAssigneeIds } });
+      const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
+
       const grouped: { [key: string]: any } = {};
       
       submissions.forEach(sub => {
         const vid = String(sub.datasetVersionId);
         const versionDoc = versionMap.get(vid);
+
+        let baseName = sub.name;
+        if (baseName && baseName.includes(' - Batch')) {
+          baseName = baseName.split(' - Batch')[0];
+        } else if (baseName && baseName.match(/^Batch \d+$/)) {
+          baseName = 'Default Task';
+        }
+
+        const groupId = `${vid}_${baseName}`;
         
-        if (!grouped[vid]) {
-          grouped[vid] = {
-            id: vid,
-            name: versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0,6)}...`,
+        if (!grouped[groupId]) {
+          grouped[groupId] = {
+            id: groupId,
+            name: baseName !== 'Default Task' ? baseName : (versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0,6)}...`),
             dataset: versionDoc ? versionDoc.projectName : (sub.dataset || 'Project Dataset'),
             version: sub.version || vid,
             totalSamples: 0,
@@ -159,7 +174,7 @@ export class AssignmentController {
           };
         }
         
-        let batch = grouped[vid].batches.find((b: any) => b.name === sub.name);
+        let batch = grouped[groupId].batches.find((b: any) => b.name === sub.name);
         if (!batch) {
           batch = {
             id: `batch-${sub.batchStart}`,
@@ -168,14 +183,21 @@ export class AssignmentController {
             status: sub.status,
             assignees: []
           };
-          grouped[vid].batches.push(batch);
-          grouped[vid].totalSamples += sub.totalSamples;
-          grouped[vid].labeledCount += (sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0);
+          grouped[groupId].batches.push(batch);
+          grouped[groupId].totalSamples += sub.totalSamples;
+          grouped[groupId].labeledCount += (sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0);
         }
         
+        let finalName = userMap.get(String(sub.assigneeId));
+        if (!finalName) {
+           if (sub.assigneeId === 'fake-staff-1') finalName = 'Nguyễn Văn A';
+           else if (sub.assigneeId === 'fake-staff-2') finalName = 'Trần Thị B';
+           else finalName = String(sub.assigneeId);
+        }
+
         batch.assignees.push({
           id: sub.assigneeId,
-          name: sub.assigneeId === 'fake-staff-1' ? 'Nguyễn Văn A' : (sub.assigneeId === 'fake-staff-2' ? 'Trần Thị B' : String(sub.assigneeId)),
+          name: finalName,
           progress: sub.status === 'submitted' ? 100 : (sub.labeledCount / (sub.totalSamples || 1)) * 100 || 0,
           status: sub.status
         });
@@ -195,7 +217,23 @@ export class AssignmentController {
   async getTaskDetail(req: Request, res: Response) {
     try {
       const { taskId } = req.params;
-      const subs = await DatasetAssignmentSubmission.find({ datasetVersionId: taskId });
+      
+      let versionId = taskId;
+      let baseName = '';
+      if (taskId.includes('_')) {
+        const parts = taskId.split('_');
+        versionId = parts[0];
+        baseName = parts.slice(1).join('_');
+      }
+
+      const query: any = { datasetVersionId: versionId };
+      if (baseName && baseName !== 'Default Task') {
+        query.name = new RegExp('^' + baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      } else if (baseName === 'Default Task') {
+        query.name = /^Batch \d+$/;
+      }
+
+      const subs = await DatasetAssignmentSubmission.find(query);
       if (subs.length === 0) {
         // Return empty structure instead of 404 so UI can render
         return res.status(200).json({ 
@@ -208,12 +246,26 @@ export class AssignmentController {
       const staffMap: { [key: string]: any } = {};
       let totalSamples = 0;
 
+      const assigneeIds = [...new Set(subs.map(s => String(s.assigneeId)))];
+      const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+      const users = await User.find({ _id: { $in: validAssigneeIds } });
+      const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
+
       subs.forEach(sub => {
+        const assigneeIdStr = String(sub.assigneeId);
+        
+        let finalName = userMap.get(assigneeIdStr);
+        if (!finalName) {
+           if (assigneeIdStr === 'fake-staff-1') finalName = 'Nguyễn Văn A';
+           else if (assigneeIdStr === 'fake-staff-2') finalName = 'Trần Thị B';
+           else finalName = assigneeIdStr;
+        }
+
         // Build Staff
-        if (!staffMap[sub.assigneeId]) {
-          staffMap[sub.assigneeId] = {
-            id: sub.assigneeId,
-            name: sub.assigneeId === '6a293e9365e356a409f3023f' ? 'System Staff' : (sub.assigneeId === 'fake-staff-2' ? 'Trần Thị B' : sub.assigneeId),
+        if (!staffMap[assigneeIdStr]) {
+          staffMap[assigneeIdStr] = {
+            id: assigneeIdStr,
+            name: finalName,
             progress: 0,
             total: 0,
             status: sub.status,
@@ -221,8 +273,8 @@ export class AssignmentController {
             labelsPerHour: Math.floor(Math.random() * 5) + 5 // Mock productivity
           };
         }
-        staffMap[sub.assigneeId].total += sub.totalSamples;
-        staffMap[sub.assigneeId].progress += sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0;
+        staffMap[assigneeIdStr].total += sub.totalSamples;
+        staffMap[assigneeIdStr].progress += sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0;
 
         // Build Batch
         let batch = batchesMap[sub.name];
@@ -237,7 +289,8 @@ export class AssignmentController {
           batchesMap[sub.name] = batch;
           totalSamples += sub.totalSamples;
         }
-        batch.assignees.push(staffMap[sub.assigneeId].name);
+        const assigneeIdStr2 = String(sub.assigneeId);
+        batch.assignees.push(staffMap[assigneeIdStr2].name);
       });
 
       const sampleAssigns = await DatasetSampleAssignment.find({ datasetVersionId: taskId }).sort({ sampleIndex: 1 });

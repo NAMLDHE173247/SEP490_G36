@@ -75,6 +75,7 @@ export const Stage3Labeling: React.FC = () => {
   // Wizard Step 2 States
   const [drawerStep, setDrawerStep] = React.useState<1 | 2>(1);
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
+  const [taskNameInput, setTaskNameInput] = React.useState('');
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -90,23 +91,18 @@ export const Stage3Labeling: React.FC = () => {
         try {
           const versionId = localStorage.getItem('current_version_id');
           if (versionId) {
-            const [dash, assign, detail] = await Promise.all([
+            const [dash, assign, usersRes] = await Promise.all([
               apiService.getDatasetVersionAssignmentDashboard(versionId),
               apiService.getDatasetVersionAssignments(versionId),
-              apiService.getDatasetVersionDetail(versionId)
+              apiService.listUsers()
             ]);
             setAssignmentDashboard(dash);
             setAssignmentTotals(assign.totals);
             setAssignmentSamples(assign.samples || []);
-            let users = detail?.datasetVersion?.sharedWithUsers || [];
-            if (users.length === 0) {
-              users = [
-                { _id: '6a293e9365e356a409f3023f', name: 'System Staff', email: 'staff@example.com' },
-                { _id: 'fake-staff-2', name: 'Trần Thị B', email: 'ttb@example.com' },
-                { _id: 'fake-staff-3', name: 'Lê Văn C', email: 'lvc@example.com' },
-                { _id: 'fake-staff-4', name: 'Phạm Thị D', email: 'ptd@example.com' }
-              ];
-            }
+            
+            const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
+            let users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+            
             setShareUsers(users);
             if (users.length > 0) {
               setTaskAssigneeId(users[0]._id);
@@ -264,7 +260,7 @@ export const Stage3Labeling: React.FC = () => {
             sampleCount: batch.samples.length,
             taskType: 'labeling',
             priority: 'medium',
-            batchName: batch.name
+            batchName: taskNameInput ? `${taskNameInput} - ${batch.name}` : batch.name
           });
         }
       }
@@ -2198,6 +2194,17 @@ export const Stage3Labeling: React.FC = () => {
               <>
                 <div className="ct-wizard-step2">
                   <div className="ct-wizard-config">
+                    <div className="ct-form-group">
+                      <label>Tên Task (Tùy chọn)</label>
+                      <input 
+                        type="text" 
+                        className="ct-input" 
+                        placeholder="Nhập tên chung cho Task..." 
+                        value={taskNameInput}
+                        onChange={(e) => setTaskNameInput(e.target.value)}
+                      />
+                    </div>
+                    
                     <div className="ct-form-group">
                       <label>Mức độ ưu tiên (Priority)</label>
                       <select className="ct-select" defaultValue="Medium">

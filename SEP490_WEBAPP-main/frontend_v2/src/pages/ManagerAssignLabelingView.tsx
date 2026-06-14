@@ -191,9 +191,8 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           return (
             <div key={task.id} className="al-task-card">
               <div className="al-task-row" onClick={() => onViewDetail(task, null)}>
-                <div className="al-task-id"><span>{task.id}</span></div>
                 <div className="al-task-title-col">
-                  <span className="al-task-title">{task.name}</span>
+                  <span className="al-task-title">{task.dataset} - {task.name}</span>
                   <span className="al-task-desc">Tổng cộng: {task.totalSamples} samples · {task.batches.length} Batch</span>
                 </div>
 
