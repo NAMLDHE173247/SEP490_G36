@@ -16,12 +16,18 @@ const QUALITY_OPTIONS = ['Good', 'Medium', 'Poor'];
 const FLAG_OPTIONS = ['Factual Error', 'Direct Answer', 'Language Issue'];
 
 function StaffLabelView({ task, onBack }) {
-  const [expandedSample, setExpandedSample] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [chatFontSize, setChatFontSize] = useState(13);
   const [labels, setLabels] = useState({});
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [savedDraft, setSavedDraft] = useState(false);
   const [showGuideline, setShowGuideline] = useState(false);
+
+  const [subjectOptions, setSubjectOptions] = useState(SUBJECT_OPTIONS);
+  const [intentOptions, setIntentOptions] = useState(INTENT_OPTIONS);
+  const [actionOptions, setActionOptions] = useState(ACTION_OPTIONS);
+  const [flagOptions, setFlagOptions] = useState(FLAG_OPTIONS);
 
   const taskName = task?.name || 'Gán nhãn Toán 11 — Batch 1';
   
@@ -79,24 +85,104 @@ function StaffLabelView({ task, onBack }) {
     setSavedDraft(false);
   };
 
-  const handleAIAssist = (sampleId) => {
-    // Fake AI Assist filling out labels
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiBackup, setAiBackup] = useState({});
+
+  const handleAIAssist = async (sampleId) => {
     const sample = samples.find(s => s.id === sampleId);
-    if (!sample) return;
-    const aiLabels = {
-      subject: 'Toán học',
-      status: 'reviewing',
-      messages: {}
-    };
-    sample.messages.forEach((msg, idx) => {
-      if (msg.role === 'user') {
-        aiLabels.messages[idx] = { intent: 'Ask Explanation' };
-      } else {
-        aiLabels.messages[idx] = { action: 'Ask Probing Question' };
+    if (!sample || !task) return;
+
+    setIsAiLoading(true);
+    try {
+      // Save current label state for rollback
+      setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
+
+      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, {
+        messages: sample.messages
+      });
+
+      if (res.data.success && res.data.data) {
+        const suggestion = res.data.data;
+        const aiLabels = {
+          subject: suggestion.subject || '',
+          completion: suggestion.completion || '',
+          quality: suggestion.quality || '',
+          status: 'reviewing',
+          messages: {}
+        };
+        // Kiểm tra xem có nhãn mới không
+        const newSubjects = [];
+        const newIntents = [];
+        const newActions = [];
+
+        if (suggestion.subject && !subjectOptions.includes(suggestion.subject)) {
+          newSubjects.push(suggestion.subject);
+        }
+
+        if (Array.isArray(suggestion.messages)) {
+          suggestion.messages.forEach(msg => {
+            if (msg.intent && !intentOptions.includes(msg.intent) && !newIntents.includes(msg.intent)) {
+              newIntents.push(msg.intent);
+            }
+            if (msg.action && !actionOptions.includes(msg.action) && !newActions.includes(msg.action)) {
+              newActions.push(msg.action);
+            }
+          });
+        }
+
+        let allowAdd = true;
+        const totalNew = newSubjects.length + newIntents.length + newActions.length;
+        if (totalNew > 0) {
+          let msg = 'AI đề xuất một số nhãn mới chưa có trong danh sách gốc:\n';
+          if (newSubjects.length) msg += `- Môn học: ${newSubjects.join(', ')}\n`;
+          if (newIntents.length) msg += `- Intent: ${newIntents.join(', ')}\n`;
+          if (newActions.length) msg += `- Action: ${newActions.join(', ')}\n`;
+          msg += '\nBạn có muốn tự động thêm chúng vào các Menu Tùy chọn không?';
+          allowAdd = window.confirm(msg);
+        }
+
+        if (allowAdd) {
+          if (newSubjects.length) setSubjectOptions(prev => [...prev, ...newSubjects]);
+          if (newIntents.length) setIntentOptions(prev => [...prev, ...newIntents]);
+          if (newActions.length) setActionOptions(prev => [...prev, ...newActions]);
+        }
+
+        // Nếu user từ chối thêm nhãn mới, gán các nhãn mới này về 'Other' hoặc ''
+        if (!allowAdd && newSubjects.includes(aiLabels.subject)) {
+          aiLabels.subject = ''; 
+        }
+
+        if (Array.isArray(suggestion.messages)) {
+          suggestion.messages.forEach(msg => {
+            aiLabels.messages[msg.messageIndex] = {};
+            if (msg.intent) {
+              aiLabels.messages[msg.messageIndex].intent = (!allowAdd && newIntents.includes(msg.intent)) ? 'Other' : msg.intent;
+            }
+            if (msg.action) {
+              aiLabels.messages[msg.messageIndex].action = (!allowAdd && newActions.includes(msg.action)) ? 'Other' : msg.action;
+            }
+          });
+        }
+        
+        setLabels(prev => ({ ...prev, [sampleId]: { ...prev[sampleId], ...aiLabels } }));
+        setSavedDraft(false);
       }
-    });
-    setLabels(prev => ({ ...prev, [sampleId]: { ...prev[sampleId], ...aiLabels } }));
-    setSavedDraft(false);
+    } catch (e) {
+      console.error('Lỗi AI:', e);
+      alert('Không thể nhận gợi ý từ AI. Vui lòng thử lại sau.');
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleRollbackAI = (sampleId) => {
+    if (aiBackup[sampleId]) {
+      setLabels(prev => ({ ...prev, [sampleId]: aiBackup[sampleId] }));
+      setSavedDraft(false);
+      const newBackup = { ...aiBackup };
+      delete newBackup[sampleId];
+      setAiBackup(newBackup);
+    }
   };
 
   const setLabel = (sampleId, field, value) => {
@@ -164,27 +250,31 @@ function StaffLabelView({ task, onBack }) {
   const labeledCount = samples.filter(s => labels[s.id]?.subject).length;
   const progress = Math.round((labeledCount / samples.length) * 100);
 
+  const [isSaving, setIsSaving] = useState(false);
+
   const handleSaveDraft = async () => {
-    // Optionally save labels to Backend
-    if (task) {
-      const currentSampleId = samples[expandedSample]?.id;
-      if (currentSampleId) {
-        const currentLabel = labels[currentSampleId];
-        const isComplete = currentLabel?.subject && currentLabel?.completion && currentLabel?.quality;
-        try {
-          await api.post(`/dataprep/assignments/my-task/${task.id}/save-label`, {
-            sampleId: currentSampleId,
-            label: currentLabel,
-            isComplete: !!isComplete
-          });
-        } catch (e) {
-          console.error('Failed to save label', e);
-        }
-      }
-    }
+    if (!task) return;
     
-    setSavedDraft(true);
-    setTimeout(() => setSavedDraft(false), 3000);
+    setIsSaving(true);
+    try {
+      const promises = Object.keys(labels).map(sampleId => {
+        const currentLabel = labels[sampleId];
+        const isComplete = currentLabel?.subject && currentLabel?.completion && currentLabel?.quality;
+        return api.post(`/dataprep/assignments/my-task/${task.id}/save-label`, {
+          sampleId,
+          label: currentLabel,
+          isComplete: !!isComplete
+        });
+      });
+      await Promise.all(promises);
+      setSavedDraft(true);
+      setTimeout(() => setSavedDraft(false), 3000);
+    } catch (e) {
+      console.error('Failed to save draft', e);
+      alert('Có lỗi khi lưu bản nháp.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -247,9 +337,13 @@ function StaffLabelView({ task, onBack }) {
             <FileText size={16} />
             Hướng dẫn
           </button>
-          <button className="sl-btn-draft" onClick={handleSaveDraft} disabled={submitted}>
-            <Save size={16} />
-            {savedDraft ? 'Đã lưu ✓' : 'Save Draft'}
+          <button className="sl-btn-draft" onClick={handleSaveDraft} disabled={submitted || isSaving}>
+            {isSaving ? (
+              <RefreshCw size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
+            {isSaving ? 'Đang lưu...' : savedDraft ? 'Đã lưu ✓' : 'Save Draft'}
           </button>
           <button
             className={`sl-btn-submit ${submitted ? 'submitted' : ''}`}
@@ -281,40 +375,55 @@ function StaffLabelView({ task, onBack }) {
         </div>
       )}
 
-      {/* Sample list */}
-      <div className="sl-samples-list">
-        {samples.map((sample, sIdx) => {
-          const isExpanded = expandedSample === sIdx;
-          const hasLabel = !!labels[sample.id]?.subject;
+      {/* Single Sample View */}
+      <div className="sl-single-sample-view">
+        {samples.length > 0 && (
+          (() => {
+            const sample = samples[currentIndex];
+            const hasLabel = !!labels[sample.id]?.subject;
 
-          return (
-            <div key={sample.id} className={`sl-sample-card ${isExpanded ? 'expanded' : ''} ${hasLabel ? 'labeled' : ''}`}>
-              {/* Sample header */}
-              <div className="sl-sample-header" onClick={() => setExpandedSample(isExpanded ? -1 : sIdx)}>
-                <div className="sl-sample-header-left">
-                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <span className="sl-sample-num">#{sample.id}</span>
-                  {hasLabel ? (
-                    <span className="sl-labeled-badge"><CheckCircle size={12} /> Đã gán nhãn</span>
-                  ) : (
-                    <span className="sl-unlabeled-badge"><Clock size={12} /> Chưa gán nhãn</span>
-                  )}
-                </div>
-                <div className="sl-sample-header-right">
-                  <span className="sl-msg-count">{sample.messages.length} tin nhắn</span>
-                  {hasLabel && <span className="sl-subject-tag">{labels[sample.id]?.subject}</span>}
-                </div>
-              </div>
-
-              {/* Expanded content */}
-              {isExpanded && (
-                <div className="sl-sample-body">
-                  {/* Chat messages */}
-                  <div className="sl-chat-area">
-                    <div className="sl-chat-title">
+            return (
+              <div key={sample.id} className={`sl-sample-card expanded ${hasLabel ? 'labeled' : ''}`}>
+                {/* Sample header */}
+                <div className="sl-sample-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div className="sl-sample-header-left" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="sl-sample-num">#{sample.id}</span>
+                      {hasLabel ? (
+                        <span className="sl-labeled-badge"><CheckCircle size={12} /> Đã gán nhãn</span>
+                      ) : (
+                        <span className="sl-unlabeled-badge"><Clock size={12} /> Chưa gán nhãn</span>
+                      )}
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#475569', fontSize: '13px', fontWeight: 600, borderLeft: '1px solid #e2e8f0', paddingLeft: '16px' }}>
                       <MessageSquare size={14} />
                       <span>Hội thoại</span>
                     </div>
+                  </div>
+
+                  <div className="sl-sample-header-right" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div className="sl-zoom-controls" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <button 
+                        onClick={() => setChatFontSize(f => Math.max(10, f - 1))}
+                        style={{ padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: '4px', background: 'white', cursor: 'pointer', fontSize: '12px', color: '#475569' }}
+                      >A-</button>
+                      <span style={{ fontSize: '12px', color: '#64748b', minWidth: '34px', textAlign: 'center', fontWeight: 'bold' }}>{chatFontSize}px</span>
+                      <button 
+                        onClick={() => setChatFontSize(f => Math.min(24, f + 1))}
+                        style={{ padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: '4px', background: 'white', cursor: 'pointer', fontSize: '12px', color: '#475569' }}
+                      >A+</button>
+                    </div>
+
+                    <span className="sl-msg-count">{sample.messages.length} tin nhắn</span>
+                    {hasLabel && <span className="sl-subject-tag">{labels[sample.id]?.subject}</span>}
+                  </div>
+                </div>
+
+                {/* Expanded content */}
+                <div className="sl-sample-body">
+                  {/* Chat messages */}
+                  <div className="sl-chat-area">
                     {sample.messages.map((msg, mIdx) => (
                       <div key={mIdx} className={`sl-msg ${msg.role}`}>
                         <div className="sl-msg-header">
@@ -322,7 +431,7 @@ function StaffLabelView({ task, onBack }) {
                           <span className="sl-msg-role">{msg.role === 'user' ? 'Học sinh' : 'Trợ lý'}</span>
                           <span className="sl-msg-turn">Turn {Math.floor(mIdx / 2) + 1}</span>
                         </div>
-                        <div className={`sl-msg-bubble ${msg.role}`}>
+                        <div className={`sl-msg-bubble ${msg.role}`} style={{ fontSize: `${chatFontSize}px` }}>
                           <p>{msg.content}</p>
                         </div>
                         {/* Per-message label */}
@@ -332,11 +441,24 @@ function StaffLabelView({ task, onBack }) {
                               <span className="sl-label-tag">Intent:</span>
                               <select
                                 value={getMsgLabel(sample.id, mIdx, 'intent')}
-                                onChange={(e) => setMsgLabel(sample.id, mIdx, 'intent', e.target.value)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__add_new__') {
+                                    const newIntent = window.prompt('Nhập Intent mới:');
+                                    if (newIntent && newIntent.trim() !== '') {
+                                      const trimmed = newIntent.trim();
+                                      if (!intentOptions.includes(trimmed)) setIntentOptions([...intentOptions, trimmed]);
+                                      setMsgLabel(sample.id, mIdx, 'intent', trimmed);
+                                    }
+                                  } else {
+                                    setMsgLabel(sample.id, mIdx, 'intent', val);
+                                  }
+                                }}
                                 className="sl-inline-select"
                               >
                                 <option value="">— Chọn —</option>
-                                {INTENT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                {intentOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                                <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Intent mới...</option>
                               </select>
                             </div>
                           ) : (
@@ -344,11 +466,24 @@ function StaffLabelView({ task, onBack }) {
                               <span className="sl-label-tag">Action:</span>
                               <select
                                 value={getMsgLabel(sample.id, mIdx, 'action')}
-                                onChange={(e) => setMsgLabel(sample.id, mIdx, 'action', e.target.value)}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__add_new__') {
+                                    const newAction = window.prompt('Nhập Action mới:');
+                                    if (newAction && newAction.trim() !== '') {
+                                      const trimmed = newAction.trim();
+                                      if (!actionOptions.includes(trimmed)) setActionOptions([...actionOptions, trimmed]);
+                                      setMsgLabel(sample.id, mIdx, 'action', trimmed);
+                                    }
+                                  } else {
+                                    setMsgLabel(sample.id, mIdx, 'action', val);
+                                  }
+                                }}
                                 className="sl-inline-select"
                               >
                                 <option value="">— Chọn —</option>
-                                {ACTION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                                {actionOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                                <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Action mới...</option>
                               </select>
                             </div>
                           )}
@@ -363,11 +498,26 @@ function StaffLabelView({ task, onBack }) {
                       <label>📌 Nhãn môn học</label>
                       <select
                         value={getLabel(sample.id, 'subject')}
-                        onChange={(e) => setLabel(sample.id, 'subject', e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '__add_new__') {
+                            const newSubject = window.prompt('Nhập nhãn môn học mới:');
+                            if (newSubject && newSubject.trim() !== '') {
+                              const trimmed = newSubject.trim();
+                              if (!subjectOptions.includes(trimmed)) {
+                                setSubjectOptions([...subjectOptions, trimmed]);
+                              }
+                              setLabel(sample.id, 'subject', trimmed);
+                            }
+                          } else {
+                            setLabel(sample.id, 'subject', val);
+                          }
+                        }}
                         className="sl-select"
                       >
                         <option value="">— Chọn môn học —</option>
-                        {SUBJECT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                        {subjectOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                        <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm môn học khác...</option>
                       </select>
                     </div>
 
@@ -399,7 +549,7 @@ function StaffLabelView({ task, onBack }) {
                     <div className="sl-label-group">
                       <label>🚩 Cờ lỗi</label>
                       <div className="sl-flags-row">
-                        {FLAG_OPTIONS.map(flag => (
+                        {flagOptions.map(flag => (
                           <label key={flag} className={`sl-flag-chip ${getFlags(sample.id).includes(flag) ? 'active' : ''}`}>
                             <input
                               type="checkbox"
@@ -409,6 +559,20 @@ function StaffLabelView({ task, onBack }) {
                             {flag}
                           </label>
                         ))}
+                        <button 
+                          className="sl-flag-chip"
+                          style={{ borderStyle: 'dashed', cursor: 'pointer', background: 'transparent', color: '#64748b' }}
+                          onClick={() => {
+                            const newFlag = window.prompt('Nhập tên cờ lỗi mới:');
+                            if (newFlag && newFlag.trim() !== '') {
+                              const trimmed = newFlag.trim();
+                              if (!flagOptions.includes(trimmed)) setFlagOptions([...flagOptions, trimmed]);
+                              if (!getFlags(sample.id).includes(trimmed)) toggleFlag(sample.id, trimmed);
+                            }
+                          }}
+                        >
+                          + Thêm...
+                        </button>
                       </div>
                     </div>
 
@@ -424,18 +588,76 @@ function StaffLabelView({ task, onBack }) {
                     </div>
 
                     {!task?.disableAi && (
-                      <button className="sl-ai-btn" onClick={() => applyAiSuggestion(sample.id, sample)}>
-                        <Sparkles size={14} />
-                        🤖 Gợi ý AI
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="sl-ai-btn" onClick={() => handleAIAssist(sample.id)} disabled={isAiLoading}>
+                          {isAiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                          {isAiLoading ? '🤖 Đang phân tích...' : '🤖 Gợi ý AI'}
+                        </button>
+                        {aiBackup[sample.id] && (
+                          <button 
+                            className="sl-ai-btn" 
+                            onClick={() => handleRollbackAI(sample.id)} 
+                            style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca' }}
+                          >
+                            Hoàn tác AI
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
-              )}
-            </div>
-          );
-        })}
+              </div>
+            );
+          })()
+        )}
       </div>
+
+      {/* Pagination Footer */}
+      {samples.length > 0 && (
+        <div className="sl-pagination-footer">
+          <button 
+            className="sl-page-btn" 
+            onClick={() => setCurrentIndex(c => Math.max(0, c - 1))} 
+            disabled={currentIndex === 0}
+          >
+            <ChevronLeft size={16} /> Quay lại
+          </button>
+          
+          <div className="sl-page-info">
+            <span>Sample {currentIndex + 1} / {samples.length}</span>
+            <div className="sl-jump-group">
+              <button 
+                onClick={() => setCurrentIndex(c => Math.max(0, c - 1))} 
+                disabled={currentIndex === 0}
+              >-</button>
+              <input 
+                type="number" 
+                value={currentIndex + 1}
+                min={1}
+                max={samples.length}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  if (!isNaN(val) && val >= 1 && val <= samples.length) {
+                    setCurrentIndex(val - 1);
+                  }
+                }}
+              />
+              <button 
+                onClick={() => setCurrentIndex(c => Math.min(samples.length - 1, c + 1))} 
+                disabled={currentIndex === samples.length - 1}
+              >+</button>
+            </div>
+          </div>
+
+          <button 
+            className="sl-page-btn" 
+            onClick={() => setCurrentIndex(c => Math.min(samples.length - 1, c + 1))} 
+            disabled={currentIndex === samples.length - 1}
+          >
+            Tiếp theo <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Submit Modal */}
       {showSubmitModal && (

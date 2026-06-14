@@ -2,10 +2,12 @@ import express from 'express';
 import { DataPrepLabelingController } from './labeling.controller';
 import { MessageAutoLabelingController } from './messageAutoLabel.controller';
 import { AssignmentController } from './assignment.controller';
+import { AutoLabelV2Controller } from './autoLabelV2.controller';
 
 const router = express.Router();
 const controller = new DataPrepLabelingController();
 const messageAutoLabelController = new MessageAutoLabelingController();
+const autoLabelV2Controller = new AutoLabelV2Controller();
 
 router.get('/samples/:sampleId/labels', (req, res) => controller.getLabelsBySample(req, res));
 router.post('/samples/:sampleId/labels', (req, res) => controller.addLabel(req, res));
@@ -25,6 +27,7 @@ router.get('/assignments/manager/overview', (req, res) => assignmentController.g
 router.get('/assignments/manager/task/:taskId', (req, res) => assignmentController.getTaskDetail(req, res));
 router.get('/assignments/my-task/:submissionId/samples', (req, res) => assignmentController.getBatchSamples(req, res));
 router.post('/assignments/my-task/:submissionId/save-label', (req, res) => assignmentController.saveSampleLabel(req, res));
+router.post('/assignments/my-task/:submissionId/auto-label-v2', (req, res) => autoLabelV2Controller.preview(req, res));
 router.post('/versions/:versionId/assignments/submit', (req, res) => assignmentController.submitTask(req, res));
 
 export default router;
