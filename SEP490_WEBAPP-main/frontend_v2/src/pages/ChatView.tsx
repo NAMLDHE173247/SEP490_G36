@@ -59,6 +59,10 @@ interface Message {
   responseTime?: number;
   model?: string;
   parameters?: any;
+  errorInfo?: {
+    raw: string;
+    retryText?: string;
+  };
 }
 
 type HistoryMessage = {
@@ -753,7 +757,11 @@ function ChatPanel({
           toast.error(friendlyError.title);
           setMessages((prev) => {
             const arr = [...prev];
-            arr[arr.length - 1] = { ...arr[arr.length - 1], content: `${friendlyError.title}\n\n${friendlyError.description}` };
+            arr[arr.length - 1] = {
+              ...arr[arr.length - 1],
+              content: `${friendlyError.title}\n\n${friendlyError.description}`,
+              errorInfo: { raw: errorMsg, retryText: text },
+            };
             return arr;
           });
           onLog?.({ message: `Lỗi inference: ${error.message}`, type: "error", instanceId });
@@ -824,16 +832,18 @@ function ChatPanel({
     }
   };
 
-  const handleConfirmModel = async () => {
+  const handleConfirmModel = async (modelOverride?: string) => {
     const isLocalOrRegistry = provider === "local" || provider === "registry";
+    const modelToLoad = modelOverride || hfHubId;
+
     if (!isLocalOrRegistry) {
       setLoading(true);
       setLoadError(null);
       try {
-        await apiService.validateModel(hfHubId, provider);
-        setActiveModelId(hfHubId || "(Default Model)");
+        await apiService.validateModel(modelToLoad, provider);
+        setActiveModelId(modelToLoad || "Default Model");
         setModelLoaded(true);
-        toast.success(`Đã kết nối model: ${hfHubId || "Mặc định"}`);
+        toast.success(`Da ket noi model: ${modelToLoad || "Mac dinh"}`);
       } catch (error: any) {
         const errorMsg = error.response?.data?.error || error.message;
         setLoadError(errorMsg);
@@ -844,16 +854,20 @@ function ChatPanel({
       }
       return;
     }
-    if (!hfHubId.trim()) {
-      setLoadError(provider === "registry" ? "Vui lòng chọn Model Registry" : "Vui lòng nhập Hugging Face Hub ID");
+
+    if (!modelToLoad.trim()) {
+      setLoadError(provider === "registry" ? "Vui long chon Model Registry" : "Vui long chon model de bat dau chat");
       return;
     }
+
+    if (modelOverride) setHfHubId(modelOverride);
     setLoading(true);
     setModelLoaded(false);
     setLoadError(null);
-    onLog?.({ message: `Bắt đầu load model: ${hfHubId}`, type: "info", instanceId });
+    onLog?.({ message: `Bat dau tai model: ${modelToLoad}`, type: "info", instanceId });
+
     try {
-      await apiService.loadModel(hfHubId, {
+      await apiService.loadModel(modelToLoad, {
         instanceId,
         system_prompt: params.systemPrompt || undefined,
         max_new_tokens: params.maxNewTokens === "" ? undefined : params.maxNewTokens,
@@ -863,21 +877,20 @@ function ChatPanel({
         repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
         provider: "local",
       });
-      setActiveModelId(hfHubId);
+      setActiveModelId(modelToLoad);
       setModelLoaded(true);
-      toast.success("Model đã được tải thành công!");
-      onLog?.({ message: `Load model thành công: ${hfHubId}`, type: "success", instanceId });
+      toast.success("Model da san sang!");
+      onLog?.({ message: `Tai model thanh cong: ${modelToLoad}`, type: "success", instanceId });
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || error.message;
       setLoadError(errorMsg);
       setModelLoaded(false);
       toast.error(getFriendlyError(errorMsg).title);
-      onLog?.({ message: `Lỗi load model: ${errorMsg}`, type: "error", instanceId });
+      onLog?.({ message: `Loi tai model: ${errorMsg}`, type: "error", instanceId });
     } finally {
       setLoading(false);
     }
   };
-
   const getSessionMeta = (session: any) => {
     const msgs: any[] = session.messages || [];
     const lastAi = msgs.slice().reverse().find((m: any) => m.role === "ai");
@@ -1105,7 +1118,7 @@ function ChatPanel({
           )}
 
           <button
-            onClick={handleConfirmModel}
+            onClick={() => handleConfirmModel()}
             disabled={
               (provider === "local" && !hfHubId.trim()) ||
               (provider === "registry" && !hfHubId.trim()) ||
@@ -1124,7 +1137,7 @@ function ChatPanel({
                 ? "✓ Sẵn sàng"
                 : provider !== "local" && provider !== "registry"
                   ? "Sử dụng API"
-                  : "Load"}
+                : "Tai model"}
           </button>
 
           {modelLoaded && (provider === "local" || provider === "registry") && (
@@ -1137,8 +1150,8 @@ function ChatPanel({
               </button>
               {showUnloadMenu && (
                 <div className="custom-dropdown-list" style={{ right: 0, width: '160px', top: '100%', position: 'absolute' }}>
-                  <div className="dropdown-item" onClick={() => handleUnloadModel(true)}>Force Reload</div>
-                  <div className="dropdown-item" style={{ color: 'var(--danger)' }} onClick={() => handleUnloadModel(false)}>Unload khỏi GPU</div>
+                  <div className="dropdown-item" onClick={() => handleUnloadModel(true)}>Khoi dong lai AI</div>
+                  <div className="dropdown-item" style={{ color: 'var(--danger)' }} onClick={() => handleUnloadModel(false)}>Giai phong model</div>
                 </div>
               )}
             </div>
@@ -1155,6 +1168,16 @@ function ChatPanel({
               <div>
                 <strong>{getFriendlyError(loadError).title}</strong>
                 <span>{getFriendlyError(loadError).description}</span>
+                <div className="chat-inline-alert-actions">
+                  <button type="button" onClick={() => handleConfirmModel(hfHubId.trim() || BASE_MODEL_OPTIONS[0])} disabled={loading}>
+                    Thu lai
+                  </button>
+                  {modelLoaded && (provider === "local" || provider === "registry") && (
+                    <button type="button" onClick={() => handleUnloadModel(false)}>
+                      Giai phong model
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1168,13 +1191,34 @@ function ChatPanel({
         {/* Message Panel Body */}
         <div className="chat-messages" style={{ overflowY: 'auto', flex: 1 }}>
           {messages.length === 0 ? (
-            <div className="empty-state">
+            <div className={`empty-state ${modelLoaded ? 'ready' : 'needs-model'}`}>
               <div className="empty-state-icon">
                 <Sparkles size={24} color="#64748b" />
               </div>
-              <p>{modelLoaded ? "Model đã sẵn sàng. Hãy bắt đầu chat!" : "Load model để bắt đầu hội thoại"}</p>
-              {isCompareMode && !modelLoaded && (
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Nhập Model {instanceId} ID ở trên</p>
+              <h3>{modelLoaded ? "AI da san sang" : "Tai model de bat dau chat"}</h3>
+              <p>
+                {modelLoaded
+                  ? "Nhap cau hoi o thanh ben duoi de bat dau cuoc tro chuyen."
+                  : isCompareMode
+                    ? `Chon model cho khung ${instanceId}, tai model, roi bat dau so sanh.`
+                    : "Nguoi dung moi co the bam nut ben duoi, he thong se dung model mac dinh."}
+              </p>
+              {!modelLoaded && (
+                <>
+                  <div className="chat-start-steps">
+                    <span>1. Chon model</span>
+                    <span>2. Tai model</span>
+                    <span>3. Dat cau hoi</span>
+                  </div>
+                  <button
+                    className="chat-empty-cta"
+                    onClick={() => handleConfirmModel(hfHubId.trim() || BASE_MODEL_OPTIONS[0])}
+                    disabled={loading || (provider === "registry" && !hfHubId.trim())}
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    {loading ? "Dang tai model..." : "Tai model va bat dau"}
+                  </button>
+                </>
               )}
             </div>
           ) : (
@@ -1193,6 +1237,27 @@ function ChatPanel({
                         </div>
                         <div className="message-ai-content">
                           {isPendingAi ? <TypingIndicator /> : <MarkdownRenderer content={msg.content} />}
+                          {msg.errorInfo && (
+                            <div className="chat-error-actions">
+                              <button
+                                type="button"
+                                onClick={() => msg.errorInfo?.retryText && sendMessage(msg.errorInfo.retryText)}
+                                disabled={loading || !modelLoaded}
+                              >
+                                Thu lai
+                              </button>
+                              {isInferring && (
+                                <button type="button" onClick={handleStopInference}>
+                                  Dung
+                                </button>
+                              )}
+                              {modelLoaded && (provider === "local" || provider === "registry") && (
+                                <button type="button" className="danger" onClick={() => handleUnloadModel(false)}>
+                                  Giai phong model
+                                </button>
+                              )}
+                            </div>
+                          )}
                           {msg.responseTime && (
                             <div className="message-ai-meta">
                               <button className="meta-btn" title="Thu lai">
@@ -1338,6 +1403,16 @@ function ChatView() {
     setInput("");
   };
 
+  const applyChatPreset = (preset: 'precise' | 'balanced' | 'creative') => {
+    const presetParams = {
+      precise: { temperature: 0.2, topP: 0.8, maxNewTokens: 512 },
+      balanced: { temperature: 0.7, topP: 0.95, maxNewTokens: 768 },
+      creative: { temperature: 1, topP: 0.98, maxNewTokens: 1024 },
+    }[preset];
+
+    setParams((prev) => ({ ...prev, ...presetParams }));
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -1403,13 +1478,13 @@ function ChatView() {
                 className={`mode-btn ${mode === 'single' ? 'active' : ''}`}
                 onClick={() => setMode('single')}
               >
-                <MessageSquare size={16} /> Single Chat
+                <MessageSquare size={16} /> Chat
               </button>
               <button
                 className={`mode-btn ${mode === 'compare' ? 'active' : ''}`}
                 onClick={() => setMode('compare')}
               >
-                <GitCompare size={16} /> Compare Models
+                <GitCompare size={16} /> So sanh AI
               </button>
             </div>
 
@@ -1419,8 +1494,8 @@ function ChatView() {
                 value={compareCount}
                 onChange={(e) => setCompareCount(Number(e.target.value))}
               >
-                <option value={2}>2 Models</option>
-                <option value={3}>3 Models</option>
+                <option value={2}>2 model</option>
+                <option value={3}>3 model</option>
               </select>
             )}
           </div>
@@ -1430,20 +1505,20 @@ function ChatView() {
               style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px', background: 'var(--primary)', border: 'none', color: 'white', cursor: 'pointer' }}
               onClick={() => setShowBatchTesting(true)}
             >
-              <FileText size={16} /> Batch Testing
+              <FileText size={16} /> Cong cu
             </button>
             <button
               className={`icon-btn ${showGlobalSettings ? 'active' : ''}`}
               style={{ backgroundColor: showGlobalSettings ? 'var(--primary-light)' : 'transparent', color: showGlobalSettings ? 'var(--primary)' : 'var(--text-muted)' }}
               onClick={() => setShowGlobalSettings(!showGlobalSettings)}
-              title="Global Parameters"
+              title="Cai dat nang cao"
             >
               <Settings2 size={20} />
             </button>
             <button
-              className={`icon-btn ${rightSidebar === 'logs' ? 'active' : ''}`}
+              className={`icon-btn utility-btn ${rightSidebar === 'logs' ? 'active' : ''}`}
               onClick={() => toggleRightSidebar('logs')}
-              title="Inference Logs"
+              title="Chi tiet ky thuat"
             >
               <TerminalSquare size={20} />
             </button>
@@ -1451,29 +1526,39 @@ function ChatView() {
         </div>
 
         {showGlobalSettings && (
-          <div className="global-settings-panel" style={{ padding: '16px', backgroundColor: 'var(--bg-card)', borderBottom: '1px solid var(--border)', display: 'flex', gap: '24px', alignItems: 'flex-start', transition: 'all 0.3s ease' }}>
+          <div className="global-settings-panel chat-advanced-panel">
+            <div className="chat-preset-section">
+              <div>
+                <div className="chat-settings-title">Cai dat nang cao</div>
+                <div className="chat-settings-subtitle">Chon cach AI tra loi ma khong can hieu thong so ky thuat.</div>
+              </div>
+              <div className="chat-preset-actions">
+                <button type="button" onClick={() => applyChatPreset('precise')}>Chinh xac</button>
+                <button type="button" onClick={() => applyChatPreset('balanced')}>Can bang</button>
+                <button type="button" onClick={() => applyChatPreset('creative')}>Sang tao</button>
+              </div>
+            </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>GLOBAL SYSTEM PROMPT</label>
-              <textarea 
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>HUONG DAN CHO AI</label>
+              <textarea
                 value={params.systemPrompt}
                 onChange={e => setParams({...params, systemPrompt: e.target.value})}
-                placeholder="Nhập Global System Prompt áp dụng cho tất cả models..."
+                placeholder="Vi du: tra loi ngan gon, giai thich tung buoc, dung giong van than thien..."
                 style={{ width: '100%', minHeight: '60px', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13px', backgroundColor: 'var(--bg-elevated)', transition: 'all 0.2s' }}
               />
             </div>
-            <div style={{ display: 'flex', gap: '16px' }}>
+            <div className="chat-technical-grid">
               <div className="inference-field">
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>MAX TOKENS</label>
-                <input type="number" value={params.maxNewTokens} onChange={e => setParams({...params, maxNewTokens: Number(e.target.value) || ""})} style={{ width: '80px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do dai tra loi</label>
+                <input type="number" value={params.maxNewTokens} onChange={e => setParams({...params, maxNewTokens: Number(e.target.value) || ""})} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
               </div>
               <div className="inference-field">
-                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>TEMPERATURE</label>
-                <input type="number" step="0.1" value={params.temperature} onChange={e => setParams({...params, temperature: Number(e.target.value) || ""})} style={{ width: '80px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do sang tao</label>
+                <input type="number" step="0.1" value={params.temperature} onChange={e => setParams({...params, temperature: Number(e.target.value) || ""})} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
               </div>
             </div>
           </div>
         )}
-
         {showBatchTesting && (
           <BatchTestingModal 
             onClose={() => setShowBatchTesting(false)}

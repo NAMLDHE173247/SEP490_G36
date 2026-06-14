@@ -2886,12 +2886,124 @@ textarea:focus {
 }
 
 .empty-state::after {
-  content: "Buoc tiep theo: chon model, bam Load, roi dat cau hoi trong thanh nhap ben duoi.";
-  display: block;
-  max-width: 360px;
-  color: #7b8c9a;
+  content: none;
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: #102a43;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.empty-state.needs-model {
+  max-width: 460px;
+  padding: 24px;
+  border: 1px solid #dbe5ec;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.chat-start-steps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chat-start-steps span {
+  padding: 6px 9px;
+  border: 1px solid #dbe5ec;
+  border-radius: 999px;
+  color: #52667a;
+  background: #f8fbfd;
   font-size: 12px;
-  line-height: 1.5;
+  font-weight: 600;
+}
+
+.chat-empty-cta {
+  min-height: 42px;
+  margin-top: 6px;
+  padding: 0 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 999px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb 0%, #0f766e 100%);
+  box-shadow: 0 12px 26px rgba(37, 99, 235, 0.22);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-empty-cta:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.chat-advanced-panel {
+  display: grid !important;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(280px, 1.4fr) auto;
+  gap: 18px !important;
+  align-items: start !important;
+  padding: 16px !important;
+  background: #f8fbfd !important;
+  border-bottom: 1px solid #dbe5ec !important;
+}
+
+.chat-preset-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-settings-title {
+  color: #102a43;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.chat-settings-subtitle {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chat-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-preset-actions button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid #d7e3eb;
+  border-radius: 999px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-preset-actions button:hover {
+  color: #2563eb;
+  border-color: #b7ccec;
+  background: #f4f8ff;
+}
+
+.chat-technical-grid {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
 }
 
 .session-meta,
@@ -3075,6 +3187,55 @@ textarea:focus {
   display: block;
   margin-top: 2px;
   color: #9a3412;
+}
+
+.chat-inline-alert-actions,
+.chat-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-inline-alert-actions button,
+.chat-error-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d7e3eb;
+  border-radius: 999px;
+  color: #334155;
+  background: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chat-inline-alert-actions button:hover,
+.chat-error-actions button:hover {
+  color: #2563eb;
+  border-color: #b7ccec;
+  background: #f4f8ff;
+}
+
+.chat-inline-alert-actions button:disabled,
+.chat-error-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.chat-error-actions button.danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.chat-header-right .utility-btn {
+  opacity: 0.7;
+}
+
+.chat-header-right .utility-btn:hover,
+.chat-header-right .utility-btn.active {
+  opacity: 1;
 }
 
 .chat-input-notice {
