@@ -27,7 +27,8 @@ import {
   getSessionById,
   createSession,
   appendMessageToSession,
-  deleteSession
+  deleteSession,
+  updateSessionTitle
 } from '../controllers/chatSessionController';
 import { clusterData, clusterFilter, deleteClusterCache, clusterVisualize, removeNoise, deduplicate, safeSplit } from '../controllers/clusterController';
 import { ModelRegistryController } from '../controllers/modelRegistryController';
@@ -119,6 +120,7 @@ router.get('/chat/sessions/:id', getSessionById);
 router.post('/chat/sessions', createSession);
 router.put('/chat/sessions/:id', appendMessageToSession);
 router.delete('/chat/sessions/:id', deleteSession);
+router.patch('/chat/sessions/:id/title', updateSessionTitle);
 
 
 // Hugging Face Routes
