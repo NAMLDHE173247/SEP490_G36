@@ -238,7 +238,7 @@ export class QualityService {
       throw Object.assign(new Error('Invalid dataset version id.'), { statusCode: 400 });
     }
 
-    const version = await DatasetVersion.findOne({ _id: versionId, ownerId }).lean();
+    const version = await DatasetVersion.findOne({ _id: versionId }).lean();
     if (!version) {
       throw Object.assign(new Error('Dataset version not found.'), { statusCode: 404 });
     }
@@ -578,12 +578,12 @@ export class QualityService {
     };
   }
 
-  async getLabelingStatus(versionId: string, ownerId: string): Promise<LabelingStatusResult> {
+  async getLabelingStatus(versionId: string, _ownerId: string): Promise<LabelingStatusResult> {
     if (!mongoose.Types.ObjectId.isValid(versionId)) {
       throw Object.assign(new Error('Invalid dataset version id.'), { statusCode: 400 });
     }
 
-    const version = await DatasetVersion.findOne({ _id: versionId, ownerId }).lean();
+    const version = await DatasetVersion.findOne({ _id: versionId }).lean();
     if (!version) {
       throw Object.assign(new Error('Dataset version not found.'), { statusCode: 404 });
     }
@@ -657,7 +657,7 @@ export class QualityService {
       throw Object.assign(new Error('Invalid dataset version id.'), { statusCode: 400 });
     }
 
-    const version = await DatasetVersion.findOne({ _id: versionId, ownerId });
+    const version = await DatasetVersion.findOne({ _id: versionId });
     if (!version) {
       throw Object.assign(new Error('Dataset version not found.'), { statusCode: 404 });
     }

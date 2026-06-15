@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
+  Menu,
   Plus,
   MessageSquare,
   GitCompare,
@@ -19,7 +20,8 @@ import {
   BookOpen,
   Settings2,
   Pencil,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
@@ -29,6 +31,8 @@ import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
 import { apiService } from '../services/api';
 import '../styles/chat.css';
+import { BatchTestingModal } from '../components/BatchTestingModal';
+import { TypingIndicator } from '../components/TypingIndicator';
 
 // Constants
 const BASE_MODEL_OPTIONS = [
@@ -55,6 +59,10 @@ interface Message {
   responseTime?: number;
   model?: string;
   parameters?: any;
+  errorInfo?: {
+    raw: string;
+    retryText?: string;
+  };
 }
 
 type HistoryMessage = {
@@ -139,6 +147,11 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
 );
 
 // Params Summary Bar
+const handleTextareaResize = (e: React.ChangeEvent<HTMLTextAreaElement>, maxHeight: number = 160) => {
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, maxHeight) + "px";
+};
+
 function ParamsSummaryBar({ params }: { params: InferenceParams }) {
   const chips = [
     { label: "Tokens", value: params.maxNewTokens },
@@ -325,13 +338,13 @@ function LogsSidePanel({
   if (collapsed) {
     return (
       <div
-        style={{ width: '32px', backgroundColor: '#0f172a', borderLeft: '1px solid #334155', display: 'flex', flexDirection: 'column', alignItems: 'center', py: '12px', gap: '12px', flexShrink: 0, cursor: 'pointer', height: '100%' }}
+        style={{ width: '36px', backgroundColor: 'rgba(255,255,255,0.88)', borderLeft: '1px solid #d8e5ec', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '12px', paddingBottom: '12px', gap: '12px', flexShrink: 0, cursor: 'pointer', height: '100%' }}
         onClick={onToggleCollapse}
         title="Mở Logs"
       >
         <button
           onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-          style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px', marginTop: '12px' }}
+          style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px', marginTop: '12px' }}
         >
           <ChevronDown size={14} style={{ transform: 'rotate(90deg)' }} />
         </button>
@@ -352,7 +365,7 @@ function LogsSidePanel({
       <div className="logs-header">
         <div className="logs-header-title">
           <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', animation: 'pulse 2s infinite' }} />
-          Inference Logs {logs.length > 0 && <span style={{ color: '#475569', fontSize: '10px' }}>({logs.length})</span>}
+          Inference Logs {logs.length > 0 && <span style={{ color: '#64748b', fontSize: '10px' }}>({logs.length})</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {logs.length > 0 && (
@@ -364,7 +377,7 @@ function LogsSidePanel({
         </div>
       </div>
 
-      <div className="right-sidebar-content" style={{ backgroundColor: '#0f172a', padding: 0, overflowY: 'auto', flex: 1 }}>
+      <div className="right-sidebar-content" style={{ backgroundColor: '#f8fbfd', padding: 0, overflowY: 'auto', flex: 1 }}>
         {logs.length === 0 ? (
           <div className="logs-empty">
             <Terminal size={40} color="#334155" strokeWidth={1} />
@@ -436,11 +449,13 @@ function ChatPanel({
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isSessionSidebarCollapsed, setIsSessionSidebarCollapsed] = useState(false);
   const [localInput, setLocalInput] = useState("");
   const [isInferring, setIsInferring] = useState(false);
   const [showUnloadMenu, setShowUnloadMenu] = useState(false);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const unloadMenuRef = useRef<HTMLDivElement>(null);
 
   // Quick model picker dropdown
@@ -541,6 +556,44 @@ function ChatPanel({
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { scrollToBottom(); }, [messages, loading]);
 
+  const getFriendlyError = (raw?: string | null) => {
+    const message = raw || "";
+    const lower = message.toLowerCase();
+
+    if (lower.includes("slot") && (lower.includes("busy") || lower.includes("bận") || lower.includes("ban"))) {
+      return {
+        title: "Model dang xu ly yeu cau khac",
+        description: "Doi vai giay roi thu lai. Neu cho qua lau, bam dung inference hoac unload model truoc khi gui tiep.",
+      };
+    }
+
+    if (lower.includes("hugging face") || lower.includes("hub id") || lower.includes("registry")) {
+      return {
+        title: "Thieu thong tin model",
+        description: "Chon model trong danh sach hoac nhap Hugging Face Hub ID roi bam Load.",
+      };
+    }
+
+    if (lower.includes("gpu") || lower.includes("service") || lower.includes("connection") || lower.includes("connect")) {
+      return {
+        title: "Chua ket noi duoc dich vu GPU",
+        description: "Kiem tra endpoint GPU o thanh tren, ket noi lai, sau do load model.",
+      };
+    }
+
+    if (lower.includes("memory") || lower.includes("vram") || lower.includes("cuda")) {
+      return {
+        title: "GPU khong du tai nguyen",
+        description: "Thu model nho hon, unload model dang chay, hoac giam cau hinh inference.",
+      };
+    }
+
+    return {
+      title: "Chua the hoan tat thao tac",
+      description: "Kiem tra lai model/GPU roi thu lai. Chi tiet loi da duoc ghi trong Logs.",
+    };
+  };
+
   const handleLoadSession = async (sessionMeta: any) => {
     try {
       const fullSession = await apiService.getChatSessionById(sessionMeta._id);
@@ -580,14 +633,17 @@ function ChatPanel({
     }
   };
 
-  const handleDeleteSession = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Ngăn chặn việc load session vừa xóa
-    if (!window.confirm("Bạn có chắc chắn muốn xóa cuộc hội thoại này không?")) {
-      return;
-    }
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPendingDeleteSessionId(id);
+  };
+  const confirmDeleteSession = async () => {
+    if (!pendingDeleteSessionId) return;
+
+    const id = pendingDeleteSessionId;
     try {
       await apiService.deleteChatSession(id);
-      toast.success("Đã xóa cuộc hội thoại");
+      toast.success("Da xoa hoi thoai");
       if (currentSessionId === id) {
         setMessages([]);
         setCurrentSessionId(null);
@@ -595,7 +651,9 @@ function ChatPanel({
       fetchChatSessions();
     } catch (error: any) {
       console.error("Failed to delete session:", error);
-      toast.error("Không thể xóa cuộc hội thoại");
+      toast.error("Chua the xoa hoi thoai");
+    } finally {
+      setPendingDeleteSessionId(null);
     }
   };
 
@@ -694,11 +752,16 @@ function ChatPanel({
       } catch (error: any) {
         if (!error.name?.includes("Abort") && !error.message?.includes("aborted")) {
           const errorMsg = error.response?.data?.error || error.message;
+          const friendlyError = getFriendlyError(errorMsg);
           setLoadError(errorMsg);
-          toast.error(`Lỗi model: ${errorMsg}`);
+          toast.error(friendlyError.title);
           setMessages((prev) => {
             const arr = [...prev];
-            arr[arr.length - 1] = { ...arr[arr.length - 1], content: `[Lỗi: ${errorMsg}]` };
+            arr[arr.length - 1] = {
+              ...arr[arr.length - 1],
+              content: `${friendlyError.title}\n\n${friendlyError.description}`,
+              errorInfo: { raw: errorMsg, retryText: text },
+            };
             return arr;
           });
           onLog?.({ message: `Lỗi inference: ${error.message}`, type: "error", instanceId });
@@ -769,36 +832,42 @@ function ChatPanel({
     }
   };
 
-  const handleConfirmModel = async () => {
+  const handleConfirmModel = async (modelOverride?: string) => {
     const isLocalOrRegistry = provider === "local" || provider === "registry";
+    const modelToLoad = modelOverride || hfHubId;
+
     if (!isLocalOrRegistry) {
       setLoading(true);
       setLoadError(null);
       try {
-        await apiService.validateModel(hfHubId, provider);
-        setActiveModelId(hfHubId || "(Default Model)");
+        await apiService.validateModel(modelToLoad, provider);
+        setActiveModelId(modelToLoad || "Default Model");
         setModelLoaded(true);
-        toast.success(`Đã kết nối model: ${hfHubId || "Mặc định"}`);
+        toast.success(`Da ket noi model: ${modelToLoad || "Mac dinh"}`);
       } catch (error: any) {
         const errorMsg = error.response?.data?.error || error.message;
         setLoadError(errorMsg);
         setModelLoaded(false);
-        toast.error(`Model không hợp lệ: ${errorMsg}`);
+        toast.error(getFriendlyError(errorMsg).title);
       } finally {
         setLoading(false);
       }
       return;
     }
-    if (!hfHubId.trim()) {
-      setLoadError(provider === "registry" ? "Vui lòng chọn Model Registry" : "Vui lòng nhập Hugging Face Hub ID");
+
+    if (!modelToLoad.trim()) {
+      setLoadError(provider === "registry" ? "Vui long chon Model Registry" : "Vui long chon model de bat dau chat");
       return;
     }
+
+    if (modelOverride) setHfHubId(modelOverride);
     setLoading(true);
     setModelLoaded(false);
     setLoadError(null);
-    onLog?.({ message: `Bắt đầu load model: ${hfHubId}`, type: "info", instanceId });
+    onLog?.({ message: `Bat dau tai model: ${modelToLoad}`, type: "info", instanceId });
+
     try {
-      await apiService.loadModel(hfHubId, {
+      await apiService.loadModel(modelToLoad, {
         instanceId,
         system_prompt: params.systemPrompt || undefined,
         max_new_tokens: params.maxNewTokens === "" ? undefined : params.maxNewTokens,
@@ -808,20 +877,20 @@ function ChatPanel({
         repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
         provider: "local",
       });
-      setActiveModelId(hfHubId);
+      setActiveModelId(modelToLoad);
       setModelLoaded(true);
-      toast.success("Model đã được tải thành công!");
-      onLog?.({ message: `Load model thành công: ${hfHubId}`, type: "success", instanceId });
+      toast.success("Model da san sang!");
+      onLog?.({ message: `Tai model thanh cong: ${modelToLoad}`, type: "success", instanceId });
     } catch (error: any) {
       const errorMsg = error.response?.data?.error || error.message;
       setLoadError(errorMsg);
       setModelLoaded(false);
-      onLog?.({ message: `Lỗi load model: ${errorMsg}`, type: "error", instanceId });
+      toast.error(getFriendlyError(errorMsg).title);
+      onLog?.({ message: `Loi tai model: ${errorMsg}`, type: "error", instanceId });
     } finally {
       setLoading(false);
     }
   };
-
   const getSessionMeta = (session: any) => {
     const msgs: any[] = session.messages || [];
     const lastAi = msgs.slice().reverse().find((m: any) => m.role === "ai");
@@ -832,17 +901,56 @@ function ChatPanel({
     };
   };
 
+  const getSessionTitle = (session: any) => {
+    const msgs: any[] = session.messages || [];
+    const firstUser = msgs.find((m: any) => m.role === "user")?.content?.trim();
+    const rawTitle = session.title?.trim();
+    const titleLooksLikeMessage = firstUser && rawTitle && rawTitle === firstUser.slice(0, rawTitle.length);
+
+    if (rawTitle && !titleLooksLikeMessage) return rawTitle;
+
+    const date = session.updatedAt || session.createdAt;
+    if (date) return `Hoi thoai ${new Date(date).toLocaleDateString("vi-VN")}`;
+    return "Hoi thoai moi";
+  };
+
   return (
     <div className="chat-container">
       {/* Sessions Sidebar */}
-      {showSidebar && (
+      {showSidebar && isSessionSidebarCollapsed && (
+        <button
+          className="chat-sidebar-restore-btn"
+          onClick={() => setIsSessionSidebarCollapsed(false)}
+          title="Mo danh sach hoi thoai"
+        >
+          <Menu size={18} />
+        </button>
+      )}
+
+      {showSidebar && !isSessionSidebarCollapsed && (
         <div className="chat-sessions-sidebar">
           <div className="chat-sessions-sidebar-header">
-            <button className="new-session-btn" onClick={handleNewChat}>
-              <Plus size={18} /> New Session
-            </button>
+            <div className="chat-sidebar-title-row">
+              <div>
+                <div className="chat-sidebar-kicker">QUAN LY</div>
+                <div className="chat-sidebar-title">Hoi thoai</div>
+              </div>
+              <div className="chat-sidebar-actions">
+                <button
+                  className="chat-sidebar-icon-btn"
+                  onClick={() => setIsSessionSidebarCollapsed(true)}
+                  title="An danh sach hoi thoai"
+                >
+                  <Menu size={16} />
+                </button>
+                <button className="chat-sidebar-icon-btn primary" onClick={handleNewChat} title="Tao hoi thoai moi">
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
           </div>
           <div className="sessions-list">
+            <div className="session-group-label">GAN DAY</div>
             {chatSessions.length === 0 ? (
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', fontStyle: 'italic', padding: '16px', textAlign: 'center' }}>Chưa có lịch sử</div>
             ) : (
@@ -897,6 +1005,7 @@ function ChatPanel({
                     className={`session-item ${currentSessionId === session._id ? 'active' : ''}`}
                     onClick={() => handleLoadSession(session)}
                   >
+                    <div className="session-title generated">{getSessionTitle(session)}</div>
                     <div className="session-title">{session.title || "Hội thoại"}</div>
                     <div className="session-meta">{getSessionMeta(session).preview}</div>
                     <div className="session-actions" onClick={(e) => e.stopPropagation()}>
@@ -1009,7 +1118,7 @@ function ChatPanel({
           )}
 
           <button
-            onClick={handleConfirmModel}
+            onClick={() => handleConfirmModel()}
             disabled={
               (provider === "local" && !hfHubId.trim()) ||
               (provider === "registry" && !hfHubId.trim()) ||
@@ -1028,7 +1137,7 @@ function ChatPanel({
                 ? "✓ Sẵn sàng"
                 : provider !== "local" && provider !== "registry"
                   ? "Sử dụng API"
-                  : "Load"}
+                  : "Tai model"}
           </button>
 
           {modelLoaded && (provider === "local" || provider === "registry") && (
@@ -1041,8 +1150,8 @@ function ChatPanel({
               </button>
               {showUnloadMenu && (
                 <div className="custom-dropdown-list" style={{ right: 0, width: '160px', top: '100%', position: 'absolute' }}>
-                  <div className="dropdown-item" onClick={() => handleUnloadModel(true)}>Force Reload</div>
-                  <div className="dropdown-item" style={{ color: 'var(--danger)' }} onClick={() => handleUnloadModel(false)}>Unload khỏi GPU</div>
+                  <div className="dropdown-item" onClick={() => handleUnloadModel(true)}>Khoi dong lai AI</div>
+                  <div className="dropdown-item" style={{ color: 'var(--danger)' }} onClick={() => handleUnloadModel(false)}>Giai phong model</div>
                 </div>
               )}
             </div>
@@ -1054,9 +1163,23 @@ function ChatPanel({
             </span>
           )}
           {loadError && (
-            <span style={{ fontSize: '12.5px', color: 'var(--danger)', fontWeight: 500 }} title={loadError}>
-              Lỗi: {loadError.slice(0, 30)}...
-            </span>
+            <div className="chat-inline-alert" title={loadError}>
+              <AlertCircle size={14} />
+              <div>
+                <strong>{getFriendlyError(loadError).title}</strong>
+                <span>{getFriendlyError(loadError).description}</span>
+                <div className="chat-inline-alert-actions">
+                  <button type="button" onClick={() => handleConfirmModel(hfHubId.trim() || BASE_MODEL_OPTIONS[0])} disabled={loading}>
+                    Thu lai
+                  </button>
+                  {modelLoaded && (provider === "local" || provider === "registry") && (
+                    <button type="button" onClick={() => handleUnloadModel(false)}>
+                      Giai phong model
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
           {modelLoaded && (
             <span style={{ fontSize: '12.5px', color: 'var(--success)', fontWeight: 500 }}>
@@ -1068,58 +1191,91 @@ function ChatPanel({
         {/* Message Panel Body */}
         <div className="chat-messages" style={{ overflowY: 'auto', flex: 1 }}>
           {messages.length === 0 ? (
-            <div className="empty-state">
+            <div className={`empty-state ${modelLoaded ? 'ready' : 'needs-model'}`}>
               <div className="empty-state-icon">
                 <Sparkles size={24} color="#64748b" />
               </div>
-              <p>{modelLoaded ? "Model đã sẵn sàng. Hãy bắt đầu chat!" : "Load model để bắt đầu hội thoại"}</p>
-              {isCompareMode && !modelLoaded && (
-                <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Nhập Model {instanceId} ID ở trên</p>
+              <h3>{modelLoaded ? "AI da san sang" : "Tai model de bat dau chat"}</h3>
+              <p>
+                {modelLoaded
+                  ? "Nhap cau hoi o thanh ben duoi de bat dau cuoc tro chuyen."
+                  : isCompareMode
+                    ? `Chon model cho khung ${instanceId}, tai model, roi bat dau so sanh.`
+                    : "Nguoi dung moi co the bam nut ben duoi, he thong se dung model mac dinh."}
+              </p>
+              {!modelLoaded && (
+                <>
+                  <div className="chat-start-steps">
+                    <span>1. Chon model</span>
+                    <span>2. Tai model</span>
+                    <span>3. Dat cau hoi</span>
+                  </div>
+                  <button
+                    className="chat-empty-cta"
+                    onClick={() => handleConfirmModel(hfHubId.trim() || BASE_MODEL_OPTIONS[0])}
+                    disabled={loading || (provider === "registry" && !hfHubId.trim())}
+                  >
+                    {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                    {loading ? "Dang tai model..." : "Tai model va bat dau"}
+                  </button>
+                </>
               )}
             </div>
           ) : (
             <div className={`messages-list-wrapper ${isCompareMode ? '' : 'single-mode'}`}>
-              {messages.map((msg, index) => (
-                <div key={index} className="message-row">
-                  {msg.role === "user" ? (
-                    <div className="message-user">{msg.content}</div>
-                  ) : (
-                    <div className="message-ai-container">
-                      <div className="message-ai-avatar" style={{ backgroundColor: instanceId === 1 ? 'var(--primary)' : instanceId === 2 ? '#0ea5e9' : '#10b981' }}>
-                        <Sparkles size={14} />
+              {messages.map((msg, index) => {
+                const isPendingAi = loading && msg.role === "ai" && index === messages.length - 1 && !msg.content.trim();
+
+                return (
+                  <div key={index} className="message-row">
+                    {msg.role === "user" ? (
+                      <div className="message-user">{msg.content}</div>
+                    ) : (
+                      <div className={`message-ai-container ${isPendingAi ? 'message-ai-loading' : ''}`}>
+                        <div className="message-ai-avatar" style={{ backgroundColor: instanceId === 1 ? 'var(--primary)' : instanceId === 2 ? '#0ea5e9' : '#10b981' }}>
+                          <Sparkles size={14} />
+                        </div>
+                        <div className="message-ai-content">
+                          {isPendingAi ? <TypingIndicator /> : <MarkdownRenderer content={msg.content} />}
+                          {msg.errorInfo && (
+                            <div className="chat-error-actions">
+                              <button
+                                type="button"
+                                onClick={() => msg.errorInfo?.retryText && sendMessage(msg.errorInfo.retryText)}
+                                disabled={loading || !modelLoaded}
+                              >
+                                Thu lai
+                              </button>
+                              {isInferring && (
+                                <button type="button" onClick={handleStopInference}>
+                                  Dung
+                                </button>
+                              )}
+                              {modelLoaded && (provider === "local" || provider === "registry") && (
+                                <button type="button" className="danger" onClick={() => handleUnloadModel(false)}>
+                                  Giai phong model
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {msg.responseTime && (
+                            <div className="message-ai-meta">
+                              <button className="meta-btn" title="Thu lai">
+                                <RotateCcw size={12} />
+                              </button>
+                              <span className="meta-badge">
+                                {msg.responseTime.toFixed(2)}s
+                                {msg.model && !isCompareMode && ` - ${msg.model.split("/").pop()}`}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="message-ai-content">
-                        <MarkdownRenderer content={msg.content} />
-                        {msg.responseTime && (
-                          <div className="message-ai-meta">
-                            <button className="meta-btn" title="Thử lại">
-                              <RotateCcw size={12} />
-                            </button>
-                            <span className="meta-badge">
-                              {msg.responseTime.toFixed(2)}s
-                              {msg.model && !isCompareMode && ` • ${msg.model.split("/").pop()}`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {loading && (
-                <div className="message-ai-container">
-                  <div className="message-ai-avatar" style={{ backgroundColor: instanceId === 1 ? 'var(--primary)' : instanceId === 2 ? '#0ea5e9' : '#10b981' }}>
-                    <Loader2 size={12} className="animate-spin" />
+                    )}
                   </div>
-                  <div className="typing-dots">
-                    <span className="typing-dot"></span>
-                    <span className="typing-dot"></span>
-                    <span className="typing-dot"></span>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                );
+              })}
+              <div ref={messagesEndRef} />            </div>
           )}
         </div>
 
@@ -1127,12 +1283,14 @@ function ChatPanel({
         {isCompareMode && (
           <div className="column-footer" style={{ padding: '16px' }}>
             <div className="message-input-wrapper">
+              <div className="composer-leading-icon" aria-hidden="true">
+                <MessageSquare size={16} />
+              </div>
               <textarea
                 value={localInput}
                 onChange={(e) => {
                   setLocalInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+                  handleTextareaResize(e, 120);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -1144,7 +1302,7 @@ function ChatPanel({
                   }
                 }}
                 placeholder={modelLoaded ? `Chat riêng với Model ${instanceId}...` : "..."}
-                style={{ minHeight: '44px', padding: '12px 48px 12px 16px', borderRadius: '12px', fontSize: '14px' }}
+                style={{ minHeight: '44px', padding: '12px 48px 12px 46px', borderRadius: '12px', fontSize: '14px' }}
                 disabled={!modelLoaded || loading}
               />
               {isInferring ? (
@@ -1177,6 +1335,27 @@ function ChatPanel({
             </div>
           </div>
         )}
+        {pendingDeleteSessionId && (
+          <div className="chat-confirm-overlay" onMouseDown={() => setPendingDeleteSessionId(null)}>
+            <div className="chat-confirm-dialog" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+              <div className="chat-confirm-icon">
+                <Trash2 size={18} />
+              </div>
+              <div className="chat-confirm-content">
+                <h3 id="delete-session-title">Xoa hoi thoai nay?</h3>
+                <p>Cuoc hoi thoai se bi xoa khoi lich su. Thao tac nay khong the hoan tac.</p>
+              </div>
+              <div className="chat-confirm-actions">
+                <button type="button" className="chat-confirm-btn secondary" onClick={() => setPendingDeleteSessionId(null)}>
+                  Huy
+                </button>
+                <button type="button" className="chat-confirm-btn danger" onClick={confirmDeleteSession}>
+                  Xoa
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1191,6 +1370,8 @@ function ChatView() {
   const [input, setInput] = useState("");
   const [sendTrigger, setSendTrigger] = useState<{ text: string; ts: number } | null>(null);
   const [params, setParams] = useState<InferenceParams>(DEFAULT_PARAMS);
+  const [showBatchTesting, setShowBatchTesting] = useState(false);
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showInferencePopup, setShowInferencePopup] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -1220,6 +1401,16 @@ function ChatView() {
     if (!input.trim() || !canSend) return;
     setSendTrigger({ text: input, ts: Date.now() });
     setInput("");
+  };
+
+  const applyChatPreset = (preset: 'precise' | 'balanced' | 'creative') => {
+    const presetParams = {
+      precise: { temperature: 0.2, topP: 0.8, maxNewTokens: 512 },
+      balanced: { temperature: 0.7, topP: 0.95, maxNewTokens: 768 },
+      creative: { temperature: 1, topP: 0.98, maxNewTokens: 1024 },
+    }[preset];
+
+    setParams((prev) => ({ ...prev, ...presetParams }));
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1257,7 +1448,25 @@ function ChatView() {
 
   return (
     <div className="chat-container" style={{ display: 'flex', height: '100%', width: '100%', position: 'relative' }}>
-      <Toaster position="top-right" />
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 3200,
+          style: {
+            borderRadius: '12px',
+            border: '1px solid #dbe5ec',
+            boxShadow: '0 18px 40px rgba(15, 23, 42, 0.12)',
+            color: '#243447',
+            padding: '12px 14px',
+          },
+          success: {
+            iconTheme: { primary: '#0f766e', secondary: '#ffffff' },
+          },
+          error: {
+            iconTheme: { primary: '#dc2626', secondary: '#ffffff' },
+          },
+        }}
+      />
 
       {/* Main Chat Area */}
       <div className="chat-main-area" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -1269,13 +1478,13 @@ function ChatView() {
                 className={`mode-btn ${mode === 'single' ? 'active' : ''}`}
                 onClick={() => setMode('single')}
               >
-                <MessageSquare size={16} /> Single Chat
+                <MessageSquare size={16} /> Chat
               </button>
               <button
                 className={`mode-btn ${mode === 'compare' ? 'active' : ''}`}
                 onClick={() => setMode('compare')}
               >
-                <GitCompare size={16} /> Compare Models
+                <GitCompare size={16} /> So sanh AI
               </button>
             </div>
 
@@ -1285,21 +1494,80 @@ function ChatView() {
                 value={compareCount}
                 onChange={(e) => setCompareCount(Number(e.target.value))}
               >
-                <option value={2}>2 Models</option>
-                <option value={3}>3 Models</option>
+                <option value={2}>2 model</option>
+                <option value={3}>3 model</option>
               </select>
             )}
           </div>
-          <div className="chat-header-right">
+          <div className="chat-header-right" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <button
-              className={`icon-btn ${rightSidebar === 'logs' ? 'active' : ''}`}
+              className="primary-btn"
+              style={{ padding: '6px 12px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px', background: 'var(--primary)', border: 'none', color: 'white', cursor: 'pointer' }}
+              onClick={() => setShowBatchTesting(true)}
+            >
+              <FileText size={16} /> Cong cu
+            </button>
+            <button
+              className={`icon-btn ${showGlobalSettings ? 'active' : ''}`}
+              style={{ backgroundColor: showGlobalSettings ? 'var(--primary-light)' : 'transparent', color: showGlobalSettings ? 'var(--primary)' : 'var(--text-muted)' }}
+              onClick={() => setShowGlobalSettings(!showGlobalSettings)}
+              title="Cai dat nang cao"
+            >
+              <Settings2 size={20} />
+            </button>
+            <button
+              className={`icon-btn utility-btn ${rightSidebar === 'logs' ? 'active' : ''}`}
               onClick={() => toggleRightSidebar('logs')}
-              title="Inference Logs"
+              title="Chi tiet ky thuat"
             >
               <TerminalSquare size={20} />
             </button>
           </div>
         </div>
+
+        {showGlobalSettings && (
+          <div className="global-settings-panel chat-advanced-panel">
+            <div className="chat-preset-section">
+              <div>
+                <div className="chat-settings-title">Cai dat nang cao</div>
+                <div className="chat-settings-subtitle">Chon cach AI tra loi ma khong can hieu thong so ky thuat.</div>
+              </div>
+              <div className="chat-preset-actions">
+                <button type="button" onClick={() => applyChatPreset('precise')}>Chinh xac</button>
+                <button type="button" onClick={() => applyChatPreset('balanced')}>Can bang</button>
+                <button type="button" onClick={() => applyChatPreset('creative')}>Sang tao</button>
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>HUONG DAN CHO AI</label>
+              <textarea
+                value={params.systemPrompt}
+                onChange={e => setParams({ ...params, systemPrompt: e.target.value })}
+                placeholder="Vi du: tra loi ngan gon, giai thich tung buoc, dung giong van than thien..."
+                style={{ width: '100%', minHeight: '60px', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13px', backgroundColor: 'var(--bg-elevated)', transition: 'all 0.2s' }}
+              />
+            </div>
+            <div className="chat-technical-grid">
+              <div className="inference-field">
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do dai tra loi</label>
+                <input type="number" value={params.maxNewTokens} onChange={e => setParams({ ...params, maxNewTokens: Number(e.target.value) || "" })} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+              </div>
+              <div className="inference-field">
+                <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do sang tao</label>
+                <input type="number" step="0.1" value={params.temperature} onChange={e => setParams({ ...params, temperature: Number(e.target.value) || "" })} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+              </div>
+            </div>
+          </div>
+        )}
+        {showBatchTesting && (
+          <BatchTestingModal
+            onClose={() => setShowBatchTesting(false)}
+            activeModelId=""
+            provider="local"
+            params={params}
+            instanceId={1}
+          />
+        )}
 
         {/* Chat Columns */}
         <div className="chat-columns-container" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -1344,38 +1612,22 @@ function ChatView() {
 
         {/* Single Mode Bottom Input Bar */}
         {mode === 'single' && (
-          <div className="column-footer" style={{ padding: '16px 20% 32px', position: 'relative', borderTop: '1px solid var(--border)' }}>
+          <div className="column-footer chat-composer-footer" style={{ padding: '18px clamp(16px, 8vw, 120px) 24px', position: 'relative', borderTop: '1px solid var(--border)' }}>
             {!model1Loaded && (
-              <div className="global-hint" style={{ color: 'var(--danger)', marginBottom: '8px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <AlertCircle size={14} /> Vui lòng load model trước khi chat.
+              <div className="global-hint chat-input-notice">
+                <AlertCircle size={14} /> Chon model va bam Load truoc khi gui tin nhan.
               </div>
             )}
 
-            <ParamsSummaryBar params={params} />
-
-            <div className="message-input-wrapper" ref={settingsRef}>
-              <button
-                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`}
-                onClick={() => setShowInferencePopup(!showInferencePopup)}
-                style={{ zIndex: 10 }}
-              >
-                <Settings2 size={20} />
-              </button>
-
-              {showInferencePopup && (
-                <ParamsDropdown
-                  params={params}
-                  onChange={setParams}
-                  onClose={() => setShowInferencePopup(false)}
-                />
-              )}
+            <div className="message-input-wrapper">
+              <div className="composer-leading-icon" aria-hidden="true">
+                <MessageSquare size={18} />
+              </div>
 
               <textarea
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={model1Loaded ? "Nhập câu lệnh..." : "Load model để bắt đầu..."}
@@ -1410,7 +1662,7 @@ function ChatView() {
         {mode === 'compare' && (
           <div className="global-bottom-bar" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             {!bothLoaded && (
-              <div className="global-hint" style={{ color: 'var(--danger)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <div className="global-hint chat-input-notice">
                 <AlertCircle size={14} />
                 {!model1Loaded && !model2Loaded
                   ? "Vui lòng load các model trước khi so sánh."
@@ -1423,33 +1675,15 @@ function ChatView() {
               </div>
             )}
 
-            <div style={{ width: '65%' }}>
-              <ParamsSummaryBar params={params} />
-            </div>
-
-            <div className="message-input-wrapper" style={{ width: '65%', position: 'relative' }} ref={settingsRef}>
-              <button
-                className={`options-toggle-btn ${showInferencePopup ? 'active' : ''}`}
-                onClick={() => setShowInferencePopup(!showInferencePopup)}
-                style={{ zIndex: 10 }}
-              >
-                <Settings2 size={20} />
-              </button>
-
-              {showInferencePopup && (
-                <ParamsDropdown
-                  params={params}
-                  onChange={setParams}
-                  onClose={() => setShowInferencePopup(false)}
-                />
-              )}
+            <div className="message-input-wrapper" style={{ width: 'min(100%, 860px)', position: 'relative' }}>
+              <div className="composer-leading-icon" aria-hidden="true">
+                <GitCompare size={18} />
+              </div>
 
               <textarea
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder={bothLoaded ? "Nhập câu hỏi — sẽ gửi đến các model cùng lúc..." : "Load đủ các model để bắt đầu..."}

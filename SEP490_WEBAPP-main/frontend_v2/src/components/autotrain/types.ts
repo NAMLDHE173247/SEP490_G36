@@ -71,6 +71,12 @@ export interface PreviewData {
   totalRecords: number | null;
   totalTokens: number | null;
   headers: string[];
+  qualityChecks?: QualityCheck[];
+}
+
+export interface QualityCheck {
+  level: 'ok' | 'warn' | 'error';
+  message: string;
 }
 
 export interface PreviewRow {
@@ -84,6 +90,7 @@ export const EMPTY_PREVIEW: PreviewData = {
   totalRecords: null,
   totalTokens: null,
   headers: [],
+  qualityChecks: undefined,
 };
 
 // ── Base Models ──
@@ -283,6 +290,27 @@ export function formatRowPreview(r: any): PreviewRow {
   };
 }
 
+/** Trigger a download of a sample training CSV (Alpaca-style with 5 rows). */
+export function downloadSampleCSV(): void {
+  const BOM = '\uFEFF';
+  const csv = `${BOM}instruction,input,output
+"What is 2+2?","","4. Two plus two equals four."
+"Explain photosynthesis.","","Photosynthesis is the process by which green plants convert sunlight, water, and carbon dioxide into glucose and oxygen."
+"Translate to French: Hello","Hello","Bonjour"
+"What is the capital of Japan?","","The capital of Japan is Tokyo."
+"Summarize: The quick brown fox jumps over the lazy dog.","The quick brown fox jumps over the lazy dog.","A fox jumps over a dog."`;
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sample_training_data.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /** Estimate training time based on dataset size and preset */
 export function estimateTrainingTime(
   totalRecords: number | null,
@@ -305,4 +333,66 @@ export function estimateTrainingTime(
   if (records < 100) return '~5 min';
   if (records < 500) return '~15 min';
   return '~25 min';
+}
+
+/**
+ * Run dataset quality checks against parsed records and detected column.
+ * Returns a list of pass/warn/error messages suitable for direct display.
+ *
+ * The checks intentionally err on the side of being lenient — we want to
+ * surface real problems (no records, all outputs empty, too few samples)
+ * without nagging on noisy single-row issues.
+ */
+export function runQualityChecks(
+  records: any[],
+  detectedColumn: string | null,
+  headers: string[],
+  previewRows: PreviewRow[],
+): QualityCheck[] {
+  const checks: QualityCheck[] = [];
+  const total = records.length;
+
+  // 1. Record count
+  if (total === 0) {
+    checks.push({ level: 'error', message: 'No records found in file.' });
+    return checks;
+  }
+  if (total < 20) {
+    checks.push({ level: 'warn', message: `Only ${total} records — training quality will be poor. Aim for at least 50.` });
+  } else if (total < 50) {
+    checks.push({ level: 'warn', message: `${total.toLocaleString()} records — usable but limited. 100+ recommended.` });
+  } else {
+    checks.push({ level: 'ok', message: `${total.toLocaleString()} records detected (good size).` });
+  }
+
+  // 2. Column detection
+  if (detectedColumn) {
+    checks.push({ level: 'ok', message: `Auto-detected training column: "${detectedColumn}".` });
+  } else if (headers.length === 0) {
+    checks.push({ level: 'warn', message: 'Could not extract column headers — records may not be objects.' });
+  } else {
+    checks.push({
+      level: 'warn',
+      message: `No standard training column found among: ${headers.join(', ')}. Pick one manually below.`,
+    });
+  }
+
+  // 3. Empty-output detection (only meaningful when preview rows are populated)
+  if (previewRows.length > 0) {
+    const emptyOutputs = previewRows.filter(r => !r.output || !r.output.trim()).length;
+    if (emptyOutputs === previewRows.length) {
+      checks.push({
+        level: 'error',
+        message: 'All preview rows have empty outputs. The model has nothing to learn — check your column mapping.',
+      });
+    } else if (emptyOutputs > 0) {
+      const pct = Math.round((emptyOutputs / previewRows.length) * 100);
+      checks.push({
+        level: 'warn',
+        message: `${emptyOutputs}/${previewRows.length} preview rows have empty outputs (~${pct}%). These will be skipped.`,
+      });
+    }
+  }
+
+  return checks;
 }

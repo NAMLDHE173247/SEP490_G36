@@ -9,7 +9,7 @@ export class GeminiProvider implements ILlmProvider {
     constructor() {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
         this.model = genAI.getGenerativeModel({
-            model: 'gemini-flash-latest',
+            model: 'gemini-1.5-flash',
             generationConfig: {
                 temperature: 0.1,
                 maxOutputTokens: 16384,

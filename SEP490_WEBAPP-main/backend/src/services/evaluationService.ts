@@ -178,7 +178,8 @@ export class EvaluationService {
             : ALPACA_SYSTEM_PROMPT.replace('${samplesJson}', samplesJson);
 
         try {
-            const rawText = await this.provider.generateContent(prompt);
+            const systemPrompt = "You are a strict data formatter. You must return ONLY a raw, valid JSON array. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON array starting with [ and ending with ].";
+            const rawText = await this.provider.generateContent(prompt, undefined, systemPrompt);
 
             // Robust JSON extraction: Find first [ and last ]
             const firstBracket = rawText.indexOf('[');
@@ -344,7 +345,8 @@ export class EvaluationService {
             const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
 
             try {
-                const rawText = await this.provider.generateContent(prompt);
+                const systemPrompt = "You are a strict data formatter. You must return ONLY a raw, valid JSON array. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON array starting with [ and ending with ].";
+                const rawText = await this.provider.generateContent(prompt, undefined, systemPrompt);
                 
                 // Robust JSON extraction: Find first [ and last ]
                 const firstBracket = rawText.indexOf('[');
@@ -450,7 +452,8 @@ export class EvaluationService {
             const prompt = REWRITE_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
 
             try {
-                const rawText = await this.provider.generateContent(prompt);
+                const systemPrompt = "You are a strict data formatter. You must return ONLY a raw, valid JSON array. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON array starting with [ and ending with ].";
+                const rawText = await this.provider.generateContent(prompt, undefined, systemPrompt);
                 const firstBracket = rawText.indexOf('[');
                 const lastBracket = rawText.lastIndexOf(']');
                 const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)

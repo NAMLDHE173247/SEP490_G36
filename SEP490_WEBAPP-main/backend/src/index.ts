@@ -21,6 +21,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_traini
 // Connect to MongoDB
 import { User } from './models/User';
 import bcrypt from 'bcryptjs';
+import { seedDefaultStage4Data } from './seedStage4';
 
 async function seedDefaultUsers() {
   try {
@@ -52,6 +53,7 @@ mongoose
   .then(async () => {
     console.log('✅ MongoDB connected:', MONGO_URI);
     await seedDefaultUsers();
+    await seedDefaultStage4Data();
   })
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 

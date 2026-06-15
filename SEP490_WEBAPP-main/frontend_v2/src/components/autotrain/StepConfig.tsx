@@ -281,7 +281,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                 >
                   <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span>
-                    <strong>Cảnh báo:</strong> Mô hình này hoạt động qua API trực tuyến. Hệ thống AutoTrain cục bộ <strong>chỉ hỗ trợ huấn luyện LoRA</strong> cho các mô hình mã nguồn mở. Việc huấn luyện mô hình này sẽ thất bại. Vui lòng chọn mô hình offline (ví dụ: Qwen 3 (0.6B)) để tiến hành huấn luyện.
+                    <strong>Warning:</strong> This model runs through an online API. Local AutoTrain <strong>only supports LoRA fine-tuning</strong> for open-source models. Training this model will fail. Please choose an offline model (e.g. Qwen 3 (0.6B)) to proceed.
                   </span>
                 </div>
               )}
@@ -451,9 +451,13 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
             {showAdvanced && (
               <div style={{ marginTop: 12, animation: 'atSlideIn 0.2s ease-out' }}>
+                <div className="at-section-divider-line" style={{ margin: '0 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Training Hyperparameters
+                </div>
+
                 <div className="at-param-rows">
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Epochs <HelpTooltip text="Number of complete training passes over the dataset (1-100)." /></span>
+                    <span className="at-label">Epochs <HelpTooltip text="Number of full passes over your dataset. Default 3. More = learns harder but risks overfitting on small datasets." /></span>
                     <input
                       className={`at-param-input at-input ${!isEpochsValid(config.epochs) ? 'at-input-error' : ''}`}
                       type="number"
@@ -464,7 +468,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Batch Size <HelpTooltip text="Data samples processed per step (1-64)." /></span>
+                    <span className="at-label">Batch Size <HelpTooltip text="Samples processed per step. Bigger = faster but uses more VRAM. Default 2 fits most GPUs." /></span>
                     <input
                       className={`at-param-input at-input ${!isBatchSizeValid(config.batchSize) ? 'at-input-error' : ''}`}
                       type="number"
@@ -475,7 +479,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Learning Rate <HelpTooltip text="Rate of weights adjustment (between 0 and 1)." /></span>
+                    <span className="at-label">Learning Rate <HelpTooltip text="How big each weight update is. Recommended 2e-5 to 5e-5 for LoRA. Too high = unstable, too low = no learning." /></span>
                     <input
                       className={`at-param-input at-input ${!isLearningRateValid(config.learningRate) ? 'at-input-error' : ''}`}
                       type="number"
@@ -487,7 +491,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Block Size <HelpTooltip text="Text segment context size (64-8192)." /></span>
+                    <span className="at-label">Block Size <HelpTooltip text="How many tokens the model sees at once during training. 512 fits short chats, 1024-2048 for longer dialogs. Higher = more VRAM." /></span>
                     <input
                       className={`at-param-input at-input ${!isBlockSizeValid(config.blockSize) ? 'at-input-error' : ''}`}
                       type="number"
@@ -498,7 +502,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Max Length <HelpTooltip text="Maximum response tokens sequence length." /></span>
+                    <span className="at-label">Max Length <HelpTooltip text="Max tokens the trained model can generate per reply. Usually set equal or above Block Size. Default 1024." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -509,7 +513,41 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Optimizer <HelpTooltip text="Optimization algorithm. adamw_8bit saves 75% memory." /></span>
+                    <span className="at-label">Grad Accumulation <HelpTooltip text="Accumulates gradients over N steps before updating. Effective batch = Batch Size × this. Use 4-8 when VRAM is tight." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      value={config.gradAccum}
+                      onChange={handleParamChange('gradAccum')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Warmup Steps <HelpTooltip text="Steps where learning rate ramps up from 0 to the target. Prevents early instability. Default 5, use 10-50 for larger datasets." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      value={config.warmupSteps}
+                      onChange={handleParamChange('warmupSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Weight Decay <HelpTooltip text="Regularization that pulls weights toward zero to prevent overfitting. Default 0.01. Set 0 to disable." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.001"
+                      value={config.weightDecay}
+                      onChange={handleParamChange('weightDecay')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Optimizer <HelpTooltip text="Algorithm that updates weights. adamw_8bit saves ~75% VRAM and is the safe default. sgd is rarely used for LoRA." /></span>
                     <select
                       className="at-select"
                       value={config.optim}
@@ -521,6 +559,32 @@ const StepConfig: React.FC<StepConfigProps> = ({
                       <option value="sgd">sgd</option>
                     </select>
                   </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">LR Scheduler <HelpTooltip text="Controls how learning rate changes during training. 'linear' decreases steadily, 'cosine' decays smoothly, 'constant' stays fixed." /></span>
+                    <select
+                      className="at-select"
+                      value={config.lrScheduler}
+                      onChange={handleParamChange('lrScheduler')}
+                      style={{ width: 120, padding: '4px 8px' }}
+                    >
+                      <option value="linear">linear</option>
+                      <option value="cosine">cosine</option>
+                      <option value="constant">constant</option>
+                      <option value="constant_with_warmup">constant_with_warmup</option>
+                    </select>
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Random Seed <HelpTooltip text="Fixed number for reproducibility. Same seed + same data = same result. Default 3407." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      value={config.seed}
+                      onChange={handleParamChange('seed')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
                 </div>
 
                 <div className="at-section-divider-line" style={{ margin: '14px 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -529,7 +593,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
                 <div className="at-param-rows">
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Rank (R) <HelpTooltip text="Maxtrix adaptation width. Common: 8, 16, 32." /></span>
+                    <span className="at-label">LoRA Rank (R) <HelpTooltip text="Capacity of the LoRA adapter. Higher = learns finer details but uses more VRAM. Common: 8, 16, 32." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -540,12 +604,24 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Alpha <HelpTooltip text="Scaling coefficient. Set equal or double the rank." /></span>
+                    <span className="at-label">LoRA Alpha <HelpTooltip text="Scaling factor for the LoRA update. Rule of thumb: set equal to or double the Rank." /></span>
                     <input
                       className="at-input"
                       type="number"
                       value={config.loraAlpha}
                       onChange={handleParamChange('loraAlpha')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">LoRA Dropout <HelpTooltip text="Randomly disables LoRA neurons during training to prevent overfitting. 0 = none, 0.05-0.1 typical." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.01"
+                      value={config.loraDropout}
+                      onChange={handleParamChange('loraDropout')}
                       style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
                     />
                   </div>

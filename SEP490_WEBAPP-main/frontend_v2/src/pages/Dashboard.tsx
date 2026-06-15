@@ -94,7 +94,7 @@ function Dashboard() {
       case 'Chat':
         return <ChatView />;
       case 'Data Prep':
-        return <DataPrepView />;
+        return <DataPrepView setActiveTab={setActiveTab} />;
       case 'AutoTrain':
         return <AutoTrainView setActiveTab={setActiveTab} />;
       case 'Training History':

@@ -16,6 +16,9 @@ import {
   Cloud,
   ChevronDown,
   ChevronUp,
+  AlertTriangle,
+  XCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   TrainingConfig,
@@ -23,6 +26,9 @@ import {
   PreviewRow,
   EMPTY_PREVIEW,
   formatRowPreview,
+  downloadSampleCSV,
+  runQualityChecks,
+  QualityCheck,
 } from './types';
 import { getAuthToken } from '../../services/authSession';
 
@@ -96,37 +102,83 @@ function parseCSV(text: string): Record<string, string>[] {
 }
 
 // ── Auto-detect best column for training ──
-const AUTO_DETECT_COLUMNS = ['messages', 'text', 'conversations', 'instruction', 'turns', 'prompt'];
+// Accepts common English + Vietnamese column names that teachers might use
+// when exporting Excel/Google Sheets to CSV.
+const AUTO_DETECT_COLUMNS = [
+  // Conversation-style
+  'messages', 'conversations', 'turns', 'dialog', 'dialogue', 'hội_thoại', 'hoithoai',
+  // Single-text style
+  'text', 'content', 'nội_dung', 'noidung',
+  // Instruction-style (the trainer's primary signal)
+  'instruction', 'prompt', 'question', 'câu_hỏi', 'cauhoi', 'cau_hoi',
+];
+
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().trim().replace(/\s+/g, '_');
+}
 
 function detectColumn(headers: string[]): string | null {
-  const lower = headers.map(h => h.toLowerCase());
+  const normalized = headers.map(normalizeHeader);
   for (const candidate of AUTO_DETECT_COLUMNS) {
-    const idx = lower.indexOf(candidate);
+    const idx = normalized.indexOf(candidate);
     if (idx !== -1) return headers[idx];
   }
   return null;
 }
 
-// ── Generate sample CSV for download ──
-function downloadSampleCSV() {
-  const BOM = '\uFEFF';
-  const csv = `${BOM}instruction,input,output
-"What is 2+2?","","4. Two plus two equals four."
-"Explain photosynthesis.","","Photosynthesis is the process by which green plants convert sunlight, water, and carbon dioxide into glucose and oxygen."
-"Translate to French: Hello","Hello","Bonjour"
-"What is the capital of Japan?","","The capital of Japan is Tokyo."
-"Summarize: The quick brown fox jumps over the lazy dog.","The quick brown fox jumps over the lazy dog.","A fox jumps over a dog."`;
+// ── Quality Checks Panel ──
+const QualityChecksPanel: React.FC<{ checks: QualityCheck[] }> = ({ checks }) => {
+  const counts = useMemo(() => {
+    const c = { ok: 0, warn: 0, error: 0 };
+    checks.forEach(ck => { c[ck.level]++; });
+    return c;
+  }, [checks]);
 
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'sample_training_data.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+  const overallLevel: 'ok' | 'warn' | 'error' =
+    counts.error > 0 ? 'error' : counts.warn > 0 ? 'warn' : 'ok';
+
+  const palette = {
+    ok:    { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', icon: '#10B981' },
+    warn:  { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E', icon: '#F59E0B' },
+    error: { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', icon: '#EF4444' },
+  }[overallLevel];
+
+  const headerLabel =
+    overallLevel === 'error' ? 'Dataset has critical issues'
+    : overallLevel === 'warn' ? 'Dataset is usable (some warnings)'
+    : 'Dataset looks good';
+
+  return (
+    <div
+      className="at-panel"
+      style={{ background: palette.bg, borderColor: palette.border }}
+    >
+      <div className="at-panel-header" style={{ background: 'transparent', borderBottom: `1px solid ${palette.border}` }}>
+        <div className="at-panel-header-left" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldCheck size={16} style={{ color: palette.icon }} />
+          <h3 style={{ color: palette.text, margin: 0 }}>Dataset Quality Check</h3>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: palette.text, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {headerLabel}
+        </span>
+      </div>
+      <div className="at-panel-body" style={{ padding: '12px 16px' }}>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {checks.map((ck, idx) => {
+            const Icon = ck.level === 'ok' ? CheckCircle2 : ck.level === 'warn' ? AlertTriangle : XCircle;
+            const color = ck.level === 'ok' ? '#059669' : ck.level === 'warn' ? '#B45309' : '#B91C1C';
+            return (
+              <li key={idx} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12, lineHeight: 1.5, color: 'var(--at-text)' }}>
+                <Icon size={15} style={{ color, flexShrink: 0, marginTop: 1 }} />
+                <span>{ck.message}</span>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+};
 
 // ── Component ──
 const StepDataset: React.FC<StepDatasetProps> = ({
@@ -243,6 +295,7 @@ const StepDataset: React.FC<StepDatasetProps> = ({
           totalRecords,
           totalTokens,
           headers,
+          qualityChecks: runQualityChecks(records, detected, headers, previewRows),
         });
 
         toast(`Loaded ${totalRecords.toLocaleString()} records from ${file.name}`, 'success');
@@ -404,7 +457,14 @@ const StepDataset: React.FC<StepDatasetProps> = ({
           onConfigChange({ columnMapping: detected });
         }
 
-        onPreviewDataChange({ rows, headers, totalRecords, totalTokens });
+        const recordsForChecks = rows.length > 0 ? rows : new Array(totalRecords ?? 0);
+        onPreviewDataChange({
+          rows,
+          headers,
+          totalRecords,
+          totalTokens,
+          qualityChecks: runQualityChecks(recordsForChecks, detected, headers, rows),
+        });
         toast(`Loaded preview for ${repoId}`, 'success');
       } catch {
         onPreviewDataChange({
@@ -479,7 +539,13 @@ const StepDataset: React.FC<StepDatasetProps> = ({
         rows: data.previewRows,
         totalRecords: data.totalRecords,
         totalTokens: data.totalTokens,
-        headers: data.headers
+        headers: data.headers,
+        qualityChecks: runQualityChecks(
+          new Array(data.totalRecords || 0),
+          data.columnMapping ?? null,
+          data.headers ?? [],
+          data.previewRows ?? [],
+        ),
       });
 
       if (data.columnMapping) {
@@ -807,6 +873,11 @@ const StepDataset: React.FC<StepDatasetProps> = ({
 
       {/* ── Right Column: Data Preview & Next ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Dataset Quality Check Panel */}
+        {previewData.qualityChecks && previewData.qualityChecks.length > 0 && (
+          <QualityChecksPanel checks={previewData.qualityChecks} />
+        )}
+
         <div className="at-panel" style={{ minHeight: '340px', display: 'flex', flexDirection: 'column' }}>
           <div className="at-panel-header">
             <div className="at-panel-header-left">
