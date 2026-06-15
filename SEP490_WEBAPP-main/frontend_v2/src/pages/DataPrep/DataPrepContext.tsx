@@ -6,9 +6,8 @@ export const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
   { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-11' },
-  { num: 5, label: 'Evaluation', sub: 'Step 12' },
-  { num: 6, label: 'Finish', sub: 'Step 13-15' },
+  { num: 4, label: 'Classification', sub: 'Step 8-12' },
+  { num: 5, label: 'Finish', sub: 'Step 13-15' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
@@ -221,8 +220,23 @@ export const PREVIEW_REMOVED = [
 const DataPrepContext = createContext<any>(null);
 
 export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentStage, setCurrentStage] = useState(1);
-  const [currentSubStep, setCurrentSubStep] = useState(1);
+  const [currentStage, setCurrentStage] = useState(() => {
+    const saved = localStorage.getItem('dp_currentStage');
+    const parsed = saved ? parseInt(saved, 10) : 1;
+    return parsed > 5 ? 5 : parsed;
+  });
+  const [currentSubStep, setCurrentSubStep] = useState(() => {
+    const saved = localStorage.getItem('dp_currentSubStep');
+    return saved ? parseInt(saved, 10) : 1;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('dp_currentStage', currentStage.toString());
+  }, [currentStage]);
+
+  React.useEffect(() => {
+    localStorage.setItem('dp_currentSubStep', currentSubStep.toString());
+  }, [currentSubStep]);
   const [file, setFile] = useState<any>(null);
   const [rawPreviewText, setRawPreviewText] = useState('');
   const [sampleOutputText, setSampleOutputText] = useState('');
@@ -287,7 +301,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [selectedConv, setSelectedConv] = useState<any>(null);
 
   /* Stage 3 state */
-  const [currentSubStep3, setCurrentSubStep3] = useState(5);
+  const [currentSubStep3, setCurrentSubStep3] = useState(() => {
+    const saved = localStorage.getItem('dp_currentSubStep3');
+    return saved ? parseInt(saved, 10) : 5;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('dp_currentSubStep3', currentSubStep3.toString());
+  }, [currentSubStep3]);
   const [stage3Page, setStage3Page] = useState(1);
   const [stage3PerPage, setStage3PerPage] = useState(10);
   const [stage3Search, setStage3Search] = useState('');
@@ -525,7 +546,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   /* Stage 4 state */
-  const [currentSubStep4, setCurrentSubStep4] = useState(8);
+  const [currentSubStep4, setCurrentSubStep4] = useState(() => {
+    const saved = localStorage.getItem('dp_currentSubStep4');
+    return saved ? parseInt(saved, 10) : 7;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('dp_currentSubStep4', currentSubStep4.toString());
+  }, [currentSubStep4]);
   const [classPage, setClassPage] = useState(1);
   const [qualityTab, setQualityTab] = useState('all');
   const [rewriteConvIdx, setRewriteConvIdx] = useState(8);
@@ -553,7 +581,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [sepQualityLabels, setSepQualityLabels] = useState<any>({});
 
   /* Stage 6 state */
-  const [currentSubStep6, setCurrentSubStep6] = useState(13);
+  const [currentSubStep6, setCurrentSubStep6] = useState(() => {
+    const saved = localStorage.getItem('dp_currentSubStep6');
+    return saved ? parseInt(saved, 10) : 13;
+  });
+
+  React.useEffect(() => {
+    localStorage.setItem('dp_currentSubStep6', currentSubStep6.toString());
+  }, [currentSubStep6]);
   const [promptText, setPromptText] = useState('');
   const [promptName, setPromptName] = useState('Project_27/05_11:11');
   const [promptDesc, setPromptDesc] = useState('Example: Added Socratic method');

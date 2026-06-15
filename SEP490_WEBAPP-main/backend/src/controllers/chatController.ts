@@ -145,7 +145,7 @@ export const chatWithAI = async (req: Request, res: Response): Promise<void> => 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
       body: JSON.stringify({
         hf_model_id: actualModelId,
@@ -242,7 +242,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
       body: JSON.stringify({
         hf_model_id: actualModelId,
@@ -351,7 +351,7 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
       body: JSON.stringify({
         hf_model_id: actualModelId,
@@ -515,7 +515,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
       body: JSON.stringify({
         hf_model_id: actualModelId,
@@ -669,7 +669,7 @@ export const loadModel = async (req: Request, res: Response): Promise<void> => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
       body: JSON.stringify({ hf_model_id, instance_id: instanceId ?? 1, system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty })
     });
@@ -703,7 +703,7 @@ export const stopInference = async (req: Request, res: Response): Promise<void> 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       }
     });
 
@@ -735,7 +735,7 @@ export const unloadModel = async (req: Request, res: Response): Promise<void> =>
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       }
     });
 
@@ -764,7 +764,7 @@ export const getInferenceLogs = async (req: Request, res: Response): Promise<voi
 
     const response = await fetch(url, {
       headers: {
-        'ngrok-skip-browser-warning': 'true'
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       }
     });
 

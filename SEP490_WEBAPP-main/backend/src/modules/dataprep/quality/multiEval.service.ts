@@ -85,8 +85,29 @@ export class MultiEvalService {
       let conflictCount = 0;
 
       const qualityService = new QualityService();
-      const qualityResult = await qualityService.classify(job.datasetVersionId.toString());
-      const humanScoresMap = new Map(qualityResult.items.map((i: any) => [String(i.sampleId), i.score]));
+      const qualityResult = await qualityService.classify(
+        job.datasetVersionId.toString(),
+        job.startedBy ? job.startedBy.toString() : ''
+      );
+      const toTenPointBaseline = (item: any): number | null => {
+        if (!item || item.bucket === 'Incomplete') return null;
+        if (item.bucket === 'Gold') return 9;
+        if (item.bucket === 'Rewrite') return 5.5;
+        if (item.bucket === 'Reject') return 2;
+        const raw = Number(item.score);
+        if (!Number.isFinite(raw)) return null;
+        if (raw >= -1 && raw <= 1) {
+          return Math.round(((raw + 1) / 2) * 100) / 10;
+        }
+        return Math.max(0, Math.min(10, raw));
+      };
+      const humanScoresMap = new Map<string, number>();
+      qualityResult.items.forEach((i: any) => {
+        const baseline = toTenPointBaseline(i);
+        if (baseline == null) return;
+        humanScoresMap.set(String(i._id), baseline);
+        humanScoresMap.set(String(i.sampleId), baseline);
+      });
 
       for (const sample of samples) {
         // Mark sample as processing in job progress

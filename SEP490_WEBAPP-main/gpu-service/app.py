@@ -2413,13 +2413,13 @@ class ClusteringService:
     # API: POST /api/cluster
     # ──────────────────────────────────────────────────────────────────────────
 
-    def cluster(self, k: int, eps: float, min_samples: int) -> dict:
+    def cluster(self, k: int, eps: float, min_samples: int, data: list[dict] | None = None) -> dict:
         """
-        Đọc conv_embeddings từ _embed_cache (không embed lại),
-        chạy DBSCAN lọc noise rồi KMeans phân cụm,
+        Chạy DBSCAN lọc noise rồi KMeans phân cụm,
         lưu toàn bộ kết quả vào _cluster_cache để filter_* tái sử dụng.
 
-        Phải gọi visualize() trước.
+        Nếu có truyền data, tự động _ensure_embeddings(data). 
+        Nếu không, đọc từ _embed_cache.
 
         Returns:
             {
@@ -2431,9 +2431,12 @@ class ClusteringService:
             }
         """
         print("=== [Cluster] Bắt đầu ===")
-        cache = self._load_embed_cache()
-        data            = cache["data"]
-        conv_embeddings = cache["conv_embeddings"]
+        if data is not None:
+            conv_embeddings, _ = self._ensure_embeddings(data)
+        else:
+            cache = self._load_embed_cache()
+            data            = cache["data"]
+            conv_embeddings = cache["conv_embeddings"]
 
         # ── 1. DBSCAN lọc noise ───────────────────────────────────────────────
         print(f"1. DBSCAN (eps={eps}, min_samples={min_samples})...")
@@ -3343,11 +3346,14 @@ def cluster():
     if not isinstance(min_samples, int) or min_samples < 1:
         return jsonify({"error": "'min_samples' phải là số nguyên dương."}), 400
 
+    data = body.get("data")
+    
     try:
         result = _service.cluster(
             k=int(k),
             eps=float(eps),
             min_samples=int(min_samples),
+            data=data,
         )
         return jsonify(result), 200
 

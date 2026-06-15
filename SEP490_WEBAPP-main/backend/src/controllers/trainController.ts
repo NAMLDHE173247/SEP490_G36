@@ -106,7 +106,7 @@ async function fetchWithForm(url: string, form: FormData): Promise<ReturnType<ty
       const headers = {
         ...form.getHeaders(),
         'Content-Length': String(length),
-        'ngrok-skip-browser-warning': 'true', // Skip ngrok free tier warning page
+        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' // Skip ngrok free tier warning page
       };
 
       resolve(
@@ -516,7 +516,7 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
 
     const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
-      headers: { 'ngrok-skip-browser-warning': 'true' }
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
     });
     const data = await response.json();
     return res.status(response.status).json(data);
@@ -563,7 +563,7 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
   const intervalId = setInterval(async () => {
     try {
       const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true' }
+        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
       });
       const data: any = await response.json();
 
@@ -684,7 +684,7 @@ export const stopTraining = async (req: Request, res: Response) => {
 
     const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
       method: 'POST',
-      headers: { 'ngrok-skip-browser-warning': 'true' }
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
     });
     const data = await response.json();
 
@@ -715,7 +715,7 @@ export const getSystemResources = async (_req: Request, res: Response) => {
 
       try {
         const response = await fetch(`${url}/api/system/resources`, {
-          headers: { 'ngrok-skip-browser-warning': 'true' },
+          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
           signal: controller.signal as any
         });
         const data: any = await response.json();

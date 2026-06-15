@@ -19,12 +19,20 @@ export function useStage4Data(versionId: string | null) {
   const [error, setError] = useState<string | null>(null);
 
   const pollIntervalRef = useRef<any | null>(null);
+  const statusPollIntervalRef = useRef<any | null>(null);
 
   // Clear polling interval
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
+    }
+  }, []);
+
+  const stopStatusPolling = useCallback(() => {
+    if (statusPollIntervalRef.current) {
+      clearInterval(statusPollIntervalRef.current);
+      statusPollIntervalRef.current = null;
     }
   }, []);
 
@@ -122,9 +130,30 @@ export function useStage4Data(versionId: string | null) {
       setLatestJob(null);
       setError(null);
       stopPolling();
+      stopStatusPolling();
     }
-    return () => stopPolling();
-  }, [versionId, fetchAllData, stopPolling]);
+    return () => {
+      stopPolling();
+      stopStatusPolling();
+    };
+  }, [versionId, fetchAllData, stopPolling, stopStatusPolling]);
+
+  useEffect(() => {
+    stopStatusPolling();
+    if (!versionId) return;
+
+    const refreshStatus = async () => {
+      try {
+        const statusData = await stage4Api.getLabelingStatus(versionId);
+        setLabelingStatus(statusData);
+      } catch (err: any) {
+        console.error('Failed to refresh labeling status:', err);
+      }
+    };
+
+    statusPollIntervalRef.current = setInterval(refreshStatus, 5000);
+    return () => stopStatusPolling();
+  }, [versionId, stopStatusPolling]);
 
   // --- ACTIONS ---
 

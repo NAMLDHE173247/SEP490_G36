@@ -153,13 +153,14 @@ function StaffLabelView({ task, onBack }) {
         }
 
         if (Array.isArray(suggestion.messages)) {
-          suggestion.messages.forEach(msg => {
-            aiLabels.messages[msg.messageIndex] = {};
+          suggestion.messages.forEach((msg, idx) => {
+            const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
+            aiLabels.messages[messageIndex] = {};
             if (msg.intent) {
-              aiLabels.messages[msg.messageIndex].intent = (!allowAdd && newIntents.includes(msg.intent)) ? 'Other' : msg.intent;
+              aiLabels.messages[messageIndex].intent = (!allowAdd && newIntents.includes(msg.intent)) ? 'Other' : msg.intent;
             }
             if (msg.action) {
-              aiLabels.messages[msg.messageIndex].action = (!allowAdd && newActions.includes(msg.action)) ? 'Other' : msg.action;
+              aiLabels.messages[messageIndex].action = (!allowAdd && newActions.includes(msg.action)) ? 'Other' : msg.action;
             }
           });
         }
@@ -247,7 +248,8 @@ function StaffLabelView({ task, onBack }) {
     setSavedDraft(false);
   };
 
-  const labeledCount = samples.filter(s => labels[s.id]?.subject).length;
+  const isSampleComplete = (sampleId) => Boolean(labels[sampleId]?.subject && labels[sampleId]?.completion && labels[sampleId]?.quality);
+  const labeledCount = samples.filter(s => isSampleComplete(s.id)).length;
   const progress = Math.round((labeledCount / samples.length) * 100);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -259,7 +261,7 @@ function StaffLabelView({ task, onBack }) {
     try {
       const promises = Object.keys(labels).map(sampleId => {
         const currentLabel = labels[sampleId];
-        const isComplete = currentLabel?.subject && currentLabel?.completion && currentLabel?.quality;
+        const isComplete = isSampleComplete(sampleId);
         return api.post(`/dataprep/assignments/my-task/${task.id}/save-label`, {
           sampleId,
           label: currentLabel,
