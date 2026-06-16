@@ -49,7 +49,7 @@ async function seedDefaultUsers() {
 }
 
 mongoose
-  .connect(MONGO_URI)
+  .connect(MONGO_URI, { retryWrites: false } as any)
   .then(async () => {
     console.log('✅ MongoDB connected:', MONGO_URI);
     await seedDefaultUsers();
