@@ -7,6 +7,10 @@ import { versionService } from './version.service';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
+import { DatasetAssignmentActivity } from '../../../models/DatasetAssignmentActivity';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
+import { LabelAssignment } from '../../../models/LabelAssignment';
 
 const legacyEvaluationController = new EvaluationController();
 
@@ -182,10 +186,39 @@ export class DataPrepVersionController {
   async clearAllAssignments(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      await DatasetAssignmentSubmission.deleteMany({ datasetVersionId: id });
-      await DatasetSampleAssignment.deleteMany({ datasetVersionId: id });
-      res.status(200).json({ success: true, message: 'Đã hủy toàn bộ task giao việc của Version này.' });
+
+      // Lấy tất cả sampleIds thuộc version này để xóa LabelAssignment
+      const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: id })
+        .select('_id').lean().then(items => items.map(i => i._id));
+
+      // Xóa toàn bộ dữ liệu assignment + labeling liên quan
+      const [subDel, saDel, actDel, adjDel, canDel, laDel] = await Promise.all([
+        DatasetAssignmentSubmission.deleteMany({ datasetVersionId: id }),
+        DatasetSampleAssignment.deleteMany({ datasetVersionId: id }),
+        DatasetAssignmentActivity.deleteMany({ datasetVersionId: id }),
+        DatasetAssignmentAdjudication.deleteMany({ datasetVersionId: id }),
+        DatasetCanonicalLabel.deleteMany({ datasetVersionId: id }),
+        sampleIds.length > 0
+          ? LabelAssignment.deleteMany({ sampleId: { $in: sampleIds } })
+          : Promise.resolve({ deletedCount: 0 }),
+      ]);
+
+      console.log(`[clearAllAssignments] versionId=${id} | submissions=${subDel.deletedCount}, sampleAssign=${saDel.deletedCount}, activities=${actDel.deletedCount}, adjudications=${adjDel.deletedCount}, canonicals=${canDel.deletedCount}, labelAssign=${laDel.deletedCount}`);
+
+      res.status(200).json({
+        success: true,
+        message: 'Đã xóa toàn bộ dữ liệu giao việc + nhãn gán của Version này.',
+        deleted: {
+          submissions: subDel.deletedCount,
+          sampleAssignments: saDel.deletedCount,
+          activities: actDel.deletedCount,
+          adjudications: adjDel.deletedCount,
+          canonicalLabels: canDel.deletedCount,
+          labelAssignments: (laDel as any).deletedCount || 0,
+        },
+      });
     } catch (error: any) {
+      console.error('[clearAllAssignments] Error:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   }
