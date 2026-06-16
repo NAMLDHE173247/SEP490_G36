@@ -429,5 +429,28 @@ export const apiService = {
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
   registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
-  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset/prompts'); return response.data; }
+  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset/prompts'); return response.data; },
+
+  // Generic POST helper for dynamic endpoints
+  post: async (url: string, data?: any): Promise<any> => {
+    const response = await api.post(url, data);
+    return response.data;
+  },
+
+  // Staff workload API — available-staff with sample-level metrics
+  getAvailableStaff: async (): Promise<{
+    success: boolean;
+    data: Array<{
+      id: string;
+      name: string;
+      email: string;
+      pendingTasks: number;
+      totalAssigned: number;
+      labeledSoFar: number;
+      remainingSamples: number;
+    }>;
+  }> => {
+    const response = await api.get('/dataprep/labeling/assignments/available-staff');
+    return response.data;
+  },
 };

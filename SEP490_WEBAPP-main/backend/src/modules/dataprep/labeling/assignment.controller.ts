@@ -41,8 +41,9 @@ export class AssignmentController {
   }
 
   /**
-   * API: Lấy danh sách Staff khả dụng kèm workload hiện tại
-   * GET /api/dataprep/assignments/available-staff?versionId=xxx
+   * API: Lấy danh sách Staff khả dụng kèm workload chi tiết (sample-level)
+   * GET /api/dataprep/labeling/assignments/available-staff
+   * Response: { success, data: [{ id, name, email, pendingTasks, totalAssigned, labeledSoFar, remainingSamples }] }
    */
   async getAvailableStaff(_req: Request, res: Response) {
     try {
@@ -51,21 +52,41 @@ export class AssignmentController {
         .select('_id email name')
         .lean();
 
-      // 2. Đếm workload (số task pending/in_progress) của mỗi staff
+      // 2. Aggregate workload từ DatasetAssignmentSubmission (pending/in_progress)
+      //    - pendingTasks: số batch/đợt giao việc đang chờ
+      //    - totalAssigned: tổng số câu (samples) được giao
+      //    - labeledSoFar: tổng số câu đã gán nhãn xong
+      //    - remainingSamples = totalAssigned - labeledSoFar
       const workloadAgg = await DatasetAssignmentSubmission.aggregate([
         { $match: { status: { $in: ['pending', 'in_progress'] } } },
-        { $group: { _id: '$assigneeId', pendingTasks: { $sum: 1 }, totalAssigned: { $sum: '$totalSamples' } } }
+        {
+          $group: {
+            _id: '$assigneeId',
+            pendingTasks: { $sum: 1 },
+            totalAssigned: { $sum: { $ifNull: ['$totalSamples', 0] } },
+            labeledSoFar: { $sum: { $ifNull: ['$labeledCount', 0] } },
+          }
+        },
+        {
+          $addFields: {
+            remainingSamples: { $subtract: ['$totalAssigned', '$labeledSoFar'] }
+          }
+        }
       ]);
       const workloadMap = new Map(workloadAgg.map((w: any) => [String(w._id), w]));
 
       const result = staffList.map(s => {
-        const wl = workloadMap.get(String(s._id)) || { pendingTasks: 0, totalAssigned: 0 };
+        const wl = workloadMap.get(String(s._id)) || {
+          pendingTasks: 0, totalAssigned: 0, labeledSoFar: 0, remainingSamples: 0
+        };
         return {
           id: String(s._id),
           name: s.name,
           email: s.email,
           pendingTasks: wl.pendingTasks,
           totalAssigned: wl.totalAssigned,
+          labeledSoFar: wl.labeledSoFar,
+          remainingSamples: Math.max(0, wl.remainingSamples),
         };
       });
 

@@ -76,6 +76,7 @@ export const Stage3Labeling: React.FC = () => {
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
+  const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -187,6 +188,37 @@ export const Stage3Labeling: React.FC = () => {
     };
   }, [currentSubStep3]);
   // --------------------------------------
+
+  // Fetch staff when modal opens
+  React.useEffect(() => {
+    if (!showCreateTaskModal) return;
+    const fetchStaffForModal = async () => {
+      setIsFetchingDashboard(true);
+      try {
+        const usersRes = await apiService.listUsers();
+        const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
+        const users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+        setShareUsers(users);
+
+        // Also try to load samples if versionId exists
+        const versionId = localStorage.getItem('current_version_id');
+        if (versionId && assignmentSamples.length === 0) {
+          try {
+            const assign = await apiService.getDatasetVersionAssignments(versionId);
+            setAssignmentSamples(assign.samples || []);
+            setAssignmentTotals(assign.totals);
+          } catch (e) {
+            console.warn('Could not load assignment samples:', e);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch staff for modal:', err);
+      } finally {
+        setIsFetchingDashboard(false);
+      }
+    };
+    fetchStaffForModal();
+  }, [showCreateTaskModal]);
 
   const handleCreateTask = async () => {
     if (!taskAssigneeId) {
@@ -2119,20 +2151,36 @@ export const Stage3Labeling: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Staff search */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px',
-                    marginBottom: '16px', background: '#f8fafc'
-                  }}>
-                    <Search size={16} style={{ color: '#94a3b8' }} />
-                    <input
-                      type="text"
-                      placeholder="Tìm theo tên hoặc email..."
-                      value={stage3Search}
-                      onChange={e => setStage3Search(e.target.value)}
-                      style={{ flex: 1, border: 'none', outline: 'none', fontSize: '14px', background: 'transparent', color: '#334155' }}
-                    />
+                  {/* Staff search + Workload filter */}
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                      padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px',
+                      background: '#f8fafc'
+                    }}>
+                      <Search size={16} style={{ color: '#94a3b8' }} />
+                      <input
+                        type="text"
+                        placeholder="Tìm theo tên hoặc email..."
+                        value={stage3Search}
+                        onChange={e => setStage3Search(e.target.value)}
+                        style={{ flex: 1, border: 'none', outline: 'none', fontSize: '14px', background: 'transparent', color: '#334155' }}
+                      />
+                    </div>
+                    <select
+                      value={workloadFilter}
+                      onChange={e => setWorkloadFilter(e.target.value as any)}
+                      style={{
+                        padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px',
+                        background: '#f8fafc', fontSize: '13px', fontWeight: 600, color: '#334155',
+                        cursor: 'pointer', minWidth: '170px'
+                      }}
+                    >
+                      <option value="all">Tất cả</option>
+                      <option value="free">🟢 Rảnh rỗi (&lt; 100 câu)</option>
+                      <option value="busy">🟡 Đang bận (100-500)</option>
+                      <option value="overloaded">🔴 Quá tải (&gt; 500)</option>
+                    </select>
                   </div>
 
                   {/* Staff list */}
@@ -2145,12 +2193,36 @@ export const Stage3Labeling: React.FC = () => {
                     ) : (
                       shareUsers
                         .filter((u: any) => {
-                          if (!stage3Search.trim()) return true;
-                          const q = stage3Search.toLowerCase();
-                          return (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
+                          // Text search filter
+                          if (stage3Search.trim()) {
+                            const q = stage3Search.toLowerCase();
+                            if (!(u.name || '').toLowerCase().includes(q) && !(u.email || '').toLowerCase().includes(q)) return false;
+                          }
+                          // Workload filter
+                          const rem = u.remainingSamples || 0;
+                          if (workloadFilter === 'free') return rem < 100;
+                          if (workloadFilter === 'busy') return rem >= 100 && rem <= 500;
+                          if (workloadFilter === 'overloaded') return rem > 500;
+                          return true;
                         })
                         .map((user: any) => {
                           const staffSelected = (staffAssignments['__selected__'] || []).includes(user._id);
+                          const rem = user.remainingSamples || 0;
+                          const total = user.totalAssigned || 0;
+                          const labeled = user.labeledSoFar || 0;
+                          const tasks = user.pendingTasks || 0;
+                          const pct = total > 0 ? Math.round((labeled / total) * 100) : 0;
+
+                          // Dynamic badge
+                          let badgeLabel = '', badgeBg = '', badgeColor = '', badgeEmoji = '';
+                          if (rem < 100) {
+                            badgeLabel = `Rảnh rỗi`; badgeBg = '#dcfce7'; badgeColor = '#16a34a'; badgeEmoji = '🟢';
+                          } else if (rem <= 500) {
+                            badgeLabel = `Đang bận`; badgeBg = '#fef3c7'; badgeColor = '#d97706'; badgeEmoji = '🟡';
+                          } else {
+                            badgeLabel = `Quá tải`; badgeBg = '#fee2e2'; badgeColor = '#dc2626'; badgeEmoji = '🔴';
+                          }
+
                           return (
                             <div
                               key={user._id}
@@ -2170,6 +2242,7 @@ export const Stage3Labeling: React.FC = () => {
                                 borderRadius: '12px', cursor: 'pointer', transition: 'all 0.15s',
                                 background: staffSelected ? '#eef2ff' : '#fff'
                               }}
+                              title={`Đang giữ ${tasks} luồng công việc. Tiến độ tổng: ${labeled}/${total} câu (${pct}%)`}
                             >
                               <input type="checkbox" checked={staffSelected} readOnly
                                 style={{ width: '18px', height: '18px', accentColor: '#6366f1', cursor: 'pointer' }} />
@@ -2181,16 +2254,29 @@ export const Stage3Labeling: React.FC = () => {
                               }}>
                                 {(user.name || 'U').split(' ').pop()?.[0] || 'U'}
                               </div>
-                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                 <span style={{ fontWeight: 600, fontSize: '14px', color: '#1e293b' }}>{user.name || user.username}</span>
                                 <span style={{ fontSize: '12px', color: '#94a3b8' }}>{user.email}</span>
+                                {total > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                    <div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', maxWidth: '120px' }}>
+                                      <div style={{ height: '100%', width: `${pct}%`, background: '#6366f1', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>{labeled}/{total} ({pct}%)</span>
+                                  </div>
+                                )}
                               </div>
-                              <span style={{
-                                fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '999px',
-                                background: '#dcfce7', color: '#16a34a'
-                              }}>
-                                Sẵn sàng
-                              </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                <span style={{
+                                  fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '999px',
+                                  background: badgeBg, color: badgeColor
+                                }}>
+                                  {badgeEmoji} {badgeLabel}
+                                </span>
+                                <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                  Còn {rem} câu chờ
+                                </span>
+                              </div>
                             </div>
                           );
                         })
