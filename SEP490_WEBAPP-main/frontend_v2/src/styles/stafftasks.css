@@ -36,7 +36,41 @@
 }
 .st-btn-refresh:hover { background: #f1f5f9; }
 
-/* Stats */
+.st-btn-refresh:hover { background: #f1f5f9; }
+
+/* Tabs */
+.st-tabs-container {
+  display: flex;
+  gap: 8px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 24px;
+  padding-bottom: 0;
+}
+.st-tab-btn {
+  padding: 10px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: 8px 8px 0 0;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  bottom: -2px; /* overlap the border */
+}
+.st-tab-btn:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+.st-tab-btn.active.labeling {
+  color: #2563eb;
+  border-bottom: 2px solid #2563eb;
+}
+.st-tab-btn.active.crosscheck {
+  color: #d97706;
+  border-bottom: 2px solid #d97706;
+}
 .st-stats {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
   margin-bottom: 24px;

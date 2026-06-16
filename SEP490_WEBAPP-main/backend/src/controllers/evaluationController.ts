@@ -1832,6 +1832,9 @@ export class EvaluationController {
       const startIndex = Number(req.body?.startIndex);
       const count = Number(req.body?.count);
 
+      const taskType = req.body?.taskType === 'cross-check' ? 'cross-check' : 'labeling';
+      const priority = ['low', 'medium', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'medium';
+
       if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(assigneeId)) {
         res.status(400).json({ error: 'Dataset version id hoặc assigneeId không hợp lệ.' });
         return;
@@ -1887,6 +1890,8 @@ export class EvaluationController {
           assigneeId: new mongoose.Types.ObjectId(assigneeId),
           assignedBy: new mongoose.Types.ObjectId(ownerId),
           sampleIndex: startIndex + offset,
+          taskType,
+          priority,
         })),
         { ordered: false }
       );

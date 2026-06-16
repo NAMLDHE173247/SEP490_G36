@@ -51,6 +51,7 @@ import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddle
 import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
 import { getGpuConfig, updateGpuConfig } from '../controllers/configController';
+import { autoLabelGroups } from '../controllers/autoLabelController';
 
 
 const router = express.Router();
@@ -158,6 +159,9 @@ router.post('/cluster/remove-noise', removeNoise);
 router.post('/cluster/deduplicate', deduplicate);
 router.post('/cluster/safe-split', safeSplit);
 router.delete('/cluster/cache', deleteClusterCache);
+
+// Auto Label Route (Label with AI)
+router.post('/auto-label', autoLabelGroups);
 
 // Config Routes
 router.get('/config/gpu-url', getGpuConfig);

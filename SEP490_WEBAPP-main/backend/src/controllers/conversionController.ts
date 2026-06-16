@@ -3,7 +3,7 @@ import { ConversionService } from '../services/conversionService';
 import { MongoDBMessage, ConversionOptions } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
-//import path from 'path';
+import * as xlsx from 'xlsx';
 
 const conversionService = new ConversionService();
 
@@ -35,8 +35,18 @@ export class ConversionController {
         return;
       }
 
-      const fileContent = await fs.readFile(req.file.path, 'utf-8');
-      const messages = this.parseFileContent(fileContent);
+      const ext = req.file.originalname.split('.').pop()?.toLowerCase();
+      let messages: any[] = [];
+      
+      if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        const workbook = xlsx.readFile(req.file.path);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        messages = xlsx.utils.sheet_to_json(worksheet);
+      } else {
+        const fileContent = await fs.readFile(req.file.path, 'utf-8');
+        messages = this.parseFileContent(fileContent);
+      }
 
       if (!Array.isArray(messages)) {
         res.status(400).json({ error: 'Invalid JSON format. Expected array.' });
@@ -151,26 +161,38 @@ export class ConversionController {
           }
         };
       } else if (stored.metadata.fileType === 'openai_messages') {
-        // If input is already OpenAI messages, we can pass through or convert to other formats
+        // If input is already OpenAI messages — apply cleanContent if removeThinkTags
+        let cleanedData = stored.data;
+        if (options.removeThinkTags) {
+          cleanedData = stored.data.map((conv: any) => ({
+            ...conv,
+            messages: Array.isArray(conv.messages)
+              ? conv.messages.map((msg: any) => ({
+                  ...msg,
+                  content: conversionService.cleanContent(msg.content || '', true)
+                }))
+              : conv.messages
+          }));
+        }
+
         if (options.format === 'openai' || options.format === 'alpaca') {
           result = {
-            data: stored.data,
+            data: cleanedData,
             format: 'openai',
             stats: {
-              totalConversations: stored.data.length,
+              totalConversations: cleanedData.length,
               totalMessages: stored.metadata.messageCount,
-              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(stored.data))
+              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(cleanedData))
             }
           };
         } else {
-          // Default fallback or handle other formats if needed
           result = {
-            data: stored.data,
+            data: cleanedData,
             format: options.format,
             stats: {
-              totalConversations: stored.data.length,
+              totalConversations: cleanedData.length,
               totalMessages: stored.metadata.messageCount,
-              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(stored.data))
+              totalTokensEstimate: conversionService.estimateTokens(JSON.stringify(cleanedData))
             }
           };
         }

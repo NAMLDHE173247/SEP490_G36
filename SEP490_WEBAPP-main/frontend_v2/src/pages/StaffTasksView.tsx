@@ -5,93 +5,46 @@ import {
 } from 'lucide-react';
 import '../styles/stafftasks.css';
 
-const MY_TASKS = [
-  {
-    id: 'TASK-001',
-    name: 'Gán nhãn Toán 11 — Batch 1',
-    dataset: 'Toan_11',
-    version: 'v3',
-    batchStart: 1,
-    batchCount: 40,
-    priority: 'high',
-    deadline: '2026-06-05',
-    status: 'in_progress',
-    labeledCount: 25,
-    totalSamples: 40,
-    supervisor: 'Supervisor User',
-    createdAt: '2026-06-01',
-    guideline: 'Gán nhãn cho các hội thoại về môn Toán lớp 11. Chú ý phân biệt rõ Intent của học sinh.',
-    disableAi: false,
-  },
-  {
-    id: 'TASK-002',
-    name: 'Gán nhãn Vật lý — Batch 2',
-    dataset: 'Vatly_12',
-    version: 'v1',
-    batchStart: 41,
-    batchCount: 35,
-    priority: 'urgent',
-    deadline: '2026-06-04',
-    status: 'in_progress',
-    labeledCount: 10,
-    totalSamples: 35,
-    supervisor: 'Supervisor User',
-    createdAt: '2026-06-02',
-    guideline: 'Gán nhãn cho hội thoại Vật lý lớp 12. Lưu ý kiểm tra lỗi factual.',
-    disableAi: true,
-  },
-  {
-    id: 'TASK-003',
-    name: 'Gán nhãn Hóa học — Batch 1',
-    dataset: 'Hoahoc_10',
-    version: 'v2',
-    batchStart: 1,
-    batchCount: 30,
-    priority: 'medium',
-    deadline: '2026-06-08',
-    status: 'pending',
-    labeledCount: 0,
-    totalSamples: 30,
-    supervisor: 'Supervisor User',
-    createdAt: '2026-06-03',
-    guideline: '',
-    disableAi: false,
-  },
-  {
-    id: 'TASK-004',
-    name: 'Gán nhãn Toán 11 — Batch 2',
-    dataset: 'Toan_11',
-    version: 'v3',
-    batchStart: 41,
-    batchCount: 40,
-    priority: 'low',
-    deadline: '2026-06-10',
-    status: 'submitted',
-    labeledCount: 40,
-    totalSamples: 40,
-    supervisor: 'Supervisor User',
-    createdAt: '2026-05-28',
-    guideline: '',
-    disableAi: false,
-  },
-  {
-    id: 'TASK-005',
-    name: 'Gán nhãn Sinh học — Batch 1',
-    dataset: 'Sinhhoc_11',
-    version: 'v1',
-    batchStart: 1,
-    batchCount: 25,
-    priority: 'medium',
-    deadline: '2026-06-12',
-    status: 'pending',
-    labeledCount: 0,
-    totalSamples: 25,
-    supervisor: 'Supervisor User',
-    createdAt: '2026-06-03',
-    guideline: '',
-    disableAi: false,
-  },
-];
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+
+function useStaffTasks() {
+  const { user } = useAuth();
+  const staffId = user?.id || 'fake-staff-1';
+  const [tasks, setTasks] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    const fetchMyTasks = async () => {
+      try {
+        const res = await api.get('/dataprep/assignments/my-tasks', { params: { userId: staffId } });
+        if (res.data.success) {
+          const fetchedTasks = res.data.data.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            dataset: 'Toan_11',
+            version: 'v3',
+            batchStart: t.batchStart,
+            batchCount: t.batchCount,
+            assignees: [t.assigneeId],
+            status: t.status,
+            priority: t.priority,
+            taskType: t.taskType,
+            createdAt: t.createdAt.split('T')[0],
+            totalSamples: t.totalSamples || t.batchCount,
+            labeledCount: t.labeledCount || 0,
+            reviewedCount: 0
+          }));
+          setTasks(fetchedTasks);
+        }
+      } catch (e) {
+        console.error('Failed to fetch staff tasks', e);
+      }
+    };
+    fetchMyTasks();
+  }, [staffId]);
+
+  return tasks;
+}
 
 const STATUS_CONFIG = {
   pending: { label: 'Chờ thực hiện', icon: <Clock size={14} />, className: 'st-status-pending' },
@@ -107,8 +60,10 @@ const PRIORITY_CONFIG = {
 };
 
 function StaffTasksView({ onOpenTask }) {
+  const MY_TASKS = useStaffTasks();
+  const [taskType, setTaskType] = useState('labeling');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('deadline');
+  const [sortBy, setSortBy] = useState('priority');
 
   const stats = {
     total: MY_TASKS.length,
@@ -116,7 +71,9 @@ function StaffTasksView({ onOpenTask }) {
     submitted: MY_TASKS.filter(t => t.status === 'submitted').length,
   };
 
-  let filtered = MY_TASKS.filter(t => statusFilter === 'all' || t.status === statusFilter);
+  // Mock filtering by taskType (in a real app, tasks would have a type field)
+  const tasksByType = taskType === 'labeling' ? MY_TASKS : [];
+  let filtered = tasksByType.filter(t => statusFilter === 'all' || t.status === statusFilter);
 
   filtered.sort((a, b) => {
     switch (sortBy) {
@@ -145,13 +102,29 @@ function StaffTasksView({ onOpenTask }) {
             <ClipboardList size={24} />
           </div>
           <div>
-            <h2>Task gán nhãn của tôi</h2>
+            <h2>Task của tôi</h2>
             <p className="st-subtitle">Xem và thực hiện các task được giao</p>
           </div>
         </div>
         <button className="st-btn-refresh" onClick={() => { }}>
           <RefreshCw size={16} />
           Làm mới
+        </button>
+      </div>
+
+      {/* Task Type Tabs */}
+      <div className="st-tabs-container">
+        <button
+          className={`st-tab-btn ${taskType === 'labeling' ? 'active labeling' : ''}`}
+          onClick={() => setTaskType('labeling')}
+        >
+          Task Gán nhãn
+        </button>
+        <button
+          className={`st-tab-btn ${taskType === 'cross-check' ? 'active crosscheck' : ''}`}
+          onClick={() => setTaskType('cross-check')}
+        >
+          Task Kiểm tra chéo
         </button>
       </div>
 
@@ -209,7 +182,7 @@ function StaffTasksView({ onOpenTask }) {
         {filtered.length === 0 && (
           <div className="st-empty">
             <ClipboardList size={48} />
-            <p>Không có task nào.</p>
+            <p>{taskType === 'cross-check' ? 'Không có task kiểm tra chéo nào.' : 'Không có task nào.'}</p>
           </div>
         )}
 
