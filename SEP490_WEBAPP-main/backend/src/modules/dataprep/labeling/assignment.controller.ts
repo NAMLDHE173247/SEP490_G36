@@ -4,6 +4,7 @@ import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { DatasetVersion } from '../../../models/DatasetVersion';
+import { DatasetAssignmentActivity } from '../../../models/DatasetAssignmentActivity';
 import { User } from '../../../models/User';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
@@ -36,6 +37,185 @@ export class AssignmentController {
       return res.status(200).json({ success: true, message: 'Reset OK' });
     } catch (e: any) {
       return res.status(500).json({ success: false, error: e.message });
+    }
+  }
+
+  /**
+   * API: Lấy danh sách Staff khả dụng kèm workload hiện tại
+   * GET /api/dataprep/assignments/available-staff?versionId=xxx
+   */
+  async getAvailableStaff(_req: Request, res: Response) {
+    try {
+      // 1. Lấy danh sách staff active
+      const staffList = await User.find({ role: 'staff', status: 'active' })
+        .select('_id email name')
+        .lean();
+
+      // 2. Đếm workload (số task pending/in_progress) của mỗi staff
+      const workloadAgg = await DatasetAssignmentSubmission.aggregate([
+        { $match: { status: { $in: ['pending', 'in_progress'] } } },
+        { $group: { _id: '$assigneeId', pendingTasks: { $sum: 1 }, totalAssigned: { $sum: '$totalSamples' } } }
+      ]);
+      const workloadMap = new Map(workloadAgg.map((w: any) => [String(w._id), w]));
+
+      const result = staffList.map(s => {
+        const wl = workloadMap.get(String(s._id)) || { pendingTasks: 0, totalAssigned: 0 };
+        return {
+          id: String(s._id),
+          name: s.name,
+          email: s.email,
+          pendingTasks: wl.pendingTasks,
+          totalAssigned: wl.totalAssigned,
+        };
+      });
+
+      return res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      console.error('[AssignmentController] getAvailableStaff error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * API: Tự động chia đều hội thoại cho danh sách nhân viên (Array Chunking)
+   * POST /api/dataprep/versions/:versionId/assignments/auto-assign
+   * Body: { assigneeIds: string[], taskName: string, priority?: string, deadline?: string }
+   */
+  async createAutoAssignment(req: Request, res: Response) {
+    try {
+      const { versionId } = req.params;
+      const { assigneeIds, taskName, priority, deadline } = req.body;
+      const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
+
+      if (!assigneeIds || !assigneeIds.length) {
+        return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên' });
+      }
+
+      // 1. Lấy version metadata
+      const version = await DatasetVersion.findById(versionId).lean();
+      if (!version) {
+        return res.status(404).json({ success: false, error: 'Không tìm thấy DatasetVersion' });
+      }
+      const datasetName = version.projectName || version.versionName || 'Dataset';
+
+      // 2. Lấy TOÀN BỘ danh sách sample IDs (Array Chunking cần ID cụ thể)
+      const allSamples = await ProcessedDatasetItem.find({ datasetVersionId: versionId })
+        .select('_id')
+        .sort({ _id: 1 })
+        .lean();
+
+      const N = allSamples.length;
+      if (N === 0) {
+        return res.status(400).json({ success: false, error: 'Version này chưa có dữ liệu (0 samples)' });
+      }
+
+      const M = assigneeIds.length;
+      const perStaff = Math.floor(N / M);
+      const remainder = N % M;
+
+      // 3. Array Chunking: chia mảng ID thành các cụm
+      const chunks: Array<{ assigneeId: string; sampleIds: any[]; startIndex: number }> = [];
+      let cursor = 0;
+      for (let i = 0; i < M; i++) {
+        const chunkSize = perStaff + (i < remainder ? 1 : 0);
+        chunks.push({
+          assigneeId: assigneeIds[i],
+          sampleIds: allSamples.slice(cursor, cursor + chunkSize),
+          startIndex: cursor + 1, // 1-indexed for display
+        });
+        cursor += chunkSize;
+      }
+
+      // 4. Thực hiện ghi DB — dùng Transaction nếu Replica Set, fallback nếu Standalone
+
+      let session: mongoose.ClientSession | null = null;
+      try {
+        session = await mongoose.startSession();
+        session.startTransaction();
+      } catch {
+        session = null;
+      }
+
+      try {
+        const allActivityDocs: any[] = [];
+
+        for (const chunk of chunks) {
+          // 4a. Tạo DatasetAssignmentSubmission
+          const submission = new DatasetAssignmentSubmission({
+            datasetVersionId: versionId,
+            assigneeId: chunk.assigneeId,
+            status: 'pending',
+            name: `${taskName} - Batch ${chunk.startIndex}`,
+            batchStart: chunk.startIndex,
+            batchCount: chunk.sampleIds.length,
+            taskType: 'labeling',
+            priority: priority || 'medium',
+            deadline: deadline ? new Date(deadline) : undefined,
+            supervisor: assignedBy,
+            labeledCount: 0,
+            totalSamples: chunk.sampleIds.length,
+            dataset: datasetName,
+            version: version.versionName || 'v1',
+            progressSnapshot: { totalAssigned: chunk.sampleIds.length },
+          });
+          if (session) await submission.save({ session }); else await submission.save();
+
+          // 4b. Tạo DatasetSampleAssignment (ánh xạ sampleId cụ thể)
+          const sampleDocs = chunk.sampleIds.map((item, i) => ({
+            datasetVersionId: versionId,
+            sampleId: item._id,
+            assigneeId: chunk.assigneeId,
+            assignedBy,
+            sampleIndex: chunk.startIndex + i,
+            taskType: 'labeling',
+            priority: priority || 'medium',
+          }));
+          if (session) await DatasetSampleAssignment.insertMany(sampleDocs, { session }); else await DatasetSampleAssignment.insertMany(sampleDocs);
+
+          // 4c. Ghi Audit log (DatasetAssignmentActivity)
+          for (const item of chunk.sampleIds) {
+            allActivityDocs.push({
+              datasetVersionId: versionId,
+              sampleId: item._id,
+              annotatorId: chunk.assigneeId,
+              labelName: 'assignment',
+              labelType: 'hard',
+              targetScope: 'sample',
+              activityType: 'assign',
+            });
+          }
+        }
+
+        // 4d. Bulk insert audit logs
+        if (allActivityDocs.length > 0) {
+          if (session) await DatasetAssignmentActivity.insertMany(allActivityDocs, { session }); else await DatasetAssignmentActivity.insertMany(allActivityDocs);
+        }
+
+        if (session) await session.commitTransaction();
+      } catch (txError: any) {
+        if (session) {
+          try { await session.abortTransaction(); } catch { /* ignore */ }
+        }
+        throw txError;
+      } finally {
+        if (session) session.endSession();
+      }
+
+      // 5. Broadcast SSE update
+      broadcastAssignmentUpdate({ type: 'assignment_created', versionId, action: 'auto_assign' });
+
+      return res.status(201).json({
+        success: true,
+        message: `Đã giao ${N} samples cho ${M} nhân viên`,
+        distribution: chunks.map(c => ({
+          assigneeId: c.assigneeId,
+          sampleCount: c.sampleIds.length,
+          range: `${c.startIndex}–${c.startIndex + c.sampleIds.length - 1}`,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[AssignmentController] createAutoAssignment error:', error);
+      return res.status(500).json({ success: false, error: error.message });
     }
   }
 
@@ -589,8 +769,152 @@ export class AssignmentController {
       return res.status(500).json({ success: false, error: error.message });
     }
   }
-}
 
+  /**
+   * API: Lấy dữ liệu Split-View cho Supervisor (Bản gốc vs Bản Preview)
+   * GET /api/dataprep/assignments/manager/sample/:sampleId/split-view?staffId=xxx
+   */
+  async getSampleSplitView(req: Request, res: Response) {
+    try {
+      const { sampleId } = req.params;
+      const staffId = req.query.staffId as string;
+
+      // 1. NỬA TRÁI: Bản gốc
+      const item = await ProcessedDatasetItem.findById(sampleId).lean();
+      if (!item) {
+        return res.status(404).json({ success: false, error: 'Sample not found' });
+      }
+
+      let originalMessages: any[] = [];
+      const data = item.data || {};
+      if (Array.isArray(data.messages)) {
+        originalMessages = data.messages;
+      } else if (data.prompt || data.response) {
+        if (data.prompt) originalMessages.push({ role: 'user', content: data.prompt });
+        if (data.response) originalMessages.push({ role: 'assistant', content: data.response });
+      }
+
+      // 2. NỬA PHẢI: Labels overlay
+      const labelQuery: any = { sampleId };
+      if (staffId) labelQuery.createdBy = staffId;
+      const labels = await LabelAssignment.find(labelQuery).lean();
+
+      // 3. NỬA PHẢI: Rewrites overlay
+      const { ConversationRewriteHistory } = require('../../../models/ConversationRewriteHistory');
+      const rewriteQuery: any = { sampleId };
+      if (staffId) rewriteQuery.editorId = staffId;
+      const rewrites = await ConversationRewriteHistory.find(rewriteQuery).lean();
+
+      // 4. Map labels và rewrites theo messageIndex
+      const labelsByMsg: Record<number, any[]> = {};
+      const sampleLabels: any[] = [];
+      for (const label of labels) {
+        if (label.targetScope === 'message' && label.messageIndex != null) {
+          if (!labelsByMsg[label.messageIndex]) labelsByMsg[label.messageIndex] = [];
+          labelsByMsg[label.messageIndex].push({
+            name: label.name,
+            type: label.type,
+            role: label.messageRole,
+          });
+        } else if (label.targetScope === 'sample') {
+          sampleLabels.push({ name: label.name, type: label.type });
+        }
+      }
+
+      const rewritesByMsg: Record<number, any> = {};
+      for (const rw of rewrites) {
+        rewritesByMsg[rw.messageIndex] = {
+          originalText: rw.originalText,
+          proposedText: rw.proposedText,
+          approvedText: rw.approvedText,
+          editReason: rw.editReason,
+          editType: rw.editType,
+        };
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          original: { messages: originalMessages },
+          labeled: {
+            sampleLabels,
+            messageLabels: labelsByMsg,
+            rewrites: rewritesByMsg,
+          },
+        },
+      });
+    } catch (error: any) {
+      console.error('[AssignmentController] getSampleSplitView error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * API: Supervisor duyệt (Approve) submission của nhân viên
+   * POST /api/dataprep/assignments/manager/submission/:submissionId/approve
+   */
+  async approveSubmission(req: Request, res: Response) {
+    try {
+      const { submissionId } = req.params;
+      const userId = (req as any).user?.id || (req as any).user?._id || 'admin';
+
+      const submission = await DatasetAssignmentSubmission.findById(submissionId);
+      if (!submission) {
+        return res.status(404).json({ success: false, error: 'Submission not found' });
+      }
+
+      if (submission.status !== 'submitted') {
+        return res.status(400).json({ success: false, error: `Không thể duyệt submission ở trạng thái "${submission.status}". Chỉ duyệt được khi status = "submitted".` });
+      }
+
+      submission.status = 'approved';
+      submission.approvedBy = userId;
+      submission.approvedAt = new Date();
+      await submission.save();
+
+      broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'approve' });
+
+      return res.status(200).json({ success: true, data: submission });
+    } catch (error: any) {
+      console.error('[AssignmentController] approveSubmission error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * API: Supervisor từ chối (Reject) submission — revert về in_progress
+   * POST /api/dataprep/assignments/manager/submission/:submissionId/reject
+   * Body: { reason: string }
+   */
+  async rejectSubmission(req: Request, res: Response) {
+    try {
+      const { submissionId } = req.params;
+      const { reason } = req.body;
+
+      const submission = await DatasetAssignmentSubmission.findById(submissionId);
+      if (!submission) {
+        return res.status(404).json({ success: false, error: 'Submission not found' });
+      }
+
+      if (submission.status !== 'submitted') {
+        return res.status(400).json({ success: false, error: `Không thể reject submission ở trạng thái "${submission.status}".` });
+      }
+
+      // Revert status → rejected (staff sẽ thấy task đỏ, sửa lại rồi submit lại)
+      submission.status = 'rejected';
+      submission.rejectReason = reason || '';
+      submission.submittedAt = undefined;
+      await submission.save();
+
+      broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'reject' });
+
+      return res.status(200).json({ success: true, data: submission });
+    } catch (error: any) {
+      console.error('[AssignmentController] rejectSubmission error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+}
 // --- AUTO SCORE LOGIC ---
 function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
   if (totalSamples <= 0 || !hardLabels.length) return 0;

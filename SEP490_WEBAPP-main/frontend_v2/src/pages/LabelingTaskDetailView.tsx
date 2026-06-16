@@ -5,6 +5,7 @@ import {
   FileText, MessageSquare, RefreshCw, Calendar, Tag, Database, Activity, Layers
 } from 'lucide-react';
 import { api } from '../services/api';
+import SplitViewModal from '../components/dataprep/SplitViewModal';
 import '../styles/taskdetail.css';
 
 export default function LabelingTaskDetailView({ onBack, task, initialBatchId }) {
@@ -20,6 +21,11 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   const [currentPage, setCurrentPage] = useState(1);
   const [sampleFilter, setSampleFilter] = useState('all'); // 'all', 'completed', 'pending'
   const itemsPerPage = 10;
+
+  // Split-View & Approve/Reject state
+  const [splitViewOpen, setSplitViewOpen] = useState(false);
+  const [splitViewSample, setSplitViewSample] = useState<any>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   
   useEffect(() => {
     if (!task) return;
@@ -190,6 +196,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                         <th>Hoàn thành</th>
                         <th>Tốc độ (samples/hr)</th>
                         <th>Cập nhật cuối</th>
+                        <th>Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -214,6 +221,45 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                           </td>
                           <td>{p.labelsPerHour || 0}</td>
                           <td>{p.submittedAt ? new Date(p.submittedAt).toLocaleString() : 'Chưa cập nhật'}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {p.status === 'submitted' && (
+                                <>
+                                  <button
+                                    className="td-action-btn approve"
+                                    disabled={actionLoading === p.submissionId}
+                                    onClick={async () => {
+                                      if (!window.confirm(`Duyệt submission của ${p.name}?`)) return;
+                                      setActionLoading(p.submissionId);
+                                      try {
+                                        await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/approve`);
+                                        const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
+                                        if (res.data.success) setTaskDetail(res.data.data);
+                                      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                      setActionLoading(null);
+                                    }}
+                                  >✅ Duyệt</button>
+                                  <button
+                                    className="td-action-btn reject"
+                                    disabled={actionLoading === p.submissionId}
+                                    onClick={async () => {
+                                      const reason = window.prompt('Lý do từ chối:');
+                                      if (reason === null) return;
+                                      setActionLoading(p.submissionId);
+                                      try {
+                                        await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/reject`, { reason });
+                                        const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
+                                        if (res.data.success) setTaskDetail(res.data.data);
+                                      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                      setActionLoading(null);
+                                    }}
+                                  >❌ Reject</button>
+                                </>
+                              )}
+                              {p.status === 'approved' && <span className="td-status-sm done">✅ Đã duyệt</span>}
+                              {p.status === 'rejected' && <span className="td-status-sm" style={{color:'#dc2626'}}>🔴 Đã từ chối</span>}
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>

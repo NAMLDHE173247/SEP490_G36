@@ -25,6 +25,7 @@ export interface IDatasetAssignmentSubmission extends Document {
   humanScore?: number;
   approvedAt?: Date;
   approvedBy?: Types.ObjectId;
+  rejectReason?: string;
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -64,6 +65,7 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
     humanScore: { type: Number },
     approvedAt: { type: Date },
     approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    rejectReason: { type: String, default: '' },
   },
   {
     timestamps: true,

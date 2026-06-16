@@ -8,6 +8,7 @@ import {
 import '../styles/assignlabeling.css';
 
 import { api } from '../services/api';
+import TaskAssignmentModal from '../components/dataprep/TaskAssignmentModal';
 
 
 const STATUS_CONFIG = {
@@ -33,6 +34,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [sortBy, setSortBy] = useState('date-desc');
 
   const [showToast, setShowToast] = useState<string | null>(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
 
   const fetchTasks = async () => {
     try {
@@ -113,7 +115,17 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <p className="al-subtitle">Theo dõi và giám sát tiến độ các Batch bên trong từng Task</p>
           </div>
         </div>
+        <button className="al-btn-create" onClick={() => setShowAssignModal(true)}>
+          <Plus size={16} /> Tạo Task Mới
+        </button>
       </div>
+
+      {/* Task Assignment Modal */}
+      <TaskAssignmentModal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        onSuccess={() => { fetchTasks(); setShowToast('Giao việc thành công!'); setTimeout(() => setShowToast(null), 3000); }}
+      />
 
       {/* Stats */}
       <div className="al-stats">
