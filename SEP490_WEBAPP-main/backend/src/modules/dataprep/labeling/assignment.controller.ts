@@ -434,16 +434,19 @@ export class AssignmentController {
 
       const subs = await DatasetAssignmentSubmission.find(query);
       if (subs.length === 0) {
-        // Return empty structure instead of 404 so UI can render
         return res.status(200).json({ 
           success: true, 
-          data: { id: taskId, batches: [], staffList: [], conflicts: [], samples: [] } 
+          data: { id: taskId, name: baseName || taskId, batches: [], staffList: [], conflicts: [], samples: [], labeledCount: 0, totalSamples: 0 } 
         });
       }
+
+      // Lấy version metadata cho tên hiển thị
+      const version = await DatasetVersion.findById(versionId).lean();
 
       const batchesMap: { [key: string]: any } = {};
       const staffMap: { [key: string]: any } = {};
       let totalSamples = 0;
+      let totalLabeled = 0;
 
       const assigneeIds = [...new Set(subs.map(s => String(s.assigneeId)))];
       const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
@@ -460,7 +463,7 @@ export class AssignmentController {
            else finalName = assigneeIdStr;
         }
 
-        // Build Staff
+        // Build Staff — tích lũy submissionIds
         if (!staffMap[assigneeIdStr]) {
           staffMap[assigneeIdStr] = {
             id: assigneeIdStr,
@@ -469,11 +472,21 @@ export class AssignmentController {
             total: 0,
             status: sub.status,
             submittedAt: sub.submittedAt || null,
-            labelsPerHour: Math.floor(Math.random() * 5) + 5 // Mock productivity
+            submissionId: String(sub._id), // Trả submissionId cho Approve/Reject
+            submissionIds: [String(sub._id)],
           };
+        } else {
+          staffMap[assigneeIdStr].submissionIds.push(String(sub._id));
+          // Ưu tiên status submitted > in_progress > pending
+          const statusPriority: any = { submitted: 3, in_progress: 2, pending: 1, approved: 4, rejected: 0 };
+          if ((statusPriority[sub.status] || 0) > (statusPriority[staffMap[assigneeIdStr].status] || 0)) {
+            staffMap[assigneeIdStr].status = sub.status;
+            staffMap[assigneeIdStr].submissionId = String(sub._id);
+          }
         }
         staffMap[assigneeIdStr].total += sub.totalSamples;
-        staffMap[assigneeIdStr].progress += sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0;
+        const subLabeled = sub.status === 'submitted' || sub.status === 'approved' ? sub.totalSamples : (sub.labeledCount || 0);
+        staffMap[assigneeIdStr].progress += subLabeled;
 
         // Build Batch
         let batch = batchesMap[sub.name];
@@ -482,38 +495,70 @@ export class AssignmentController {
             id: `batch-${sub.batchStart}`,
             name: sub.name,
             totalSamples: sub.totalSamples,
+            labeledCount: sub.labeledCount || 0,
             status: sub.status,
             assignees: []
           };
           batchesMap[sub.name] = batch;
           totalSamples += sub.totalSamples;
+          totalLabeled += subLabeled;
         }
-        const assigneeIdStr2 = String(sub.assigneeId);
-        batch.assignees.push(staffMap[assigneeIdStr2].name);
+        batch.assignees.push(staffMap[assigneeIdStr].name);
       });
 
-      const sampleAssigns = await DatasetSampleAssignment.find({ datasetVersionId: taskId }).sort({ sampleIndex: 1 });
+      // === FIX: Dùng versionId (không phải taskId composite) để query samples ===
+      const sampleAssigns = await DatasetSampleAssignment.find({ datasetVersionId: versionId }).sort({ sampleIndex: 1 });
       const samplesMap: { [key: number]: any } = {};
       const sampleIdMap: { [key: string]: number } = {};
+      const allSampleObjectIds: string[] = [];
 
       for (const sa of sampleAssigns) {
         if (!samplesMap[sa.sampleIndex]) {
           samplesMap[sa.sampleIndex] = {
             id: sa.sampleIndex,
+            sampleObjectId: String(sa.sampleId), // ID thật để mở SplitView
             key: `sample_${String(sa.sampleIndex).padStart(3, '0')}`,
-            preview: `Sample data preview content ${sa.sampleIndex}...`,
+            preview: '',
             assignees: [],
             staffStatus: {},
             staffLabels: {},
             conflict: false,
           };
           sampleIdMap[String(sa.sampleId)] = sa.sampleIndex;
+          allSampleObjectIds.push(String(sa.sampleId));
         }
         const assigneeName = staffMap[String(sa.assigneeId)]?.name || String(sa.assigneeId);
         if (!samplesMap[sa.sampleIndex].assignees.includes(assigneeName)) {
            samplesMap[sa.sampleIndex].assignees.push(assigneeName);
         }
         samplesMap[sa.sampleIndex].staffStatus[String(sa.assigneeId)] = 'pending';
+      }
+
+      // === FIX: Fetch nội dung thật từ ProcessedDatasetItem thay vì placeholder ===
+      if (allSampleObjectIds.length > 0) {
+        const validIds = allSampleObjectIds.filter(id => mongoose.Types.ObjectId.isValid(id));
+        const processedItems = await ProcessedDatasetItem.find({ _id: { $in: validIds } }).select('_id data').lean();
+        const itemMap = new Map(processedItems.map(item => [String(item._id), item]));
+
+        for (const sampleObjId of allSampleObjectIds) {
+          const sIndex = sampleIdMap[sampleObjId];
+          const item = itemMap.get(sampleObjId);
+          if (item && sIndex && samplesMap[sIndex]) {
+            const data = (item as any).data || {};
+            let preview = '';
+            if (Array.isArray(data.messages) && data.messages.length > 0) {
+              // Lấy 2 tin nhắn đầu, mỗi tin cắt 100 ký tự
+              preview = data.messages.slice(0, 2).map((m: any) => {
+                const role = m.role === 'user' ? 'U' : 'A';
+                const text = (m.content || '').substring(0, 100);
+                return `[${role}] ${text}`;
+              }).join(' | ');
+            } else if (data.prompt || data.response) {
+              preview = `[U] ${(data.prompt || '').substring(0, 80)} | [A] ${(data.response || '').substring(0, 80)}`;
+            }
+            samplesMap[sIndex].preview = preview || `Sample #${sIndex}`;
+          }
+        }
       }
 
       const sampleIdArray = Object.keys(sampleIdMap);
@@ -539,7 +584,7 @@ export class AssignmentController {
          if (sLabels.length > 1) {
             const firstLabelName = sLabels[0].name;
             const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
-            if (hasConflict || true) { // Always show as conflict for now if > 1 label for demo purposes
+            if (hasConflict) {
               samplesMap[sIndex].conflict = true;
               conflicts.push({
                 sampleId: sIndex,
@@ -554,10 +599,16 @@ export class AssignmentController {
          }
       }
 
+      // Tên hiển thị: ưu tiên dataset + taskName
+      const displayName = baseName && baseName !== 'Default Task'
+        ? `${version?.projectName || 'Dataset'} - ${baseName}`
+        : version?.projectName || version?.versionName || `Dataset Version`;
+
       const data = {
         id: taskId,
-        name: `Dataset Version ${taskId}`,
+        name: displayName,
         totalSamples,
+        labeledCount: totalLabeled,
         batches: Object.values(batchesMap),
         staffList: Object.values(staffMap).map((s: any) => ({
           ...s,

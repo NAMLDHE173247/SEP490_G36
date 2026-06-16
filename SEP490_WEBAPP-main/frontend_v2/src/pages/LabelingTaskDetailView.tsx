@@ -15,18 +15,37 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   const [activeTab, setActiveTab] = useState('progress');
   const [resolvedConflicts, setResolvedConflicts] = useState<string[]>([]);
   const [showConflictModal, setShowConflictModal] = useState<any>(null);
-  const [showSampleDetailModal, setShowSampleDetailModal] = useState<any>(null);
   
   // Pagination & Filter state for samples
   const [currentPage, setCurrentPage] = useState(1);
-  const [sampleFilter, setSampleFilter] = useState('all'); // 'all', 'completed', 'pending'
+  const [sampleFilter, setSampleFilter] = useState('all');
   const itemsPerPage = 10;
 
-  // Split-View & Approve/Reject state
+  // Split-View state
   const [splitViewOpen, setSplitViewOpen] = useState(false);
-  const [splitViewSample, setSplitViewSample] = useState<any>(null);
+  const [splitViewSampleId, setSplitViewSampleId] = useState('');
+  const [splitViewStaffId, setSplitViewStaffId] = useState('');
+  const [splitViewStaffName, setSplitViewStaffName] = useState('');
+
+  // Staff Sample List modal state
+  const [staffSamplesModal, setStaffSamplesModal] = useState<any>(null);
+  const [staffSamplePage, setStaffSamplePage] = useState(1);
+  const staffSamplePageSize = 20;
+
+  // Approve/Reject loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   
+  const refreshTaskDetail = async () => {
+    try {
+      const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
+      if (res.data.success) {
+        setTaskDetail(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh task detail', err);
+    }
+  };
+
   useEffect(() => {
     if (!task) return;
     const fetchDetail = async () => {
@@ -60,7 +79,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   const staffList = taskDetail.staffList || [];
   const samples = taskDetail.samples || [];
   
-  // Filter and Pagination logic
+  // Filter and Pagination logic for samples tab
   const filteredSamples = samples.filter((s: any) => {
     if (sampleFilter === 'all') return true;
     const doneCount = staffList.filter((staff: any) => s.staffStatus?.[staff.id] === 'done').length;
@@ -76,9 +95,49 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   const selectedBatch = selectedBatchId ? batches.find(b => b.id === selectedBatchId) : null;
   const pendingConflicts = conflicts.filter(c => !resolvedConflicts.includes(c.key)).length;
 
+  const overallProgress = taskDetail.totalSamples > 0
+    ? Math.round(((taskDetail.labeledCount || 0) / taskDetail.totalSamples) * 100)
+    : 0;
+
   const handleResolveConflict = (key) => {
     setResolvedConflicts(prev => [...prev, key]);
     setShowConflictModal(null);
+  };
+
+  // Open staff sample list modal
+  const openStaffSamples = (staff: any) => {
+    // Filter samples assigned to this staff
+    const staffSamples = samples
+      .filter((s: any) => s.staffStatus?.hasOwnProperty(staff.id))
+      .map((s: any) => ({
+        ...s,
+        isLabeled: s.staffStatus?.[staff.id] === 'done',
+        labelName: s.staffLabels?.[staff.id] || null,
+      }))
+      // Ưu tiên câu đã labeled lên trước
+      .sort((a, b) => (b.isLabeled ? 1 : 0) - (a.isLabeled ? 1 : 0));
+
+    setStaffSamplesModal({ staff, samples: staffSamples });
+    setStaffSamplePage(1);
+  };
+
+  // Open split-view for a specific sample + staff
+  const openSplitView = (sampleObjectId: string, staffId: string, staffName: string) => {
+    setSplitViewSampleId(sampleObjectId);
+    setSplitViewStaffId(staffId);
+    setSplitViewStaffName(staffName);
+    setSplitViewOpen(true);
+  };
+
+  // Status display helper
+  const getStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'approved': return { label: 'Đã duyệt', className: 'done', icon: '✅' };
+      case 'submitted': return { label: 'Đã nộp', className: 'submitted', icon: '📤' };
+      case 'rejected': return { label: 'Bị từ chối', className: 'rejected', icon: '🔴' };
+      case 'in_progress': return { label: 'Đang làm', className: 'working', icon: '🔄' };
+      default: return { label: 'Chờ xử lý', className: 'pending-status', icon: '⏳' };
+    }
   };
 
   return (
@@ -96,8 +155,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
           <div className="td-sidebar-title">
             <Database size={16} />
             <div className="td-sidebar-title-text">
-              <h3>{task.dataset}</h3>
-              <span>{task.version}</span>
+              <h3>{task.dataset || 'Dataset'}</h3>
+              <span>{task.version || ''}</span>
             </div>
           </div>
 
@@ -132,7 +191,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
         {/* Right Content: Dashboard */}
         <div className="td-main-content">
           <div className="td-content-header">
-            <h2>{selectedBatch ? selectedBatch.name : 'Tổng quan: ' + taskDetail.name}</h2>
+            <h2>{selectedBatch ? selectedBatch.name : taskDetail.name}</h2>
             {selectedBatch && (
               <span className="td-header-badge">{selectedBatch.status === 'completed' ? '✅ Completed' : '⏳ In Progress'}</span>
             )}
@@ -146,7 +205,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                 <span className="td-kpi-value">
                   {selectedBatch 
                     ? Math.round(((selectedBatch.labeledCount || 0) / (selectedBatch.totalSamples || 1)) * 100) 
-                    : Math.round(((taskDetail.labeledCount || 0) / (taskDetail.totalSamples || 1)) * 100)}%
+                    : overallProgress}%
                 </span>
                 <span className="td-kpi-label">Tiến độ gán nhãn</span>
               </div>
@@ -159,12 +218,10 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               </div>
             </div>
             <div className="td-kpi-card">
-              <div className="td-kpi-icon productivity"><Clock size={20} /></div>
+              <div className="td-kpi-icon productivity"><Users size={20} /></div>
               <div className="td-kpi-info">
-                <span className="td-kpi-value">
-                  {staffList.length > 0 ? Math.round(staffList.reduce((acc, s) => acc + (s.labelsPerHour || 0), 0) / staffList.length * 10) / 10 : 0}
-                </span>
-                <span className="td-kpi-label">Samples / hr (Avg)</span>
+                <span className="td-kpi-value">{staffList.length}</span>
+                <span className="td-kpi-label">Nhân viên tham gia</span>
               </div>
             </div>
           </div>
@@ -184,140 +241,166 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
           </div>
 
           <div className="td-tab-content">
+            {/* ===== TAB 1: TIẾN ĐỘ NHÂN VIÊN ===== */}
             {activeTab === 'progress' && (
               <div className="td-panel">
-                <h3>Thống kê Năng suất</h3>
+                <h3>Thống kê Tiến độ</h3>
                 <div className="td-table-wrapper">
                   <table className="td-table">
                     <thead>
                       <tr>
                         <th>Nhân viên</th>
                         <th>Trạng thái</th>
-                        <th>Hoàn thành</th>
-                        <th>Tốc độ (samples/hr)</th>
+                        <th>Tiến độ</th>
+                        <th>Số lượng</th>
                         <th>Cập nhật cuối</th>
                         <th>Thao tác</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {staffList.map((p, i) => (
-                        <tr key={i}>
-                          <td>
-                            <div className="td-staff-cell">
-                              <div className="al-avatar sm">{p.name ? p.name.split(' ').pop()[0] : 'U'}</div>
-                              {p.name}
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`td-status-sm ${p.completion === 100 ? 'done' : 'working'}`}>
-                              {p.completion === 100 ? 'Đã nộp' : 'Đang làm'}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="td-progress-cell">
-                              <div className="td-progress-bar-sm"><div className="td-progress-fill-sm" style={{ width: `${p.completion}%` }}></div></div>
-                              <span>{Math.round(p.completion)}%</span>
-                            </div>
-                          </td>
-                          <td>{p.labelsPerHour || 0}</td>
-                          <td>{p.submittedAt ? new Date(p.submittedAt).toLocaleString() : 'Chưa cập nhật'}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                              {p.status === 'submitted' && (
-                                <>
-                                  <button
-                                    className="td-action-btn approve"
-                                    disabled={actionLoading === p.submissionId}
-                                    onClick={async () => {
-                                      if (!window.confirm(`Duyệt submission của ${p.name}?`)) return;
-                                      setActionLoading(p.submissionId);
-                                      try {
-                                        await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/approve`);
-                                        const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
-                                        if (res.data.success) setTaskDetail(res.data.data);
-                                      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
-                                      setActionLoading(null);
-                                    }}
-                                  >✅ Duyệt</button>
-                                  <button
-                                    className="td-action-btn reject"
-                                    disabled={actionLoading === p.submissionId}
-                                    onClick={async () => {
-                                      const reason = window.prompt('Lý do từ chối:');
-                                      if (reason === null) return;
-                                      setActionLoading(p.submissionId);
-                                      try {
-                                        await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/reject`, { reason });
-                                        const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
-                                        if (res.data.success) setTaskDetail(res.data.data);
-                                      } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
-                                      setActionLoading(null);
-                                    }}
-                                  >❌ Reject</button>
-                                </>
-                              )}
-                              {p.status === 'approved' && <span className="td-status-sm done">✅ Đã duyệt</span>}
-                              {p.status === 'rejected' && <span className="td-status-sm" style={{color:'#dc2626'}}>🔴 Đã từ chối</span>}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {staffList.map((p, i) => {
+                        const statusInfo = getStatusDisplay(p.status);
+                        return (
+                          <tr key={i}>
+                            <td>
+                              <div className="td-staff-cell">
+                                <div className="al-avatar sm">{p.name ? p.name.split(' ').pop()[0] : 'U'}</div>
+                                {p.name}
+                              </div>
+                            </td>
+                            <td>
+                              <span className={`td-status-sm ${statusInfo.className}`}>
+                                {statusInfo.icon} {statusInfo.label}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="td-progress-cell">
+                                <div className="td-progress-bar-sm"><div className="td-progress-fill-sm" style={{ width: `${p.completion}%` }}></div></div>
+                                <span>{Math.round(p.completion)}%</span>
+                              </div>
+                            </td>
+                            <td style={{ fontSize: '13px', color: '#6b7280' }}>
+                              {p.progress}/{p.total} samples
+                            </td>
+                            <td>{p.submittedAt ? new Date(p.submittedAt).toLocaleString() : 'Chưa cập nhật'}</td>
+                            <td>
+                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                {/* Nút Xem chi tiết → mở danh sách samples của staff */}
+                                <button
+                                  className="td-action-btn"
+                                  style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}
+                                  onClick={() => openStaffSamples(p)}
+                                  title="Xem danh sách samples của nhân viên"
+                                >
+                                  <Eye size={14} /> Xem
+                                </button>
+                                
+                                {/* Approve/Reject buttons */}
+                                {p.status === 'submitted' && (
+                                  <>
+                                    <button
+                                      className="td-action-btn approve"
+                                      disabled={actionLoading === p.submissionId}
+                                      onClick={async () => {
+                                        if (!window.confirm(`Duyệt submission của ${p.name}?`)) return;
+                                        setActionLoading(p.submissionId);
+                                        try {
+                                          await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/approve`);
+                                          await refreshTaskDetail();
+                                        } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                        setActionLoading(null);
+                                      }}
+                                    >✅ Duyệt</button>
+                                    <button
+                                      className="td-action-btn reject"
+                                      disabled={actionLoading === p.submissionId}
+                                      onClick={async () => {
+                                        const reason = window.prompt('Nhập lý do từ chối (bắt buộc):');
+                                        if (!reason || reason.trim() === '') {
+                                          if (reason !== null) alert('Vui lòng nhập lý do từ chối!');
+                                          return;
+                                        }
+                                        setActionLoading(p.submissionId);
+                                        try {
+                                          await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/reject`, { reason: reason.trim() });
+                                          await refreshTaskDetail();
+                                        } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                        setActionLoading(null);
+                                      }}
+                                    >❌ Từ chối</button>
+                                  </>
+                                )}
+                                {p.status === 'approved' && <span className="td-status-sm done">✅ Đã duyệt</span>}
+                                {p.status === 'rejected' && <span className="td-status-sm" style={{color:'#dc2626'}}>🔴 Đã từ chối</span>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
 
+            {/* ===== TAB 2: QUẢN LÝ CONFLICT ===== */}
             {activeTab === 'conflicts' && (
               <div className="td-panel">
                 <div className="td-panel-header">
                   <h3>Xung đột nhãn (Inter-Annotator Agreement)</h3>
-                  <button className="al-btn al-btn-outline"><RefreshCw size={14} style={{ marginRight: '6px' }}/> Chạy lại hàm tính IAA</button>
                 </div>
-                <div className="td-conflict-list">
-                  {conflicts.map((c, idx) => {
-                    const isResolved = resolvedConflicts.includes(c.key);
-                    return (
-                      <div key={idx} className={`td-conflict-item ${isResolved ? 'resolved' : ''}`}>
-                        <div className="td-conflict-header">
-                          <span className="td-conflict-id">Sample #{c.sampleId} ({c.key})</span>
-                          {isResolved ? (
-                            <span className="td-status-badge resolved"><CheckCircle size={14} /> Đã phân xử</span>
-                          ) : (
-                            <span className="td-status-badge pending"><AlertCircle size={14} /> Cần phân xử</span>
+                {conflicts.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#9ca3af' }}>
+                    <CheckCircle size={40} style={{ marginBottom: 12 }} />
+                    <p>Chưa có xung đột nhãn nào.</p>
+                  </div>
+                ) : (
+                  <div className="td-conflict-list">
+                    {conflicts.map((c, idx) => {
+                      const isResolved = resolvedConflicts.includes(c.key);
+                      return (
+                        <div key={idx} className={`td-conflict-item ${isResolved ? 'resolved' : ''}`}>
+                          <div className="td-conflict-header">
+                            <span className="td-conflict-id">Sample #{c.sampleId} ({c.key})</span>
+                            {isResolved ? (
+                              <span className="td-status-badge resolved"><CheckCircle size={14} /> Đã phân xử</span>
+                            ) : (
+                              <span className="td-status-badge pending"><AlertCircle size={14} /> Cần phân xử</span>
+                            )}
+                          </div>
+                          <div className="td-conflict-body">
+                            <div className="td-conflict-label">
+                              <span className="td-annotator"><div className="al-avatar xs">{c.labelA.subject ? c.labelA.subject.split(' ').pop()[0] : 'U'}</div> {c.labelA.subject}</span>
+                              <div className="td-label-tags">
+                                <span className="td-tag subject">{c.labelA.quality}</span>
+                              </div>
+                            </div>
+                            <div className="td-conflict-vs">VS</div>
+                            <div className="td-conflict-label">
+                              <span className="td-annotator"><div className="al-avatar xs">{c.labelB.subject ? c.labelB.subject.split(' ').pop()[0] : 'U'}</div> {c.labelB.subject}</span>
+                              <div className="td-label-tags">
+                                <span className="td-tag subject">{c.labelB.quality}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {!isResolved && (
+                            <div className="td-conflict-actions">
+                              <button className="al-btn al-btn-primary" onClick={() => setShowConflictModal(c)}>Phân xử ngay</button>
+                            </div>
                           )}
                         </div>
-                        <div className="td-conflict-body">
-                          <div className="td-conflict-label">
-                            <span className="td-annotator"><div className="al-avatar xs">{c.labelA.subject ? c.labelA.subject.split(' ').pop()[0] : 'U'}</div> {c.labelA.subject}</span>
-                            <div className="td-label-tags">
-                              <span className="td-tag subject">{c.labelA.quality}</span>
-                            </div>
-                          </div>
-                          <div className="td-conflict-vs">VS</div>
-                          <div className="td-conflict-label">
-                            <span className="td-annotator"><div className="al-avatar xs">{c.labelB.subject ? c.labelB.subject.split(' ').pop()[0] : 'U'}</div> {c.labelB.subject}</span>
-                            <div className="td-label-tags">
-                              <span className="td-tag subject">{c.labelB.quality}</span>
-                            </div>
-                          </div>
-                        </div>
-                        {!isResolved && (
-                          <div className="td-conflict-actions">
-                            <button className="al-btn al-btn-primary" onClick={() => setShowConflictModal(c)}>Phân xử ngay</button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
+            {/* ===== TAB 3: DỮ LIỆU CHI TIẾT ===== */}
             {activeTab === 'samples' && (
               <div className="td-panel">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3>Danh sách dữ liệu</h3>
+                  <h3>Danh sách dữ liệu ({filteredSamples.length} samples)</h3>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className={`al-btn ${sampleFilter === 'all' ? 'al-btn-primary' : 'al-btn-outline'}`} onClick={() => { setSampleFilter('all'); setCurrentPage(1); }}>Tất cả</button>
                     <button className={`al-btn ${sampleFilter === 'completed' ? 'al-btn-primary' : 'al-btn-outline'}`} onClick={() => { setSampleFilter('completed'); setCurrentPage(1); }}>Hoàn thành</button>
@@ -328,10 +411,10 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                   <table className="td-table">
                     <thead>
                       <tr>
-                        <th>ID</th>
-                        <th>Preview</th>
-                        <th>Trạng thái (Annotators)</th>
-                        <th>Hành động</th>
+                        <th style={{ width: '60px' }}>#</th>
+                        <th>Preview nội dung</th>
+                        <th style={{ width: '160px' }}>Annotators</th>
+                        <th style={{ width: '80px' }}>Xem</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -339,8 +422,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                         const doneCount = staffList.filter((staff: any) => s.staffStatus?.[staff.id] === 'done').length;
                         return (
                         <tr key={s.id}>
-                          <td>{s.id}</td>
-                          <td className="td-preview-cell">{s.preview}</td>
+                          <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
+                          <td className="td-preview-cell" style={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px' }}>{s.preview}</td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
                               {staffList.map((staff: any, idx: number) => {
@@ -368,7 +451,15 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                               </span>
                             </div>
                           </td>
-                          <td><button className="td-icon-btn" onClick={() => setShowSampleDetailModal(s)}><Eye size={16}/></button></td>
+                          <td>
+                            <button
+                              className="td-icon-btn"
+                              title="Mở Split-View"
+                              onClick={() => openSplitView(s.sampleObjectId, '', '')}
+                            >
+                              <Eye size={16}/>
+                            </button>
+                          </td>
                         </tr>
                       )})}
                     </tbody>
@@ -376,23 +467,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                 </div>
                 {totalPages > 1 && (
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '20px', gap: '12px' }}>
-                    <button 
-                      className="al-btn al-btn-outline" 
-                      disabled={currentPage === 1}
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    >
-                      Trước
-                    </button>
-                    <span style={{ fontSize: '14px', color: '#4b5563' }}>
-                      Trang {currentPage} / {totalPages}
-                    </span>
-                    <button 
-                      className="al-btn al-btn-outline" 
-                      disabled={currentPage === totalPages}
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    >
-                      Sau
-                    </button>
+                    <button className="al-btn al-btn-outline" disabled={currentPage === 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Trước</button>
+                    <span style={{ fontSize: '14px', color: '#4b5563' }}>Trang {currentPage} / {totalPages}</span>
+                    <button className="al-btn al-btn-outline" disabled={currentPage === totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Sau</button>
                   </div>
                 )}
               </div>
@@ -401,7 +478,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
         </div>
       </div>
 
-      {/* Conflict Modal */}
+      {/* ===== MODAL: CONFLICT RESOLUTION ===== */}
       {showConflictModal && (
         <div className="td-modal-overlay">
           <div className="td-modal">
@@ -410,28 +487,16 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               <button className="td-modal-close" onClick={() => setShowConflictModal(null)}><X size={20}/></button>
             </div>
             <div className="td-modal-body">
-              <div className="td-text-preview">
-                <p><strong>Nội dung đoạn hội thoại:</strong></p>
-                <div className="td-chat-preview">
-                  <div className="td-chat-msg user">Em không hiểu cách giải bài này, thầy làm mẫu được không?</div>
-                  <div className="td-chat-msg bot">Chào em, đầu tiên ta xét điều kiện của phương trình...</div>
-                </div>
-              </div>
               <div className="td-decide-section">
                 <p><strong>Chọn nhãn đúng:</strong></p>
                 <div className="td-decide-options">
                   <button className="td-decide-btn" onClick={() => handleResolveConflict(showConflictModal.key)}>
-                    <div className="td-decide-title">Giữ nhãn của {staffList[0]?.name || 'Nguyễn Văn A'}</div>
-                    <div className="td-tag subject">{showConflictModal.labelA.subject}</div>
-                    <div className="td-tag quality">{showConflictModal.labelA.quality}</div>
+                    <div className="td-decide-title">Giữ nhãn của {showConflictModal.labelA.subject}</div>
+                    <div className="td-tag subject">{showConflictModal.labelA.quality}</div>
                   </button>
                   <button className="td-decide-btn" onClick={() => handleResolveConflict(showConflictModal.key)}>
-                    <div className="td-decide-title">Giữ nhãn của {staffList[1]?.name || 'Trần Thị B'}</div>
-                    <div className="td-tag subject">{showConflictModal.labelB.subject}</div>
-                    <div className="td-tag quality">{showConflictModal.labelB.quality}</div>
-                  </button>
-                  <button className="td-decide-btn custom">
-                    <div className="td-decide-title">Chỉnh sửa thành nhãn khác...</div>
+                    <div className="td-decide-title">Giữ nhãn của {showConflictModal.labelB.subject}</div>
+                    <div className="td-tag subject">{showConflictModal.labelB.quality}</div>
                   </button>
                 </div>
               </div>
@@ -440,49 +505,112 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
         </div>
       )}
 
-      {/* Sample Detail Modal */}
-      {showSampleDetailModal && (
-        <div className="td-modal-overlay">
-          <div className="td-modal" style={{ maxWidth: '600px' }}>
+      {/* ===== MODAL: STAFF SAMPLE LIST (Option B) ===== */}
+      {staffSamplesModal && (
+        <div className="td-modal-overlay" onClick={() => setStaffSamplesModal(null)}>
+          <div className="td-modal" style={{ maxWidth: '800px', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
             <div className="td-modal-header">
-              <h3>Chi tiết Sample #{showSampleDetailModal.id}</h3>
-              <button className="td-modal-close" onClick={() => setShowSampleDetailModal(null)}><X size={20}/></button>
+              <h3>
+                <Eye size={18} style={{ marginRight: 8 }} />
+                Danh sách samples — {staffSamplesModal.staff.name}
+              </h3>
+              <button className="td-modal-close" onClick={() => setStaffSamplesModal(null)}><X size={20}/></button>
             </div>
-            <div className="td-modal-body">
-              <div className="td-text-preview" style={{ marginBottom: '20px' }}>
-                <p><strong>Nội dung:</strong></p>
-                <div style={{ padding: '12px', background: '#f3f4f6', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
-                  {showSampleDetailModal.preview}
-                </div>
+            <div className="td-modal-body" style={{ padding: 0 }}>
+              {/* Summary bar */}
+              <div style={{ display: 'flex', gap: '16px', padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
+                <span>📊 Tổng: <strong>{staffSamplesModal.samples.length}</strong></span>
+                <span style={{ color: '#10b981' }}>✅ Đã gán nhãn: <strong>{staffSamplesModal.samples.filter(s => s.isLabeled).length}</strong></span>
+                <span style={{ color: '#f59e0b' }}>⏳ Chưa làm: <strong>{staffSamplesModal.samples.filter(s => !s.isLabeled).length}</strong></span>
               </div>
-              <div className="td-decide-section">
-                <p><strong>Kết quả gán nhãn:</strong></p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-                  {staffList.map((staff: any) => {
-                    const status = showSampleDetailModal.staffStatus?.[staff.id] || 'pending';
-                    const label = showSampleDetailModal.staffLabels?.[staff.id];
-                    return (
-                      <div key={staff.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div className={`al-avatar xs ${status}`}>{staff.name ? staff.name.split(' ').pop()[0] : 'U'}</div>
-                          <span style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>{staff.name}</span>
-                        </div>
-                        <div>
-                          {status === 'done' ? (
-                            <span className="td-tag quality" style={{ margin: 0 }}>{label || 'Đã gán nhãn'}</span>
-                          ) : (
-                            <span style={{ fontSize: '13px', color: '#9ca3af' }}>Đang chờ</span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+
+              {/* Sample list table */}
+              <div style={{ maxHeight: '55vh', overflowY: 'auto', padding: '0' }}>
+                <table className="td-table" style={{ margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '60px' }}>#</th>
+                      <th style={{ width: '100px' }}>Trạng thái</th>
+                      <th>Nhãn</th>
+                      <th>Preview</th>
+                      <th style={{ width: '80px' }}>Xem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffSamplesModal.samples
+                      .slice((staffSamplePage - 1) * staffSamplePageSize, staffSamplePage * staffSamplePageSize)
+                      .map((s: any) => (
+                        <tr 
+                          key={s.id} 
+                          style={{ cursor: s.isLabeled ? 'pointer' : 'default', background: s.isLabeled ? '#f0fdf4' : 'transparent' }}
+                          onClick={() => {
+                            if (s.sampleObjectId) {
+                              openSplitView(s.sampleObjectId, staffSamplesModal.staff.id, staffSamplesModal.staff.name);
+                            }
+                          }}
+                        >
+                          <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
+                          <td>
+                            {s.isLabeled ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#dcfce7', color: '#166534' }}>
+                                <CheckCircle size={12} /> Đã gán
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#fef3c7', color: '#92400e' }}>
+                                <Clock size={12} /> Chưa làm
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ fontSize: '13px', color: s.labelName ? '#374151' : '#d1d5db' }}>
+                            {s.labelName || '—'}
+                          </td>
+                          <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', color: '#6b7280' }}>
+                            {s.preview || `Sample #${s.id}`}
+                          </td>
+                          <td>
+                            <button
+                              className="td-icon-btn"
+                              title="Mở Split-View"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (s.sampleObjectId) {
+                                  openSplitView(s.sampleObjectId, staffSamplesModal.staff.id, staffSamplesModal.staff.name);
+                                }
+                              }}
+                            >
+                              <Eye size={14}/>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    }
+                  </tbody>
+                </table>
               </div>
+
+              {/* Pagination */}
+              {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize) > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px', gap: '12px', borderTop: '1px solid #e5e7eb' }}>
+                  <button className="al-btn al-btn-outline" disabled={staffSamplePage === 1} onClick={() => setStaffSamplePage(p => p - 1)}>Trước</button>
+                  <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                    Trang {staffSamplePage} / {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)}
+                  </span>
+                  <button className="al-btn al-btn-outline" disabled={staffSamplePage >= Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)} onClick={() => setStaffSamplePage(p => p + 1)}>Sau</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {/* ===== SPLIT-VIEW MODAL ===== */}
+      <SplitViewModal
+        isOpen={splitViewOpen}
+        onClose={() => setSplitViewOpen(false)}
+        sampleId={splitViewSampleId}
+        staffId={splitViewStaffId}
+        staffName={splitViewStaffName}
+      />
     </div>
   );
 }
