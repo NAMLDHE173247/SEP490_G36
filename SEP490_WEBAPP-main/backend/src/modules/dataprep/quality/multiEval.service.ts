@@ -76,7 +76,7 @@ export class MultiEvalService {
       if (!job) return;
 
       const samples = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).sort({ createdAt: 1 }).lean();
-      
+
       // Clean up any old evaluation results for the same version before saving new ones
       await MultiModelEvaluationResult.deleteMany({ datasetVersionId: versionId });
 
@@ -87,9 +87,27 @@ export class MultiEvalService {
       const qualityService = new QualityService();
       const qualityResult = await qualityService.classify(
         job.datasetVersionId.toString(),
-        job.startedBy.toString()
+        job.startedBy ? job.startedBy.toString() : ''
       );
-      const humanScoresMap = new Map(qualityResult.items.map((i: any) => [String(i.sampleId), i.score]));
+      const toTenPointBaseline = (item: any): number | null => {
+        if (!item || item.bucket === 'Incomplete') return null;
+        if (item.bucket === 'Gold') return 9;
+        if (item.bucket === 'Rewrite') return 5.5;
+        if (item.bucket === 'Reject') return 2;
+        const raw = Number(item.score);
+        if (!Number.isFinite(raw)) return null;
+        if (raw >= -1 && raw <= 1) {
+          return Math.round(((raw + 1) / 2) * 100) / 10;
+        }
+        return Math.max(0, Math.min(10, raw));
+      };
+      const humanScoresMap = new Map<string, number>();
+      qualityResult.items.forEach((i: any) => {
+        const baseline = toTenPointBaseline(i);
+        if (baseline == null) return;
+        humanScoresMap.set(String(i._id), baseline);
+        humanScoresMap.set(String(i.sampleId), baseline);
+      });
 
       for (const sample of samples) {
         // Mark sample as processing in job progress
@@ -129,7 +147,7 @@ export class MultiEvalService {
 
         const targetIdx = targetMessageIndices[0];
         const messages = (sample.data as any)?.messages || [];
-        
+
         // 2. Extract Context Window
         let start = 0;
         let end = messages.length - 1;
@@ -211,8 +229,8 @@ export class MultiEvalService {
                 scorecard.completeness,
                 scorecard.readiness,
               ].filter((v) => typeof v === 'number' && v !== null) as number[];
-              
-              scorecard.overall = scores.length > 0 
+
+              scorecard.overall = scores.length > 0
                 ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
                 : 5;
             }
@@ -311,7 +329,7 @@ export class MultiEvalService {
             const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
             const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
             const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
-            
+
             const firstBracket = rawResponse.indexOf('[');
             const lastBracket = rawResponse.lastIndexOf(']');
             const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
@@ -320,21 +338,21 @@ export class MultiEvalService {
 
             const parsed = JSON.parse(jsonString);
             const refinedOutput = parsed[0]?.refinedOutput;
-            
+
             if (typeof refinedOutput === 'string' && refinedOutput.trim()) {
               if (Array.isArray(messages)) {
                 const updatedMessages = [...messages];
                 let finalCleanOutput = refinedOutput.replace(/^\[ASSISTANT.*?\]:\s*/i, '').trim();
-                
+
                 updatedMessages[targetIdx] = {
                   ...updatedMessages[targetIdx],
                   content: finalCleanOutput
                 };
-                
+
                 await ProcessedDatasetItem.findByIdAndUpdate(sample._id, {
                   $set: { 'data.messages': updatedMessages }
                 });
-                
+
                 await ConversationRewriteHistory.create({
                   datasetVersionId: new mongoose.Types.ObjectId(versionId),
                   sampleId: sample._id,
@@ -347,7 +365,7 @@ export class MultiEvalService {
                   editType: 'ai',
                   createdAt: new Date()
                 });
-                
+
                 autoRefined = true;
                 job.progress.refinedCount = (job.progress.refinedCount || 0) + 1;
               }

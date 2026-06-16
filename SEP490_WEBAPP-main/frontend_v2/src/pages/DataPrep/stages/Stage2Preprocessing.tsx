@@ -10,6 +10,7 @@ export const Stage2Preprocessing: React.FC = () => {
   const {
     currentStage, setCurrentStage,
     currentSubStep, setCurrentSubStep,
+    setCurrentSubStep3,
     conversationsList, setConversationsList,
     searchQuery, setSearchQuery,
     currentPage, setCurrentPage,
@@ -1466,6 +1467,7 @@ const totalConvs = conversationsList.length;
             if (currentSubStep < SUB_STEPS_STAGE2.length) {
               setCurrentSubStep(currentSubStep + 1);
             } else {
+              setCurrentSubStep3(5);
               setCurrentStage(3);
             }
           }}>
@@ -1494,4 +1496,4 @@ const totalConvs = conversationsList.length;
     { id: 'conv_007', reason: 'Hội thoại quá ngắn (< 5 ký tự)', user: 'Hi', assistant: 'Hello!' },
     { id: 'conv_009', reason: 'Chứa từ khóa lỗi: "as an AI language model"', user: 'Tính toán entropy', assistant: 'I apologize, as an AI language model I cannot...' },
   ];
-
+

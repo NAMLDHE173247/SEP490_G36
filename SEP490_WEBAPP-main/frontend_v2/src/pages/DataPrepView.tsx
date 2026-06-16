@@ -28,17 +28,15 @@ import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
 import { Stage1Upload } from './DataPrep/stages/Stage1Upload';
 import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
 import { Stage3Labeling } from './DataPrep/stages/Stage3Labeling';
-import { Stage4TrainEval } from './DataPrep/stages/Stage4TrainEval';
-import { Stage5Evaluation } from './DataPrep/stages/Stage5Evaluation';
+import { Stage4Labeling } from '../components/dataprep/Stage4Labeling';
 import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
   { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-11' },
-  { num: 5, label: 'Evaluation', sub: 'Step 12' },
-  { num: 6, label: 'Finish', sub: 'Step 13-15' },
+  { num: 4, label: 'Classification', sub: 'Step 8-12' },
+  { num: 5, label: 'Finish', sub: 'Step 13-15' },
 ];
 
 const SUB_STEPS_STAGE2 = [
@@ -716,7 +714,7 @@ function DataPrepInner() {
     { num: 10, label: 'Distribution' },
     { num: 11, label: 'Rewrite' },
   ];
-  const [currentSubStep4, setCurrentSubStep4] = useState(8);
+  const [currentSubStep4, setCurrentSubStep4] = useState(7);
   const [classPage, setClassPage] = useState(1);
   const [qualityTab, setQualityTab] = useState('all');
   const [rewriteConvIdx, setRewriteConvIdx] = useState(8);
@@ -4012,6 +4010,7 @@ function DataPrepInner() {
             if (currentSubStep3 < 7) {
               setCurrentSubStep3(currentSubStep3 + 1);
             } else {
+              setCurrentSubStep4(7);
               setCurrentStage(4);
             }
           }}>
@@ -4246,9 +4245,8 @@ function DataPrepInner() {
       {currentStage === 1 && <Stage1Upload />}
       {currentStage === 2 && <Stage2Preprocessing />}
       {currentStage === 3 && <Stage3Labeling />}
-      {currentStage === 4 && <Stage4TrainEval />}
-      {currentStage === 5 && <Stage5Evaluation />}
-      {currentStage === 6 && <Stage6Finish />}
+      {currentStage === 4 && <Stage4Labeling />}
+      {currentStage === 5 && <Stage6Finish />}
 
       {/* Compare Groups Modal */}
       {showCompareModal && (
@@ -4389,10 +4387,41 @@ function DataPrepInner() {
   );
 }
 
+class ErrorBoundary extends React.Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, errorInfo: any) {
+    this.setState({ errorInfo });
+    console.error("ErrorBoundary caught:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: "20px", background: "#fee2e2", color: "#991b1b", height: "100vh", overflow: "auto" }}>
+          <h2>Something went wrong in DataPrepView</h2>
+          <details style={{ whiteSpace: "pre-wrap" }}>
+            {this.state.error && this.state.error.toString()}
+            <br />
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
+          </details>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function DataPrepView() {
   return (
-    <DataPrepProvider>
-      <DataPrepInner />
-    </DataPrepProvider>
+    <ErrorBoundary>
+      <DataPrepProvider>
+        <DataPrepInner />
+      </DataPrepProvider>
+    </ErrorBoundary>
   );
 }

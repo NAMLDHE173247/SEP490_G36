@@ -11,7 +11,7 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 const legacyEvaluationController = new EvaluationController();
 
 export class DataPrepVersionController {
-  async listVersions(req: Request, res: Response): Promise<void> {
+  async listVersions(_req: Request, res: Response): Promise<void> {
     try {
       const versions = await DatasetVersion.find().sort({ createdAt: -1 });
       const versionsWithStats = await Promise.all(versions.map(async (v) => {
@@ -157,7 +157,7 @@ export class DataPrepVersionController {
     try {
       const { id } = req.params;
       const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
-      const data = items.map(item => item.originalData);
+      const data = items.map(item => (item as any).originalData || item.data);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=version_${id}_original.json`);
       res.send(JSON.stringify(data, null, 2));
@@ -170,7 +170,7 @@ export class DataPrepVersionController {
     try {
       const { id } = req.params;
       const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
-      const data = items.map(item => item.processedData || item.originalData);
+      const data = items.map(item => (item as any).processedData || (item as any).originalData || item.data);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=version_${id}_labeled.json`);
       res.send(JSON.stringify(data, null, 2));

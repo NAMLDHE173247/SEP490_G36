@@ -718,6 +718,37 @@ export async function getAggregatedSampleLabels(sampleIds: mongoose.Types.Object
   ]);
 }
 
+async function getAggregatedHardSampleLabels(sampleIds: mongoose.Types.ObjectId[]) {
+  await ensureLabelAssignmentsForSamples(sampleIds.map((id) => String(id)));
+  return LabelAssignment.aggregate([
+    { $match: { sampleId: { $in: sampleIds }, type: 'hard' } },
+    {
+      $group: {
+        _id: {
+          sampleId: '$sampleId',
+          name: '$name',
+          type: '$type',
+          targetScope: '$targetScope',
+          messageIndex: '$messageIndex',
+          messageRole: '$messageRole',
+        },
+        contributors: { $addToSet: '$createdBy' },
+      },
+    },
+    {
+      $project: {
+        sampleId: '$_id.sampleId',
+        name: '$_id.name',
+        type: '$_id.type',
+        targetScope: '$_id.targetScope',
+        messageIndex: '$_id.messageIndex',
+        messageRole: '$_id.messageRole',
+        assignedUserCount: { $size: '$contributors' },
+      },
+    },
+  ]);
+}
+
 export async function getCanonicalSampleLabelsForVersion(
   datasetVersionId: string | mongoose.Types.ObjectId,
   sampleIds: mongoose.Types.ObjectId[]
@@ -763,10 +794,19 @@ export async function getEffectiveSampleLabelsForVersion(
   );
 
   if (!hasAssignments) {
-    return getAggregatedSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
+    return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
   }
 
-  return getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
+  const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
+  const canonicalSampleIds = new Set(canonical.map((c) => String(c.sampleId)));
+  const missingSampleIds = sampleIds.filter((id) => !canonicalSampleIds.has(String(id)));
+
+  if (missingSampleIds.length > 0) {
+    const aggregated = await getAggregatedHardSampleLabels(missingSampleIds);
+    return [...canonical, ...(aggregated as any)];
+  }
+
+  return canonical;
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
@@ -864,7 +904,10 @@ function buildRequiredTargets(sample: any): DecisionTarget[] {
 
 export async function calculateAssignmentProgressFromAssignments(datasetVersionId: mongoose.Types.ObjectId, assigneeId: string) {
   const assigneeObjectId = new mongoose.Types.ObjectId(assigneeId);
-  const assignments = await DatasetSampleAssignment.find({ datasetVersionId, assigneeId: assigneeObjectId })
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: { $in: [datasetVersionId, String(datasetVersionId)] },
+    assigneeId: { $in: [assigneeObjectId, String(assigneeObjectId)] },
+  })
     .sort({ sampleIndex: 1 })
     .lean();
 
@@ -1478,21 +1521,30 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
 
 export async function buildAssignmentDashboard(datasetVersionId: string) {
   const versionOid = new mongoose.Types.ObjectId(datasetVersionId);
-  const assignments = await DatasetSampleAssignment.find({ datasetVersionId: versionOid })
+  const versionScope = [versionOid, String(versionOid)];
+  const idVariants = (id: string) => {
+    const variants: any[] = [id];
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      variants.push(new mongoose.Types.ObjectId(id));
+    }
+    return variants;
+  };
+  const assignments = await DatasetSampleAssignment.find({ datasetVersionId: { $in: versionScope } })
     .sort({ sampleIndex: 1 })
     .lean();
   const sampleIds = Array.from(new Set(assignments.map((row: any) => String(row.sampleId))));
   await ensureLabelAssignmentsForSamples(sampleIds);
 
   const assigneeIds = Array.from(new Set(assignments.map((row: any) => String(row.assigneeId)).filter(Boolean)));
+  const validObjectAssigneeIds = assigneeIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
   const users = assigneeIds.length
-    ? await User.find({ _id: { $in: assigneeIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+    ? await User.find({ _id: { $in: validObjectAssigneeIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
     : [];
   const userMap = new Map(users.map((user: any) => [String(user._id), user]));
   const submissions = assigneeIds.length
     ? await DatasetAssignmentSubmission.find({
-        datasetVersionId: versionOid,
-        assigneeId: { $in: assigneeIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        datasetVersionId: { $in: versionScope },
+        assigneeId: { $in: assigneeIds.flatMap(idVariants) },
       }).lean()
     : [];
   const submissionMap = new Map(submissions.map((item: any) => [String(item.assigneeId), item]));
@@ -1518,6 +1570,17 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
   const userRows = await Promise.all(
     assigneeIds.map(async (assigneeId) => {
       const progress = await calculateAssignmentProgressFromAssignments(versionOid, assigneeId);
+      const submission = submissionMap.get(assigneeId) as any;
+      const assignedSamples = assignments.filter((row: any) => String(row.assigneeId) === assigneeId).length;
+      const draftLabeledSamples = Number(submission?.labeledCount || 0);
+      const targetsPerSample = progress.assignedSamples > 0 && progress.requiredMessages > 0
+        ? progress.requiredMessages / progress.assignedSamples
+        : 1;
+      const draftCompletedTargets = Math.min(progress.requiredMessages, Math.round(draftLabeledSamples * targetsPerSample));
+      const completedTargets = Math.max(progress.completedMessages, draftCompletedTargets);
+      const completionPercent = progress.requiredMessages > 0
+        ? Math.round((completedTargets / progress.requiredMessages) * 100)
+        : (assignedSamples > 0 ? Math.round((draftLabeledSamples / assignedSamples) * 100) : 0);
       const hourCount = activityRows.filter((row: any) => String(row.annotatorId) === assigneeId && row.activityType === 'assign').length;
       return {
         user: {
@@ -1525,18 +1588,20 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
           name: String((userMap.get(assigneeId) as any)?.name || ''),
           email: String((userMap.get(assigneeId) as any)?.email || ''),
         },
-        assignedSamples: assignments.filter((row: any) => String(row.assigneeId) === assigneeId).length,
-        completedTargets: progress.completedMessages,
+        assignedSamples,
+        completedTargets,
         totalTargets: progress.requiredMessages,
-        completionPercent: progress.percent,
+        completionPercent,
         labelsPerHour: hourCount,
         latestActivityAt: latestActivityMap.get(assigneeId) || null,
-        reviewAvailable: String((submissionMap.get(assigneeId) as any)?.status || '') === 'submitted'
-          || String((submissionMap.get(assigneeId) as any)?.status || '') === 'approved',
-        submission: submissionMap.get(assigneeId)
+        reviewAvailable: String(submission?.status || '') === 'submitted'
+          || String(submission?.status || '') === 'approved',
+        submission: submission
           ? {
-              status: ['submitted', 'approved'].includes(String((submissionMap.get(assigneeId) as any).status || 'draft')) ? 'submitted' : 'draft',
-              submittedAt: (submissionMap.get(assigneeId) as any).submittedAt || null,
+              status: ['submitted', 'approved'].includes(String(submission.status || 'draft')) ? 'submitted' : 'draft',
+              submittedAt: submission.submittedAt || null,
+              name: submission.name || null,
+              labeledCount: draftLabeledSamples,
             }
           : null,
       };

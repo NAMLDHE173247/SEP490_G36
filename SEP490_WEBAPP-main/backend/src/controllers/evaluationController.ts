@@ -1336,7 +1336,8 @@ export class EvaluationController {
       const samples = await ProcessedDatasetItem.find({ datasetVersionId: version._id })
         .sort({ createdAt: 1 })
         .lean();
-      const assignments = await DatasetSampleAssignment.find({ datasetVersionId: version._id })
+      const versionScope = [version._id, String(version._id)];
+      const assignments = await DatasetSampleAssignment.find({ datasetVersionId: { $in: versionScope } })
         .sort({ sampleIndex: 1 })
         .lean();
 

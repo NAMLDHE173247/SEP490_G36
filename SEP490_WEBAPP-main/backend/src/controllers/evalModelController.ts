@@ -33,7 +33,7 @@ async function getGpuStatus(): Promise<{
 } | null> {
   try {
     const resp = await fetch(`${configService.getGpuUrl()}/api/system-eval/resources`, {
-      headers: { 'ngrok-skip-browser-warning': 'true' },
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
       signal: AbortSignal.timeout(5000),
     });
     if (!resp.ok) return null;
@@ -75,7 +75,7 @@ async function fetchWithForm(url: string, form: FormData): Promise<ReturnType<ty
           headers: {
             ...form.getHeaders(),
             'Content-Length': String(length),
-            'ngrok-skip-browser-warning': 'true',
+            'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
           },
         })
       );
@@ -351,7 +351,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   const intervalId = setInterval(async () => {
     try {
       const response = await fetch(`${configService.getGpuUrl()}/api/eval/status/${evalJobId}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
       });
       const text = await response.text();
       let data: any;
@@ -402,7 +402,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
 async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<void> {
   try {
     const resp = await fetch(`${configService.getGpuUrl()}/api/eval/result/${evalJobId}`, {
-      headers: { 'ngrok-skip-browser-warning': 'true' },
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
     });
 
     if (!resp.ok) {

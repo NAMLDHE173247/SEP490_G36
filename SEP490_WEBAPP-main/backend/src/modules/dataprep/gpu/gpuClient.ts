@@ -10,7 +10,7 @@ const fetchJson = async (
     method: init?.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
+      'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });

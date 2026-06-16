@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 import { getAuthToken } from './authSession';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
@@ -127,6 +127,7 @@ export type AssignmentDashboardResponse = {
     submission: {
       status: 'draft' | 'submitted';
       submittedAt?: string | null;
+      name?: string | null;
     } | null;
   }>;
   conflicts: AssignmentConflictItem[];
@@ -324,11 +325,23 @@ export const apiService = {
     return response.data;
   },
 
+  getDatasetVersionAssignmentSampleComparison: async (id: string, sampleId: string): Promise<any> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments/samples/${sampleId}/comparison`);
+    return response.data;
+  },
+
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
-    const response = await api.post(`/dataprep/versions/${id}/assignments/range`, payload);
+    const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
+      assigneeIds: [payload.assigneeId],
+      sampleStartIndex: payload.startIndex,
+      sampleCount: payload.count,
+      taskType: 'labeling',
+      priority: payload.priority || 'medium',
+      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`
+    });
     return response.data;
   },
 

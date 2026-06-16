@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export type AssignmentSubmissionStatus = 'draft' | 'submitted' | 'approved';
+export type AssignmentSubmissionStatus = 'pending' | 'in_progress' | 'draft' | 'submitted' | 'approved' | 'completed' | 'rejected';
 
 export interface IDatasetAssignmentSubmission extends Document {
   datasetVersionId: Types.ObjectId | string;
@@ -22,6 +22,7 @@ export interface IDatasetAssignmentSubmission extends Document {
 
   progressSnapshot?: Record<string, unknown>;
   submittedAt?: Date;
+  humanScore?: number;
   approvedAt?: Date;
   approvedBy?: Types.ObjectId;
   createdAt: Date;
@@ -42,7 +43,7 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
     },
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'draft', 'submitted', 'approved'] as any,
+      enum: ['pending', 'in_progress', 'draft', 'submitted', 'approved', 'completed', 'rejected'] as any,
       default: 'pending',
       index: true,
     },
@@ -60,6 +61,7 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
 
     progressSnapshot: { type: Schema.Types.Mixed },
     submittedAt: { type: Date },
+    humanScore: { type: Number },
     approvedAt: { type: Date },
     approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   },

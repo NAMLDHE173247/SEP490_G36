@@ -96,14 +96,28 @@ export interface QualityReview {
 }
 
 export interface QualityStatistics {
-  summary: {
+  summary?: {
     totalSamples: number;
     classifiedCount: number;
     pendingCount: number;
     conflictCount: number;
     distribution: Record<QualityBucket, number>;
   };
-  bySubject: Array<{
+  totalSamples?: number;
+  reviewedSamples?: number;
+  conflictCount?: number;
+  totalMessages?: number;
+  qualityDistribution?: Array<{
+    group: QualityBucket | 'Bad';
+    count: number;
+    messageCount?: number;
+    percentage: number;
+  }>;
+  reviewerStats?: Array<{
+    name: string;
+    count: number;
+  }>;
+  bySubject?: Array<{
     subject: string;
     total: number;
     gold: number;
@@ -111,7 +125,7 @@ export interface QualityStatistics {
     reject: number;
     incomplete: number;
   }>;
-  commonErrors: Array<{
+  commonErrors?: Array<{
     error: string;
     count: number;
   }>;
@@ -150,9 +164,13 @@ export interface MultiEvalResult {
   };
   subject: string;
   scores: Record<string, number>;
+  modelScores?: Record<string, { overall?: number; recommendation?: string; reason?: string }>;
   averageScore: number;
+  averageOverall?: number;
   diff: number;
   recommendation: 'Gold' | 'Rewrite' | 'Reject' | 'Conflict';
+  finalRecommendation?: 'Pass' | 'Need Rewrite' | 'Reject';
+  hasConflict?: boolean;
   resolved: boolean;
   adjudicationAction?: 'approve' | 'rewrite' | 'reevaluate' | 'reject';
   adjudicationNote?: string;

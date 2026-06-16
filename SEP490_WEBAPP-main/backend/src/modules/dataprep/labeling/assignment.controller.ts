@@ -6,6 +6,21 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { User } from '../../../models/User';
 import mongoose from 'mongoose';
+import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
+import { broadcastAssignmentUpdate } from './assignment.events';
+
+function isCompleteStaffLabel(label: any): boolean {
+  return Boolean(label?.subject && label?.completion && label?.quality);
+}
+
+function parseSavedLabel(snapshot?: string): any {
+  if (!snapshot) return null;
+  try {
+    return JSON.parse(snapshot);
+  } catch {
+    return null;
+  }
+}
 
 export class AssignmentController {
   
@@ -13,7 +28,7 @@ export class AssignmentController {
    * API: Xóa toàn bộ dữ liệu Test của Assignment
    * POST /api/dataprep/assignments/reset
    */
-  async resetData(req: Request, res: Response) {
+  async resetData(_req: Request, res: Response) {
     try {
       await DatasetAssignmentSubmission.deleteMany({});
       await DatasetSampleAssignment.deleteMany({});
@@ -32,13 +47,16 @@ export class AssignmentController {
     try {
       const { versionId } = req.params;
       const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName } = req.body;
-      const assignedBy = req.user?.id || req.user?._id || 'admin';
+      const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
       }
 
       for (const assigneeId of assigneeIds) {
+        const version = await DatasetVersion.findById(versionId).lean();
+        const datasetName = version ? version.projectName || version.versionName || 'Dataset' : 'Dataset';
+
         // Create the submission (batch block)
         const submission = new DatasetAssignmentSubmission({
           datasetVersionId: versionId,
@@ -52,8 +70,8 @@ export class AssignmentController {
           taskType: taskType || 'labeling',
           labeledCount: 0,
           totalSamples: sampleCount,
-          dataset: 'Default Dataset', // Normally queried from versionId
-          version: 'v1'
+          dataset: datasetName,
+          version: version?.versionName || 'v1'
         });
         
         await submission.save();
@@ -97,7 +115,7 @@ export class AssignmentController {
    */
   async getMyTasks(req: Request, res: Response) {
     try {
-      const userId = req.query.userId || req.user?.id || req.user?._id || 'fake-staff-1';
+      const userId = req.query.userId || (req as any).user?.id || (req as any).user?._id || 'fake-staff-1';
       
       const myTasks = await DatasetAssignmentSubmission.find({ assigneeId: userId }).sort({ createdAt: -1 });
 
@@ -118,7 +136,7 @@ export class AssignmentController {
    * API: Lấy TẤT CẢ các Tasks cho Manager (Manager Dashboard)
    * GET /api/dataprep/assignments/all (LEGACY - keep for now)
    */
-  async getAllTasks(req: Request, res: Response) {
+  async getAllTasks(_req: Request, res: Response) {
     try {
       const allTasks = await DatasetAssignmentSubmission.find().sort({ createdAt: -1 });
       return res.status(200).json({ success: true, data: allTasks });
@@ -132,7 +150,7 @@ export class AssignmentController {
    * API: Lấy Manager Overview (Grouped by Dataset Version / Task)
    * GET /api/dataprep/assignments/manager/overview
    */
-  async getManagerOverview(req: Request, res: Response) {
+  async getManagerOverview(_req: Request, res: Response) {
     try {
       const submissions = await DatasetAssignmentSubmission.find();
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];
@@ -459,7 +477,7 @@ export class AssignmentController {
   async saveSampleLabel(req: Request, res: Response) {
     try {
       const { submissionId } = req.params;
-      const { sampleId, label, isComplete } = req.body;
+      const { sampleId, label } = req.body;
 
       const submission = await DatasetAssignmentSubmission.findById(submissionId);
       if (!submission) {
@@ -487,8 +505,6 @@ export class AssignmentController {
         sampleId: sa.sampleId
       });
 
-      const wasLabeled = !!existingLabel;
-
       if (existingLabel) {
         existingLabel.targetTextSnapshot = JSON.stringify(label);
         await existingLabel.save();
@@ -503,15 +519,29 @@ export class AssignmentController {
         });
       }
 
-      if (!wasLabeled && isComplete) {
-        submission.labeledCount = (submission.labeledCount || 0) + 1;
-      }
+      const submissionAssignments = await DatasetSampleAssignment.find({
+        datasetVersionId: submission.datasetVersionId,
+        assigneeId: submission.assigneeId,
+        sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount }
+      }).select('sampleId').lean();
+      const assignmentSampleIds = submissionAssignments.map((item: any) => item.sampleId);
+      const savedLabels = assignmentSampleIds.length
+        ? await LabelAssignment.find({
+            createdBy: submission.assigneeId,
+            sampleId: { $in: assignmentSampleIds },
+            targetScope: 'sample',
+          }).select('targetTextSnapshot').lean()
+        : [];
+      submission.labeledCount = savedLabels.filter((item: any) => isCompleteStaffLabel(parseSavedLabel(item.targetTextSnapshot))).length;
 
       if (submission.status === 'pending') {
         submission.status = 'in_progress';
       }
 
       await submission.save();
+
+      // Trigger SSE update for Step 7 real-time reflection
+      broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'save_draft' });
 
       return res.status(200).json({ success: true, data: submission });
     } catch (error: any) {
@@ -536,7 +566,20 @@ export class AssignmentController {
       if (submission) {
         submission.status = 'submitted';
         submission.submittedAt = new Date();
+        
+        // Promote soft labels to hard labels on successful submission
+        const hardLabels = await promoteSubmissionLabels(submission);
+        
+        // Auto-calculate human score if missing
+        if (submission.humanScore === undefined || submission.humanScore === null) {
+          submission.humanScore = calculateHumanScore(hardLabels || [], submission.totalSamples || 0);
+        }
+
         await submission.save();
+
+        // Trigger SSE update for Step 7 real-time reflection
+        broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit' });
+
         return res.status(200).json({ success: true, data: submission });
       } else {
         return res.status(404).json({ success: false, error: 'Submission not found' });
@@ -545,5 +588,246 @@ export class AssignmentController {
       console.error('[AssignmentController] Error submitting task:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
+  }
+}
+
+// --- AUTO SCORE LOGIC ---
+function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
+  if (totalSamples <= 0 || !hardLabels.length) return 0;
+  
+  let score = 10;
+  const labeledSamples = new Set(hardLabels.map(l => String(l.sampleId)));
+  const coverageRatio = labeledSamples.size / totalSamples;
+  
+  // 1. Coverage Penalty: -1 for every 20% unlabeled
+  if (coverageRatio < 1) {
+    const missingRatio = 1 - coverageRatio;
+    score -= Math.floor(missingRatio / 0.2) * 1;
+  }
+  
+  // 2. Consistency & Richness Checks
+  let conflicts = 0;
+  let shallowLabels = 0;
+  
+  labeledSamples.forEach(sampleId => {
+    const sampleLabels = hardLabels.filter(l => String(l.sampleId) === sampleId && l.targetScope === 'message');
+    const userIntents = sampleLabels.filter(l => l.messageRole === 'user').map(l => l.name);
+    const assistantActions = sampleLabels.filter(l => l.messageRole === 'assistant').map(l => l.name);
+    
+    // Simple consistency check: e.g. HINT intent shouldn't map to DIRECT_ANSWER action (INCORRECT is direct answer equivalent here)
+    if (userIntents.includes('REQUEST_HINT') && (assistantActions.includes('INCORRECT') || assistantActions.includes('WAITING'))) {
+      conflicts++;
+    }
+    
+    // Richness check: Is it just a single label for the entire sample?
+    if (sampleLabels.length <= 1) {
+      shallowLabels++;
+    }
+  });
+  
+  score -= conflicts * 2; // -2 for each conflict
+  score -= shallowLabels * 0.5; // -0.5 for shallow labeling
+  
+  return Math.max(0, Math.min(10, score));
+}
+
+// --- MAPPING UTILITIES & PROMOTION HELPER ---
+
+const SUBJECT_MAP: Record<string, string> = {
+  'Toán': 'MATH',
+  'Vật lý': 'PHYSICAL',
+  'Hóa học': 'CHEMISTRY',
+  'Sinh học': 'BIOLOGY',
+  'Ngữ văn': 'LITERATURE',
+  'Lịch sử': 'LITERATURE',
+  'Địa lý': 'LITERATURE',
+  'Tiếng Anh': 'LITERATURE',
+  'GDCD': 'LITERATURE',
+  'Tin học': 'LITERATURE'
+};
+
+const INTENT_MAP: Record<string, string> = {
+  'Ask Explanation': 'REQUEST_EXPLANATION',
+  'Solve Exercise': 'INCORRECT',
+  'Request Formula': 'ASK_THEORY',
+  'Confirm Understanding': 'NEXT_SECTION',
+  'Ask Example': 'REQUEST_SIMPLER',
+  'Other': 'WAIT_READY'
+};
+
+const ACTION_MAP: Record<string, string> = {
+  'Guide Step-by-step': 'LOGIC_BREAKDOWN',
+  'Give Hint': 'HINTING',
+  'Ask Probing Question': 'SCAFFOLDING',
+  'Provide Formula': 'CONCEPT_CLARIFY',
+  'Encourage': 'MOTIVATING',
+  'Correct Error': 'SCAFFOLDING',
+  'Summarize': 'TRANSITIONING',
+  'Other': 'WAITING'
+};
+
+function mapToStandardIntent(rawIntent: string): string {
+  const trimmed = rawIntent.trim();
+  if (INTENT_MAP[trimmed]) return INTENT_MAP[trimmed];
+  const upper = trimmed.toUpperCase();
+  if ((USER_MESSAGE_LABELS as readonly string[]).includes(upper)) return upper;
+  return 'WAIT_READY';
+}
+
+function mapToStandardAction(rawAction: string): string {
+  const trimmed = rawAction.trim();
+  if (ACTION_MAP[trimmed]) return ACTION_MAP[trimmed];
+  const upper = trimmed.toUpperCase();
+  if ((ASSISTANT_MESSAGE_LABELS as readonly string[]).includes(upper)) return upper;
+  return 'WAITING';
+}
+
+function mapToStandardSubject(rawSubject: string): string {
+  const trimmed = rawSubject.trim();
+  if (SUBJECT_MAP[trimmed]) return SUBJECT_MAP[trimmed];
+  const upper = trimmed.toUpperCase();
+  if (['MATH', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE'].includes(upper)) return upper;
+  return 'LITERATURE';
+}
+
+function serializeMessages(data: Record<string, any>): Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }> {
+  if (Array.isArray(data?.messages)) {
+    return data.messages
+      .filter((message: any) => message?.role === 'user' || message?.role === 'assistant')
+      .map((message: any, index: number) => ({
+        messageIndex: index,
+        role: message.role,
+        content: String(message?.content || ''),
+      }));
+  }
+
+  const instruction = String(data?.instruction || data?.userText || '').trim();
+  const output = String(data?.output || data?.assistantText || '').trim();
+  const messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }> = [];
+  if (instruction) {
+    messages.push({ messageIndex: 0, role: 'user', content: instruction });
+  }
+  if (output) {
+    messages.push({ messageIndex: 1, role: 'assistant', content: output });
+  }
+  return messages;
+}
+
+async function promoteSubmissionLabels(submission: any) {
+  try {
+    const sampleAssigns = await DatasetSampleAssignment.find({
+      datasetVersionId: submission.datasetVersionId,
+      assigneeId: submission.assigneeId,
+      sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount }
+    }).lean();
+
+    const sampleIds = sampleAssigns.map(sa => sa.sampleId);
+    if (!sampleIds.length) {
+      return [];
+    }
+
+    const softLabels = await LabelAssignment.find({
+      sampleId: { $in: sampleIds },
+      createdBy: submission.assigneeId,
+      type: 'soft'
+    }).lean();
+
+    if (!softLabels.length) {
+      return [];
+    }
+
+    const processedItems = await ProcessedDatasetItem.find({
+      _id: { $in: sampleIds }
+    }).lean();
+
+    const hardLabelsToInsert: any[] = [];
+
+    for (const softLabel of softLabels) {
+      if (!softLabel.targetTextSnapshot) continue;
+
+      let labelObj: any;
+      try {
+        labelObj = JSON.parse(softLabel.targetTextSnapshot);
+      } catch (e) {
+        console.error('[Promotion] Failed to parse soft label JSON:', e);
+        continue;
+      }
+
+      const sampleIdStr = String(softLabel.sampleId);
+      const item = processedItems.find(p => String(p._id) === sampleIdStr);
+      const serializedMsgs = item ? serializeMessages(item.data || {}) : [];
+
+      // 1. Promote subject as a hard sample-level label
+      if (labelObj.subject) {
+        const mappedSubject = mapToStandardSubject(labelObj.subject);
+        hardLabelsToInsert.push({
+          sampleId: softLabel.sampleId,
+          name: mappedSubject,
+          type: 'hard',
+          targetScope: 'sample',
+          createdBy: submission.assigneeId
+        });
+      }
+
+      // 2. Promote message-level intents and actions
+      if (labelObj.messages && typeof labelObj.messages === 'object') {
+        for (const msgIdxStr of Object.keys(labelObj.messages)) {
+          const msgIdx = parseInt(msgIdxStr);
+          if (isNaN(msgIdx)) continue;
+
+          const msgLabel = labelObj.messages[msgIdxStr];
+          const matchingMsg = serializedMsgs.find(m => m.messageIndex === msgIdx);
+          const contentSnapshot = matchingMsg ? matchingMsg.content.slice(0, 2000) : '';
+
+          if (matchingMsg?.role === 'user' && msgLabel.intent) {
+            const mappedIntent = mapToStandardIntent(msgLabel.intent);
+            hardLabelsToInsert.push({
+              sampleId: softLabel.sampleId,
+              name: mappedIntent,
+              type: 'hard',
+              targetScope: 'message',
+              messageIndex: msgIdx,
+              messageRole: 'user',
+              targetTextSnapshot: contentSnapshot,
+              createdBy: submission.assigneeId
+            });
+          } else if (matchingMsg?.role === 'assistant' && msgLabel.action) {
+            const mappedAction = mapToStandardAction(msgLabel.action);
+            hardLabelsToInsert.push({
+              sampleId: softLabel.sampleId,
+              name: mappedAction,
+              type: 'hard',
+              targetScope: 'message',
+              messageIndex: msgIdx,
+              messageRole: 'assistant',
+              targetTextSnapshot: contentSnapshot,
+              createdBy: submission.assigneeId
+            });
+          }
+        }
+      }
+    }
+
+    // Delete old hard labels first
+    await LabelAssignment.deleteMany({
+      sampleId: { $in: sampleIds },
+      createdBy: submission.assigneeId,
+      type: 'hard'
+    });
+
+    // Bulk insert new hard labels
+    if (hardLabelsToInsert.length > 0) {
+      try {
+        await LabelAssignment.insertMany(hardLabelsToInsert, { ordered: false });
+      } catch (error: any) {
+        if (error?.code !== 11000) {
+          console.error('[Promotion] Error inserting hard labels:', error);
+        }
+      }
+    }
+    return hardLabelsToInsert;
+  } catch (error) {
+    console.error('[Promotion] Error promoting soft labels to hard:', error);
+    return [];
   }
 }

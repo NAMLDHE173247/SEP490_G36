@@ -449,7 +449,7 @@ export const Stage6Finish: React.FC = () => {
             if (currentSubStep6 > 13) {
               setCurrentSubStep6(currentSubStep6 - 1);
             } else {
-              setCurrentStage(5);
+              setCurrentStage(4);
             }
           }}>
             Back

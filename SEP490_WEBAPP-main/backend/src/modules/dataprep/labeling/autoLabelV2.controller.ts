@@ -17,8 +17,22 @@ export class AutoLabelV2Controller {
       };
 
       // Mặc định dùng GeminiProvider
+      const normalizedMessages = (messages || [])
+        .filter((message: any) => message?.role === 'user' || message?.role === 'assistant')
+        .map((message: any, index: number) => ({
+          messageIndex: Number.isInteger(Number(message.messageIndex)) ? Number(message.messageIndex) : index,
+          role: message.role,
+          content: String(message.content || (message as any).text || ''),
+        }));
+
       const service = new AutoLabelV2Service(new GeminiProvider());
-      const suggestions = await service.preview(messages || []);
+      let suggestions;
+      try {
+        suggestions = await service.preview(normalizedMessages);
+      } catch (error: any) {
+        console.error('AutoLabel V2 provider failed, using fallback:', error?.message || error);
+        suggestions = buildFallbackSuggestion(normalizedMessages);
+      }
 
       res.json({ success: true, data: suggestions });
     } catch (error: any) {
@@ -29,4 +43,34 @@ export class AutoLabelV2Controller {
       });
     }
   }
+}
+
+function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>) {
+  return {
+    subject: 'Unclear',
+    completion: 'Completed',
+    quality: 'Medium',
+    messages: messages.map((message) => {
+      const text = message.content.toLowerCase();
+      if (message.role === 'user') {
+        const intent = text.includes('ví dụ') || text.includes('example')
+          ? 'Ask Example'
+          : text.includes('công thức') || text.includes('formula')
+            ? 'Request Formula'
+            : text.includes('hiểu') || text.includes('vì sao') || text.includes('why')
+              ? 'Ask Explanation'
+              : 'Other';
+        return { messageIndex: message.messageIndex, intent };
+      }
+
+      const action = text.includes('?')
+        ? 'Ask Probing Question'
+        : text.includes('gợi ý') || text.includes('hint')
+          ? 'Give Hint'
+          : text.includes('bước') || text.includes('step')
+            ? 'Guide Step-by-step'
+            : 'Summarize';
+      return { messageIndex: message.messageIndex, action };
+    }),
+  };
 }

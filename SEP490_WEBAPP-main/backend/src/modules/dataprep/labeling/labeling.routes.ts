@@ -3,6 +3,7 @@ import { DataPrepLabelingController } from './labeling.controller';
 import { MessageAutoLabelingController } from './messageAutoLabel.controller';
 import { AssignmentController } from './assignment.controller';
 import { AutoLabelV2Controller } from './autoLabelV2.controller';
+import { sseHandler } from './assignment.events';
 
 const router = express.Router();
 const controller = new DataPrepLabelingController();
@@ -19,6 +20,7 @@ router.post('/labels/:labelId/votes', (req, res) => controller.voteLabel(req, re
 
 // Assignment Routes
 const assignmentController = new AssignmentController();
+router.get('/assignments/stream', sseHandler);
 router.post('/assignments/reset', (req, res) => assignmentController.resetData(req, res));
 router.post('/versions/:versionId/assignments/batch', (req, res) => assignmentController.createBatchAssignment(req, res));
 router.get('/assignments/my-tasks', (req, res) => assignmentController.getMyTasks(req, res));

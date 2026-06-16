@@ -1,6 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { api } from '../../../services/api';
+import React from 'react';
 import { 
   Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
   Search, Users, Star, Plus, Upload, Link as LinkIcon, Trash2, Edit3, X, Eye, 
@@ -31,7 +29,8 @@ export const Stage3Labeling: React.FC = () => {
     selectedIaMsgId, setSelectedIaMsgId,
     iaMessages, setIaMessages,
     clusterRan,
-    setCurrentStage
+    setCurrentStage,
+    setCurrentSubStep4
   } = dataPrep;
 
   // Local states
@@ -76,6 +75,7 @@ export const Stage3Labeling: React.FC = () => {
   const [drawerStep, setDrawerStep] = React.useState<1 | 2>(1);
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
   const [taskNameInput, setTaskNameInput] = React.useState('');
+  const [taskPriority, setTaskPriority] = React.useState('medium');
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -84,7 +84,52 @@ export const Stage3Labeling: React.FC = () => {
     return false;
   };
 
+  const ensureDatasetVersionId = async () => {
+    let versionId: string =
+      (stage3Convs[0] as any)?.datasetVersionId ||
+      (stage3Convs[0] as any)?.versionId ||
+      localStorage.getItem('current_version_id') ||
+      '';
+
+    if (versionId) {
+      localStorage.setItem('current_version_id', versionId);
+      return versionId;
+    }
+
+    if (stage3Convs.length === 0) {
+      throw new Error('No Stage 3 conversations available to create dataset version.');
+    }
+
+    const payload = {
+      projectName: 'Auto-Label Dataset',
+      operationType: 'labeling_base' as const,
+      similarityThreshold: 0.85,
+      format: 'openai' as const,
+      data: stage3Convs.map((conv, idx) => {
+        const messages = conv.messages.flatMap((m: any) => [
+          { role: 'user', content: m.user },
+          { role: 'assistant', content: m.assistant }
+        ]).filter((m: any) => m.content && String(m.content).trim() !== '');
+
+        return {
+          sourceKey: `conv-${idx}`,
+          data: {
+            messages,
+            cluster: conv.groupId,
+            conversation_id: `conv-${idx}`
+          }
+        };
+      })
+    };
+
+    const created = await apiService.createDatasetVersion(payload);
+    versionId = created.datasetVersion._id;
+    localStorage.setItem('current_version_id', versionId);
+    return versionId;
+  };
+
   React.useEffect(() => {
+    let eventSource: EventSource | null = null;
     if (currentSubStep3 === 6) {
       const fetchAssignmentData = async () => {
         setIsFetchingDashboard(true);
@@ -115,7 +160,31 @@ export const Stage3Labeling: React.FC = () => {
         }
       };
       fetchAssignmentData();
+
+      // Listen for Real-Time Updates using SSE
+      const sseUrl = 'http://localhost:5000/api/dataprep/labeling/assignments/stream';
+      eventSource = new EventSource(sseUrl);
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'assignment_updated') {
+             console.log('[SSE] Received assignment update, refreshing dashboard...');
+             fetchAssignmentData();
+          }
+        } catch (e) {
+          console.error('[SSE] Error parsing event data', e);
+        }
+      };
+      eventSource.onerror = (err) => {
+        console.error('[SSE] EventSource failed:', err);
+      };
     }
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+    };
   }, [currentSubStep3]);
   // --------------------------------------
 
@@ -244,6 +313,13 @@ export const Stage3Labeling: React.FC = () => {
       return;
     }
 
+    const bulkVersionId = localStorage.getItem('current_version_id');
+    if (!bulkVersionId) {
+      alert('Missing dataset version.');
+      return;
+    }
+
+    setIsAssigning(true);
     try {
       // Loop over batches and make API calls
       for (let i = 0; i < autoSplitPreview.length; i++) {
@@ -253,23 +329,40 @@ export const Stage3Labeling: React.FC = () => {
         );
 
         if (assignees.length > 0) {
-          const versionId = localStorage.getItem('current_version_id') || 'default';
-          await api.post(`/dataprep/versions/${versionId}/assignments/batch`, {
-            assigneeIds: assignees,
-            sampleStartIndex: batch.samples.length > 0 ? batch.samples[0].sampleIndex : 0,
-            sampleCount: batch.samples.length,
-            taskType: 'labeling',
-            priority: 'medium',
-            batchName: taskNameInput ? `${taskNameInput} - ${batch.name}` : batch.name
-          });
+          const versionId = bulkVersionId;
+          const startIndex = batch.samples.length > 0 ? batch.samples[0].sampleIndex : 0;
+          const count = batch.samples.length;
+          for (const assigneeId of assignees) {
+            const finalBatchName = taskNameInput.trim() 
+              ? (autoSplitPreview.length > 1 ? `${taskNameInput.trim()} - ${batch.name}` : taskNameInput.trim())
+              : batch.name;
+
+            await apiService.assignDatasetVersionRange(versionId, {
+              assigneeId,
+              startIndex,
+              count,
+              batchName: finalBatchName,
+              priority: taskPriority
+            });
+          }
         }
       }
 
       alert('Đã Giao Việc thành công (Backend Integration)!');
+      const [dash, assign] = await Promise.all([
+        apiService.getDatasetVersionAssignmentDashboard(bulkVersionId),
+        apiService.getDatasetVersionAssignments(bulkVersionId)
+      ]);
+      setAssignmentDashboard(dash);
+      setAssignmentTotals(assign.totals);
+      setAssignmentSamples(assign.samples || []);
+
       setShowCreateTaskModal(false);
     } catch (err) {
       console.error('Error assigning task:', err);
       alert('Có lỗi xảy ra khi giao việc. Vui lòng thử lại.');
+    } finally {
+      setIsAssigning(false);
     }
     setDrawerStep(1);
   };
@@ -1024,12 +1117,7 @@ export const Stage3Labeling: React.FC = () => {
                       if (!clusterRan || isSavingLabels) return;
                       setIsSavingLabels(true);
                       try {
-                        const versionId = localStorage.getItem('current_version_id');
-                        if (!versionId) {
-                          alert('Không tìm thấy versionId, không thể lưu nhãn lên DB.');
-                          setIsSavingLabels(false);
-                          return;
-                        }
+                        const versionId = await ensureDatasetVersionId();
 
                         // Payload: { clusterId, label }
                         const payloadLabels = Object.entries(aiGroupLabels).map(([groupId, label]) => ({
@@ -1053,7 +1141,8 @@ export const Stage3Labeling: React.FC = () => {
                         alert('Đã lưu nhãn thành công vào Database!');
                       } catch (err: any) {
                         console.error('Save labels error:', err);
-                        alert(`Lỗi khi lưu nhãn: ${err.message || 'Unknown error'}`);
+                        const detail = err?.response?.data?.details || err?.response?.data?.error || err.message || 'Unknown error';
+                        alert(`Lỗi khi lưu nhãn: ${detail}`);
                       } finally {
                         setIsSavingLabels(false);
                       }
@@ -1189,7 +1278,7 @@ export const Stage3Labeling: React.FC = () => {
                         ) : assignmentDashboard?.users && assignmentDashboard.users.length > 0 ? (
                           assignmentDashboard.users.map((u: any, i: number) => (
                             <tr key={i}>
-                              <td><span className="sa-link">Batch {i+1}</span></td>
+                              <td><span className="sa-link">{u.submission?.name || `Batch ${i+1}`}</span></td>
                               <td>{u.user.name || u.user.username}</td>
                               <td>{u.assignedSamples} samples assigned</td>
                               <td className="sa-date">-</td>
@@ -1768,6 +1857,7 @@ export const Stage3Labeling: React.FC = () => {
                       onClick={() => {
                         if(window.confirm('Bạn có chắc chắn muốn đẩy batch dữ liệu này sang Stage 4 (Training/Evaluation)?')) {
                           alert('Đã đẩy dữ liệu thành công!');
+                          setCurrentSubStep4(7);
                           setCurrentStage(4);
                         }
                       }}
@@ -1957,6 +2047,7 @@ export const Stage3Labeling: React.FC = () => {
             if (currentSubStep3 < 7) {
               setCurrentSubStep3(currentSubStep3 + 1);
             } else {
+              setCurrentSubStep4(7);
               setCurrentStage(4);
             }
           }}>
@@ -2207,7 +2298,11 @@ export const Stage3Labeling: React.FC = () => {
                     
                     <div className="ct-form-group">
                       <label>Mức độ ưu tiên (Priority)</label>
-                      <select className="ct-select" defaultValue="Medium">
+                      <select 
+                        className="ct-select" 
+                        value={taskPriority}
+                        onChange={(e) => setTaskPriority(e.target.value)}
+                      >
                         <option value="high">High</option>
                         <option value="medium">Medium</option>
                         <option value="low">Low</option>
