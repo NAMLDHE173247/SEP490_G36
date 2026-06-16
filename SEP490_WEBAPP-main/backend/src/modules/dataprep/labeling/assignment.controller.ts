@@ -147,79 +147,59 @@ export class AssignmentController {
         cursor += chunkSize;
       }
 
-      // 4. Thực hiện ghi DB — dùng Transaction nếu Replica Set, fallback nếu Standalone
+      // 4. Ghi DB trực tiếp (không dùng transaction — standalone MongoDB)
+      const allActivityDocs: any[] = [];
 
-      let session: mongoose.ClientSession | null = null;
-      try {
-        session = await mongoose.startSession();
-        session.startTransaction();
-      } catch {
-        session = null;
-      }
+      for (const chunk of chunks) {
+        // 4a. Tạo DatasetAssignmentSubmission
+        const submission = new DatasetAssignmentSubmission({
+          datasetVersionId: versionId,
+          assigneeId: chunk.assigneeId,
+          status: 'pending',
+          name: `${taskName} - Batch ${chunk.startIndex}`,
+          batchStart: chunk.startIndex,
+          batchCount: chunk.sampleIds.length,
+          taskType: 'labeling',
+          priority: priority || 'medium',
+          deadline: deadline ? new Date(deadline) : undefined,
+          supervisor: assignedBy,
+          labeledCount: 0,
+          totalSamples: chunk.sampleIds.length,
+          dataset: datasetName,
+          version: version.versionName || 'v1',
+          progressSnapshot: { totalAssigned: chunk.sampleIds.length },
+        });
+        await submission.save();
 
-      try {
-        const allActivityDocs: any[] = [];
+        // 4b. Tạo DatasetSampleAssignment (ánh xạ sampleId cụ thể)
+        const sampleDocs = chunk.sampleIds.map((item, i) => ({
+          datasetVersionId: versionId,
+          sampleId: item._id,
+          assigneeId: chunk.assigneeId,
+          assignedBy,
+          sampleIndex: chunk.startIndex + i,
+          taskType: 'labeling',
+          priority: priority || 'medium',
+        }));
+        await DatasetSampleAssignment.insertMany(sampleDocs);
 
-        for (const chunk of chunks) {
-          // 4a. Tạo DatasetAssignmentSubmission
-          const submission = new DatasetAssignmentSubmission({
-            datasetVersionId: versionId,
-            assigneeId: chunk.assigneeId,
-            status: 'pending',
-            name: `${taskName} - Batch ${chunk.startIndex}`,
-            batchStart: chunk.startIndex,
-            batchCount: chunk.sampleIds.length,
-            taskType: 'labeling',
-            priority: priority || 'medium',
-            deadline: deadline ? new Date(deadline) : undefined,
-            supervisor: assignedBy,
-            labeledCount: 0,
-            totalSamples: chunk.sampleIds.length,
-            dataset: datasetName,
-            version: version.versionName || 'v1',
-            progressSnapshot: { totalAssigned: chunk.sampleIds.length },
-          });
-          if (session) await submission.save({ session }); else await submission.save();
-
-          // 4b. Tạo DatasetSampleAssignment (ánh xạ sampleId cụ thể)
-          const sampleDocs = chunk.sampleIds.map((item, i) => ({
+        // 4c. Ghi Audit log (DatasetAssignmentActivity)
+        for (const item of chunk.sampleIds) {
+          allActivityDocs.push({
             datasetVersionId: versionId,
             sampleId: item._id,
-            assigneeId: chunk.assigneeId,
-            assignedBy,
-            sampleIndex: chunk.startIndex + i,
-            taskType: 'labeling',
-            priority: priority || 'medium',
-          }));
-          if (session) await DatasetSampleAssignment.insertMany(sampleDocs, { session }); else await DatasetSampleAssignment.insertMany(sampleDocs);
-
-          // 4c. Ghi Audit log (DatasetAssignmentActivity)
-          for (const item of chunk.sampleIds) {
-            allActivityDocs.push({
-              datasetVersionId: versionId,
-              sampleId: item._id,
-              annotatorId: chunk.assigneeId,
-              labelName: 'assignment',
-              labelType: 'hard',
-              targetScope: 'sample',
-              activityType: 'assign',
-            });
-          }
+            annotatorId: chunk.assigneeId,
+            labelName: 'assignment',
+            labelType: 'hard',
+            targetScope: 'sample',
+            activityType: 'assign',
+          });
         }
+      }
 
-        // 4d. Bulk insert audit logs
-        if (allActivityDocs.length > 0) {
-          if (session) await DatasetAssignmentActivity.insertMany(allActivityDocs, { session }); else await DatasetAssignmentActivity.insertMany(allActivityDocs);
-        }
-
-        if (session) await session.commitTransaction();
-      } catch (txError: any) {
-        if (session) {
-          try { await session.abortTransaction(); } catch { /* ignore */ }
-        }
-        throw txError;
-      } finally {
-        if (session) session.endSession();
+      // 4d. Bulk insert audit logs
+      if (allActivityDocs.length > 0) {
+        await DatasetAssignmentActivity.insertMany(allActivityDocs);
       }
 
       // 5. Broadcast SSE update
