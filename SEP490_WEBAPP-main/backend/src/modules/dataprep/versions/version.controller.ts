@@ -185,7 +185,17 @@ export class DataPrepVersionController {
 
   async clearAllAssignments(req: Request, res: Response): Promise<void> {
     try {
-      const { id } = req.params;
+      let { id } = req.params;
+
+      // Frontend truyền groupId dạng "versionId_taskName" từ getManagerOverview
+      // Cần tách ra lấy phần versionId (24 ký tự ObjectId đầu tiên)
+      if (id && id.includes('_')) {
+        const parts = id.split('_');
+        // ObjectId MongoDB luôn 24 ký tự hex
+        if (parts[0].length === 24 && /^[0-9a-fA-F]{24}$/.test(parts[0])) {
+          id = parts[0];
+        }
+      }
 
       // Lấy tất cả sampleIds thuộc version này để xóa LabelAssignment
       const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: id })
