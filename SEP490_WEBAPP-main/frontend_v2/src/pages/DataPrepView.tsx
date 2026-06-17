@@ -192,7 +192,7 @@ const CONVERSATIONS = [
   },
 ];
 
-const Tooltip = ({ children, text }) => {
+const Tooltip = ({ children, text, position = 'top' }) => {
   const [show, setShow] = useState(false);
   return (
     <div 
@@ -204,7 +204,9 @@ const Tooltip = ({ children, text }) => {
       {children}
       {show && (
         <div style={{
-          position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+          position: 'absolute', 
+          ...(position === 'top' ? { bottom: 'calc(100% + 8px)' } : { top: 'calc(100% + 8px)' }),
+          left: '50%', transform: 'translateX(-50%)',
           backgroundColor: '#1e293b', color: '#fff', padding: '8px 12px', borderRadius: '6px',
           fontSize: '12px', width: '250px', zIndex: 1000, textAlign: 'left',
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', fontWeight: 400, lineHeight: 1.5
@@ -271,7 +273,7 @@ function DataPrepView() {
   const [findKResults, setFindKResults] = useState<any>(null);
 
   /* K-means Cluster state */
-  const [targetK, setTargetK] = useState('14');
+  const [targetK, setTargetK] = useState('');
   const [clusterEps, setClusterEps] = useState('0.1');
   const [clusterMinSamples, setClusterMinSamples] = useState('3');
   const [clusterRan, setClusterRan] = useState(false);
@@ -280,12 +282,9 @@ function DataPrepView() {
   const clusterPerPage = 5;
   const [isClustering, setIsClustering] = useState(false);
   const [clusterResults, setClusterResults] = useState<any>(null);
+  const [backupConvs, setBackupConvs] = useState<any[]>([]);
 
-  /* Compare Groups state */
-  const [showCompareModal, setShowCompareModal] = useState(false);
-  const [compareSlot1, setCompareSlot1] = useState(null);
-  const [compareSlot2, setCompareSlot2] = useState(null);
-  const [activeCompareDropdown, setActiveCompareDropdown] = useState(null);
+
 
   /* Clustering Options Popup */
   const [showClusterOptionsPopup, setShowClusterOptionsPopup] = useState(false);
@@ -1038,6 +1037,7 @@ function DataPrepView() {
         if (cleanedItem) {
           const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
           const isFixed = assistantMsgBefore !== assistantMsgAfter;
+          cleanedItem.status = isFixed ? 'fixed' : 'clean';
 
           beforePreview.push({
             id: item.id,
@@ -1104,14 +1104,15 @@ function DataPrepView() {
         ]).flat()
       }));
 
+      const safeMinSamples = Math.min(parseInt(minSamples, 10), Math.max(2, Math.floor(conversationsList.length / 2)));
       const res = await apiService.clusterVisualize(
         formattedData,
         parseInt(maxK, 10),
         parseFloat(eps),
-        parseInt(minSamples, 10)
+        safeMinSamples
       );
 
-      let recommendedK = 14; // Default fallback
+      let recommendedK = Math.max(2, Math.min(10, conversationsList.length)); // Dynamic fallback
       if (res.silhouette && res.silhouette.length > 0) {
         // Find K with max silhouette score
         const best = res.silhouette.reduce((prev, current) => 
@@ -1140,6 +1141,10 @@ function DataPrepView() {
     try {
       setIsClustering(true);
       
+      if (!clusterRan) {
+        setBackupConvs([...conversationsList]);
+      }
+
       const formattedData = conversationsList.map(c => ({
         conversation_id: c.id,
         messages: c.messages.map((m: any) => [
@@ -1148,11 +1153,12 @@ function DataPrepView() {
         ]).flat()
       }));
 
+      const safeClusterMinSamples = Math.min(parseInt(clusterMinSamples, 10), Math.max(2, Math.floor(conversationsList.length / 2)));
       const res = await apiService.clusterData(
         formattedData,
         parseInt(targetK, 10),
         parseFloat(clusterEps),
-        parseInt(clusterMinSamples, 10)
+        safeClusterMinSamples
       );
 
       if (res.assignments) {
@@ -1224,6 +1230,59 @@ function DataPrepView() {
     } catch (err: any) {
       console.error('Remove Noise failed:', err);
       alert('Lỗi khi loại bỏ nhiễu');
+    }
+  };
+
+  const handleDeduplicate = async () => {
+    try {
+      setIsClustering(true);
+      const res = await apiService.clusterDeduplicate(simThreshold);
+
+      if (res.data && res.assignments) {
+        const updatedConvs = res.data.map((item: any, idx: number) => {
+          const groupId = res.assignments[idx];
+          const originalConv = conversationsList.find(c => c.id === item.conversation_id) || backupConvs.find(c => c.id === item.conversation_id);
+          
+          return {
+            ...originalConv, 
+            groupId: groupId,
+            groupLabel: groupId === -1 ? 'Group -1' : `Group ${groupId}`,
+            groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
+            groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            confidence: originalConv?.confidence || Math.floor(Math.random() * 10 + 90)
+          };
+        });
+        
+        const updatedStats = clusterResults?.clusterStats ? clusterResults.clusterStats.map((oldStat: any) => {
+          const newGroup = res.groups?.find((g: any) => g.groupId === oldStat.clusterId);
+          return newGroup ? { ...oldStat, count: newGroup.count } : oldStat;
+        }).filter((stat: any) => res.groups?.some((g: any) => g.groupId === stat.clusterId)) : undefined;
+
+        setStage3Convs(updatedConvs);
+        setConversationsList(updatedConvs);
+        setClusterResults({
+          ...res,
+          clusterStats: updatedStats
+        });
+        alert(`Đã loại bỏ ${res.removedCount} hội thoại trùng lặp. Giữ lại ${res.keptCount} hội thoại.`);
+      }
+    } catch (err: any) {
+      console.error('Deduplicate failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi deduplicate');
+    } finally {
+      setIsClustering(false);
+    }
+  };
+
+  const handleResetFilter = () => {
+    if (backupConvs.length > 0) {
+      setConversationsList(backupConvs);
+      setStage3Convs(backupConvs);
+      setClusterRan(false);
+      setClusterResults(null);
+      alert("Đã khôi phục lại dữ liệu gốc trước khi phân cụm.");
+    } else {
+      alert("Không có dữ liệu gốc để khôi phục.");
     }
   };
 
@@ -1464,20 +1523,6 @@ function DataPrepView() {
 
     /* using component-level highlightSearch */
 
-    /* Cleaning status per conversation (mock) */
-    const CONV_STATUS = {
-      conv_001: 'clean',
-      conv_002: 'fixed',
-      conv_003: 'clean',
-      conv_004: 'clean',
-      conv_005: 'fixed',
-      conv_006: 'clean',
-      conv_007: 'clean',
-      conv_008: 'clean',
-      conv_009: 'fixed',
-      conv_010: 'clean',
-    };
-
     return (
       <>
         {/* Sub-stepper */}
@@ -1521,25 +1566,25 @@ function DataPrepView() {
             <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
             <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
               <div className="post-stat-item">
-                <div className="post-stat-label">Error keywords</div>
+                <div className="post-stat-label">Lọc do vi phạm từ khóa</div>
                 <div className="post-stat-value cleaning-red">
-                  {conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+                  {conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0}
                 </div>
               </div>
               <div className="post-stat-item">
-                <div className="post-stat-label">Length</div>
+                <div className="post-stat-label">Lọc do vi phạm độ dài</div>
                 <div className="post-stat-value cleaning-red">
-                  {((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
+                  {((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) ?? 0}
                 </div>
               </div>
               <div className="post-stat-item">
-                <div className="post-stat-label">Unclosed &lt;think&gt;</div>
+                <div className="post-stat-label">Lọc do thẻ &lt;think&gt; hỏng</div>
                 <div className="post-stat-value cleaning-red">
-                  {conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
+                  {conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0}
                 </div>
               </div>
               <div className="post-stat-item highlight">
-                <div className="post-stat-label">Final Count</div>
+                <div className="post-stat-label">Hội thoại hợp lệ</div>
                 <div className="post-stat-value cleaning-green">{totalConvs}</div>
               </div>
             </div>
@@ -1650,7 +1695,7 @@ function DataPrepView() {
                   {pageConvs.map((conv, convPageIdx) => {
                     const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
                     const convGlobalIdx = startConvIdx + convPageIdx + 1;
-                    const status = CONV_STATUS[conv.id] || 'clean';
+                    const status = conv.status || 'clean';
 
                     return (
                       <tr
@@ -2364,10 +2409,7 @@ function DataPrepView() {
                     <option value="15">15</option>
                   </select>
                 </div>
-                <div className="toolbar-actions">
-                  <button className="toolbar-btn-sm" onClick={expandAll} title="Expand all">Expand All</button>
-                  <button className="toolbar-btn-sm" onClick={collapseAll} title="Collapse all">Collapse All</button>
-                </div>
+
                 <div className="toolbar-search">
                   <input
                     type="text"
@@ -2387,74 +2429,109 @@ function DataPrepView() {
                 <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th style={{ width: '14%', textAlign: 'center' }}>Conversation ID</th>
+                      <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
+                      <th style={{ width: '12%', textAlign: 'center' }}>Conv ID</th>
                       <th style={{ width: '3%', textAlign: 'center' }}>#</th>
-                      <th style={{ width: '40%' }}>User</th>
+                      <th style={{ width: '38%' }}>User</th>
                       <th style={{ width: '43%' }}>Assistant</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pageConvs.length === 0 && (
                       <tr>
-                        <td colSpan={4} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                           No conversations match your search.
                         </td>
                       </tr>
                     )}
                     {pageConvs.map((conv, convPageIdx) => {
-                      const isExpanded = expandedConvs[conv.id] !== undefined ? expandedConvs[conv.id] : true;
                       const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
+                      const convGlobalIdx = startConvIdx + convPageIdx + 1;
 
-                      if (!isExpanded) {
-                        return (
-                          <tr key={conv.id} className={`conv-row conv-first conv-last conv-collapsed ${groupClass}`}>
-                            <td className="col-conv-id-cell">
-                              <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Expand">
-                                <ChevronRight size={14} />
-                              </button>
-                              <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
-                              {conv.groupLabel && (
-                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
-                                  {conv.groupLabel}
-                                </span>
-                              )}
-                            </td>
-                            <td className="col-msg-num-cell">—</td>
-                            <td className="cell-text-col" title={conv.messages[0].user}>
-                              <div className="cell-truncate">{conv.messages[0].user}</div>
-                            </td>
-                            <td className="cell-text-col" title={conv.messages[0].assistant}>
-                              <div className="cell-truncate">{conv.messages[0].assistant}</div>
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return conv.messages.map((msg, msgIdx) => (
+                      return (
                         <tr
-                          key={`${conv.id}-${msgIdx}`}
-                          className={`conv-row ${msgIdx === 0 ? 'conv-first' : ''} ${msgIdx === conv.messages.length - 1 ? 'conv-last' : ''} ${groupClass}`}
+                          key={conv.id}
+                          className={`conv-row conv-first conv-last ${groupClass}`}
                         >
-                          {msgIdx === 0 && (
-                            <td className="col-conv-id-cell" rowSpan={conv.messages.length}>
-                              <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Collapse">
-                                <ChevronDown size={14} />
-                              </button>
-                              <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
-                              {conv.groupLabel && (
-                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
-                                  {conv.groupLabel}
-                                </span>
+                          <td className="col-conv-num-cell" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{convGlobalIdx}</td>
+                          <td className="col-conv-id-cell">
+                            <span className="conv-id-badge">{conv.id}</span>
+                            <span className="conv-msg-count">{conv.messages.length} messages</span>
+                            {conv.groupLabel && (
+                              <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginTop: '4px' }}>
+                                {conv.groupLabel}
+                              </span>
+                            )}
+                          </td>
+                          <td className="col-msg-num-cell">{conv.messages.length}</td>
+                          <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                            <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {conv.messages.length === 1 ? (
+                                <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                                  {highlightSearch(conv.messages[0].user, searchQuery)}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                    <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                      {getConversationTopic(conv.messages)}
+                                    </span>
+                                  </div>
+                                  <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                    {conv.messages.slice(0, 3).map((msg, idx) => (
+                                      <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                        <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                        <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                          {highlightSearch(truncateText(msg.user, 150), searchQuery)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {conv.messages.length > 3 && (
+                                      <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                        + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
                               )}
-                            </td>
-                          )}
-                          <td className="col-msg-num-cell">#{msgIdx + 1}</td>
-                          <td className="cell-text-col" title={msg.user}><div className="cell-truncate">{msg.user}</div></td>
-                          <td className="cell-text-col" title={msg.assistant}><div className="cell-truncate">{msg.assistant}</div></td>
+                            </div>
+                          </td>
+                          <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
+                            <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {conv.messages.length === 1 ? (
+                                <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                                  {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="conv-topic-title" style={{ fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '13px', visibility: 'hidden' }}>📌</span>
+                                    <span style={{ fontSize: '13.5px', fontStyle: 'italic' }}>Phản hồi nổi bật</span>
+                                  </div>
+                                  <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                    {conv.messages.slice(0, 3).map((msg, idx) => (
+                                      <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                        <span style={{ fontWeight: '600', color: '#10b981', flexShrink: 0 }}>A{idx+1}:</span>
+                                        <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                          {highlightSearch(truncateText(msg.assistant, 150), searchQuery)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {conv.messages.length > 3 && (
+                                      <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic', visibility: 'hidden' }}>
+                                        + {conv.messages.length - 3}
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </td>
                         </tr>
-                      ));
+                      );
                     })}
                   </tbody>
                 </table>
@@ -2517,15 +2594,17 @@ function DataPrepView() {
                       <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                           Target K (Clusters)
-                          <Tooltip text="Số lượng cụm K mục tiêu thuật toán K-Means sẽ chia dữ liệu. Số K càng lớn thì số cụm môn học càng nhiều.">
+                          <Tooltip position="bottom" text="Số lượng nhóm dữ liệu mà AI sẽ tự động phân loại. Giá trị này được AI khuyến nghị tự động (Recommended K) dựa trên biểu đồ Silhouette để đạt chất lượng chia nhóm tốt nhất.">
                             <HelpCircle size={14} color="#94a3b8" />
                           </Tooltip>
                         </label>
-                        <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
+                        <input type="number" value={targetK} readOnly className="readonly-input-field" style={{ backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }} />
                       </div>
                       <p className="cluster-recommend">
                         {findKResults?.recommendedK ? (
-                          <>Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</>
+                          <>
+                            Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)
+                          </>
                         ) : (
                           <>Run <strong>Find K</strong> step first to get Recommended K.</>
                         )}
@@ -2534,20 +2613,20 @@ function DataPrepView() {
                         <div className="cleaning-input-group">
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             DBSCAN EPS
-                            <Tooltip text="Bán kính Epsilon của thuật toán DBSCAN. Quyết định khoảng cách tối đa để hai đoạn hội thoại được xem là cùng một cụm.">
+                            <Tooltip position="bottom" text="Khoảng cách cho phép (bán kính) để 2 hội thoại được xem là 'giống nhau'. Nếu vượt quá mức này, AI sẽ loại chúng ra thành dữ liệu rác (Noise) để làm sạch cụm.">
                               <HelpCircle size={14} color="#94a3b8" />
                             </Tooltip>
                           </label>
-                          <input type="number" step="0.1" value={clusterEps} onChange={(e) => setClusterEps(e.target.value)} />
+                          <input type="number" step="0.1" value={clusterEps} readOnly className="readonly-input-field" style={{ backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }} />
                         </div>
                         <div className="cleaning-input-group">
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             Min Samples
-                            <Tooltip text="Số lượng hội thoại tối thiểu cần thiết để tạo thành một cụm DBSCAN hợp lệ. Nếu ít hơn sẽ bị coi là nhiễu (Noise).">
+                            <Tooltip position="bottom" text="Số lượng hội thoại tối thiểu cần có để tạo thành 1 nhóm. Nếu một nhóm có ít hội thoại hơn mức này, nó sẽ bị AI coi là rác (Noise) và loại bỏ.">
                               <HelpCircle size={14} color="#94a3b8" />
                             </Tooltip>
                           </label>
-                          <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
+                          <input type="number" value={clusterMinSamples} readOnly className="readonly-input-field" style={{ backgroundColor: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }} />
                         </div>
                       </div>
                       <button className="cluster-run-btn" onClick={handleCluster} disabled={isClustering}>
@@ -2569,46 +2648,42 @@ function DataPrepView() {
                             value={simThreshold}
                             onChange={(e) => setSimThreshold(parseFloat(e.target.value))}
                             className="sim-slider"
+                            style={{ '--val': `${simThreshold * 100}%` } as React.CSSProperties}
                           />
                           <div className="cluster-action-btns">
                             <button className="cluster-btn-noise" onClick={handleRemoveNoise}>Remove Noise</button>
-                            <button className="cluster-btn-dedup">Deduplicate</button>
+                            <button className="cluster-btn-dedup" onClick={handleDeduplicate} disabled={isClustering}>
+                              {isClustering ? <RefreshCw size={14} className="animate-spin" /> : 'Deduplicate'}
+                            </button>
                           </div>
-                          <button className="reset-filter-btn">Reset Filter</button>
+                          <button className="reset-filter-btn" onClick={handleResetFilter}>Reset Filter</button>
                         </div>
 
                         {/* Cluster Statistics */}
                         <div className="cluster-popup-section">
                           <div className="cluster-stats-header">
                             <span className="cluster-stats-title">Cluster Statistics</span>
-                            <button className="compare-btn" onClick={() => setShowCompareModal(true)}>
-                              <Eye size={14} />
-                              Compare Groups
-                            </button>
                           </div>
                           <table className="cluster-stats-table">
                             <thead>
                               <tr>
-                                <th>Select</th>
-                                <th>Group</th>
-                                <th>Count</th>
-                                <th>Avg Similarity</th>
+                                <th style={{ textAlign: 'left' }}>Group</th>
+                                <th style={{ textAlign: 'center' }}>Conversations</th>
+                                <th style={{ textAlign: 'right' }}>Avg Similarity</th>
                               </tr>
                             </thead>
                             <tbody>
                               {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
                                 <tr key={i}>
-                                  <td><input type="checkbox" /></td>
-                                  <td><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
-                                  <td className="count-cell">{g.count}</td>
-                                  <td className="sim-cell">{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
+                                  <td style={{ textAlign: 'left' }}><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
+                                  <td className="count-cell" style={{ textAlign: 'center' }}>{g.count}</td>
+                                  <td className="sim-cell" style={{ textAlign: 'right' }}>{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
                                 </tr>
                               )) : CLUSTER_GROUPS.map((g, i) => (
                                 <tr key={i}>
-                                  <td><input type="checkbox" /></td>
-                                  <td><strong>{g.name}</strong></td>
-                                  <td className="count-cell">{g.count}</td>
-                                  <td className="sim-cell">{g.sim.toFixed(4)}</td>
+                                  <td style={{ textAlign: 'left' }}><strong>{g.name}</strong></td>
+                                  <td className="count-cell" style={{ textAlign: 'center' }}>{g.count}</td>
+                                  <td className="sim-cell" style={{ textAlign: 'right' }}>{g.sim.toFixed(4)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -5441,139 +5516,7 @@ function DataPrepView() {
       {currentStage === 6 && renderStage6()}
 
       {/* Compare Groups Modal */}
-      {showCompareModal && (
-        <div className="compare-modal-overlay" onClick={() => setShowCompareModal(false)}>
-          <div className="compare-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="compare-header-row">
-              <div className="compare-header-titles">
-                <h2>Cluster Group Comparison</h2>
-                <p>Compare two groups side by side using User, &lt;think&gt;, and Assistant content.</p>
-              </div>
-              <button className="compare-close-btn" onClick={() => setShowCompareModal(false)}>
-                <X size={14} /> Close Comparison
-              </button>
-            </div>
 
-            <div className="compare-body">
-              {/* Slot 1 */}
-              <div className="compare-slot">
-                {compareSlot1 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 1</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 1 ? null : 1)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 1 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot1(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot1}</h3>
-                        <p>{compareSlot1 === 0 || compareSlot1 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot1(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot1 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot1 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Slot 2 */}
-              <div className="compare-slot">
-                {compareSlot2 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 2</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 2 ? null : 2)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 2 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot2(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot2}</h3>
-                        <p>{compareSlot2 === 0 || compareSlot2 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot2(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot2 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot2 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Compare AI Labels Modal */}
       {showCompareLabels && (

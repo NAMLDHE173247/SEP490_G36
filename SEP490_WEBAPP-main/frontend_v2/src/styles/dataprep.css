@@ -1064,7 +1064,9 @@
   padding: 4px 10px;
   border-radius: 6px;
   margin-bottom: 4px;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-all;
+  max-width: 100%;
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
 }
 
