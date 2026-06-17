@@ -29,9 +29,9 @@ export class HuggingFaceController {
                 url: result.url,
             });
         } catch (error: any) {
-            console.error('Hugging Face Upload Error:', error);
+            console.error('Hugging Face Upload Error:', error?.message || error);
             res.status(500).json({
-                error: 'Failed to upload to Hugging Face',
+                error: error.message || 'Failed to upload to Hugging Face',
                 details: error.message,
             });
         }

@@ -182,20 +182,20 @@ export const Stage6Finish: React.FC = () => {
         const total = res.length;
         const testCount = splitTestPercentage > 0 ? Math.max(1, Math.round(total * (splitTestPercentage / 100))) : 0;
         const trainCount = total - testCount;
-        
+
         // Re-inject original IDs by matching first message content
         const recoveredData = res.map(apiItem => {
           let id = apiItem.conversation_id || apiItem.id;
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || '';
             const match = conversationsList.find((c: any) => {
-               if (!c.messages || c.messages.length === 0) return false;
-               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
-               return cFirstContent === firstContent;
+              if (!c.messages || c.messages.length === 0) return false;
+              const cFirstContent = c.messages[0].content || c.messages[0].user || '';
+              return cFirstContent === firstContent;
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2,9)}` };
+          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
         });
 
         const shuffled = [...recoveredData].sort(() => 0.5 - Math.random());
@@ -215,19 +215,19 @@ export const Stage6Finish: React.FC = () => {
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || '';
             const match = conversationsList.find((c: any) => {
-               if (!c.messages || c.messages.length === 0) return false;
-               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
-               return cFirstContent === firstContent;
+              if (!c.messages || c.messages.length === 0) return false;
+              const cFirstContent = c.messages[0].content || c.messages[0].user || '';
+              return cFirstContent === firstContent;
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2,9)}` };
+          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
         });
-        
+
         apiResponse = {
-           ...res,
-           train: injectIds(res.train),
-           test: injectIds(res.test)
+          ...res,
+          train: injectIds(res.train),
+          test: injectIds(res.test)
         };
       } else if (res && typeof res === 'object' && res.trainIndices) {
         // GPU Service returned { trainIndices, testIndices, conflictCount, ... }
@@ -236,13 +236,13 @@ export const Stage6Finish: React.FC = () => {
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || apiItem.messages[0].user || '';
             const match = conversationsList.find((c: any) => {
-               if (!c.messages || c.messages.length === 0) return false;
-               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
-               return cFirstContent === firstContent;
+              if (!c.messages || c.messages.length === 0) return false;
+              const cFirstContent = c.messages[0].content || c.messages[0].user || '';
+              return cFirstContent === firstContent;
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2,9)}` };
+          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
         });
 
         const trainData = res.trainIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
@@ -329,7 +329,7 @@ export const Stage6Finish: React.FC = () => {
     if (testData && testData.length > 0) {
       zip.file("test.json", JSON.stringify(testData, null, 2));
     }
-    
+
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, `${projectName || 'dataset'}_split.zip`);
   };
@@ -361,7 +361,7 @@ export const Stage6Finish: React.FC = () => {
     if (testData && testData.length > 0) {
       zip.file("test.json", JSON.stringify(testData, null, 2));
     }
-    
+
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, `${projectName || 'dataset'}_split_filtered.zip`);
   };
@@ -384,7 +384,7 @@ export const Stage6Finish: React.FC = () => {
       // Prepare dataset content
       let trainData = splitResult.train;
       let testData = splitResult.test || [];
-      
+
       // Filter out excluded items
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
@@ -426,7 +426,7 @@ export const Stage6Finish: React.FC = () => {
       // Prepare dataset content
       let trainData = splitResult.train;
       let testData = splitResult.test || [];
-      
+
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
@@ -990,24 +990,24 @@ export const Stage6Finish: React.FC = () => {
             <div className="ex-push-card">
               <h4>🔥 Push to Hugging Face Hub</h4>
               <label className="s6-field-label" style={{ marginTop: 0 }}>Hugging Face Token</label>
-              <input 
-                className="s6-field-input" 
-                placeholder="hf_..." 
+              <input
+                className="s6-field-input"
+                placeholder="hf_..."
                 value={hfToken}
                 onChange={(e) => setHfToken(e.target.value)}
-                style={{ borderLeft: '1px solid #e2e8f0' }} 
+                style={{ borderLeft: '1px solid #e2e8f0' }}
               />
               <label className="s6-field-label">Repository ID</label>
-              <input 
-                className="s6-field-input" 
-                placeholder="username/my-dataset" 
+              <input
+                className="s6-field-input"
+                placeholder="username/my-dataset"
                 value={hfRepoId}
                 onChange={(e) => setHfRepoId(e.target.value)}
-                style={{ borderLeft: '1px solid #e2e8f0' }} 
+                style={{ borderLeft: '1px solid #e2e8f0' }}
               />
               <label className="ex-checkbox-label">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={hfIsPrivate}
                   onChange={(e) => setHfIsPrivate(e.target.checked)}
                 /> Make repository private

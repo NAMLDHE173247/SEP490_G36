@@ -1,28 +1,4 @@
 import React, { useState, useRef } from 'react';
-import { apiService } from '../services/api';
-import {
-  Upload,
-  X,
-  Eye,
-  ChevronRight,
-  ChevronLeft,
-  ChevronDown,
-  FileText,
-  Settings,
-  Check,
-  Sparkles,
-  RotateCcw,
-  Scissors,
-  Plus,
-  Calendar,
-  BarChart2,
-  AlertCircle,
-  Filter,
-  Download,
-  RefreshCw,
-  MessageSquare,
-  HelpCircle
-} from 'lucide-react';
 import '../styles/dataprep.css';
 import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
 import { Stage1Upload } from './DataPrep/stages/Stage1Upload';
@@ -30,6 +6,8 @@ import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
 import { Stage3Labeling } from './DataPrep/stages/Stage3Labeling';
 import { Stage4Labeling } from '../components/dataprep/Stage4Labeling';
 import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
+import { apiService } from '../services/api';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, HelpCircle, MessageSquare, Plus, RefreshCw, RotateCcw, Scissors, Settings, Sparkles, Upload, X } from 'lucide-react';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
@@ -4249,143 +4227,11 @@ function DataPrepInner() {
       {currentStage === 5 && <Stage6Finish />}
 
       {/* Compare Groups Modal */}
-      {showCompareModal && (
-        <div className="compare-modal-overlay" onClick={() => setShowCompareModal(false)}>
-          <div className="compare-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="compare-header-row">
-              <div className="compare-header-titles">
-                <h2>Cluster Group Comparison</h2>
-                <p>Compare two groups side by side using User, &lt;think&gt;, and Assistant content.</p>
-              </div>
-              <button className="compare-close-btn" onClick={() => setShowCompareModal(false)}>
-                <X size={14} /> Close Comparison
-              </button>
-            </div>
 
-            <div className="compare-body">
-              {/* Slot 1 */}
-              <div className="compare-slot">
-                {compareSlot1 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 1</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 1 ? null : 1)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 1 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot1(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot1}</h3>
-                        <p>{compareSlot1 === 0 || compareSlot1 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot1(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot1 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot1 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Slot 2 */}
-              <div className="compare-slot">
-                {compareSlot2 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 2</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 2 ? null : 2)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 2 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot2(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot2}</h3>
-                        <p>{compareSlot2 === 0 || compareSlot2 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot2(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot2 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot2 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
-}
+};
 
 class ErrorBoundary extends React.Component<any, any> {
   constructor(props: any) {

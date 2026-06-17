@@ -1,58 +1,18 @@
 import React from 'react';
-import { Upload, FileText, X, Eye, ChevronDown, Scissors } from 'lucide-react';
-import { useDataPrep, SAMPLE_RAW_DATA, SAMPLE_OUTPUT } from '../DataPrepContext';
-import './Stage1Upload.css';
+import { useDataPrep, SAMPLE_RAW_DATA, SAMPLE_OUTPUT, SUB_STEPS_STAGE2 } from '../DataPrepContext';
+import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Trash2, GitCompare, ArrowUpDown, ChevronRight, CheckCircle, RefreshCw, MessageSquare, HelpCircle, Scissors, Filter, Calendar, BarChart2, XCircle, Tag, ClipboardList, Send, Play, Eye, RotateCcw, Plus, Sparkles, ChevronLeft, Settings, X } from 'lucide-react';
 
-const renderJsonHighlighted = (jsonString: string) => {
-  if (!jsonString) return null;
-  try {
-    const lines = typeof jsonString === 'string' ? jsonString.split('\n') : JSON.stringify(jsonString, null, 2).split('\n');
-    return lines.map((line, i) => {
-      let content = line;
-      let className = 'json-text';
-
-      if (line.includes('"user"') || line.includes('"human"')) {
-        className = 'json-key-user';
-      } else if (line.includes('"assistant"') || line.includes('"gpt"')) {
-        className = 'json-key-assistant';
-      } else if (line.match(/"[^"]+":/)) {
-        className = 'json-key';
-      }
-
-      if (line.match(/:\s*"[^"]*"/)) {
-        content = line.replace(/(:\s*)("[^"]*")/, '$1<span class="json-string">$2</span>');
-      }
-
-      return (
-        <div key={i} className="json-line">
-          <span className="json-line-number">{i + 1}</span>
-          <span className={className} dangerouslySetInnerHTML={{ __html: content }} />
-        </div>
-      );
-    });
-  } catch (e) {
-    return jsonString;
-  }
-};
-
-export const Stage1Upload: React.FC = () => {
-  const {
-    file,
-    projectName, setProjectName,
-    rawPreviewOpen, setRawPreviewOpen,
-    selectedFormat, setSelectedFormat,
-    rawPreviewText, sampleOutputText,
-    fileInputRef, handleFileUpload, handleRemoveFile, handleConvert,
-    uploadProgress
-  } = useDataPrep();
+export const Stage1Upload = () => {
+  const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
 
   return (
-    <div className="stage-1-upload-container">
+(
+    <>
       {/* File upload section */}
       <input
         ref={fileInputRef}
         type="file"
-        accept=".json,.csv,.jsonl,.xlsx,.xls,.txt"
+        accept=".json,.csv,.jsonl"
         style={{ display: 'none' }}
         onChange={handleFileUpload}
       />
@@ -62,12 +22,7 @@ export const Stage1Upload: React.FC = () => {
         <div className="dataprep-upload-zone" onClick={() => fileInputRef.current?.click()}>
           <Upload size={36} className="upload-icon" />
           <div className="upload-title">Drop your file here, or click to browse</div>
-          <div className="upload-sub">Supports .json, .jsonl, .csv, .xlsx, .xls, .txt files up to 100MB</div>
-          {uploadProgress > 0 && uploadProgress < 100 && (
-            <div style={{ marginTop: '15px', width: '80%', background: '#eee', borderRadius: '4px', height: '10px', overflow: 'hidden' }}>
-              <div style={{ width: `${uploadProgress}%`, background: '#2563eb', height: '100%', transition: 'width 0.2s ease-in-out' }}></div>
-            </div>
-          )}
+          <div className="upload-sub">Supports .jsonl, .json, .csv files up to 100MB</div>
           <button className="upload-select-btn" type="button">Select File</button>
         </div>
       ) : (
@@ -165,6 +120,7 @@ export const Stage1Upload: React.FC = () => {
           </button>
         </>
       )}
-    </div>
-  );
+    </>
+  )
+);
 };

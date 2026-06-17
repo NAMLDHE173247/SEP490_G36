@@ -253,6 +253,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [cleaningApplied, setCleaningApplied] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewTab, setPreviewTab] = useState('before');
+  const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
+  const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
+  const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewItemsPerPage, setPreviewItemsPerPage] = useState(5);
 
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
@@ -274,6 +279,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [eps, setEps] = useState('0.1');
   const [minSamples, setMinSamples] = useState('3');
   const [showVisualization, setShowVisualization] = useState(false);
+  const [isFindingK, setIsFindingK] = useState(false);
+  const [findKResults, setFindKResults] = useState<any>(null);
 
   /* K-means Cluster state */
   const [targetK, setTargetK] = useState('14');
@@ -283,6 +290,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [simThreshold, setSimThreshold] = useState(0.9);
   const [clusterPage, setClusterPage] = useState(1);
   const clusterPerPage = 5;
+  const [isClustering, setIsClustering] = useState(false);
+  const [clusterResults, setClusterResults] = useState<any>(null);
+  const [backupConvs, setBackupConvs] = useState<any[]>([]);
 
   /* Compare Groups state */
   const [showCompareModal, setShowCompareModal] = useState(false);
@@ -318,6 +328,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [showUserGuide, setShowUserGuide] = useState(false);
   const [selectedGroup3, setSelectedGroup3] = useState<any>(null);
   const [selectedConv3, setSelectedConv3] = useState<any>(null);
+  const [stage3SubGroup, setStage3SubGroup] = useState('A');
+  const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
   const [selectedIaMsgId, setSelectedIaMsgId] = useState<any>(null);
   const [iaMessages, setIaMessages] = useState<any[]>([
     {
@@ -499,7 +511,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleToggleLabel = (msgId: number, groupName: string, tagName: string) => {
     setIaMessages(prev => prev.map(msg => {
       if (msg.id !== msgId) return msg;
-      
+
       const newLabels = { ...msg.labels };
       newLabels[groupName] = newLabels[groupName].map((tag: any) => {
         if (tag.name === tagName) {
@@ -523,7 +535,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleRemoveMessageSingleLabel = (msgId: number, tagName: string) => {
     setIaMessages(prev => prev.map(msg => {
       if (msg.id !== msgId) return msg;
-      
+
       const newLabels = { ...msg.labels };
       Object.keys(newLabels).forEach(g => {
         newLabels[g] = newLabels[g].map((tag: any) => {
@@ -617,12 +629,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
-          if (progressEvent.total) {
-            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percentCompleted);
-          }
-        });
+        const res = await apiService.uploadFile(uploaded);
 
         setFile({
           fileId: res.fileId,
@@ -796,8 +803,359 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  /* Page numbers with ellipsis */
-  const getPageNumbers = (current: number, total: number) => {
+  const handleApplyCleaning = async () => {
+    if (!file || !file.fileId) {
+      alert('Vui lòng tải tệp lên trước.');
+      return;
+    }
+
+    try {
+      setIsCleaningLoading(true);
+      const res = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: true,
+        removeThinkTags: removeThinkTags,
+        removeBoilerplate: removeErrorKeywords,
+        removeUnclosedThink: removeUnclosedThink,
+        minCharsAssistant: parseInt(minChars, 10) || 5,
+        maxCharsAssistant: parseInt(maxChars, 10) || 4000,
+        minTurns: parseInt(minPairs, 10) || 1,
+      });
+
+      // Update states and lists
+      setConversionStats(res);
+      const mapped = mapConvertedToConversations(res.data);
+      setPendingCleanedList(mapped);
+
+      // We query the backend with enableCleaning: false to get the original data for preview.
+      const originalRes = await apiService.convertData(file.fileId, {
+        format: selectedFormat as any,
+        enableCleaning: false,
+        removeThinkTags: removeThinkTags,
+      });
+      const originalMapped = mapConvertedToConversations(originalRes.data);
+
+      // Take all items for the preview list
+      const originalSample = originalMapped;
+      const cleanedSampleMap = new Map<string, any>();
+      mapped.forEach(c => cleanedSampleMap.set(c.id, c));
+
+      const beforePreview: any[] = [];
+      const afterPreview: any[] = [];
+      const removedPreview: any[] = [];
+
+      originalSample.forEach(item => {
+        const cleanedItem = cleanedSampleMap.get(item.id);
+        const userMsg = item.messages[0]?.user || '';
+        const assistantMsgBefore = item.messages[0]?.assistant || '';
+
+        if (cleanedItem) {
+          const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
+          const isFixed = assistantMsgBefore !== assistantMsgAfter;
+          cleanedItem.status = isFixed ? 'fixed' : 'clean';
+
+          beforePreview.push({
+            id: item.id,
+            status: isFixed ? 'has-issue' : 'clean',
+            issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          afterPreview.push({
+            id: item.id,
+            status: isFixed ? 'fixed' : 'clean',
+            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            user: userMsg,
+            assistant: assistantMsgAfter,
+          });
+        } else {
+          beforePreview.push({
+            id: item.id,
+            status: 'has-issue',
+            issue: 'Bị lọc bỏ',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+
+          removedPreview.push({
+            id: item.id,
+            reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
+            user: userMsg,
+            assistant: assistantMsgBefore,
+          });
+        }
+      });
+
+      setCleaningPreviewBefore(beforePreview);
+      setCleaningPreviewAfter(afterPreview);
+      setCleaningPreviewRemoved(removedPreview);
+      setCleaningPopupView('preview');
+      setPreviewTab('before');
+    } catch (err: any) {
+      console.error('Cleaning failed:', err);
+      alert(err.response?.data?.error || err.message || 'Làm sạch dữ liệu thất bại');
+    } finally {
+      setIsCleaningLoading(false);
+    }
+  };
+
+  const handleVisualizeK = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để tính toán. Vui lòng chuyển đổi dữ liệu trước.');
+      return;
+    }
+
+    try {
+      setIsFindingK(true);
+      setShowVisualization(true);
+
+      // format for api
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const totalConvs = conversationsList.length;
+      const safeMinSamples = Math.min(parseInt(minSamples, 10), Math.max(2, totalConvs));
+      if (parseInt(minSamples, 10) !== safeMinSamples) { setMinSamples(safeMinSamples.toString()); }
+      const res = await apiService.clusterVisualize(
+        formattedData,
+        parseInt(maxK, 10),
+        parseFloat(eps),
+        safeMinSamples
+      );
+
+      let recommendedK = Math.max(2, Math.min(10, conversationsList.length)); // Dynamic fallback
+      if (res.silhouette && res.silhouette.length > 0) {
+        // Find K with max silhouette score
+        const best = res.silhouette.reduce((prev, current) =>
+          (prev.silhouette > current.silhouette) ? prev : current
+        );
+        recommendedK = best.k;
+      }
+
+      setFindKResults({ ...res, recommendedK });
+      setTargetK(recommendedK.toString());
+    } catch (err: any) {
+      console.error('Visualize K failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');
+      setShowVisualization(false);
+    } finally {
+      setIsFindingK(false);
+    }
+  };
+
+  const handleCluster = async () => {
+    if (!conversationsList || conversationsList.length === 0) {
+      alert('Không có dữ liệu để phân cụm.');
+      return;
+    }
+
+    try {
+      setIsClustering(true);
+
+      if (!clusterRan) {
+        setBackupConvs([...conversationsList]);
+      }
+
+      const formattedData = conversationsList.map(c => ({
+        conversation_id: c.id,
+        messages: c.messages.map((m: any) => [
+          { role: 'user', content: m.user || '' },
+          { role: 'assistant', content: m.assistant || '' }
+        ]).flat()
+      }));
+
+      const safeClusterMinSamples = Math.min(parseInt(clusterMinSamples, 10), Math.max(2, conversationsList.length));
+      if (parseInt(clusterMinSamples, 10) !== safeClusterMinSamples) { setClusterMinSamples(safeClusterMinSamples.toString()); }
+      const res = await apiService.clusterData(
+        formattedData,
+        parseInt(targetK, 10),
+        parseFloat(clusterEps),
+        safeClusterMinSamples
+      );
+
+      if (res.assignments) {
+        const noiseCount = res.assignments.filter((a: number) => a === -1).length;
+        if (noiseCount > 0) {
+          if (!res.clusterStats) {
+            res.clusterStats = [];
+          }
+          if (!res.clusterStats.some((g: any) => g.clusterId === -1)) {
+            // Inject NOISE group so it shows in the table
+            res.clusterStats.unshift({
+              clusterId: -1,
+              count: noiseCount,
+              avgSimilarity: null
+            });
+          }
+        }
+      }
+
+      setClusterResults(res);
+      setClusterRan(true);
+
+      // Update stage3Convs or conversationsList based on assignments if needed
+      // Currently, DataPrepView uses stage3Convs for stage 3
+      if (res.assignments && res.assignments.length === conversationsList.length) {
+        const updatedConvs = conversationsList.map((c, idx) => {
+          const groupId = res.assignments[idx];
+          const groupStat = res.clusterStats?.find((g: any) => g.clusterId === groupId);
+
+          return {
+            ...c,
+            groupId: groupId,
+            groupLabel: groupId === -1 ? 'Group -1' : `Group ${groupId}`,
+            // assign random color or keep existing logic
+            groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
+            groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            subGroup: c.subGroup || 'A',
+            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+          };
+        });
+        setStage3Convs(updatedConvs);
+        setConversationsList(updatedConvs);
+      }
+
+    } catch (err: any) {
+      console.error('Cluster failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi phân cụm K-means');
+    } finally {
+      setIsClustering(false);
+    }
+  };
+
+  const handleRemoveNoise = () => {
+    try {
+      const updatedConvs = conversationsList.filter(c => c.groupId !== -1);
+      const numRemoved = conversationsList.length - updatedConvs.length;
+
+      setConversationsList(updatedConvs);
+      setStage3Convs(updatedConvs);
+
+      if (clusterResults && clusterResults.clusterStats) {
+        const updatedStats = clusterResults.clusterStats.filter((g: any) => g.clusterId !== -1);
+        setClusterResults({
+          ...clusterResults,
+          clusterStats: updatedStats
+        });
+      }
+
+      alert(`Đã loại bỏ ${numRemoved} hội thoại nhiễu (Group -1).`);
+    } catch (err: any) {
+      console.error('Remove Noise failed:', err);
+      alert('Lỗi khi loại bỏ nhiễu');
+    }
+  };
+
+  const handleDeduplicate = async () => {
+    try {
+      setIsClustering(true);
+      const res = await apiService.clusterDeduplicate(simThreshold);
+
+      if (res.data && res.assignments) {
+        const updatedConvs = res.data.map((item: any, idx: number) => {
+          const groupId = res.assignments[idx];
+          const originalConv = conversationsList.find(c => c.id === item.conversation_id) || backupConvs.find(c => c.id === item.conversation_id);
+
+          return {
+            ...originalConv,
+            groupId: groupId,
+            groupLabel: groupId === -1 ? 'Group -1' : `Group ${groupId}`,
+            groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
+            groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
+            subGroup: originalConv?.subGroup || 'A',
+            confidence: originalConv?.confidence || Math.floor(Math.random() * 10 + 90)
+          };
+        });
+
+        const updatedStats = clusterResults?.clusterStats ? clusterResults.clusterStats.map((oldStat: any) => {
+          const newGroup = res.groups?.find((g: any) => g.groupId === oldStat.clusterId);
+          return newGroup ? { ...oldStat, count: newGroup.count } : oldStat;
+        }).filter((stat: any) => res.groups?.some((g: any) => g.groupId === stat.clusterId)) : undefined;
+
+        setStage3Convs(updatedConvs);
+        setConversationsList(updatedConvs);
+        setClusterResults({
+          ...res,
+          clusterStats: updatedStats
+        });
+        alert(`Đã loại bỏ ${res.removedCount} hội thoại trùng lặp. Giữ lại ${res.keptCount} hội thoại.`);
+      }
+    } catch (err: any) {
+      console.error('Deduplicate failed:', err);
+      alert(err.response?.data?.error || err.message || 'Lỗi khi deduplicate');
+    } finally {
+      setIsClustering(false);
+    }
+  };
+
+  const handleResetFilter = () => {
+    if (backupConvs.length > 0) {
+      setConversationsList(backupConvs);
+      setStage3Convs(backupConvs);
+      setClusterRan(false);
+      setClusterResults(null);
+      alert("Đã khôi phục lại dữ liệu gốc trước khi phân cụm.");
+    } else {
+      alert("Không có dữ liệu gốc để khôi phục.");
+    }
+  };
+
+  const renderJsonHighlighted = (jsonStr) => {
+    const lines = jsonStr.split('\n');
+    return lines.map((line, lineIdx) => {
+      const parts = [];
+      let remaining = line;
+      let partIdx = 0;
+
+      const regex = /("(?:[^"\\]|\\.)*")/g;
+      let match;
+      let lastIndex = 0;
+
+      while ((match = regex.exec(remaining)) !== null) {
+        if (match.index > lastIndex) {
+          parts.push(
+            <span key={`${lineIdx}-${partIdx++}`} className="json-bracket">
+              {remaining.substring(lastIndex, match.index)}
+            </span>
+          );
+        }
+
+        const afterStr = remaining.substring(match.index + match[0].length).trimStart();
+        const isKey = afterStr.startsWith(':');
+
+        parts.push(
+          <span key={`${lineIdx}-${partIdx++}`} className={isKey ? 'json-key' : 'json-string'}>
+            {match[0]}
+          </span>
+        );
+
+        lastIndex = match.index + match[0].length;
+      }
+
+      if (lastIndex < remaining.length) {
+        parts.push(
+          <span key={`${lineIdx}-${partIdx++}`} className="json-bracket">
+            {remaining.substring(lastIndex)}
+          </span>
+        );
+      }
+
+      return (
+        <React.Fragment key={lineIdx}>
+          {parts}
+          {lineIdx < lines.length - 1 ? '\n' : ''}
+        </React.Fragment>
+      );
+    });
+  };
+
+  const getPageNumbers = (current, total) => {
     if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
     const pages = [];
     pages.push(1);
@@ -830,6 +1188,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       cleaningApplied, setCleaningApplied,
       showPreviewModal, setShowPreviewModal,
       previewTab, setPreviewTab,
+      cleaningPreviewBefore, setCleaningPreviewBefore,
+      cleaningPreviewAfter, setCleaningPreviewAfter,
+      cleaningPreviewRemoved, setCleaningPreviewRemoved,
+      previewPage, setPreviewPage,
+      previewItemsPerPage, setPreviewItemsPerPage,
       removeErrorKeywords, setRemoveErrorKeywords,
       removeUnclosedThink, setRemoveUnclosedThink,
       removeCompleteThink, setRemoveCompleteThink,
@@ -846,6 +1209,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       eps, setEps,
       minSamples, setMinSamples,
       showVisualization, setShowVisualization,
+      isFindingK, setIsFindingK,
+      findKResults, setFindKResults,
       targetK, setTargetK,
       clusterEps, setClusterEps,
       clusterMinSamples, setClusterMinSamples,
@@ -853,6 +1218,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       simThreshold, setSimThreshold,
       clusterPage, setClusterPage,
       clusterPerPage,
+      isClustering, setIsClustering,
+      clusterResults, setClusterResults,
+      backupConvs, setBackupConvs,
       showCompareModal, setShowCompareModal,
       compareSlot1, setCompareSlot1,
       compareSlot2, setCompareSlot2,
@@ -861,6 +1229,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       showCleaningPopup, setShowCleaningPopup,
       cleaningPopupView, setCleaningPopupView,
       selectedConv, setSelectedConv,
+      SUB_STEPS_STAGE3,
       currentSubStep3, setCurrentSubStep3,
       stage3Page, setStage3Page,
       stage3PerPage, setStage3PerPage,
@@ -871,11 +1240,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       showUserGuide, setShowUserGuide,
       selectedGroup3, setSelectedGroup3,
       selectedConv3, setSelectedConv3,
+      stage3SubGroup, setStage3SubGroup,
+      checkedConvIds, setCheckedConvIds,
       selectedIaMsgId, setSelectedIaMsgId,
       iaMessages, setIaMessages,
       getLabelBadgeStyle,
       handleToggleLabel,
       handleRemoveMessageSingleLabel,
+      SUB_STEPS_STAGE4,
       currentSubStep4, setCurrentSubStep4,
       classPage, setClassPage,
       qualityTab, setQualityTab,
@@ -900,6 +1272,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       sepRewriteDecision, setSepRewriteDecision,
       sepQualityRatings, setSepQualityRatings,
       sepQualityLabels, setSepQualityLabels,
+      SUB_STEPS_STAGE6,
       currentSubStep6, setCurrentSubStep6,
       promptText, setPromptText,
       promptName, setPromptName,
@@ -907,14 +1280,77 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       selectedVersion, setSelectedVersion,
       sampleQuestion, setSampleQuestion,
       trialResponse, setTrialResponse,
+      PROMPT_VERSIONS,
       exportPage, setExportPage,
       cloudProvider, setCloudProvider,
+      EXPORT_ROWS,
       uploadProgress, setUploadProgress,
       fileInputRef,
       handleFileUpload,
       handleRemoveFile,
       handleConvert,
-      getPageNumbers
+      handleApplyCleaning,
+      handleVisualizeK,
+      handleCluster,
+      handleRemoveNoise,
+      handleDeduplicate,
+      handleResetFilter,
+      renderJsonHighlighted,
+      getPageNumbers,
+      PREVIEW_BEFORE,
+      PREVIEW_AFTER,
+      PREVIEW_REMOVED,
+      QUALITY_CONVS: CONVERSATIONS,
+      cleanVietnameseGreetings: (text: string) => {
+        let cleaned = text.trim();
+        const introPatterns = [
+          /^(dạ\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+          /^(em\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+          /^dạ\s+chào\s+ạ/i, /^dạ/i, /^(thầy|cô)\s+ơi/i,
+          /^(cho\s+em|cho\s+mình|cho\s+hỏi)\s+hỏi/i,
+          /^thầy\s+cho\s+em\s+hỏi/i, /^cô\s+cho\s+em\s+hỏi/i,
+          /^cho\s+hỏi/i, /^xin\s+chào/i, /^hello/i, /^hi/i, /^alo/i, /^hey/i
+        ];
+        let matched = true;
+        while (matched) { matched = false; cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim(); for (const p of introPatterns) { const m = cleaned.match(p); if (m) { cleaned = cleaned.substring(m[0].length).trim(); matched = true; break; } } }
+        cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+        return cleaned || text.trim();
+      },
+      cleanAssistantGreetings: (text: string) => {
+        let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        const introPatterns = [
+          /^(dạ\s+)?chào\s+(em|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
+          /^(thầy|cô)\s+chào\s+(em|bạn)/i, /^chào\s+em/i, /^dạ/i,
+          /^thầy\s+rất\s+vui/i, /^không\s+sao/i, /^câu\s+hỏi\s+hay/i,
+          /^câu\s+hỏi\s+rất\s+hay/i, /^cảm\s+ơn\s+em/i, /^chào/i, /^hello/i, /^hi/i
+        ];
+        let matched = true;
+        while (matched) { matched = false; cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim(); for (const p of introPatterns) { const m = cleaned.match(p); if (m) { cleaned = cleaned.substring(m[0].length).trim(); matched = true; break; } } }
+        cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
+        return cleaned || text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      },
+      truncateText: (text: string, limit: number = 150) => { if (!text) return ''; if (text.length <= limit) return text; return text.substring(0, limit) + '...'; },
+      highlightSearch: (text: string, query: string) => {
+        if (!query || !query.trim()) return text;
+        const parts = text.split(new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+        return parts.map((part: string, i: number) => part.toLowerCase() === query.toLowerCase() ? React.createElement('span', { key: i, className: 'search-highlight' }, part) : part);
+      },
+      getConversationTopic: (messages: any[]) => {
+        if (!messages || messages.length === 0) return 'Không có nội dung';
+        const firstUser = messages[0]?.user || '';
+        if (!firstUser) return 'Không có nội dung';
+        if (firstUser.length <= 80) return firstUser;
+        return firstUser.substring(0, 80) + '...';
+      },
+      getAssistantSummary: (messages: any[]) => {
+        if (!messages || messages.length === 0) return 'Không có phản hồi';
+        const firstAssistant = messages[0]?.assistant || '';
+        if (!firstAssistant) return 'Không có phản hồi';
+        let text = firstAssistant.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        if (!text) return 'Chỉ chứa <think>';
+        if (text.length <= 80) return text;
+        return text.substring(0, 80) + '...';
+      },
     }}>
       {children}
     </DataPrepContext.Provider>
