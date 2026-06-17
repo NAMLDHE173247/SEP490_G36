@@ -1137,7 +1137,7 @@ function ChatPanel({
                 ? "✓ Sẵn sàng"
                 : provider !== "local" && provider !== "registry"
                   ? "Sử dụng API"
-                : "Tai model"}
+                  : "Tai model"}
           </button>
 
           {modelLoaded && (provider === "local" || provider === "registry") && (
@@ -1335,27 +1335,27 @@ function ChatPanel({
             </div>
           </div>
         )}
-      {pendingDeleteSessionId && (
-        <div className="chat-confirm-overlay" onMouseDown={() => setPendingDeleteSessionId(null)}>
-          <div className="chat-confirm-dialog" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
-            <div className="chat-confirm-icon">
-              <Trash2 size={18} />
-            </div>
-            <div className="chat-confirm-content">
-              <h3 id="delete-session-title">Xoa hoi thoai nay?</h3>
-              <p>Cuoc hoi thoai se bi xoa khoi lich su. Thao tac nay khong the hoan tac.</p>
-            </div>
-            <div className="chat-confirm-actions">
-              <button type="button" className="chat-confirm-btn secondary" onClick={() => setPendingDeleteSessionId(null)}>
-                Huy
-              </button>
-              <button type="button" className="chat-confirm-btn danger" onClick={confirmDeleteSession}>
-                Xoa
-              </button>
+        {pendingDeleteSessionId && (
+          <div className="chat-confirm-overlay" onMouseDown={() => setPendingDeleteSessionId(null)}>
+            <div className="chat-confirm-dialog" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="delete-session-title">
+              <div className="chat-confirm-icon">
+                <Trash2 size={18} />
+              </div>
+              <div className="chat-confirm-content">
+                <h3 id="delete-session-title">Xoa hoi thoai nay?</h3>
+                <p>Cuoc hoi thoai se bi xoa khoi lich su. Thao tac nay khong the hoan tac.</p>
+              </div>
+              <div className="chat-confirm-actions">
+                <button type="button" className="chat-confirm-btn secondary" onClick={() => setPendingDeleteSessionId(null)}>
+                  Huy
+                </button>
+                <button type="button" className="chat-confirm-btn danger" onClick={confirmDeleteSession}>
+                  Xoa
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
       </div>
     </div>
   );
@@ -1542,7 +1542,7 @@ function ChatView() {
               <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>HUONG DAN CHO AI</label>
               <textarea
                 value={params.systemPrompt}
-                onChange={e => setParams({...params, systemPrompt: e.target.value})}
+                onChange={e => setParams({ ...params, systemPrompt: e.target.value })}
                 placeholder="Vi du: tra loi ngan gon, giai thich tung buoc, dung giong van than thien..."
                 style={{ width: '100%', minHeight: '60px', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13px', backgroundColor: 'var(--bg-elevated)', transition: 'all 0.2s' }}
               />
@@ -1550,17 +1550,17 @@ function ChatView() {
             <div className="chat-technical-grid">
               <div className="inference-field">
                 <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do dai tra loi</label>
-                <input type="number" value={params.maxNewTokens} onChange={e => setParams({...params, maxNewTokens: Number(e.target.value) || ""})} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                <input type="number" value={params.maxNewTokens} onChange={e => setParams({ ...params, maxNewTokens: Number(e.target.value) || "" })} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
               </div>
               <div className="inference-field">
                 <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>Do sang tao</label>
-                <input type="number" step="0.1" value={params.temperature} onChange={e => setParams({...params, temperature: Number(e.target.value) || ""})} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                <input type="number" step="0.1" value={params.temperature} onChange={e => setParams({ ...params, temperature: Number(e.target.value) || "" })} style={{ width: '92px', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--border)' }} />
               </div>
             </div>
           </div>
         )}
         {showBatchTesting && (
-          <BatchTestingModal 
+          <BatchTestingModal
             onClose={() => setShowBatchTesting(false)}
             activeModelId=""
             provider="local"

@@ -1,28 +1,4 @@
 import React, { useState, useRef } from 'react';
-import { apiService } from '../services/api';
-import {
-  Upload,
-  X,
-  Eye,
-  ChevronRight,
-  ChevronLeft,
-  ChevronDown,
-  FileText,
-  Settings,
-  Check,
-  Sparkles,
-  RotateCcw,
-  Scissors,
-  Plus,
-  Calendar,
-  BarChart2,
-  AlertCircle,
-  Filter,
-  Download,
-  RefreshCw,
-  MessageSquare,
-  HelpCircle
-} from 'lucide-react';
 import '../styles/dataprep.css';
 import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
 import { Stage1Upload } from './DataPrep/stages/Stage1Upload';
@@ -30,6 +6,8 @@ import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
 import { Stage3Labeling } from './DataPrep/stages/Stage3Labeling';
 import { Stage4Labeling } from '../components/dataprep/Stage4Labeling';
 import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
+import { apiService } from '../services/api';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, HelpCircle, MessageSquare, Plus, RefreshCw, RotateCcw, Scissors, Settings, Sparkles, Upload, X } from 'lucide-react';
 
 const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
@@ -200,7 +178,7 @@ const CONVERSATIONS = [
 const Tooltip = ({ children, text }) => {
   const [show, setShow] = useState(false);
   return (
-    <div 
+    <div
       style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', cursor: 'help' }}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
@@ -316,9 +294,21 @@ function DataPrepInner() {
   const [stage3Convs, setStage3Convs] = useState<any[]>([]);
   const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
 
+  React.useEffect(() => {
+    if (currentStage === 4) {
+      if (currentSubStep4 < 7 || currentSubStep4 > 10) {
+        setCurrentSubStep4(7);
+      }
+    } else if (currentStage === 5) {
+      if (currentSubStep4 < 11 || currentSubStep4 > 12) {
+        setCurrentSubStep4(11);
+      }
+    }
+  }, [currentStage]);
+
   const cleanVietnameseGreetings = (text: string): string => {
     let cleaned = text.trim();
-    
+
     // Danh sách các từ chào/lời dẫn tiếng Việt thường gặp ở đầu câu
     const introPatterns = [
       /^(dạ\s+)?chào\s+(thầy|cô|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
@@ -351,14 +341,14 @@ function DataPrepInner() {
         }
       }
     }
-    
+
     cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
     return cleaned || text.trim();
   };
 
   const cleanAssistantGreetings = (text: string): string => {
     let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    
+
     const introPatterns = [
       /^(dạ\s+)?chào\s+(em|bạn|mọi\s+người)(xuống\s+ạ|ạ)?/i,
       /^(thầy|cô)\s+chào\s+(em|bạn)/i,
@@ -389,7 +379,7 @@ function DataPrepInner() {
         }
       }
     }
-    
+
     cleaned = cleaned.replace(/^[\s,.:;!?~-]+/, '').trim();
     return cleaned || text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   };
@@ -412,7 +402,7 @@ function DataPrepInner() {
 
   const getConversationTopic = (messages: any[]) => {
     if (!messages || messages.length === 0) return 'Không có nội dung';
-    
+
     let targetText = '';
     const meaningfulTurn = messages.find(m => {
       const rawText = m.user || '';
@@ -427,14 +417,14 @@ function DataPrepInner() {
     }
 
     if (!targetText) return 'Không có nội dung';
-    
+
     const cleanText = targetText.trim().replace(/^["'\s]+|["'\s]+$/g, '');
     if (cleanText.length <= 80) return cleanText;
-    
+
     const sentences = cleanText.split(/[.!?\n]/);
     const firstSentence = sentences[0].trim();
     if (firstSentence.length > 15 && firstSentence.length <= 100) return firstSentence;
-    
+
     const words = cleanText.split(/\s+/);
     if (words.length > 10) {
       return words.slice(0, 10).join(' ') + '...';
@@ -444,7 +434,7 @@ function DataPrepInner() {
 
   const getAssistantSummary = (messages: any[]) => {
     if (!messages || messages.length === 0) return 'Không có phản hồi';
-    
+
     const meaningfulIdx = messages.findIndex(m => {
       const rawText = m.user || '';
       const cleaned = cleanVietnameseGreetings(rawText);
@@ -649,7 +639,7 @@ function DataPrepInner() {
   const handleToggleLabel = (msgId, groupName, tagName) => {
     setIaMessages(prev => prev.map(msg => {
       if (msg.id !== msgId) return msg;
-      
+
       const newLabels = { ...msg.labels };
       newLabels[groupName] = newLabels[groupName].map(tag => {
         if (tag.name === tagName) {
@@ -673,7 +663,7 @@ function DataPrepInner() {
   const handleRemoveMessageSingleLabel = (msgId, tagName) => {
     setIaMessages(prev => prev.map(msg => {
       if (msg.id !== msgId) return msg;
-      
+
       const newLabels = { ...msg.labels };
       Object.keys(newLabels).forEach(g => {
         newLabels[g] = newLabels[g].map(tag => {
@@ -1074,7 +1064,7 @@ function DataPrepInner() {
     try {
       setIsFindingK(true);
       setShowVisualization(true);
-      
+
       // format for api
       const formattedData = conversationsList.map(c => ({
         conversation_id: c.id,
@@ -1094,7 +1084,7 @@ function DataPrepInner() {
       let recommendedK = 14; // Default fallback
       if (res.silhouette && res.silhouette.length > 0) {
         // Find K with max silhouette score
-        const best = res.silhouette.reduce((prev, current) => 
+        const best = res.silhouette.reduce((prev, current) =>
           (prev.silhouette > current.silhouette) ? prev : current
         );
         recommendedK = best.k;
@@ -1119,7 +1109,7 @@ function DataPrepInner() {
 
     try {
       setIsClustering(true);
-      
+
       const formattedData = conversationsList.map(c => ({
         conversation_id: c.id,
         messages: c.messages.map((m: any) => [
@@ -1161,7 +1151,7 @@ function DataPrepInner() {
         const updatedConvs = conversationsList.map((c, idx) => {
           const groupId = res.assignments[idx];
           const groupStat = res.clusterStats?.find((g: any) => g.clusterId === groupId);
-          
+
           return {
             ...c,
             groupId: groupId,
@@ -1189,7 +1179,7 @@ function DataPrepInner() {
     try {
       const updatedConvs = conversationsList.filter(c => c.groupId !== -1);
       const numRemoved = conversationsList.length - updatedConvs.length;
-      
+
       setConversationsList(updatedConvs);
       setStage3Convs(updatedConvs);
 
@@ -1403,12 +1393,12 @@ function DataPrepInner() {
     /* Filter conversations by search */
     const filtered = searchQuery.trim()
       ? conversationsList.filter(conv =>
-          conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          conv.messages.some(m =>
-            m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
-          )
+        conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        conv.messages.some(m =>
+          m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
         )
+      )
       : conversationsList;
 
     const filteredTotal = filtered.length;
@@ -1485,613 +1475,613 @@ function DataPrepInner() {
         </div>
 
         {currentSubStep === 1 && (
-        <>
-        {/* Post-conversion Statistics — shown above table after cleaning is applied */}
-        {cleaningApplied && (
-          <div className="post-stats-card">
-            <div className="post-stats-header">
-              <Check size={16} className="post-stats-icon" />
-              <span>Post-conversion Statistics</span>
-            </div>
-            <div className="post-stats-grid">
-              <div className="post-stat-item">
-                <div className="post-stat-label">Converted Records</div>
-                <div className="post-stat-value">{conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs}</div>
-              </div>
-              <div className="post-stat-item">
-                <div className="post-stat-label">Source Messages</div>
-                <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
-              </div>
-            </div>
-
-            <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
-            <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
-              <div className="post-stat-item">
-                <div className="post-stat-label">Error keywords</div>
-                <div className="post-stat-value cleaning-red">
-                  -{conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+          <>
+            {/* Post-conversion Statistics — shown above table after cleaning is applied */}
+            {cleaningApplied && (
+              <div className="post-stats-card">
+                <div className="post-stats-header">
+                  <Check size={16} className="post-stats-icon" />
+                  <span>Post-conversion Statistics</span>
                 </div>
-              </div>
-              <div className="post-stat-item">
-                <div className="post-stat-label">Length</div>
-                <div className="post-stat-value cleaning-red">
-                  -{((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
-                </div>
-              </div>
-              <div className="post-stat-item">
-                <div className="post-stat-label">Unclosed &lt;think&gt;</div>
-                <div className="post-stat-value cleaning-red">
-                  -{conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
-                </div>
-              </div>
-              <div className="post-stat-item highlight">
-                <div className="post-stat-label">Final Count</div>
-                <div className="post-stat-value cleaning-green">{totalConvs}</div>
-              </div>
-            </div>
-            
-            {/* Dynamic Data Loss Chart */}
-            {(() => {
-              const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
-              const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
-                              (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
-                              (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
-                              (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
-                              (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
-              const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
-              const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
-              const removedPct = source > 0 ? 100 - finalPct : 0;
-
-              return (
-                <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span>Source: {source} (100%)</span>
-                    <span>Filtered: {removed} ({removedPct}%)</span>
-                    <span>Final: {final} ({finalPct}%)</span>
+                <div className="post-stats-grid">
+                  <div className="post-stat-item">
+                    <div className="post-stat-label">Converted Records</div>
+                    <div className="post-stat-value">{conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs}</div>
                   </div>
-                  <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
-                    <div style={{ width: `${finalPct}%`, backgroundColor: '#22c55e', transition: 'width 0.5s' }} title={`Clean Data (${finalPct}%)`}></div>
-                    <div style={{ width: `${removedPct}%`, backgroundColor: '#ef4444', transition: 'width 0.5s' }} title={`Removed (${removedPct}%)`}></div>
+                  <div className="post-stat-item">
+                    <div className="post-stat-label">Source Messages</div>
+                    <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
                   </div>
                 </div>
-              );
-            })()}
-          </div>
-        )}
 
-        {/* Full-width content (no sidebar) */}
-        <div className="cluster-fullwidth">
-            <div className="preview-header">
-              <h3>Converted Dataset Preview</h3>
-              <div className="preview-header-right">
-                <span className="preview-count">
-                  {pageMsgCount} messages · Showing {startConvIdx + 1}-{Math.min(startConvIdx + convsPerPage, filteredTotal)} of {filteredTotal} conversations
-                  {searchQuery && ` (filtered from ${totalConvs})`}
-                </span>
-                <button className="cleaning-pipeline-trigger-btn" onClick={() => setShowCleaningPopup(true)}>
-                  <Settings size={16} />
-                  Data Cleaning Pipeline
-                </button>
+                <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
+                <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
+                  <div className="post-stat-item">
+                    <div className="post-stat-label">Error keywords</div>
+                    <div className="post-stat-value cleaning-red">
+                      -{conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+                    </div>
+                  </div>
+                  <div className="post-stat-item">
+                    <div className="post-stat-label">Length</div>
+                    <div className="post-stat-value cleaning-red">
+                      -{((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
+                    </div>
+                  </div>
+                  <div className="post-stat-item">
+                    <div className="post-stat-label">Unclosed &lt;think&gt;</div>
+                    <div className="post-stat-value cleaning-red">
+                      -{conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
+                    </div>
+                  </div>
+                  <div className="post-stat-item highlight">
+                    <div className="post-stat-label">Final Count</div>
+                    <div className="post-stat-value cleaning-green">{totalConvs}</div>
+                  </div>
+                </div>
+
+                {/* Dynamic Data Loss Chart */}
+                {(() => {
+                  const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
+                  const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
+                    (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
+                    (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
+                    (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
+                    (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
+                  const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
+                  const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
+                  const removedPct = source > 0 ? 100 - finalPct : 0;
+
+                  return (
+                    <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span>Source: {source} (100%)</span>
+                        <span>Filtered: {removed} ({removedPct}%)</span>
+                        <span>Final: {final} ({finalPct}%)</span>
+                      </div>
+                      <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
+                        <div style={{ width: `${finalPct}%`, backgroundColor: '#22c55e', transition: 'width 0.5s' }} title={`Clean Data (${finalPct}%)`}></div>
+                        <div style={{ width: `${removedPct}%`, backgroundColor: '#ef4444', transition: 'width 0.5s' }} title={`Removed (${removedPct}%)`}></div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
-            </div>
+            )}
 
-            <div className="preview-toolbar">
-              <div className="toolbar-select-wrapper">
-                <label className="toolbar-label">Conversations / page:</label>
-                <select
-                  className="toolbar-select"
-                  value={convsPerPage}
-                  onChange={(e) => handleConvsPerPageChange(e.target.value)}
-                >
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="5">5</option>
-                  <option value="10">10</option>
-                  <option value="15">15</option>
-                </select>
+            {/* Full-width content (no sidebar) */}
+            <div className="cluster-fullwidth">
+              <div className="preview-header">
+                <h3>Converted Dataset Preview</h3>
+                <div className="preview-header-right">
+                  <span className="preview-count">
+                    {pageMsgCount} messages · Showing {startConvIdx + 1}-{Math.min(startConvIdx + convsPerPage, filteredTotal)} of {filteredTotal} conversations
+                    {searchQuery && ` (filtered from ${totalConvs})`}
+                  </span>
+                  <button className="cleaning-pipeline-trigger-btn" onClick={() => setShowCleaningPopup(true)}>
+                    <Settings size={16} />
+                    Data Cleaning Pipeline
+                  </button>
+                </div>
               </div>
 
-              <div className="toolbar-stats">
-                <span className="toolbar-stat-tag">{totalConvs} conversations</span>
-                <span className="toolbar-stat-tag">{totalMessages} messages</span>
-              </div>
-            </div>
+              <div className="preview-toolbar">
+                <div className="toolbar-select-wrapper">
+                  <label className="toolbar-label">Conversations / page:</label>
+                  <select
+                    className="toolbar-select"
+                    value={convsPerPage}
+                    onChange={(e) => handleConvsPerPageChange(e.target.value)}
+                  >
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                  </select>
+                </div>
 
-            <div className="preview-table-wrapper cluster-table-full">
-              <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '16%', textAlign: 'center' }}>Conv ID</th>
-                    <th style={{ width: '3%', textAlign: 'center' }}>#</th>
-                    <th style={{ width: '30%' }}>User</th>
-                    <th style={{ width: '43%' }}>Assistant</th>
-                    <th style={{ width: '8%', textAlign: 'center' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageConvs.length === 0 && (
+                <div className="toolbar-stats">
+                  <span className="toolbar-stat-tag">{totalConvs} conversations</span>
+                  <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                </div>
+              </div>
+
+              <div className="preview-table-wrapper cluster-table-full">
+                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <thead>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
-                        No conversations match your search.
-                      </td>
+                      <th style={{ width: '16%', textAlign: 'center' }}>Conv ID</th>
+                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
+                      <th style={{ width: '30%' }}>User</th>
+                      <th style={{ width: '43%' }}>Assistant</th>
+                      <th style={{ width: '8%', textAlign: 'center' }}></th>
                     </tr>
-                  )}
-                  {pageConvs.map((conv, convPageIdx) => {
-                    const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
-                    const convGlobalIdx = startConvIdx + convPageIdx + 1;
-                    const status = CONV_STATUS[conv.id] || 'clean';
-
-                    return (
-                      <tr
-                        key={conv.id}
-                        className={`conv-row conv-first conv-last ${groupClass} conv-clickable`}
-                      >
-                        <td className="col-conv-id-cell">
-                          <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
-                          <span className="conv-msg-count">{conv.messages.length} messages</span>
-                          {cleaningApplied && (
-                            <span className={`conv-status-badge badge-${status}`}>
-                              {status === 'clean' ? '✓ Clean' : status === 'fixed' ? '🔧 Fixed' : '✗ Removed'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="col-msg-num-cell">{conv.messages.length}</td>
-                        <td className="cell-text-col" style={{ padding: '12px' }}>
-                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {conv.messages.length === 1 ? (
-                              /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
-                              <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
-                                {highlightSearch(conv.messages[0].user, searchQuery)}
-                              </div>
-                            ) : (
-                              /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
-                              <>
-                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
-                                  <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
-                                    {getConversationTopic(conv.messages)}
-                                  </span>
-                                </div>
-                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
-                                  {conv.messages.slice(0, 3).map((msg, idx) => (
-                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
-                                      <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
-                                      <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
-                                        {highlightSearch(truncateText(msg.user, 150), searchQuery)}
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {conv.messages.length > 3 && (
-                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                      + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
-                                    </div>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="cell-text-col" style={{ padding: '12px' }}>
-                          <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {conv.messages.length === 1 ? (
-                              /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
-                              <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
-                                {highlightSearch(conv.messages[0].assistant, searchQuery)}
-                              </div>
-                            ) : (
-                              /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
-                              <>
-                                <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
-                                  <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
-                                    {getAssistantSummary(conv.messages)}
-                                  </span>
-                                </div>
-                                <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
-                                  {conv.messages.slice(0, 3).map((msg, idx) => (
-                                    <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
-                                      <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
-                                      <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
-                                        {highlightSearch(truncateText(msg.assistant, 150), searchQuery)}
-                                      </span>
-                                    </div>
-                                  ))}
-                                  {conv.messages.length > 3 && (
-                                    <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
-                                      + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
-                                    </div>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                        <td className="col-action-cell">
-                          <button className="view-detail-btn" onClick={() => setSelectedConv(conv)}>
-                            <Eye size={14} />
-                            Detail
-                          </button>
+                  </thead>
+                  <tbody>
+                    {pageConvs.length === 0 && (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                          No conversations match your search.
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    )}
+                    {pageConvs.map((conv, convPageIdx) => {
+                      const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
+                      const convGlobalIdx = startConvIdx + convPageIdx + 1;
+                      const status = CONV_STATUS[conv.id] || 'clean';
 
-            {/* Pagination */}
-            <div className="preview-pagination">
-              <button
-                className="pagination-arrow"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage(currentPage - 1)}
-              >
-                ‹
-              </button>
-              {getPageNumbers(currentPage, totalPages).map((page, idx) =>
-                page === '...' ? (
-                  <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
-                ) : (
-                  <button
-                    key={page}
-                    className={`pagination-page-btn ${page === currentPage ? 'active' : ''}`}
-                    onClick={() => setCurrentPage(page)}
-                  >
-                    {page}
-                  </button>
-                )
-              )}
-              <button
-                className="pagination-arrow"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage(currentPage + 1)}
-              >
-                ›
-              </button>
-            </div>
-        </div>
-
-        {/* Conversation Detail Popup */}
-        {selectedConv && (
-          <div className="cluster-popup-overlay" onClick={() => setSelectedConv(null)}>
-            <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
-              <div className="cluster-popup-header">
-                <div className="cluster-popup-header-left">
-                  <MessageSquare size={20} />
-                  <div>
-                    <h2>Conversation Detail</h2>
-                    <p>{selectedConv.id} · {selectedConv.messages.length} messages</p>
-                  </div>
-                </div>
-                <button className="cluster-popup-close-btn" onClick={() => setSelectedConv(null)}>
-                  <X size={18} />
-                  Close
-                </button>
-              </div>
-
-              <div className="conv-detail-body">
-                {selectedConv.messages.map((msg, idx) => (
-                  <div key={idx} className="conv-detail-pair">
-                    <div className="conv-detail-label">#{idx + 1}</div>
-                    <div className="conv-detail-msg conv-detail-user">
-                      <div className="conv-detail-role">👤 User</div>
-                      <div className="conv-detail-text">{msg.user}</div>
-                    </div>
-                    <div className="conv-detail-msg conv-detail-assistant">
-                      <div className="conv-detail-role">🤖 Assistant</div>
-                      <div className="conv-detail-text">{msg.assistant}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Data Cleaning Pipeline Popup (merged with Preview) */}
-        {showCleaningPopup && (
-          <div className="cluster-popup-overlay" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
-            <div className={`cluster-popup-content cleaning-popup-content ${cleaningPopupView === 'preview' ? 'cleaning-popup-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
-              <div className="cluster-popup-header">
-                <div className="cluster-popup-header-left">
-                  <Settings size={20} />
-                  <div>
-                    <h2>{cleaningPopupView === 'settings' ? 'Data Cleaning Pipeline' : '🔍 Cleaning Preview'}</h2>
-                    <p>{cleaningPopupView === 'settings' ? 'Configure cleaning rules, character limits, and preview changes before applying' : 'Xem trước kết quả làm sạch dữ liệu — file gốc không bị thay đổi'}</p>
-                  </div>
-                </div>
-                <button className="cluster-popup-close-btn" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
-                  <X size={18} />
-                  Close
-                </button>
-              </div>
-
-              {/* ===== VIEW: Settings ===== */}
-              {cleaningPopupView === 'settings' && (
-                <div className="cluster-popup-body">
-                  {/* Enable toggle section */}
-                  <div className="cluster-popup-section">
-                    <div className="cleaning-pipeline-row">
-                      <span className="cleaning-label">Data Cleaning Pipeline</span>
-                      <label className="cleaning-toggle">
-                        <span className="toggle-text">Enable</span>
-                        <input
-                          type="checkbox"
-                          checked={cleaningEnabled}
-                          onChange={() => setCleaningEnabled(!cleaningEnabled)}
-                        />
-                        <span className="toggle-checkmark"></span>
-                      </label>
-                    </div>
-
-                    {cleaningEnabled && (
-                      <div className="cleaning-options">
-                        {/* Checkbox: Xóa thẻ think hoàn chỉnh */}
-                        <label className="cleaning-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={removeCompleteThink}
-                            onChange={() => setRemoveCompleteThink(!removeCompleteThink)}
-                          />
-                          <span className="checkbox-mark"></span>
-                          <span className="checkbox-label">Xóa các cặp thẻ &lt;think&gt;...&lt;/think&gt; hoàn chỉnh</span>
-                        </label>
-
-                        {/* Checkbox: Vá lỗi thẻ think */}
-                        <label className="cleaning-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={removeUnclosedThink}
-                            onChange={() => setRemoveUnclosedThink(!removeUnclosedThink)}
-                          />
-                          <span className="checkbox-mark"></span>
-                          <span className="checkbox-label">Vá lỗi thẻ &lt;think&gt; bị thiếu thẻ đóng/mở (Regex + AI)</span>
-                        </label>
-
-                        {/* Checkbox: Lọc từ khóa lỗi */}
-                        <label className="cleaning-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={removeErrorKeywords}
-                            onChange={() => setRemoveErrorKeywords(!removeErrorKeywords)}
-                          />
-                          <span className="checkbox-mark"></span>
-                          <span className="checkbox-label">Lọc bỏ các từ khóa lỗi quy định</span>
-                        </label>
-
-                        {/* Min / Max chars */}
-                        <div className="cleaning-inputs-row">
-                          <div className="cleaning-input-group">
-                            <label>Min chars assistant</label>
-                            <input type="number" value={minChars} onChange={(e) => setMinChars(e.target.value)} />
-                          </div>
-                          <div className="cleaning-input-group">
-                            <label>Max chars assistant</label>
-                            <input type="number" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
-                          </div>
-                        </div>
-
-                        {/* Min pairs */}
-                        <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
-                          <label>Số cặp hỏi đáp tối thiểu:</label>
-                          <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
-                        </div>
-
-                        {/* Preview button — switches to preview view */}
-                        <button
-                          className="cleaning-accept-btn"
-                          disabled={isCleaningLoading}
-                          onClick={handleApplyCleaning}
+                      return (
+                        <tr
+                          key={conv.id}
+                          className={`conv-row conv-first conv-last ${groupClass} conv-clickable`}
                         >
-                          {isCleaningLoading ? (
-                            <span>Đang xử lý...</span>
-                          ) : (
-                            <>
-                              <Eye size={16} />
-                              Preview & Apply Cleaning
-                            </>
-                          )}
+                          <td className="col-conv-id-cell">
+                            <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
+                            <span className="conv-msg-count">{conv.messages.length} messages</span>
+                            {cleaningApplied && (
+                              <span className={`conv-status-badge badge-${status}`}>
+                                {status === 'clean' ? '✓ Clean' : status === 'fixed' ? '🔧 Fixed' : '✗ Removed'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="col-msg-num-cell">{conv.messages.length}</td>
+                          <td className="cell-text-col" style={{ padding: '12px' }}>
+                            <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {conv.messages.length === 1 ? (
+                                /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
+                                <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
+                                  {highlightSearch(conv.messages[0].user, searchQuery)}
+                                </div>
+                              ) : (
+                                /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
+                                <>
+                                  <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                    <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
+                                      {getConversationTopic(conv.messages)}
+                                    </span>
+                                  </div>
+                                  <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                    {conv.messages.slice(0, 3).map((msg, idx) => (
+                                      <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                        <span style={{ fontWeight: '600', color: '#6366f1', flexShrink: 0 }}>U{idx + 1}:</span>
+                                        <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
+                                          {highlightSearch(truncateText(msg.user, 150), searchQuery)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {conv.messages.length > 3 && (
+                                      <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                        + {conv.messages.length - 3} lượt thoại khác (bấm Detail để xem)
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="cell-text-col" style={{ padding: '12px' }}>
+                            <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                              {conv.messages.length === 1 ? (
+                                /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
+                                <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
+                                  {highlightSearch(conv.messages[0].assistant, searchQuery)}
+                                </div>
+                              ) : (
+                                /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
+                                <>
+                                  <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
+                                    <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
+                                      {getAssistantSummary(conv.messages)}
+                                    </span>
+                                  </div>
+                                  <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>
+                                    {conv.messages.slice(0, 3).map((msg, idx) => (
+                                      <div key={idx} style={{ fontSize: '13px', display: 'flex', gap: '6px', overflow: 'hidden' }}>
+                                        <span style={{ fontWeight: '600', color: '#0ea5e9', flexShrink: 0 }}>A{idx + 1}:</span>
+                                        <span style={{ color: '#475569', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
+                                          {highlightSearch(truncateText(msg.assistant, 150), searchQuery)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {conv.messages.length > 3 && (
+                                      <div style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>
+                                        + {conv.messages.length - 3} phản hồi khác (bấm Detail để xem)
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="col-action-cell">
+                            <button className="view-detail-btn" onClick={() => setSelectedConv(conv)}>
+                              <Eye size={14} />
+                              Detail
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="preview-pagination">
+                <button
+                  className="pagination-arrow"
+                  disabled={currentPage <= 1}
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                >
+                  ‹
+                </button>
+                {getPageNumbers(currentPage, totalPages).map((page, idx) =>
+                  page === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+                  ) : (
+                    <button
+                      key={page}
+                      className={`pagination-page-btn ${page === currentPage ? 'active' : ''}`}
+                      onClick={() => setCurrentPage(page)}
+                    >
+                      {page}
+                    </button>
+                  )
+                )}
+                <button
+                  className="pagination-arrow"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                >
+                  ›
+                </button>
+              </div>
+            </div>
+
+            {/* Conversation Detail Popup */}
+            {selectedConv && (
+              <div className="cluster-popup-overlay" onClick={() => setSelectedConv(null)}>
+                <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
+                  <div className="cluster-popup-header">
+                    <div className="cluster-popup-header-left">
+                      <MessageSquare size={20} />
+                      <div>
+                        <h2>Conversation Detail</h2>
+                        <p>{selectedConv.id} · {selectedConv.messages.length} messages</p>
+                      </div>
+                    </div>
+                    <button className="cluster-popup-close-btn" onClick={() => setSelectedConv(null)}>
+                      <X size={18} />
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="conv-detail-body">
+                    {selectedConv.messages.map((msg, idx) => (
+                      <div key={idx} className="conv-detail-pair">
+                        <div className="conv-detail-label">#{idx + 1}</div>
+                        <div className="conv-detail-msg conv-detail-user">
+                          <div className="conv-detail-role">👤 User</div>
+                          <div className="conv-detail-text">{msg.user}</div>
+                        </div>
+                        <div className="conv-detail-msg conv-detail-assistant">
+                          <div className="conv-detail-role">🤖 Assistant</div>
+                          <div className="conv-detail-text">{msg.assistant}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Data Cleaning Pipeline Popup (merged with Preview) */}
+            {showCleaningPopup && (
+              <div className="cluster-popup-overlay" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
+                <div className={`cluster-popup-content cleaning-popup-content ${cleaningPopupView === 'preview' ? 'cleaning-popup-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
+                  <div className="cluster-popup-header">
+                    <div className="cluster-popup-header-left">
+                      <Settings size={20} />
+                      <div>
+                        <h2>{cleaningPopupView === 'settings' ? 'Data Cleaning Pipeline' : '🔍 Cleaning Preview'}</h2>
+                        <p>{cleaningPopupView === 'settings' ? 'Configure cleaning rules, character limits, and preview changes before applying' : 'Xem trước kết quả làm sạch dữ liệu — file gốc không bị thay đổi'}</p>
+                      </div>
+                    </div>
+                    <button className="cluster-popup-close-btn" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
+                      <X size={18} />
+                      Close
+                    </button>
+                  </div>
+
+                  {/* ===== VIEW: Settings ===== */}
+                  {cleaningPopupView === 'settings' && (
+                    <div className="cluster-popup-body">
+                      {/* Enable toggle section */}
+                      <div className="cluster-popup-section">
+                        <div className="cleaning-pipeline-row">
+                          <span className="cleaning-label">Data Cleaning Pipeline</span>
+                          <label className="cleaning-toggle">
+                            <span className="toggle-text">Enable</span>
+                            <input
+                              type="checkbox"
+                              checked={cleaningEnabled}
+                              onChange={() => setCleaningEnabled(!cleaningEnabled)}
+                            />
+                            <span className="toggle-checkmark"></span>
+                          </label>
+                        </div>
+
+                        {cleaningEnabled && (
+                          <div className="cleaning-options">
+                            {/* Checkbox: Xóa thẻ think hoàn chỉnh */}
+                            <label className="cleaning-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={removeCompleteThink}
+                                onChange={() => setRemoveCompleteThink(!removeCompleteThink)}
+                              />
+                              <span className="checkbox-mark"></span>
+                              <span className="checkbox-label">Xóa các cặp thẻ &lt;think&gt;...&lt;/think&gt; hoàn chỉnh</span>
+                            </label>
+
+                            {/* Checkbox: Vá lỗi thẻ think */}
+                            <label className="cleaning-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={removeUnclosedThink}
+                                onChange={() => setRemoveUnclosedThink(!removeUnclosedThink)}
+                              />
+                              <span className="checkbox-mark"></span>
+                              <span className="checkbox-label">Vá lỗi thẻ &lt;think&gt; bị thiếu thẻ đóng/mở (Regex + AI)</span>
+                            </label>
+
+                            {/* Checkbox: Lọc từ khóa lỗi */}
+                            <label className="cleaning-checkbox">
+                              <input
+                                type="checkbox"
+                                checked={removeErrorKeywords}
+                                onChange={() => setRemoveErrorKeywords(!removeErrorKeywords)}
+                              />
+                              <span className="checkbox-mark"></span>
+                              <span className="checkbox-label">Lọc bỏ các từ khóa lỗi quy định</span>
+                            </label>
+
+                            {/* Min / Max chars */}
+                            <div className="cleaning-inputs-row">
+                              <div className="cleaning-input-group">
+                                <label>Min chars assistant</label>
+                                <input type="number" value={minChars} onChange={(e) => setMinChars(e.target.value)} />
+                              </div>
+                              <div className="cleaning-input-group">
+                                <label>Max chars assistant</label>
+                                <input type="number" value={maxChars} onChange={(e) => setMaxChars(e.target.value)} />
+                              </div>
+                            </div>
+
+                            {/* Min pairs */}
+                            <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
+                              <label>Số cặp hỏi đáp tối thiểu:</label>
+                              <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
+                            </div>
+
+                            {/* Preview button — switches to preview view */}
+                            <button
+                              className="cleaning-accept-btn"
+                              disabled={isCleaningLoading}
+                              onClick={handleApplyCleaning}
+                            >
+                              {isCleaningLoading ? (
+                                <span>Đang xử lý...</span>
+                              ) : (
+                                <>
+                                  <Eye size={16} />
+                                  Preview & Apply Cleaning
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        <button className="reset-btn" onClick={() => {
+                          setCleaningApplied(false);
+                          setCleaningEnabled(false);
+                          setRemoveErrorKeywords(true);
+                          setRemoveUnclosedThink(true);
+                          setRemoveCompleteThink(false);
+                          setMinChars('5');
+                          setMaxChars('4000');
+                          setMinPairs('1');
+                        }}>
+                          <RotateCcw size={14} />
+                          Reset to Original
                         </button>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    <button className="reset-btn" onClick={() => {
-                      setCleaningApplied(false);
-                      setCleaningEnabled(false);
-                      setRemoveErrorKeywords(true);
-                      setRemoveUnclosedThink(true);
-                      setRemoveCompleteThink(false);
-                      setMinChars('5');
-                      setMaxChars('4000');
-                      setMinPairs('1');
-                    }}>
-                      <RotateCcw size={14} />
-                      Reset to Original
-                    </button>
-                  </div>
+                  {/* ===== VIEW: Preview ===== */}
+                  {cleaningPopupView === 'preview' && (
+                    <>
+                      {(() => {
+                        const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
+                        const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
+                        const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                        const totalCount = beforeList.length;
+                        const keptCount = afterList.length;
+                        const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+                        const removedCount = removedList.length;
+
+                        return (
+                          <>
+                            {/* Tabs */}
+                            <div className="preview-modal-tabs">
+                              <button
+                                className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
+                                onClick={() => setPreviewTab('before')}
+                              >
+                                📄 Before (Mẫu {totalCount})
+                              </button>
+                              <button
+                                className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
+                                onClick={() => setPreviewTab('after')}
+                              >
+                                ✅ After (Mẫu {keptCount})
+                              </button>
+                              <button
+                                className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
+                                onClick={() => setPreviewTab('removed')}
+                              >
+                                🗑️ Removed (Mẫu {removedCount})
+                              </button>
+                            </div>
+
+                            {(() => {
+                              const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                              const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                              const realRemoved = realTotal - realKept;
+                              const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
+
+                              return (
+                                <>
+                                  {/* Summary bar */}
+                                  <div className="preview-modal-summary">
+                                    <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
+                                    <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
+                                    <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
+                                    <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
+                                  </div>
+
+                                  {/* Info Alert */}
+                                  <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span>ℹ️</span>
+                                    <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
+                                  </div>
+                                </>
+                              );
+                            })()}
+
+                            {/* Tab Content */}
+                            <div className="preview-modal-body">
+                              {previewTab === 'before' && (
+                                <table className="preview-modal-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Conv ID</th>
+                                      <th>Status</th>
+                                      <th>User</th>
+                                      <th>Assistant (trước)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {beforeList.map((row) => (
+                                      <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
+                                        <td><span className="conv-id-badge">{row.id}</span></td>
+                                        <td>
+                                          {row.issue
+                                            ? <span className="status-badge badge-issue">{row.issue}</span>
+                                            : <span className="status-badge badge-clean">Clean</span>
+                                          }
+                                        </td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+
+                              {previewTab === 'after' && (
+                                <table className="preview-modal-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Conv ID</th>
+                                      <th>Action</th>
+                                      <th>User</th>
+                                      <th>Assistant (sau)</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {afterList.map((row) => (
+                                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                        <td><span className="conv-id-badge">{row.id}</span></td>
+                                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+
+                              {previewTab === 'removed' && (
+                                <table className="preview-modal-table">
+                                  <thead>
+                                    <tr>
+                                      <th>Conv ID</th>
+                                      <th>Lý do loại bỏ</th>
+                                      <th>User</th>
+                                      <th>Assistant</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {removedList.map((row) => (
+                                      <tr key={row.id} className="row-removed">
+                                        <td><span className="conv-id-badge">{row.id}</span></td>
+                                        <td><span className="status-badge badge-removed">{row.reason}</span></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </>
+                        );
+                      })()}
+
+                      {/* Footer */}
+                      <div className="preview-modal-footer">
+                        <button className="modal-cancel-btn" onClick={() => setCleaningPopupView('settings')}>
+                          <ChevronLeft size={16} />
+                          Quay lại cài đặt
+                        </button>
+                        <button className="modal-confirm-btn" onClick={() => {
+                          if (pendingCleanedList.length > 0) {
+                            setConversationsList(pendingCleanedList);
+                            setStage3Convs(pendingCleanedList.map((c, idx) => {
+                              const gId = (idx % 15) + 1;
+                              return {
+                                ...c,
+                                groupId: gId,
+                                groupLabel: '',
+                                groupColor: '#64748b',
+                                groupBg: '#f8fafc',
+                                subGroup: c.subGroup || 'A',
+                                confidence: 0
+                              };
+                            }));
+                          }
+                          setCleaningApplied(true);
+                          setShowCleaningPopup(false);
+                          setCleaningPopupView('settings');
+                        }}>
+                          <Check size={16} />
+                          Xác nhận & Áp dụng
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              )}
-
-              {/* ===== VIEW: Preview ===== */}
-              {cleaningPopupView === 'preview' && (
-                <>
-                  {(() => {
-                    const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
-                    const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
-                    const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
-                    const totalCount = beforeList.length;
-                    const keptCount = afterList.length;
-                    const fixedCount = afterList.filter(r => r.status === 'fixed').length;
-                    const removedCount = removedList.length;
-
-                    return (
-                      <>
-                        {/* Tabs */}
-                        <div className="preview-modal-tabs">
-                          <button
-                            className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('before')}
-                          >
-                            📄 Before (Mẫu {totalCount})
-                          </button>
-                          <button
-                            className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('after')}
-                          >
-                            ✅ After (Mẫu {keptCount})
-                          </button>
-                          <button
-                            className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('removed')}
-                          >
-                            🗑️ Removed (Mẫu {removedCount})
-                          </button>
-                        </div>
-
-                        {(() => {
-                          const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
-                          const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
-                          const realRemoved = realTotal - realKept;
-                          const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
-
-                          return (
-                            <>
-                              {/* Summary bar */}
-                              <div className="preview-modal-summary">
-                                <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
-                                <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
-                                <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
-                                <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
-                              </div>
-
-                              {/* Info Alert */}
-                              <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span>ℹ️</span>
-                                <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
-                              </div>
-                            </>
-                          );
-                        })()}
-
-                        {/* Tab Content */}
-                        <div className="preview-modal-body">
-                          {previewTab === 'before' && (
-                            <table className="preview-modal-table">
-                              <thead>
-                                <tr>
-                                  <th>Conv ID</th>
-                                  <th>Status</th>
-                                  <th>User</th>
-                                  <th>Assistant (trước)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {beforeList.map((row) => (
-                                  <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
-                                    <td><span className="conv-id-badge">{row.id}</span></td>
-                                    <td>
-                                      {row.issue
-                                        ? <span className="status-badge badge-issue">{row.issue}</span>
-                                        : <span className="status-badge badge-clean">Clean</span>
-                                      }
-                                    </td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-
-                          {previewTab === 'after' && (
-                            <table className="preview-modal-table">
-                              <thead>
-                                <tr>
-                                  <th>Conv ID</th>
-                                  <th>Action</th>
-                                  <th>User</th>
-                                  <th>Assistant (sau)</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {afterList.map((row) => (
-                                  <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
-                                    <td><span className="conv-id-badge">{row.id}</span></td>
-                                    <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-
-                          {previewTab === 'removed' && (
-                            <table className="preview-modal-table">
-                              <thead>
-                                <tr>
-                                  <th>Conv ID</th>
-                                  <th>Lý do loại bỏ</th>
-                                  <th>User</th>
-                                  <th>Assistant</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {removedList.map((row) => (
-                                  <tr key={row.id} className="row-removed">
-                                    <td><span className="conv-id-badge">{row.id}</span></td>
-                                    <td><span className="status-badge badge-removed">{row.reason}</span></td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                    <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          )}
-                        </div>
-                      </>
-                    );
-                  })()}
-
-                  {/* Footer */}
-                  <div className="preview-modal-footer">
-                    <button className="modal-cancel-btn" onClick={() => setCleaningPopupView('settings')}>
-                      <ChevronLeft size={16} />
-                      Quay lại cài đặt
-                    </button>
-                    <button className="modal-confirm-btn" onClick={() => {
-                      if (pendingCleanedList.length > 0) {
-                        setConversationsList(pendingCleanedList);
-                        setStage3Convs(pendingCleanedList.map((c, idx) => {
-                          const gId = (idx % 15) + 1;
-                          return {
-                            ...c,
-                            groupId: gId,
-                            groupLabel: '',
-                            groupColor: '#64748b',
-                            groupBg: '#f8fafc',
-                            subGroup: c.subGroup || 'A',
-                            confidence: 0
-                          };
-                        }));
-                      }
-                      setCleaningApplied(true);
-                      setShowCleaningPopup(false);
-                      setCleaningPopupView('settings');
-                    }}>
-                      <Check size={16} />
-                      Xác nhận & Áp dụng
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-        </>
+              </div>
+            )}
+          </>
         )}
 
         {currentSubStep === 2 && (
@@ -2122,26 +2112,26 @@ function DataPrepInner() {
             {showVisualization && findKResults && (() => {
               const elbow = findKResults.elbow || [];
               const silhouette = findKResults.silhouette || [];
-              
+
               const wcssMax = Math.max(...elbow.map((d: any) => d.wcss), 12);
               const wcssMin = 0;
               const silMax = Math.max(...silhouette.map((d: any) => d.silhouette), 0.22);
               const silMin = 0;
-              
-              const chartHeight = 240; 
+
+              const chartHeight = 240;
               const chartBottom = 280;
               const chartWidth = 700;
               const chartLeft = 60;
-              
+
               const maxKVal = elbow.length > 0 ? elbow.length : parseInt(maxK, 10);
               const stepX = maxKVal > 1 ? chartWidth / (maxKVal - 1) : 0;
-              
+
               const wcssPoints = elbow.map((d: any, i: number) => {
                 const x = chartLeft + i * stepX;
                 const y = chartBottom - ((d.wcss - wcssMin) / (wcssMax - wcssMin || 1)) * chartHeight;
                 return [x, y];
               });
-              
+
               const silPoints = silhouette.map((d: any, i: number) => {
                 const x = chartLeft + i * stepX;
                 const y = chartBottom - ((d.silhouette - silMin) / (silMax - silMin || 1)) * chartHeight;
@@ -2186,7 +2176,7 @@ function DataPrepInner() {
                         <text x="16" y="224" className="axis-label">{(wcssMax * 0.25).toFixed(1)}</text>
                         <text x="16" y="284" className="axis-label">0</text>
                         <text x="10" y="175" className="axis-title" transform="rotate(-90, 10, 175)">WCSS</text>
-                        
+
                         {/* Y-axis right labels (Silhouette) */}
                         <text x="770" y="44" className="axis-label-right">{silMax.toFixed(3)}</text>
                         <text x="770" y="104" className="axis-label-right">{(silMax * 0.75).toFixed(3)}</text>
@@ -2194,15 +2184,15 @@ function DataPrepInner() {
                         <text x="770" y="224" className="axis-label-right">{(silMax * 0.25).toFixed(3)}</text>
                         <text x="770" y="284" className="axis-label-right">0</text>
                         <text x="825" y="175" className="axis-title-right" transform="rotate(90, 825, 175)">Silhouette</text>
-                        
+
                         {/* X-axis labels */}
                         {elbow.map((d: any, i: number) => (
                           <text key={`x-${i}`} x={chartLeft + i * stepX} y="310" className="axis-label" textAnchor="middle">{d.k}</text>
                         ))}
-                        
+
                         {/* Recommended K dotted line */}
                         <line x1={recommendedX} y1="40" x2={recommendedX} y2="280" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="6 4" />
-                        
+
                         {/* WCSS line (blue) */}
                         <polyline
                           fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinejoin="round"
@@ -2212,7 +2202,7 @@ function DataPrepInner() {
                         {wcssPoints.map((p, i) => (
                           <circle key={`wc-${i}`} cx={p[0]} cy={p[1]} r="4" fill="white" stroke="#3b82f6" strokeWidth="2" />
                         ))}
-                        
+
                         {/* Silhouette line (green) */}
                         {silPoints.length > 0 && (
                           <>
@@ -2249,288 +2239,288 @@ function DataPrepInner() {
           ];
 
           return (
-          <>
-            {/* Full-width Dataset Preview */}
-            <div className="cluster-fullwidth">
-              <div className="preview-header">
-                <h3>Converted Dataset Preview</h3>
-                <div className="preview-header-right">
-                  <span className="preview-count">
-                    {pageMsgCount} messages · Showing {startConvIdx + 1}-{Math.min(startConvIdx + convsPerPage, filteredTotal)} of {filteredTotal} conversations
-                    {searchQuery && ` (filtered from ${totalConvs})`}
-                  </span>
-                  <button className="cluster-options-trigger-btn" onClick={() => setShowClusterOptionsPopup(true)}>
-                    <Settings size={16} />
-                    Clustering Options
+            <>
+              {/* Full-width Dataset Preview */}
+              <div className="cluster-fullwidth">
+                <div className="preview-header">
+                  <h3>Converted Dataset Preview</h3>
+                  <div className="preview-header-right">
+                    <span className="preview-count">
+                      {pageMsgCount} messages · Showing {startConvIdx + 1}-{Math.min(startConvIdx + convsPerPage, filteredTotal)} of {filteredTotal} conversations
+                      {searchQuery && ` (filtered from ${totalConvs})`}
+                    </span>
+                    <button className="cluster-options-trigger-btn" onClick={() => setShowClusterOptionsPopup(true)}>
+                      <Settings size={16} />
+                      Clustering Options
+                    </button>
+                  </div>
+                </div>
+
+                <div className="preview-toolbar">
+                  <div className="toolbar-select-wrapper">
+                    <label className="toolbar-label">Conversations / page:</label>
+                    <select
+                      className="toolbar-select"
+                      value={convsPerPage}
+                      onChange={(e) => handleConvsPerPageChange(e.target.value)}
+                    >
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="5">5</option>
+                      <option value="10">10</option>
+                      <option value="15">15</option>
+                    </select>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button className="toolbar-btn-sm" onClick={expandAll} title="Expand all">Expand All</button>
+                    <button className="toolbar-btn-sm" onClick={collapseAll} title="Collapse all">Collapse All</button>
+                  </div>
+
+                  <div className="toolbar-stats">
+                    <span className="toolbar-stat-tag">{totalConvs} conversations</span>
+                    <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                  </div>
+                </div>
+
+                <div className="preview-table-wrapper cluster-table-full">
+                  <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '14%', textAlign: 'center' }}>Conversation ID</th>
+                        <th style={{ width: '3%', textAlign: 'center' }}>#</th>
+                        <th style={{ width: '40%' }}>User</th>
+                        <th style={{ width: '43%' }}>Assistant</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageConvs.length === 0 && (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                            No conversations match your search.
+                          </td>
+                        </tr>
+                      )}
+                      {pageConvs.map((conv, convPageIdx) => {
+                        const isExpanded = expandedConvs[conv.id] !== undefined ? expandedConvs[conv.id] : true;
+                        const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
+
+                        if (!isExpanded) {
+                          return (
+                            <tr key={conv.id} className={`conv-row conv-first conv-last conv-collapsed ${groupClass}`}>
+                              <td className="col-conv-id-cell">
+                                <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Expand">
+                                  <ChevronRight size={14} />
+                                </button>
+                                <span className="conv-id-badge">{conv.id}</span>
+                                <span className="conv-msg-count">{conv.messages.length} messages</span>
+                                {conv.groupLabel && (
+                                  <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {conv.groupLabel}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="col-msg-num-cell">—</td>
+                              <td className="cell-text-col" title={conv.messages[0].user}>
+                                <div className="cell-truncate">{conv.messages[0].user}</div>
+                              </td>
+                              <td className="cell-text-col" title={conv.messages[0].assistant}>
+                                <div className="cell-truncate">{conv.messages[0].assistant}</div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return conv.messages.map((msg, msgIdx) => (
+                          <tr
+                            key={`${conv.id}-${msgIdx}`}
+                            className={`conv-row ${msgIdx === 0 ? 'conv-first' : ''} ${msgIdx === conv.messages.length - 1 ? 'conv-last' : ''} ${groupClass}`}
+                          >
+                            {msgIdx === 0 && (
+                              <td className="col-conv-id-cell" rowSpan={conv.messages.length}>
+                                <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Collapse">
+                                  <ChevronDown size={14} />
+                                </button>
+                                <span className="conv-id-badge">{conv.id}</span>
+                                <span className="conv-msg-count">{conv.messages.length} messages</span>
+                                {conv.groupLabel && (
+                                  <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
+                                    {conv.groupLabel}
+                                  </span>
+                                )}
+                              </td>
+                            )}
+                            <td className="col-msg-num-cell">#{msgIdx + 1}</td>
+                            <td className="cell-text-col" title={msg.user}><div className="cell-truncate">{msg.user}</div></td>
+                            <td className="cell-text-col" title={msg.assistant}><div className="cell-truncate">{msg.assistant}</div></td>
+                          </tr>
+                        ));
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="preview-pagination">
+                  <button
+                    className="pagination-arrow"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(currentPage - 1)}
+                  >
+                    ‹
+                  </button>
+                  {getPageNumbers(currentPage, totalPages || 1).map((page, idx) =>
+                    page === '...' ? (
+                      <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
+                    ) : (
+                      <button
+                        key={page}
+                        className={`pagination-page-btn ${page === currentPage ? 'active' : ''}`}
+                        onClick={() => setCurrentPage(page)}
+                      >
+                        {page}
+                      </button>
+                    )
+                  )}
+                  <button
+                    className="pagination-arrow"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(currentPage + 1)}
+                  >
+                    ›
                   </button>
                 </div>
               </div>
 
-              <div className="preview-toolbar">
-                <div className="toolbar-select-wrapper">
-                  <label className="toolbar-label">Conversations / page:</label>
-                  <select
-                    className="toolbar-select"
-                    value={convsPerPage}
-                    onChange={(e) => handleConvsPerPageChange(e.target.value)}
-                  >
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                    <option value="5">5</option>
-                    <option value="10">10</option>
-                    <option value="15">15</option>
-                  </select>
-                </div>
-                <div className="toolbar-actions">
-                  <button className="toolbar-btn-sm" onClick={expandAll} title="Expand all">Expand All</button>
-                  <button className="toolbar-btn-sm" onClick={collapseAll} title="Collapse all">Collapse All</button>
-                </div>
-
-                <div className="toolbar-stats">
-                  <span className="toolbar-stat-tag">{totalConvs} conversations</span>
-                  <span className="toolbar-stat-tag">{totalMessages} messages</span>
-                </div>
-              </div>
-
-              <div className="preview-table-wrapper cluster-table-full">
-                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '14%', textAlign: 'center' }}>Conversation ID</th>
-                      <th style={{ width: '3%', textAlign: 'center' }}>#</th>
-                      <th style={{ width: '40%' }}>User</th>
-                      <th style={{ width: '43%' }}>Assistant</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pageConvs.length === 0 && (
-                      <tr>
-                        <td colSpan={4} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
-                          No conversations match your search.
-                        </td>
-                      </tr>
-                    )}
-                    {pageConvs.map((conv, convPageIdx) => {
-                      const isExpanded = expandedConvs[conv.id] !== undefined ? expandedConvs[conv.id] : true;
-                      const groupClass = (startConvIdx + convPageIdx) % 2 === 1 ? 'conv-group-alt' : '';
-
-                      if (!isExpanded) {
-                        return (
-                          <tr key={conv.id} className={`conv-row conv-first conv-last conv-collapsed ${groupClass}`}>
-                            <td className="col-conv-id-cell">
-                              <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Expand">
-                                <ChevronRight size={14} />
-                              </button>
-                              <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
-                              {conv.groupLabel && (
-                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
-                                  {conv.groupLabel}
-                                </span>
-                              )}
-                            </td>
-                            <td className="col-msg-num-cell">—</td>
-                            <td className="cell-text-col" title={conv.messages[0].user}>
-                              <div className="cell-truncate">{conv.messages[0].user}</div>
-                            </td>
-                            <td className="cell-text-col" title={conv.messages[0].assistant}>
-                              <div className="cell-truncate">{conv.messages[0].assistant}</div>
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return conv.messages.map((msg, msgIdx) => (
-                        <tr
-                          key={`${conv.id}-${msgIdx}`}
-                          className={`conv-row ${msgIdx === 0 ? 'conv-first' : ''} ${msgIdx === conv.messages.length - 1 ? 'conv-last' : ''} ${groupClass}`}
-                        >
-                          {msgIdx === 0 && (
-                            <td className="col-conv-id-cell" rowSpan={conv.messages.length}>
-                              <button className="conv-toggle-btn" onClick={() => toggleConv(conv.id)} title="Collapse">
-                                <ChevronDown size={14} />
-                              </button>
-                              <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
-                              {conv.groupLabel && (
-                                <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}>
-                                  {conv.groupLabel}
-                                </span>
-                              )}
-                            </td>
-                          )}
-                          <td className="col-msg-num-cell">#{msgIdx + 1}</td>
-                          <td className="cell-text-col" title={msg.user}><div className="cell-truncate">{msg.user}</div></td>
-                          <td className="cell-text-col" title={msg.assistant}><div className="cell-truncate">{msg.assistant}</div></td>
-                        </tr>
-                      ));
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Pagination */}
-              <div className="preview-pagination">
-                <button
-                  className="pagination-arrow"
-                  disabled={currentPage <= 1}
-                  onClick={() => setCurrentPage(currentPage - 1)}
-                >
-                  ‹
-                </button>
-                {getPageNumbers(currentPage, totalPages || 1).map((page, idx) =>
-                  page === '...' ? (
-                    <span key={`ellipsis-${idx}`} className="pagination-ellipsis">...</span>
-                  ) : (
-                    <button
-                      key={page}
-                      className={`pagination-page-btn ${page === currentPage ? 'active' : ''}`}
-                      onClick={() => setCurrentPage(page)}
-                    >
-                      {page}
-                    </button>
-                  )
-                )}
-                <button
-                  className="pagination-arrow"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage(currentPage + 1)}
-                >
-                  ›
-                </button>
-              </div>
-            </div>
-
-            {/* Clustering Options Popup */}
-            {showClusterOptionsPopup && (
-              <div className="cluster-popup-overlay" onClick={() => setShowClusterOptionsPopup(false)}>
-                <div className="cluster-popup-content" onClick={(e) => e.stopPropagation()}>
-                  <div className="cluster-popup-header">
-                    <div className="cluster-popup-header-left">
-                      <Settings size={20} />
-                      <div>
-                        <h2>Clustering Options</h2>
-                        <p>Configure clustering parameters, filter noise, and review group statistics</p>
-                      </div>
-                    </div>
-                    <button className="cluster-popup-close-btn" onClick={() => setShowClusterOptionsPopup(false)}>
-                      <X size={18} />
-                      Close
-                    </button>
-                  </div>
-
-                  <div className="cluster-popup-body">
-                    {/* Clustering Parameters */}
-                    <div className="cluster-popup-section">
-                      <h3 className="cluster-card-title">Clustering Parameters</h3>
-                      <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          Target K (Clusters)
-                          <Tooltip text="Số lượng cụm K mục tiêu thuật toán K-Means sẽ chia dữ liệu. Số K càng lớn thì số cụm môn học càng nhiều.">
-                            <HelpCircle size={14} color="#94a3b8" />
-                          </Tooltip>
-                        </label>
-                        <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
-                      </div>
-                      <p className="cluster-recommend">
-                        {findKResults?.recommendedK ? (
-                          <>Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</>
-                        ) : (
-                          <>Run <strong>Find K</strong> step first to get Recommended K.</>
-                        )}
-                      </p>
-                      <div className="cleaning-inputs-row" style={{ marginBottom: 12 }}>
-                        <div className="cleaning-input-group">
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            DBSCAN EPS
-                            <Tooltip text="Bán kính Epsilon của thuật toán DBSCAN. Quyết định khoảng cách tối đa để hai đoạn hội thoại được xem là cùng một cụm.">
-                              <HelpCircle size={14} color="#94a3b8" />
-                            </Tooltip>
-                          </label>
-                          <input type="number" step="0.1" value={clusterEps} onChange={(e) => setClusterEps(e.target.value)} />
-                        </div>
-                        <div className="cleaning-input-group">
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            Min Samples
-                            <Tooltip text="Số lượng hội thoại tối thiểu cần thiết để tạo thành một cụm DBSCAN hợp lệ. Nếu ít hơn sẽ bị coi là nhiễu (Noise).">
-                              <HelpCircle size={14} color="#94a3b8" />
-                            </Tooltip>
-                          </label>
-                          <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
+              {/* Clustering Options Popup */}
+              {showClusterOptionsPopup && (
+                <div className="cluster-popup-overlay" onClick={() => setShowClusterOptionsPopup(false)}>
+                  <div className="cluster-popup-content" onClick={(e) => e.stopPropagation()}>
+                    <div className="cluster-popup-header">
+                      <div className="cluster-popup-header-left">
+                        <Settings size={20} />
+                        <div>
+                          <h2>Clustering Options</h2>
+                          <p>Configure clustering parameters, filter noise, and review group statistics</p>
                         </div>
                       </div>
-                      <button className="cluster-run-btn" onClick={handleCluster} disabled={isClustering}>
-                        {isClustering ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                        {isClustering ? 'Clustering...' : 'Cluster'}
+                      <button className="cluster-popup-close-btn" onClick={() => setShowClusterOptionsPopup(false)}>
+                        <X size={18} />
+                        Close
                       </button>
                     </div>
 
-                    {clusterRan && (
-                      <>
-                        {/* Similarity Threshold */}
-                        <div className="cluster-popup-section">
-                          <div className="sim-header">
-                            <span className="sim-label">Similarity Threshold (for Deduplicate)</span>
-                            <span className="sim-value">{simThreshold.toFixed(3)}</span>
-                          </div>
-                          <input
-                            type="range" min="0" max="1" step="0.001"
-                            value={simThreshold}
-                            onChange={(e) => setSimThreshold(parseFloat(e.target.value))}
-                            className="sim-slider"
-                          />
-                          <div className="cluster-action-btns">
-                            <button className="cluster-btn-noise" onClick={handleRemoveNoise}>Remove Noise</button>
-                            <button className="cluster-btn-dedup">Deduplicate</button>
-                          </div>
-                          <button className="reset-filter-btn">Reset Filter</button>
+                    <div className="cluster-popup-body">
+                      {/* Clustering Parameters */}
+                      <div className="cluster-popup-section">
+                        <h3 className="cluster-card-title">Clustering Parameters</h3>
+                        <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            Target K (Clusters)
+                            <Tooltip text="Số lượng cụm K mục tiêu thuật toán K-Means sẽ chia dữ liệu. Số K càng lớn thì số cụm môn học càng nhiều.">
+                              <HelpCircle size={14} color="#94a3b8" />
+                            </Tooltip>
+                          </label>
+                          <input type="number" value={targetK} onChange={(e) => setTargetK(e.target.value)} />
                         </div>
+                        <p className="cluster-recommend">
+                          {findKResults?.recommendedK ? (
+                            <>Recommended K: <strong>{findKResults.recommendedK}</strong> (stable plateau: silhouette remains strong while WCSS has flattened)</>
+                          ) : (
+                            <>Run <strong>Find K</strong> step first to get Recommended K.</>
+                          )}
+                        </p>
+                        <div className="cleaning-inputs-row" style={{ marginBottom: 12 }}>
+                          <div className="cleaning-input-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              DBSCAN EPS
+                              <Tooltip text="Bán kính Epsilon của thuật toán DBSCAN. Quyết định khoảng cách tối đa để hai đoạn hội thoại được xem là cùng một cụm.">
+                                <HelpCircle size={14} color="#94a3b8" />
+                              </Tooltip>
+                            </label>
+                            <input type="number" step="0.1" value={clusterEps} onChange={(e) => setClusterEps(e.target.value)} />
+                          </div>
+                          <div className="cleaning-input-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              Min Samples
+                              <Tooltip text="Số lượng hội thoại tối thiểu cần thiết để tạo thành một cụm DBSCAN hợp lệ. Nếu ít hơn sẽ bị coi là nhiễu (Noise).">
+                                <HelpCircle size={14} color="#94a3b8" />
+                              </Tooltip>
+                            </label>
+                            <input type="number" value={clusterMinSamples} onChange={(e) => setClusterMinSamples(e.target.value)} />
+                          </div>
+                        </div>
+                        <button className="cluster-run-btn" onClick={handleCluster} disabled={isClustering}>
+                          {isClustering ? <RefreshCw size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                          {isClustering ? 'Clustering...' : 'Cluster'}
+                        </button>
+                      </div>
 
-                        {/* Cluster Statistics */}
-                        <div className="cluster-popup-section">
-                          <div className="cluster-stats-header">
-                            <span className="cluster-stats-title">Cluster Statistics</span>
-                            <button className="compare-btn" onClick={() => setShowCompareModal(true)}>
-                              <Eye size={14} />
-                              Compare Groups
-                            </button>
+                      {clusterRan && (
+                        <>
+                          {/* Similarity Threshold */}
+                          <div className="cluster-popup-section">
+                            <div className="sim-header">
+                              <span className="sim-label">Similarity Threshold (for Deduplicate)</span>
+                              <span className="sim-value">{simThreshold.toFixed(3)}</span>
+                            </div>
+                            <input
+                              type="range" min="0" max="1" step="0.001"
+                              value={simThreshold}
+                              onChange={(e) => setSimThreshold(parseFloat(e.target.value))}
+                              className="sim-slider"
+                            />
+                            <div className="cluster-action-btns">
+                              <button className="cluster-btn-noise" onClick={handleRemoveNoise}>Remove Noise</button>
+                              <button className="cluster-btn-dedup">Deduplicate</button>
+                            </div>
+                            <button className="reset-filter-btn">Reset Filter</button>
                           </div>
-                          <table className="cluster-stats-table">
-                            <thead>
-                              <tr>
-                                <th>Select</th>
-                                <th>Group</th>
-                                <th>Count</th>
-                                <th>Avg Similarity</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
-                                <tr key={i}>
-                                  <td><input type="checkbox" /></td>
-                                  <td><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
-                                  <td className="count-cell">{g.count}</td>
-                                  <td className="sim-cell">{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
+
+                          {/* Cluster Statistics */}
+                          <div className="cluster-popup-section">
+                            <div className="cluster-stats-header">
+                              <span className="cluster-stats-title">Cluster Statistics</span>
+                              <button className="compare-btn" onClick={() => setShowCompareModal(true)}>
+                                <Eye size={14} />
+                                Compare Groups
+                              </button>
+                            </div>
+                            <table className="cluster-stats-table">
+                              <thead>
+                                <tr>
+                                  <th>Select</th>
+                                  <th>Group</th>
+                                  <th>Count</th>
+                                  <th>Avg Similarity</th>
                                 </tr>
-                              )) : CLUSTER_GROUPS.map((g, i) => (
-                                <tr key={i}>
-                                  <td><input type="checkbox" /></td>
-                                  <td><strong>{g.name}</strong></td>
-                                  <td className="count-cell">{g.count}</td>
-                                  <td className="sim-cell">{g.sim.toFixed(4)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    )}
+                              </thead>
+                              <tbody>
+                                {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
+                                  <tr key={i}>
+                                    <td><input type="checkbox" /></td>
+                                    <td><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
+                                    <td className="count-cell">{g.count}</td>
+                                    <td className="sim-cell">{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
+                                  </tr>
+                                )) : CLUSTER_GROUPS.map((g, i) => (
+                                  <tr key={i}>
+                                    <td><input type="checkbox" /></td>
+                                    <td><strong>{g.name}</strong></td>
+                                    <td className="count-cell">{g.count}</td>
+                                    <td className="sim-cell">{g.sim.toFixed(4)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </>
+              )}
+            </>
           );
         })()}
 
@@ -2682,13 +2672,13 @@ function DataPrepInner() {
                   Apply Bulk Label
                 </button>
                 <div style={{ flex: 1 }}></div>
-                <button 
-                  style={{ backgroundColor: stage3SubGroup === 'A' ? '#ef4444' : '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }} 
+                <button
+                  style={{ backgroundColor: stage3SubGroup === 'A' ? '#ef4444' : '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }}
                   title={`Di chuyển các dòng đã chọn sang Group ${stage3SubGroup === 'A' ? 'B (Nhiễu)' : 'A (Chuẩn)'}`}
                   disabled={checkedConvIds.length === 0}
                   onClick={() => {
-                    setStage3Convs(prev => prev.map(c => 
-                      checkedConvIds.includes(c.id) 
+                    setStage3Convs(prev => prev.map(c =>
+                      checkedConvIds.includes(c.id)
                         ? { ...c, subGroup: stage3SubGroup === 'A' ? 'B' : 'A' }
                         : c
                     ));
@@ -2741,8 +2731,8 @@ function DataPrepInner() {
                   <thead>
                     <tr>
                       <th style={{ width: '4%', textAlign: 'center' }} title="Select to move to noise group">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           checked={stage3PageRows.length > 0 && stage3PageRows.every(r => checkedConvIds.includes(r.id))}
                           onChange={(e) => {
                             if (e.target.checked) {
@@ -2776,8 +2766,8 @@ function DataPrepInner() {
                     {stage3PageRows.map((conv, idx) => (
                       <tr key={conv.id} className="conv-row conv-first conv-last">
                         <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                          <input 
-                            type="checkbox" 
+                          <input
+                            type="checkbox"
                             checked={checkedConvIds.includes(conv.id)}
                             onChange={(e) => {
                               if (e.target.checked) {
@@ -2812,7 +2802,7 @@ function DataPrepInner() {
                                 <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
                                   {conv.messages.slice(0, 3).map((msg, idx) => (
                                     <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
-                                      <span style={{ fontWeight: '700', color: '#6366f1', flexShrink: 0 }}>U{idx+1}:</span>
+                                      <span style={{ fontWeight: '700', color: '#6366f1', flexShrink: 0 }}>U{idx + 1}:</span>
                                       <span style={{ color: '#1e293b', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.user}>
                                         {highlightSearch(truncateText(msg.user, 150), stage3Search)}
                                       </span>
@@ -2848,7 +2838,7 @@ function DataPrepInner() {
                                 <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '5px', borderTop: '1px solid #f1f5f9', paddingTop: '5px' }}>
                                   {conv.messages.slice(0, 3).map((msg, idx) => (
                                     <div key={idx} style={{ fontSize: '14.5px', display: 'flex', gap: '6px', overflow: 'hidden', lineHeight: '1.5' }}>
-                                      <span style={{ fontWeight: '700', color: '#0ea5e9', flexShrink: 0 }}>A{idx+1}:</span>
+                                      <span style={{ fontWeight: '700', color: '#0ea5e9', flexShrink: 0 }}>A{idx + 1}:</span>
                                       <span style={{ color: '#334155', whiteSpace: 'normal', wordBreak: 'break-word' }} title={msg.assistant}>
                                         {highlightSearch(truncateText(msg.assistant, 150), stage3Search)}
                                       </span>
@@ -2961,7 +2951,7 @@ function DataPrepInner() {
                         if (hasExistingLabels) {
                           const confirmRelabel = window.confirm('Dữ liệu này đã được gán nhãn. Bạn có muốn yêu cầu AI chạy lại và ghi đè nhãn mới không?');
                           if (!confirmRelabel) return;
-                          
+
                           // Xóa nhãn hiện tại trên UI để chạy lại
                           setAiGroupLabels({});
                           setPendingAiLabels([]);
@@ -3023,7 +3013,7 @@ function DataPrepInner() {
                               }
                             }
                           });
-                          
+
                           if (newLabels.size > 0) {
                             setPendingAiLabels(Array.from(newLabels));
                           }
@@ -3217,7 +3207,7 @@ function DataPrepInner() {
                         }
 
                         await apiService.saveAutoLabels(versionId, payloadLabels);
-                        
+
                         // Cập nhật giao diện cục bộ sau khi lưu thành công
                         setStage3Convs(prev => prev.map(c => ({
                           ...c,
@@ -3232,7 +3222,7 @@ function DataPrepInner() {
                       }
                     }}
                   >
-                    {isSavingLabels ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={14} />} 
+                    {isSavingLabels ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={14} />}
                     {isSavingLabels ? 'Saving...' : 'Save'}
                   </button>
                 </div>
@@ -3292,7 +3282,7 @@ function DataPrepInner() {
 
             {/* Status Cards Row */}
             <div className="sa-status-row">
-              {['ASSIGNED','ASSIGNEES','IN PROGRESS','SUBMITTED','SAVED DECISIONS','NEEDS REVIEW','PUBLISHED'].map(label => (
+              {['ASSIGNED', 'ASSIGNEES', 'IN PROGRESS', 'SUBMITTED', 'SAVED DECISIONS', 'NEEDS REVIEW', 'PUBLISHED'].map(label => (
                 <div key={label} className="sa-status-card">
                   <span className="sa-status-label">{label}</span>
                   <span className="sa-status-value">0</span>
@@ -3360,9 +3350,9 @@ function DataPrepInner() {
                     <table className="sa-tasks-table sa-samples-table">
                       <thead>
                         <tr>
-                          <th style={{width:'5%'}}>ID</th>
-                          <th style={{width:'65%'}}>SAMPLE KEY & CONTENT</th>
-                          <th style={{width:'30%'}}>ASSIGNEES</th>
+                          <th style={{ width: '5%' }}>ID</th>
+                          <th style={{ width: '65%' }}>SAMPLE KEY & CONTENT</th>
+                          <th style={{ width: '30%' }}>ASSIGNEES</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3455,154 +3445,154 @@ function DataPrepInner() {
                   </div>
 
                   {iaActiveTab === 'assignment' && (
-                  <>
-                  <div className="ia-chat-messages">
-                    {iaMessages.map((msg) => {
-                      const isUser = msg.role === 'user';
-                      const isSelected = selectedIaMsgId === msg.id;
-                      
-                      const msgClass = isUser ? 'ia-msg ia-msg-user' : 'ia-msg ia-msg-assistant';
-                      const bubbleClass = isUser 
-                        ? `ia-msg-bubble ia-bubble-user ${isSelected ? 'ia-bubble-selected-user' : ''}` 
-                        : `ia-msg-bubble ia-bubble-assistant ${isSelected ? 'ia-bubble-selected-assistant' : ''}`;
-                      
-                      const numClass = isUser ? 'ia-msg-num' : 'ia-msg-num ia-num-green';
-                      
-                      const activeLabels = [];
-                      Object.keys(msg.labels).forEach((groupName) => {
-                        msg.labels[groupName].forEach((tag) => {
-                          if (tag.active) {
-                            activeLabels.push(tag.name);
-                          }
-                        });
-                      });
+                    <>
+                      <div className="ia-chat-messages">
+                        {iaMessages.map((msg) => {
+                          const isUser = msg.role === 'user';
+                          const isSelected = selectedIaMsgId === msg.id;
 
-                      return (
-                        <div 
-                          key={msg.id} 
-                          className={msgClass}
-                          onClick={() => setSelectedIaMsgId(prev => prev === msg.id ? null : msg.id)}
-                          style={{ cursor: 'pointer', marginBottom: '8px' }}
-                        >
-                          {isUser ? (
-                            <>
-                              <div className={bubbleClass}>
-                                <span className="ia-msg-role">USER</span>
-                                <p>{msg.text}</p>
-                              </div>
-                              <span className={numClass}>{msg.turn}</span>
-                              {activeLabels.length > 0 && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', marginLeft: '0' }}>
-                                  {activeLabels.map((lbl) => (
-                                    <div 
-                                      key={lbl}
-                                      className="ia-msg-label"
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 10px',
-                                        borderRadius: '16px',
-                                        fontSize: '11px',
-                                        fontWeight: '700',
-                                        cursor: 'pointer',
-                                        margin: '0',
-                                        ...getLabelBadgeStyle(lbl)
-                                      }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRemoveMessageSingleLabel(msg.id, lbl);
-                                      }}
-                                    >
-                                      {lbl === 'OK' && <Check size={10} style={{ marginRight: '2px' }} />}
-                                      {lbl} <X size={10} style={{ marginLeft: '4px' }} />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              <span className={numClass}>{msg.turn}</span>
-                              <div className={bubbleClass}>
-                                <span className="ia-msg-role">ASSISTANT</span>
-                                <p>{msg.text}</p>
-                              </div>
-                              {activeLabels.length > 0 && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', marginLeft: '32px' }}>
-                                  {activeLabels.map((lbl) => (
-                                    <div 
-                                      key={lbl}
-                                      className="ia-msg-label"
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        padding: '4px 10px',
-                                        borderRadius: '16px',
-                                        fontSize: '11px',
-                                        fontWeight: '700',
-                                        cursor: 'pointer',
-                                        margin: '0',
-                                        ...getLabelBadgeStyle(lbl)
-                                      }}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleRemoveMessageSingleLabel(msg.id, lbl);
-                                      }}
-                                    >
-                                      {lbl} <X size={10} style={{ marginLeft: '4px' }} />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          const msgClass = isUser ? 'ia-msg ia-msg-user' : 'ia-msg ia-msg-assistant';
+                          const bubbleClass = isUser
+                            ? `ia-msg-bubble ia-bubble-user ${isSelected ? 'ia-bubble-selected-user' : ''}`
+                            : `ia-msg-bubble ia-bubble-assistant ${isSelected ? 'ia-bubble-selected-assistant' : ''}`;
 
-                  {/* Pagination */}
-                  <div className="ia-chat-pagination">
-                    <button className="ia-page-btn">← Previous</button>
-                    <span className="ia-page-info">1 / 90</span>
-                    <button className="ia-page-btn">Next →</button>
-                  </div>
-                  </>
+                          const numClass = isUser ? 'ia-msg-num' : 'ia-msg-num ia-num-green';
+
+                          const activeLabels = [];
+                          Object.keys(msg.labels).forEach((groupName) => {
+                            msg.labels[groupName].forEach((tag) => {
+                              if (tag.active) {
+                                activeLabels.push(tag.name);
+                              }
+                            });
+                          });
+
+                          return (
+                            <div
+                              key={msg.id}
+                              className={msgClass}
+                              onClick={() => setSelectedIaMsgId(prev => prev === msg.id ? null : msg.id)}
+                              style={{ cursor: 'pointer', marginBottom: '8px' }}
+                            >
+                              {isUser ? (
+                                <>
+                                  <div className={bubbleClass}>
+                                    <span className="ia-msg-role">USER</span>
+                                    <p>{msg.text}</p>
+                                  </div>
+                                  <span className={numClass}>{msg.turn}</span>
+                                  {activeLabels.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', marginLeft: '0' }}>
+                                      {activeLabels.map((lbl) => (
+                                        <div
+                                          key={lbl}
+                                          className="ia-msg-label"
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            padding: '4px 10px',
+                                            borderRadius: '16px',
+                                            fontSize: '11px',
+                                            fontWeight: '700',
+                                            cursor: 'pointer',
+                                            margin: '0',
+                                            ...getLabelBadgeStyle(lbl)
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveMessageSingleLabel(msg.id, lbl);
+                                          }}
+                                        >
+                                          {lbl === 'OK' && <Check size={10} style={{ marginRight: '2px' }} />}
+                                          {lbl} <X size={10} style={{ marginLeft: '4px' }} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className={numClass}>{msg.turn}</span>
+                                  <div className={bubbleClass}>
+                                    <span className="ia-msg-role">ASSISTANT</span>
+                                    <p>{msg.text}</p>
+                                  </div>
+                                  {activeLabels.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px', marginLeft: '32px' }}>
+                                      {activeLabels.map((lbl) => (
+                                        <div
+                                          key={lbl}
+                                          className="ia-msg-label"
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            padding: '4px 10px',
+                                            borderRadius: '16px',
+                                            fontSize: '11px',
+                                            fontWeight: '700',
+                                            cursor: 'pointer',
+                                            margin: '0',
+                                            ...getLabelBadgeStyle(lbl)
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveMessageSingleLabel(msg.id, lbl);
+                                          }}
+                                        >
+                                          {lbl} <X size={10} style={{ marginLeft: '4px' }} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Pagination */}
+                      <div className="ia-chat-pagination">
+                        <button className="ia-page-btn">← Previous</button>
+                        <span className="ia-page-info">1 / 90</span>
+                        <button className="ia-page-btn">Next →</button>
+                      </div>
+                    </>
                   )}
 
                   {iaActiveTab === 'unassigned' && (
-                  <>
-                  <div className="ia-unassigned-list">
-                    {[
-                      { id: 'conv-4', preview: 'Thầy ơi, lực ma sát là gì ạ? Em nghe nói có 2 loại...', turns: 6, subject: 'PHYSICAL' },
-                      { id: 'conv-5', preview: 'Cho em hỏi cách tính diện tích hình thang ạ?', turns: 4, subject: 'MATH' },
-                      { id: 'conv-7', preview: 'Em không hiểu phản ứng oxi hóa khử, giải thích giúp em...', turns: 8, subject: 'CHEM' },
-                      { id: 'conv-9', preview: 'Anh ơi giải giúp em bài toán xác suất này...', turns: 5, subject: 'MATH' },
-                      { id: 'conv-12', preview: 'Quang hợp là gì ạ? Cây xanh hấp thụ ánh sáng như nào?', turns: 7, subject: 'BIO' },
-                      { id: 'conv-15', preview: 'Cho em hỏi về thuyết tương đối của Einstein...', turns: 10, subject: 'PHYSICAL' },
-                    ].map((conv) => (
-                      <div key={conv.id} className="ia-unassigned-item">
-                        <div className="ia-unassigned-info">
-                          <div className="ia-unassigned-top">
-                            <span className="ia-unassigned-id">{conv.id}</span>
-                            <span className={`ia-unassigned-subject ia-subj-${conv.subject.toLowerCase()}`}>{conv.subject}</span>
-                            <span className="ia-unassigned-turns">{conv.turns} turns</span>
+                    <>
+                      <div className="ia-unassigned-list">
+                        {[
+                          { id: 'conv-4', preview: 'Thầy ơi, lực ma sát là gì ạ? Em nghe nói có 2 loại...', turns: 6, subject: 'PHYSICAL' },
+                          { id: 'conv-5', preview: 'Cho em hỏi cách tính diện tích hình thang ạ?', turns: 4, subject: 'MATH' },
+                          { id: 'conv-7', preview: 'Em không hiểu phản ứng oxi hóa khử, giải thích giúp em...', turns: 8, subject: 'CHEM' },
+                          { id: 'conv-9', preview: 'Anh ơi giải giúp em bài toán xác suất này...', turns: 5, subject: 'MATH' },
+                          { id: 'conv-12', preview: 'Quang hợp là gì ạ? Cây xanh hấp thụ ánh sáng như nào?', turns: 7, subject: 'BIO' },
+                          { id: 'conv-15', preview: 'Cho em hỏi về thuyết tương đối của Einstein...', turns: 10, subject: 'PHYSICAL' },
+                        ].map((conv) => (
+                          <div key={conv.id} className="ia-unassigned-item">
+                            <div className="ia-unassigned-info">
+                              <div className="ia-unassigned-top">
+                                <span className="ia-unassigned-id">{conv.id}</span>
+                                <span className={`ia-unassigned-subject ia-subj-${conv.subject.toLowerCase()}`}>{conv.subject}</span>
+                                <span className="ia-unassigned-turns">{conv.turns} turns</span>
+                              </div>
+                              <p className="ia-unassigned-preview">{conv.preview}</p>
+                            </div>
+                            <button className="ia-assign-btn">Assign to me</button>
                           </div>
-                          <p className="ia-unassigned-preview">{conv.preview}</p>
-                        </div>
-                        <button className="ia-assign-btn">Assign to me</button>
+                        ))}
                       </div>
-                    ))}
-                  </div>
 
-                  <div className="ia-chat-pagination">
-                    <button className="ia-page-btn">← Previous</button>
-                    <span className="ia-page-info">1 / 15</span>
-                    <button className="ia-page-btn">Next →</button>
-                  </div>
-                  </>
+                      <div className="ia-chat-pagination">
+                        <button className="ia-page-btn">← Previous</button>
+                        <span className="ia-page-info">1 / 15</span>
+                        <button className="ia-page-btn">Next →</button>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>
@@ -3644,7 +3634,7 @@ function DataPrepInner() {
                     (() => {
                       const selectedMsg = iaMessages.find(m => m.id === selectedIaMsgId);
                       if (!selectedMsg) return null;
-                      
+
                       return (
                         <div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -3655,7 +3645,7 @@ function DataPrepInner() {
                               Turn {selectedMsg.turn}
                             </span>
                           </div>
-                          
+
                           {Object.keys(selectedMsg.labels).map((groupName) => (
                             <div key={groupName} className="ia-hl-group" style={{ marginBottom: '16px' }}>
                               <span className="ia-hl-group-label" style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
@@ -3667,7 +3657,7 @@ function DataPrepInner() {
                                   const isGreen = tag.colorClass === 'green' || (selectedMsg.role === 'user' && groupName === 'KNOWLEDGE' && tag.name === 'OK');
                                   const isBlue = tag.colorClass === 'blue' || (selectedMsg.role === 'assistant' && groupName === 'PEDAGOGY' && tag.name === 'SCAF');
                                   const isRed = tag.colorClass === 'red';
-                                  
+
                                   let tagStyle: React.CSSProperties = {
                                     display: 'flex',
                                     justifyContent: 'space-between',
@@ -4237,143 +4227,11 @@ function DataPrepInner() {
       {currentStage === 5 && <Stage6Finish />}
 
       {/* Compare Groups Modal */}
-      {showCompareModal && (
-        <div className="compare-modal-overlay" onClick={() => setShowCompareModal(false)}>
-          <div className="compare-modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="compare-header-row">
-              <div className="compare-header-titles">
-                <h2>Cluster Group Comparison</h2>
-                <p>Compare two groups side by side using User, &lt;think&gt;, and Assistant content.</p>
-              </div>
-              <button className="compare-close-btn" onClick={() => setShowCompareModal(false)}>
-                <X size={14} /> Close Comparison
-              </button>
-            </div>
 
-            <div className="compare-body">
-              {/* Slot 1 */}
-              <div className="compare-slot">
-                {compareSlot1 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 1</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 1 ? null : 1)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 1 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot1(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot1}</h3>
-                        <p>{compareSlot1 === 0 || compareSlot1 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot1(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot1 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot1 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Slot 2 */}
-              <div className="compare-slot">
-                {compareSlot2 === null ? (
-                  <div className="slot-empty">
-                    <div className="slot-header-empty">
-                      <span>Comparison Slot 2</span>
-                      <span className="empty-text">Empty slot</span>
-                    </div>
-                    <div className="slot-add-btn-wrapper">
-                      <button className="slot-add-btn" onClick={() => setActiveCompareDropdown(activeCompareDropdown === 2 ? null : 2)}>
-                        <Plus size={24} />
-                      </button>
-                      {activeCompareDropdown === 2 && (
-                        <div className="slot-dropdown">
-                          <div className="dropdown-title">SELECT GROUP</div>
-                          {[0, 1, 2, 3, 4, 5, 6, 7].map(g => (
-                            <div key={g} className="dropdown-item" onClick={() => { setCompareSlot2(g); setActiveCompareDropdown(null); }}>
-                              <span>Group {g}</span>
-                              <span className="dropdown-count">{g === 0 || g === 1 ? 17 : g === 2 ? 12 : 8} rows</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="slot-filled">
-                    <div className="slot-filled-header">
-                      <div>
-                        <h3>Group {compareSlot2}</h3>
-                        <p>{compareSlot2 === 0 || compareSlot2 === 1 ? 17 : 8} rows</p>
-                      </div>
-                      <button className="slot-clear-btn" onClick={() => setCompareSlot2(null)}><X size={14} /></button>
-                    </div>
-                    <div className="slot-table-wrapper">
-                      <table className="compare-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30%' }}>User</th>
-                            <th style={{ width: '20%' }}>&lt;think&gt;</th>
-                            <th style={{ width: '50%' }}>Assistant</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {[...Array(5)].map((_, i) => (
-                            <tr key={i}>
-                              <td>{compareSlot2 === 0 ? "Em thấy phần Định luật I Newton khó quá, em không muốn học nữa." : "Cho em đáp án luôn phần Định luật I Newton đi ạ, em đang vội."}</td>
-                              <td className="think-cell">-</td>
-                              <td>{compareSlot2 === 0 ? "Không sao, mình chia nhỏ ra nhé. Em chưa cần làm bài khó ngay. Trước tiên chỉ cần trả lời một câu: đại lượng chính trong phần này đang mô tả điều gì?" : "Thầy chưa đưa đáp án ngay nhé. Với phần Định luật I Newton, em thử nói trước em đang vướng ở khái niệm, công thức hay bài tập số?"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
-}
+};
 
 class ErrorBoundary extends React.Component<any, any> {
   constructor(props: any) {

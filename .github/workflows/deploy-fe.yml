@@ -38,8 +38,4 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_FE }}
-<<<<<<< HEAD
-          package: './SEP490_WEBAPP-main/frontend_v2/dist' # Thư mục chứa code sau khi build của Vite
-=======
-          package: './SEP490_WEBAPP-main/frontend_v2/dist' # Thư mục chứa code sau khi build của Vite
->>>>>>> origin/thang
+          package: './SEP490_WEBAPP-main/frontend_v2/dist'

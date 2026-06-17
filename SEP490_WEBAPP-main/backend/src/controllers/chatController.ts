@@ -119,13 +119,22 @@ export const chatWithAI = async (req: Request, res: Response): Promise<void> => 
 
       if (normalizedProvider === 'openrouter') {
         llmProvider = new OpenRouterProvider();
+      } else if (normalizedProvider === 'gemini') {
+        // Use GeminiProvider with isJson = false for chat
+        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
+        llmProvider = new GeminiProvider(false);
+      } else if (normalizedProvider === 'openai') {
+        const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
+        llmProvider = new OpenAIProvider();
+      } else if (normalizedProvider === 'deepseek') {
+        const { DeepseekProvider } = await import('../services/providers/DeepseekProvider.js');
+        llmProvider = new DeepseekProvider();
       }
 
       if (llmProvider) {
         console.log(`[chatWithAI] Using external provider: ${normalizedProvider}`);
-        // If using OpenRouter, we can pass the model ID if it looks like a HF model ID or OpenRouter model ID
-        const modelOverride = normalizedProvider === 'openrouter' ? actualModelId : undefined;
-        const reply = await llmProvider.generateContent(actualMessage, modelOverride);
+        // If using OpenRouter or Gemini, pass the model ID
+        const reply = await llmProvider.generateContent(actualMessage, actualModelId, system_prompt);
         res.json({ reply, result: reply });
         return;
       }
@@ -218,7 +227,18 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     if (provider) {
       let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') llmProvider = new OpenRouterProvider();
+      if (normalizedProvider === 'openrouter') {
+        llmProvider = new OpenRouterProvider();
+      } else if (normalizedProvider === 'gemini') {
+        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
+        llmProvider = new GeminiProvider(false);
+      } else if (normalizedProvider === 'openai') {
+        const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
+        llmProvider = new OpenAIProvider();
+      } else if (normalizedProvider === 'deepseek') {
+        const { DeepseekProvider } = await import('../services/providers/DeepseekProvider.js');
+        llmProvider = new DeepseekProvider();
+      }
 
       if (llmProvider) {
         console.log(`[inferWithAI] Using external provider: ${normalizedProvider}`);
@@ -318,7 +338,12 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
     if (provider) {
       let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') llmProvider = new OpenRouterProvider();
+      if (normalizedProvider === 'openrouter') {
+        llmProvider = new OpenRouterProvider();
+      } else if (normalizedProvider === 'gemini') {
+        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
+        llmProvider = new GeminiProvider(false);
+      }
 
       if (llmProvider) {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -326,8 +351,7 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
 
-        const modelOverride = normalizedProvider === 'openrouter' ? actualModelId : undefined;
-        const reply = await llmProvider.generateContent(actualMessage, modelOverride);
+        const reply = await llmProvider.generateContent(actualMessage, actualModelId, system_prompt);
 
         res.write(`data: ${JSON.stringify({ text: reply })}\n\n`);
         res.write(`data: ${JSON.stringify({ is_final: true })}\n\n`);
@@ -484,7 +508,12 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     if (provider) {
       let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') llmProvider = new OpenRouterProvider();
+      if (normalizedProvider === 'openrouter') {
+        llmProvider = new OpenRouterProvider();
+      } else if (normalizedProvider === 'gemini') {
+        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
+        llmProvider = new GeminiProvider(false);
+      }
 
       if (llmProvider) {
         res.setHeader('Content-Type', 'text/event-stream');

@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { ConversionController } from '../controllers/conversionController';
 import { HuggingFaceController } from '../controllers/huggingfaceController';
+import { CloudStorageController } from '../controllers/cloudStorageController';
 import { EvaluationController } from '../controllers/evaluationController';
 import {
   startTraining,
@@ -57,6 +58,7 @@ import { autoLabelGroups } from '../controllers/autoLabelController';
 const router = express.Router();
 const controller = new ConversionController();
 const hfController = new HuggingFaceController();
+const cloudStorageController = new CloudStorageController();
 const evalController = new EvaluationController();
 const registryController = new ModelRegistryController();
 const promptController = new PromptController();
@@ -126,6 +128,9 @@ router.patch('/chat/sessions/:id/title', updateSessionTitle);
 
 // Hugging Face Routes
 router.post('/huggingface/upload', (req, res) => hfController.uploadDataset(req, res));
+
+// Cloud Storage Routes
+router.post('/cloud-storage/sync', (req, res) => cloudStorageController.syncDataset(req, res));
 
 // Gemini Evaluation
 router.post('/evaluate', (req, res) => evalController.evaluate(req, res));

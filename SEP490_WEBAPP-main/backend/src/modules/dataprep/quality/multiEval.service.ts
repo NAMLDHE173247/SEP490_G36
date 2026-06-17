@@ -76,7 +76,7 @@ export class MultiEvalService {
       if (!job) return;
 
       const samples = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).sort({ createdAt: 1 }).lean();
-      
+
       // Clean up any old evaluation results for the same version before saving new ones
       await MultiModelEvaluationResult.deleteMany({ datasetVersionId: versionId });
 
@@ -147,7 +147,7 @@ export class MultiEvalService {
 
         const targetIdx = targetMessageIndices[0];
         const messages = (sample.data as any)?.messages || [];
-        
+
         // 2. Extract Context Window
         let start = 0;
         let end = messages.length - 1;
@@ -185,7 +185,7 @@ export class MultiEvalService {
               originalMessageIndex: targetIdx,
             };
 
-            const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', JSON.stringify(inputData, null, 2));
+            const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', () => JSON.stringify(inputData, null, 2));
             const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
             const rawResponse = await provider.generateContent(prompt, undefined, systemPrompt);
 
@@ -229,8 +229,8 @@ export class MultiEvalService {
                 scorecard.completeness,
                 scorecard.readiness,
               ].filter((v) => typeof v === 'number' && v !== null) as number[];
-              
-              scorecard.overall = scores.length > 0 
+
+              scorecard.overall = scores.length > 0
                 ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
                 : 5;
             }
@@ -326,10 +326,10 @@ export class MultiEvalService {
               reason: bestModelScorecard.reason
             }];
 
-            const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
+            const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', () => JSON.stringify(payload, null, 2));
             const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
             const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
-            
+
             const firstBracket = rawResponse.indexOf('[');
             const lastBracket = rawResponse.lastIndexOf(']');
             const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
@@ -338,21 +338,21 @@ export class MultiEvalService {
 
             const parsed = JSON.parse(jsonString);
             const refinedOutput = parsed[0]?.refinedOutput;
-            
+
             if (typeof refinedOutput === 'string' && refinedOutput.trim()) {
               if (Array.isArray(messages)) {
                 const updatedMessages = [...messages];
                 let finalCleanOutput = refinedOutput.replace(/^\[ASSISTANT.*?\]:\s*/i, '').trim();
-                
+
                 updatedMessages[targetIdx] = {
                   ...updatedMessages[targetIdx],
                   content: finalCleanOutput
                 };
-                
+
                 await ProcessedDatasetItem.findByIdAndUpdate(sample._id, {
                   $set: { 'data.messages': updatedMessages }
                 });
-                
+
                 await ConversationRewriteHistory.create({
                   datasetVersionId: new mongoose.Types.ObjectId(versionId),
                   sampleId: sample._id,
@@ -365,7 +365,7 @@ export class MultiEvalService {
                   editType: 'ai',
                   createdAt: new Date()
                 });
-                
+
                 autoRefined = true;
                 job.progress.refinedCount = (job.progress.refinedCount || 0) + 1;
               }
