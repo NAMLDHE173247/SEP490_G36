@@ -501,6 +501,14 @@ export class ConversionService {
       stats.removedTooShort += before;
     }
 
+    // BƯỚC 7: ÁP DỤNG TEXT CLEANING
+    cleaned = cleaned.map(item => ({
+      ...item,
+      instruction: this.cleanContent(item.instruction, options.removeThinkTags || false),
+      input: item.input ? this.cleanContent(item.input, options.removeThinkTags || false) : item.input,
+      output: this.cleanContent(item.output, options.removeThinkTags || false)
+    }));
+
     stats.finalCount = cleaned.length;
     return { cleaned, stats };
   }
@@ -648,6 +656,15 @@ export class ConversionService {
       });
       stats.removedTooShort += before - cleaned.length;
     }
+
+    // BƯỚC 6: ÁP DỤNG TEXT CLEANING CHO TẤT CẢ MESSAGES
+    cleaned = cleaned.map(item => ({
+      ...item,
+      messages: item.messages.map(msg => ({
+        ...msg,
+        content: this.cleanContent(msg.content, options.removeThinkTags || false)
+      }))
+    }));
 
     stats.finalCount = cleaned.length;
     return { cleaned, stats };

@@ -242,6 +242,8 @@ function DataPrepView() {
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [previewPage, setPreviewPage] = useState(1);
+  const [previewItemsPerPage, setPreviewItemsPerPage] = useState(10);
   const [isCleaningLoading, setIsCleaningLoading] = useState(false);
   const [pendingCleanedList, setPendingCleanedList] = useState<any[]>([]);
 
@@ -1019,8 +1021,8 @@ function DataPrepView() {
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
-      // Take a sample of 10 items for the before/after/removed list
-      const originalSample = originalMapped.slice(0, 10);
+      // Take all items for the preview list
+      const originalSample = originalMapped;
       const cleanedSampleMap = new Map<string, any>();
       mapped.forEach(c => cleanedSampleMap.set(c.id, c));
 
@@ -1521,19 +1523,19 @@ function DataPrepView() {
               <div className="post-stat-item">
                 <div className="post-stat-label">Error keywords</div>
                 <div className="post-stat-value cleaning-red">
-                  -{conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
+                  {conversionStats?.stats?.cleaning?.removedBoilerplate ?? 28}
                 </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Length</div>
                 <div className="post-stat-value cleaning-red">
-                  -{((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
+                  {((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) || 14}
                 </div>
               </div>
               <div className="post-stat-item">
                 <div className="post-stat-label">Unclosed &lt;think&gt;</div>
                 <div className="post-stat-value cleaning-red">
-                  -{conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
+                  {conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 5}
                 </div>
               </div>
               <div className="post-stat-item highlight">
@@ -1580,7 +1582,14 @@ function DataPrepView() {
                   {pageMsgCount} messages · Showing {startConvIdx + 1}-{Math.min(startConvIdx + convsPerPage, filteredTotal)} of {filteredTotal} conversations
                   {searchQuery && ` (filtered from ${totalConvs})`}
                 </span>
-                <button className="cleaning-pipeline-trigger-btn" onClick={() => setShowCleaningPopup(true)}>
+                <button className="cleaning-pipeline-trigger-btn" onClick={() => {
+                  setShowCleaningPopup(true);
+                  if (cleaningApplied) {
+                    setCleaningPopupView('preview');
+                  } else {
+                    setCleaningPopupView('settings');
+                  }
+                }}>
                   <Settings size={16} />
                   Data Cleaning Pipeline
                 </button>
@@ -1944,63 +1953,103 @@ function DataPrepView() {
                     const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
                     const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
                     const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                    const fixedList = afterList.filter(r => r.status === 'fixed');
+                    
                     const totalCount = beforeList.length;
                     const keptCount = afterList.length;
-                    const fixedCount = afterList.filter(r => r.status === 'fixed').length;
+                    const fixedCount = fixedList.length;
                     const removedCount = removedList.length;
+
+                    const activeList = previewTab === 'total' || previewTab === 'before' ? beforeList :
+                                       previewTab === 'kept' || previewTab === 'after' ? afterList :
+                                       previewTab === 'fixed' ? fixedList :
+                                       removedList;
+                                       
+                    const totalPages = Math.max(1, Math.ceil(activeList.length / previewItemsPerPage));
+                    const startIdx = (previewPage - 1) * previewItemsPerPage;
+                    const paginatedList = activeList.slice(startIdx, startIdx + previewItemsPerPage);
+
+                    const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
+                    const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                    const realRemoved = realTotal - realKept;
+                    const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
 
                     return (
                       <>
-                        {/* Tabs */}
-                        <div className="preview-modal-tabs">
+                        {/* New Tabs / Summary */}
+                        <div className="preview-modal-summary" style={{ display: 'flex', gap: '8px', cursor: 'pointer', flexWrap: 'wrap' }}>
                           <button
-                            className={`preview-tab ${previewTab === 'before' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('before')}
+                            className={`summary-tag summary-total ${previewTab === 'total' || previewTab === 'before' ? 'active-tab' : ''}`}
+                            style={{ opacity: previewTab === 'total' || previewTab === 'before' ? 1 : 0.6, border: 'none', padding: '6px 12px' }}
+                            onClick={() => { setPreviewTab('total'); setPreviewPage(1); }}
                           >
-                            📄 Before (Mẫu {totalCount})
+                            Tổng tệp: {realTotal} hội thoại
                           </button>
                           <button
-                            className={`preview-tab ${previewTab === 'after' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('after')}
+                            className={`summary-tag summary-kept ${previewTab === 'kept' || previewTab === 'after' ? 'active-tab' : ''}`}
+                            style={{ opacity: previewTab === 'kept' || previewTab === 'after' ? 1 : 0.6, border: 'none', padding: '6px 12px' }}
+                            onClick={() => { setPreviewTab('kept'); setPreviewPage(1); }}
                           >
-                            ✅ After (Mẫu {keptCount})
+                            Giữ lại: {realKept}
                           </button>
                           <button
-                            className={`preview-tab tab-removed ${previewTab === 'removed' ? 'active' : ''}`}
-                            onClick={() => setPreviewTab('removed')}
+                            className={`summary-tag summary-fixed ${previewTab === 'fixed' ? 'active-tab' : ''}`}
+                            style={{ opacity: previewTab === 'fixed' ? 1 : 0.6, border: 'none', padding: '6px 12px' }}
+                            onClick={() => { setPreviewTab('fixed'); setPreviewPage(1); }}
                           >
-                            🗑️ Removed (Mẫu {removedCount})
+                            Đã sửa: {realFixed}
+                          </button>
+                          <button
+                            className={`summary-tag summary-removed ${previewTab === 'removed' ? 'active-tab' : ''}`}
+                            style={{ opacity: previewTab === 'removed' ? 1 : 0.6, border: 'none', padding: '6px 12px' }}
+                            onClick={() => { setPreviewTab('removed'); setPreviewPage(1); }}
+                          >
+                            Loại bỏ: {realRemoved}
                           </button>
                         </div>
 
-                        {(() => {
-                          const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
-                          const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
-                          const realRemoved = realTotal - realKept;
-                          const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
-
-                          return (
-                            <>
-                              {/* Summary bar */}
-                              <div className="preview-modal-summary">
-                                <span className="summary-tag summary-total">Tổng tệp: {realTotal} hội thoại</span>
-                                <span className="summary-tag summary-kept">Giữ lại: {realKept}</span>
-                                <span className="summary-tag summary-fixed">Đã sửa: {realFixed}</span>
-                                <span className="summary-tag summary-removed">Loại bỏ: {realRemoved}</span>
-                              </div>
-
-                              {/* Info Alert */}
-                              <div className="preview-modal-info-alert" style={{ margin: '8px 16px', padding: '10px 14px', backgroundColor: '#eff6ff', borderRadius: '6px', borderLeft: '4px solid #3b82f6', color: '#1e3a8a', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span>ℹ️</span>
-                                <span><strong>Lưu ý:</strong> Bảng bên dưới chỉ hiển thị mẫu {totalCount} hội thoại đầu tiên để xem trước kết quả. Khi bấm "Xác nhận & Áp dụng", bộ lọc sẽ được áp dụng cho <strong>tất cả {realTotal} cuộc hội thoại</strong> trong tệp dữ liệu.</span>
-                              </div>
-                            </>
-                          );
-                        })()}
+                        {/* Toolbar for Pagination */}
+                        <div className="preview-toolbar" style={{ margin: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div className="toolbar-select-wrapper">
+                            <label className="toolbar-label">Hiển thị:</label>
+                            <select
+                              className="toolbar-select"
+                              value={previewItemsPerPage}
+                              onChange={(e) => {
+                                setPreviewItemsPerPage(Number(e.target.value));
+                                setPreviewPage(1);
+                              }}
+                            >
+                              <option value="5">5</option>
+                              <option value="10">10</option>
+                              <option value="15">15</option>
+                              <option value="20">20</option>
+                            </select>
+                          </div>
+                          <div className="pagination-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <button
+                              className="page-btn"
+                              disabled={previewPage <= 1}
+                              onClick={() => setPreviewPage(p => Math.max(1, p - 1))}
+                              style={{ padding: '4px 8px', background: previewPage <= 1 ? '#e2e8f0' : '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: previewPage <= 1 ? 'not-allowed' : 'pointer' }}
+                            >
+                              <ChevronLeft size={16} />
+                            </button>
+                            <span style={{ fontSize: '14px', color: '#475569' }}>Trang {previewPage} / {totalPages}</span>
+                            <button
+                              className="page-btn"
+                              disabled={previewPage >= totalPages}
+                              onClick={() => setPreviewPage(p => Math.min(totalPages, p + 1))}
+                              style={{ padding: '4px 8px', background: previewPage >= totalPages ? '#e2e8f0' : '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: previewPage >= totalPages ? 'not-allowed' : 'pointer' }}
+                            >
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                        </div>
 
                         {/* Tab Content */}
                         <div className="preview-modal-body">
-                          {previewTab === 'before' && (
+                          {(previewTab === 'total' || previewTab === 'before') && (
                             <table className="preview-modal-table">
                               <thead>
                                 <tr>
@@ -2011,7 +2060,7 @@ function DataPrepView() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {beforeList.map((row) => (
+                                {paginatedList.map((row) => (
                                   <tr key={row.id} className={row.status === 'has-issue' ? 'row-issue' : 'row-clean'}>
                                     <td><span className="conv-id-badge">{row.id}</span></td>
                                     <td>
@@ -2028,7 +2077,7 @@ function DataPrepView() {
                             </table>
                           )}
 
-                          {previewTab === 'after' && (
+                          {(previewTab === 'kept' || previewTab === 'after' || previewTab === 'fixed') && (
                             <table className="preview-modal-table">
                               <thead>
                                 <tr>
@@ -2039,7 +2088,7 @@ function DataPrepView() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {afterList.map((row) => (
+                                {paginatedList.map((row) => (
                                   <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
                                     <td><span className="conv-id-badge">{row.id}</span></td>
                                     <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
@@ -2062,7 +2111,7 @@ function DataPrepView() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {removedList.map((row) => (
+                                {paginatedList.map((row) => (
                                   <tr key={row.id} className="row-removed">
                                     <td><span className="conv-id-badge">{row.id}</span></td>
                                     <td><span className="status-badge badge-removed">{row.reason}</span></td>
@@ -2072,6 +2121,11 @@ function DataPrepView() {
                                 ))}
                               </tbody>
                             </table>
+                          )}
+                          {paginatedList.length === 0 && (
+                            <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>
+                              Không có dữ liệu trong mục này
+                            </div>
                           )}
                         </div>
                       </>

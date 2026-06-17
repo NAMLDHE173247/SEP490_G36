@@ -2520,8 +2520,8 @@
 
 /* Wide mode for preview view */
 .cleaning-popup-content.cleaning-popup-wide {
-  max-width: 920px;
-  height: 700px;
+  max-width: 1200px;
+  height: 85vh;
 }
 
 /* Ensure preview modal styles work inside the merged popup */
