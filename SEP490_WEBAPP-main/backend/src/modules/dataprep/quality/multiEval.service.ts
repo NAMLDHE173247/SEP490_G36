@@ -185,7 +185,7 @@ export class MultiEvalService {
               originalMessageIndex: targetIdx,
             };
 
-            const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', JSON.stringify(inputData, null, 2));
+            const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', () => JSON.stringify(inputData, null, 2));
             const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
             const rawResponse = await provider.generateContent(prompt, undefined, systemPrompt);
 
@@ -326,7 +326,7 @@ export class MultiEvalService {
               reason: bestModelScorecard.reason
             }];
 
-            const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
+            const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', () => JSON.stringify(payload, null, 2));
             const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
             const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
 

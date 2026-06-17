@@ -377,7 +377,7 @@ export const apiService = {
   appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat-sessions/${args[0]}/messages`, args[1]); return response.data; },
   
   infer: async (...args: any[]) => { 
-    const response = await api.post('/inference/infer', args[0]); 
+    const response = await api.post('/infer', args[0]); 
     return response.data; 
   },
   
@@ -394,7 +394,7 @@ export const apiService = {
         onChunkCallback = args[2] || args[1];
     }
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-    const response = await fetch(`${apiUrl}/inference/stream`, {
+    const response = await fetch(`${apiUrl}/infer/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -420,14 +420,49 @@ export const apiService = {
     }
   },
 
-  getInferenceLogs: async (...args: any[]) => { const response = await api.get(`/inference/logs/${args[0]}`); return response.data; },
-  stopInference: async (...args: any[]) => { const response = await api.post(`/inference/stop/${args[0]}`); return response.data; },
-  loadModel: async (...args: any[]) => { const response = await api.post(`/inference/load/${args[0]}`); return response.data; },
-  unloadModel: async (...args: any[]) => { const response = await api.post(`/inference/unload/${args[0]}`); return response.data; },
-  validateModel: async (...args: any[]) => { const response = await api.get(`/inference/validate/${args[0]}`); return response.data; },
+  getInferenceLogs: async (...args: any[]) => { const response = await api.get('/infer/logs', { params: { instanceId: args[0] } }); return response.data; },
+  stopInference: async (...args: any[]) => { const response = await api.post(`/infer/stop/${args[0]}`); return response.data; },
+  loadModel: async (...args: any[]) => { const response = await api.post('/model/load', { hf_model_id: args[0], ...args[1] }); return response.data; },
+  unloadModel: async (...args: any[]) => { const response = await api.post(`/model/unload/${args[0]}`); return response.data; },
+  validateModel: async (...args: any[]) => { const response = await api.post('/chat/validate-model', args[0]); return response.data; },
   listModelRegistries: async (...args: any[]) => { const response = await api.get('/model-registry'); return response.data; },
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
   registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
-  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset/prompts'); return response.data; }
+  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset-prompts'); return response.data; },
+  createDatasetPrompt: async (payload: { name: string; content: string; description?: string; isPublic?: boolean }): Promise<any> => {
+    const response = await api.post('/dataset-prompts', payload);
+    return response.data;
+  },
+  safeSplit: async (payload: {
+    data: any[];
+    test_percentage?: number;
+    threshold?: number;
+    max_attempts?: number;
+    seed?: number;
+  }): Promise<any> => {
+    const response = await api.post('/cluster/safe-split', payload);
+    return response.data;
+  },
+  
+  pushToHuggingFace: async (payload: {
+    token: string;
+    repoId: string;
+    fileName: string;
+    content: string;
+    isPrivate?: boolean;
+  }): Promise<{ url: string; message: string }> => {
+    const response = await api.post('/huggingface/upload', payload);
+    return response.data;
+  },
+
+  syncToCloud: async (payload: {
+    provider: 'gcloud' | 'azure';
+    fileName: string;
+    content: string;
+  }): Promise<{ url: string; message: string }> => {
+    const response = await api.post('/cloud-storage/sync', payload);
+    return response.data;
+  }
 };
+

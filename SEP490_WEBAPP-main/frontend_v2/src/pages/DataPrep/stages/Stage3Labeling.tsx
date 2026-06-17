@@ -30,7 +30,8 @@ export const Stage3Labeling: React.FC = () => {
     iaMessages, setIaMessages,
     clusterRan,
     setCurrentStage,
-    setCurrentSubStep4
+    setCurrentSubStep4,
+    setConversationsList
   } = dataPrep;
 
   // Local states
@@ -2047,6 +2048,7 @@ export const Stage3Labeling: React.FC = () => {
             if (currentSubStep3 < 7) {
               setCurrentSubStep3(currentSubStep3 + 1);
             } else {
+              setConversationsList(stage3Convs);
               setCurrentSubStep4(7);
               setCurrentStage(4);
             }
