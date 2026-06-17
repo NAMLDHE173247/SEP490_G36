@@ -77,6 +77,7 @@ export const Stage3Labeling: React.FC = () => {
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
+  const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -188,6 +189,37 @@ export const Stage3Labeling: React.FC = () => {
     };
   }, [currentSubStep3]);
   // --------------------------------------
+
+  // Fetch staff when modal opens
+  React.useEffect(() => {
+    if (!showCreateTaskModal) return;
+    const fetchStaffForModal = async () => {
+      setIsFetchingDashboard(true);
+      try {
+        const usersRes = await apiService.listUsers();
+        const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
+        const users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+        setShareUsers(users);
+
+        // Also try to load samples if versionId exists
+        const versionId = localStorage.getItem('current_version_id');
+        if (versionId && assignmentSamples.length === 0) {
+          try {
+            const assign = await apiService.getDatasetVersionAssignments(versionId);
+            setAssignmentSamples(assign.samples || []);
+            setAssignmentTotals(assign.totals);
+          } catch (e) {
+            console.warn('Could not load assignment samples:', e);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch staff for modal:', err);
+      } finally {
+        setIsFetchingDashboard(false);
+      }
+    };
+    fetchStaffForModal();
+  }, [showCreateTaskModal]);
 
   const handleCreateTask = async () => {
     if (!taskAssigneeId) {
@@ -2064,337 +2096,370 @@ export const Stage3Labeling: React.FC = () => {
       {renderedContent}
 
 
-      {/* Create Labeling Task Drawer */}
+
+      {/* Create Labeling Task Drawer — Refactored: Staff-First Flow */}
       {showCreateTaskModal && (
         <div className="ct-drawer-overlay" onClick={() => setShowCreateTaskModal(false)}>
           <div className="ct-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="ct-drawer-header" style={{ flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                 <div>
-                  <h2>{drawerStep === 1 ? 'Bước 1: Chia Batch (Batching)' : 'Bước 2: Phân công Nhân viên (Assigning)'}</h2>
-                  <p>{drawerStep === 1 ? 'Chọn hoặc tự động cắt các mẫu thành các batch dữ liệu.' : 'Giao các Batch vừa tạo cho Nhân viên phụ trách.'}</p>
+                  <h2>{drawerStep === 1 ? 'Bước 1: Chọn Nhân viên' : 'Bước 2: Cấu hình & Xác nhận'}</h2>
+                  <p>{drawerStep === 1
+                    ? 'Chọn nhân viên sẽ tham gia gán nhãn. Hệ thống sẽ tự động chia đều dữ liệu.'
+                    : 'Cấu hình tên Task, mức ưu tiên và xem preview phân bổ.'}</p>
                 </div>
                 <button className="ct-drawer-close" onClick={() => setShowCreateTaskModal(false)}><X size={20} /></button>
               </div>
-              {drawerStep === 1 && (
-                <div className="ct-drawer-tabs">
-                  <button 
-                    className={`ct-drawer-tab ${assignActiveTab === 'manual' ? 'active' : ''}`}
-                    onClick={() => setAssignActiveTab('manual')}
-                  >Giao việc Thủ công (Manual)</button>
-                  <button 
-                    className={`ct-drawer-tab ${assignActiveTab === 'auto' ? 'active' : ''}`}
-                    onClick={() => setAssignActiveTab('auto')}
-                  >Chia batch Tự động (Auto-Split)</button>
-                </div>
-              )}
+              {/* Step indicators */}
+              <div className="ct-drawer-tabs">
+                <button
+                  className={`ct-drawer-tab ${drawerStep === 1 ? 'active' : ''}`}
+                  onClick={() => setDrawerStep(1)}
+                  style={drawerStep > 1 ? { opacity: 0.7 } : {}}
+                >
+                  <Users size={14} style={{ marginRight: '6px' }} />
+                  1. Chọn Nhân viên
+                </button>
+                <button
+                  className={`ct-drawer-tab ${drawerStep === 2 ? 'active' : ''}`}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <Check size={14} style={{ marginRight: '6px' }} />
+                  2. Xác nhận & Giao việc
+                </button>
+              </div>
             </div>
 
             {drawerStep === 1 ? (
-              assignActiveTab === 'manual' ? (
               <>
-                <div className="ct-drawer-body">
-                  {/* Left Column: Sample Selection */}
-                  <div className="ct-drawer-left">
-                    <div className="ct-drawer-left-header">
-                      <div>
-                        <span style={{ fontWeight: 700, fontSize: '14px', color: '#0f172a' }}>Danh sách Samples</span>
-                        <span style={{ fontSize: '13px', color: '#64748b', marginLeft: '8px' }}>
-                          ({selectedSamplesForBatch.length} đã chọn / {assignmentSamples.length} tổng số)
-                        </span>
-                      </div>
-                      <button 
-                        style={{ fontSize: '13px', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
-                        onClick={() => {
-                          if (selectedSamplesForBatch.length === assignmentSamples.length) {
-                            setSelectedSamplesForBatch([]);
-                          } else {
-                            setSelectedSamplesForBatch(assignmentSamples.map(s => s.sampleIndex));
-                          }
-                        }}
-                      >
-                        {selectedSamplesForBatch.length === assignmentSamples.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                      </button>
-                    </div>
-                    <div className="ct-drawer-left-content">
-                      {assignmentSamples.map((s, idx) => {
-                        const isSelected = selectedSamplesForBatch.includes(s.sampleIndex);
-                        return (
-                          <div 
-                            key={idx} 
-                            className={`ct-sample-item ${isSelected ? 'selected' : ''}`}
-                            onClick={() => {
-                              if (isSelected) {
-                                setSelectedSamplesForBatch(prev => prev.filter(id => id !== s.sampleIndex));
-                              } else {
-                                setSelectedSamplesForBatch(prev => [...prev, s.sampleIndex]);
-                              }
-                            }}
-                          >
-                            <input 
-                              type="checkbox" 
-                              className="ct-sample-checkbox"
-                              checked={isSelected}
-                              onChange={() => {}} // Handle click on the wrapper
-                            />
-                            <div className="ct-sample-content">
-                              <div className="ct-sample-key">#{s.sampleIndex} - {s.sampleKey}</div>
-                              <div className="ct-sample-text">{truncateText(s.preview, 150)}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="ct-drawer-footer">
-                  <button 
-                    className="ct-btn-cancel" 
-                    style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600 }}
-                    onClick={() => setShowCreateTaskModal(false)}
-                  >
-                    Hủy (Cancel)
-                  </button>
-                  <button 
-                    className="ct-btn-create"
-                    style={{ padding: '10px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
-                    onClick={handleNextToStep2}
-                  >
-                    Tiếp tục: Phân công <ChevronRight size={16} />
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="ct-auto-split-container">
-                  <div className="ct-auto-split-top">
-                    <div className="ct-auto-split-config">
-                      <div style={{ display: 'flex', gap: '24px' }}>
-                        <div className="ct-form-group">
-                          <label>Chiến lược chia batch</label>
-                          <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input 
-                                type="radio" 
-                                name="splitMode" 
-                                checked={autoSplitMode === 'by_batch_count'}
-                                onChange={() => setAutoSplitMode('by_batch_count')}
-                              />
-                              Chia đều cho N batch
-                            </label>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                              <input 
-                                type="radio" 
-                                name="splitMode" 
-                                checked={autoSplitMode === 'by_batch_size'}
-                                onChange={() => setAutoSplitMode('by_batch_size')}
-                              />
-                              Chia theo N câu / batch
-                            </label>
-                          </div>
-                        </div>
-                        <div className="ct-form-group" style={{ maxWidth: '120px' }}>
-                          <label>Số N</label>
-                          <input 
-                            type="number" 
-                            className="ct-input" 
-                            value={autoSplitValue}
-                            onChange={(e) => setAutoSplitValue(Number(e.target.value))}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      
-                      <div className="ct-form-group" style={{ maxWidth: '300px' }}>
-                        <label>Tiền tố Tên batch (Prefix)</label>
-                        <input 
-                          type="text" 
-                          className="ct-input" 
-                          value={autoSplitPrefix}
-                          onChange={(e) => setAutoSplitPrefix(e.target.value)}
-                          placeholder="VD: Batch Toán Học"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="ct-auto-split-actions">
-                      <button 
-                        className="ct-btn-create" 
-                        style={{ padding: '10px 20px', background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600 }}
-                        onClick={handleGenerateAutoSplit}
-                      >
-                        <Sparkles size={14} className="inline mr-2" /> Tạo trước danh sách Batch
-                      </button>
+                {/* Step 1: Staff Selection */}
+                <div className="ct-drawer-body" style={{ flexDirection: 'column', padding: '24px' }}>
+                  {/* Summary info */}
+                  <div style={{
+                    display: 'flex', gap: '16px', marginBottom: '20px', padding: '14px 16px',
+                    background: '#f0f9ff', borderRadius: '10px', border: '1px solid #bae6fd',
+                    alignItems: 'center'
+                  }}>
+                    <Database size={18} style={{ color: '#0284c7' }} />
+                    <div>
+                      <span style={{ fontWeight: 700, color: '#0c4a6e' }}>Tổng dữ liệu: </span>
+                      <span style={{ fontWeight: 700, fontSize: '16px', color: '#0284c7' }}>
+                        {assignmentSamples.length} samples
+                      </span>
+                      <span style={{ color: '#64748b', marginLeft: '12px', fontSize: '13px' }}>
+                        sẽ được chia đều cho các nhân viên được chọn
+                      </span>
                     </div>
                   </div>
 
-                  <div className="ct-auto-split-preview">
-                    {autoSplitPreview.length > 0 ? (
-                      <table className="ct-preview-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '80px' }}>STT</th>
-                            <th>Tên Batch (Sẽ tạo)</th>
-                            <th>Số lượng Sample</th>
-                            <th>Mẫu Dữ Liệu (ID)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {autoSplitPreview.map((batch, idx) => (
-                            <tr key={idx}>
-                              <td style={{ fontWeight: 600 }}>{idx + 1}</td>
-                              <td style={{ fontWeight: 600, color: '#3b82f6' }}>{batch.name}</td>
-                              <td>{batch.samples.length} samples</td>
-                              <td style={{ color: '#64748b' }}>
-                                #{batch.samples[0]?.sampleIndex} ... #{batch.samples[batch.samples.length - 1]?.sampleIndex}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* Staff search + Workload filter */}
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px', flex: 1,
+                      padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px',
+                      background: '#f8fafc'
+                    }}>
+                      <Search size={16} style={{ color: '#94a3b8' }} />
+                      <input
+                        type="text"
+                        placeholder="Tìm theo tên hoặc email..."
+                        value={stage3Search}
+                        onChange={e => setStage3Search(e.target.value)}
+                        style={{ flex: 1, border: 'none', outline: 'none', fontSize: '14px', background: 'transparent', color: '#334155' }}
+                      />
+                    </div>
+                    <select
+                      value={workloadFilter}
+                      onChange={e => setWorkloadFilter(e.target.value as any)}
+                      style={{
+                        padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: '10px',
+                        background: '#f8fafc', fontSize: '13px', fontWeight: 600, color: '#334155',
+                        cursor: 'pointer', minWidth: '170px'
+                      }}
+                    >
+                      <option value="all">Tất cả</option>
+                      <option value="free">🟢 Rảnh rỗi (&lt; 100 câu)</option>
+                      <option value="busy">🟡 Đang bận (100-500)</option>
+                      <option value="overloaded">🔴 Quá tải (&gt; 500)</option>
+                    </select>
+                  </div>
+
+                  {/* Staff list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '420px', overflowY: 'auto' }}>
+                    {isFetchingDashboard ? (
+                      <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                        <Loader2 size={20} className="animate-spin" style={{ display: 'inline', marginRight: '8px' }} />
+                        Đang tải danh sách nhân viên...
+                      </div>
                     ) : (
-                      <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
-                        <Database size={48} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
-                        <p style={{ fontSize: '15px', fontWeight: 500, color: '#475569', marginBottom: '8px' }}>Chưa có danh sách batch nào được tạo.</p>
-                        <p style={{ fontSize: '13px' }}>Vui lòng cấu hình chiến lược chia batch ở trên và bấm "Tạo trước danh sách Batch" để xem trước.</p>
+                      shareUsers
+                        .filter((u: any) => {
+                          // Text search filter
+                          if (stage3Search.trim()) {
+                            const q = stage3Search.toLowerCase();
+                            if (!(u.name || '').toLowerCase().includes(q) && !(u.email || '').toLowerCase().includes(q)) return false;
+                          }
+                          // Workload filter
+                          const rem = u.remainingSamples || 0;
+                          if (workloadFilter === 'free') return rem < 100;
+                          if (workloadFilter === 'busy') return rem >= 100 && rem <= 500;
+                          if (workloadFilter === 'overloaded') return rem > 500;
+                          return true;
+                        })
+                        .map((user: any) => {
+                          const staffSelected = (staffAssignments['__selected__'] || []).includes(user._id);
+                          const rem = user.remainingSamples || 0;
+                          const total = user.totalAssigned || 0;
+                          const labeled = user.labeledSoFar || 0;
+                          const tasks = user.pendingTasks || 0;
+                          const pct = total > 0 ? Math.round((labeled / total) * 100) : 0;
+
+                          // Dynamic badge
+                          let badgeLabel = '', badgeBg = '', badgeColor = '', badgeEmoji = '';
+                          if (rem < 100) {
+                            badgeLabel = `Rảnh rỗi`; badgeBg = '#dcfce7'; badgeColor = '#16a34a'; badgeEmoji = '🟢';
+                          } else if (rem <= 500) {
+                            badgeLabel = `Đang bận`; badgeBg = '#fef3c7'; badgeColor = '#d97706'; badgeEmoji = '🟡';
+                          } else {
+                            badgeLabel = `Quá tải`; badgeBg = '#fee2e2'; badgeColor = '#dc2626'; badgeEmoji = '🔴';
+                          }
+
+                          return (
+                            <div
+                              key={user._id}
+                              onClick={() => {
+                                setStaffAssignments(prev => {
+                                  const current = prev['__selected__'] || [];
+                                  if (current.includes(user._id)) {
+                                    return { ...prev, '__selected__': current.filter((id: string) => id !== user._id) };
+                                  } else {
+                                    return { ...prev, '__selected__': [...current, user._id] };
+                                  }
+                                });
+                              }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '14px',
+                                padding: '14px 16px', border: `2px solid ${staffSelected ? '#6366f1' : '#e5e7eb'}`,
+                                borderRadius: '12px', cursor: 'pointer', transition: 'all 0.15s',
+                                background: staffSelected ? '#eef2ff' : '#fff'
+                              }}
+                              title={`Đang giữ ${tasks} luồng công việc. Tiến độ tổng: ${labeled}/${total} câu (${pct}%)`}
+                            >
+                              <input type="checkbox" checked={staffSelected} readOnly
+                                style={{ width: '18px', height: '18px', accentColor: '#6366f1', cursor: 'pointer' }} />
+                              <div style={{
+                                width: '38px', height: '38px', borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontWeight: 700, fontSize: '14px', flexShrink: 0
+                              }}>
+                                {(user.name || 'U').split(' ').pop()?.[0] || 'U'}
+                              </div>
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontWeight: 600, fontSize: '14px', color: '#1e293b' }}>{user.name || user.username}</span>
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>{user.email}</span>
+                                {total > 0 && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                                    <div style={{ flex: 1, height: '4px', background: '#e5e7eb', borderRadius: '2px', maxWidth: '120px' }}>
+                                      <div style={{ height: '100%', width: `${pct}%`, background: '#6366f1', borderRadius: '2px', transition: 'width 0.3s' }} />
+                                    </div>
+                                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>{labeled}/{total} ({pct}%)</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                <span style={{
+                                  fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '999px',
+                                  background: badgeBg, color: badgeColor
+                                }}>
+                                  {badgeEmoji} {badgeLabel}
+                                </span>
+                                <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                  Còn {rem} câu chờ
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                    )}
+                    {!isFetchingDashboard && shareUsers.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                        Không tìm thấy nhân viên nào. Hãy thêm Staff trong quản lý User.
                       </div>
                     )}
                   </div>
+
+                  {/* Selected count */}
+                  <div style={{ marginTop: '16px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
+                    Đã chọn: <strong style={{ color: '#6366f1' }}>{(staffAssignments['__selected__'] || []).length}</strong> nhân viên
+                  </div>
                 </div>
-                
+
+                {/* Footer Step 1 */}
                 <div className="ct-drawer-footer">
-                  <button 
-                    className="ct-btn-cancel" 
-                    style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600 }}
-                    onClick={() => setShowCreateTaskModal(false)}
-                  >
+                  <button className="ct-btn-cancel" onClick={() => setShowCreateTaskModal(false)}>
                     Hủy (Cancel)
                   </button>
-                  <button 
+                  <button
                     className="ct-btn-create"
-                    style={{ padding: '10px 16px', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', opacity: autoSplitPreview.length > 0 ? 1 : 0.5 }}
-                    disabled={autoSplitPreview.length === 0}
-                    onClick={handleNextToStep2}
+                    style={{
+                      padding: '10px 24px', background: '#6366f1', color: 'white', border: 'none',
+                      borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px',
+                      opacity: (staffAssignments['__selected__'] || []).length === 0 ? 0.5 : 1,
+                      cursor: (staffAssignments['__selected__'] || []).length === 0 ? 'not-allowed' : 'pointer'
+                    }}
+                    disabled={(staffAssignments['__selected__'] || []).length === 0}
+                    onClick={() => setDrawerStep(2)}
                   >
-                    Tiếp tục: Phân công <ChevronRight size={16} />
+                    Tiếp tục: Xác nhận <ChevronRight size={16} />
                   </button>
                 </div>
               </>
-            )
             ) : (
-              /* Step 2: Assigning Staff */
+              /* Step 2: Config & Confirm */
               <>
-                <div className="ct-wizard-step2">
+                <div className="ct-wizard-step2" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
                   <div className="ct-wizard-config">
                     <div className="ct-form-group">
                       <label>Tên Task (Tùy chọn)</label>
-                      <input 
-                        type="text" 
-                        className="ct-input" 
-                        placeholder="Nhập tên chung cho Task..." 
+                      <input
+                        type="text"
+                        className="ct-input"
+                        placeholder="Nhập tên chung cho Task..."
                         value={taskNameInput}
                         onChange={(e) => setTaskNameInput(e.target.value)}
                       />
                     </div>
-                    
-                    <div className="ct-form-group">
-                      <label>Mức độ ưu tiên (Priority)</label>
-                      <select 
-                        className="ct-select" 
-                        value={taskPriority}
-                        onChange={(e) => setTaskPriority(e.target.value)}
-                      >
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                      </select>
-                    </div>
 
-
-                    <div className="ct-form-group">
-                      <label>Hạn chót chung (Deadline)</label>
-                      <div className="ct-date-input">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      <div className="ct-form-group">
+                        <label>Mức độ ưu tiên</label>
+                        <select
+                          className="ct-select"
+                          value={taskPriority}
+                          onChange={(e) => setTaskPriority(e.target.value)}
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                          <option value="urgent">Urgent</option>
+                        </select>
+                      </div>
+                      <div className="ct-form-group">
+                        <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót (Deadline)</label>
                         <input type="date" className="ct-input" />
                       </div>
                     </div>
-
-                    <div className="ct-form-group">
-                      <label>Hướng dẫn chi tiết (Guideline)</label>
-                      <textarea placeholder="Link to Notion/Google Doc..." className="ct-textarea"></textarea>
-                    </div>
-
-                    <div className="ct-form-group">
-                      <label className="ct-checkbox-label" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <input type="checkbox" />
-                        <strong style={{ fontSize: '13px' }}>Tắt gợi ý nhãn từ AI</strong>
-                      </label>
-                    </div>
                   </div>
 
-                  <div className="ct-wizard-staff">
-                    <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Phân công Batch cho Nhân viên</h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
-                      Click vào các Batch bên dưới tên mỗi nhân viên để giao việc cho họ. Một Batch có thể được giao cho nhiều nhân viên.
+                  {/* Distribution Preview */}
+                  <div style={{
+                    background: 'linear-gradient(135deg, #f8fafc, #eef2ff)', border: '1px solid #c7d2fe',
+                    borderRadius: '14px', padding: '20px', marginTop: '20px'
+                  }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#4338ca', margin: '0 0 4px 0' }}>
+                      📊 Phân bổ tự động
+                    </h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
+                      {assignmentSamples.length} samples ÷ {(staffAssignments['__selected__'] || []).length} nhân viên
                     </p>
-                    <table className="ct-staff-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: '250px' }}>Nhân viên</th>
-                          <th>Chọn Batch phụ trách (Click để chọn/bỏ)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {shareUsers.length > 0 ? shareUsers.map(user => (
-                          <tr key={user._id}>
-                            <td>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontWeight: 600, color: '#0f172a' }}>{user.name || user.username}</span>
-                                <span style={{ fontSize: '12px', color: '#64748b' }}>{user.email}</span>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {(() => {
+                        const selectedIds = staffAssignments['__selected__'] || [];
+                        const N = assignmentSamples.length;
+                        const M = selectedIds.length;
+                        if (M === 0) return null;
+                        const perStaff = Math.floor(N / M);
+                        const remainder = N % M;
+                        let cursor = 1;
+                        return selectedIds.map((staffId: string, i: number) => {
+                          const user = shareUsers.find((u: any) => u._id === staffId);
+                          const count = perStaff + (i < remainder ? 1 : 0);
+                          const range = `#${cursor}–${cursor + count - 1}`;
+                          cursor += count;
+                          return (
+                            <div key={staffId} style={{
+                              display: 'flex', alignItems: 'center', gap: '12px',
+                              padding: '10px 14px', background: '#fff', borderRadius: '10px',
+                              border: '1px solid #e5e7eb'
+                            }}>
+                              <div style={{
+                                width: '32px', height: '32px', borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontWeight: 700, fontSize: '13px', flexShrink: 0
+                              }}>
+                                {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
                               </div>
-                            </td>
-                            <td>
-                              <div className="ct-batch-pills">
-                                {autoSplitPreview.map(batch => {
-                                  const isAssigned = (staffAssignments[user._id] || []).includes(batch.id);
-                                  return (
-                                    <div 
-                                      key={batch.id} 
-                                      className={`ct-batch-pill ${isAssigned ? 'active' : ''}`}
-                                      onClick={() => toggleStaffBatch(user._id, batch.id)}
-                                    >
-                                      {isAssigned ? <Check size={12} style={{ display: 'inline', marginRight: '4px' }} /> : <Plus size={12} style={{ display: 'inline', marginRight: '4px' }} />}
-                                      {batch.name}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </td>
-                          </tr>
-                        )) : (
-                          <tr>
-                            <td colSpan={2} style={{ textAlign: 'center', color: '#64748b', padding: '30px' }}>Chưa có thành viên nào trong dự án</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                              <span style={{ flex: 1, fontWeight: 600, fontSize: '14px', color: '#334155' }}>
+                                {user?.name || staffId}
+                              </span>
+                              <span style={{ fontWeight: 700, fontSize: '14px', color: '#6366f1' }}>
+                                {count} samples
+                              </span>
+                              <span style={{ fontSize: '12px', color: '#94a3b8' }}>{range}</span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
                   </div>
                 </div>
 
+                {/* Footer Step 2 */}
                 <div className="ct-drawer-footer" style={{ justifyContent: 'space-between' }}>
-                  <button 
-                    className="ct-btn-cancel" 
+                  <button
+                    className="ct-btn-cancel"
                     style={{ padding: '10px 16px', background: '#f8fafc', color: '#334155', border: '1px solid #cbd5e1', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
                     onClick={() => setDrawerStep(1)}
                   >
                     <ChevronRight size={16} style={{ transform: 'rotate(180deg)' }} /> Quay lại Bước 1
                   </button>
-                  <button 
+                  <button
                     className="ct-btn-create"
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
-                    onClick={handleBulkAssign}
+                    disabled={isAssigning}
+                    onClick={async () => {
+                      const selectedIds = staffAssignments['__selected__'] || [];
+                      if (selectedIds.length === 0) return;
+                      const versionId = localStorage.getItem('current_version_id');
+                      if (!versionId) { alert('Missing dataset version.'); return; }
+
+                      setIsAssigning(true);
+                      try {
+                        await apiService.post(`/dataprep/versions/${versionId}/assignments/auto-assign`, {
+                          assigneeIds: selectedIds,
+                          taskName: taskNameInput.trim() || 'Labeling Task',
+                          priority: taskPriority,
+                        });
+
+                        alert('Đã Giao Việc thành công!');
+                        // Refresh dashboard
+                        const [dash, assign] = await Promise.all([
+                          apiService.getDatasetVersionAssignmentDashboard(versionId),
+                          apiService.getDatasetVersionAssignments(versionId)
+                        ]);
+                        setAssignmentDashboard(dash);
+                        setAssignmentTotals(assign.totals);
+                        setAssignmentSamples(assign.samples || []);
+                        setShowCreateTaskModal(false);
+                        setDrawerStep(1);
+                        setStaffAssignments({});
+                      } catch (err: any) {
+                        console.error('Error assigning task:', err);
+                        alert(err?.response?.data?.error || err.message || 'Có lỗi xảy ra khi giao việc.');
+                      } finally {
+                        setIsAssigning(false);
+                      }
+                    }}
                   >
-                    <Check size={16} /> Hoàn tất & Giao việc
+                    {isAssigning ? (
+                      <><Loader2 size={16} className="animate-spin" /> Đang giao việc...</>
+                    ) : (
+                      <><Check size={16} /> 🚀 Hoàn tất & Giao việc</>
+                    )}
                   </button>
                 </div>
               </>

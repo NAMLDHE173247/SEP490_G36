@@ -375,12 +375,12 @@ export const apiService = {
   updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat-sessions/${args[0]}`, { title: args[1] }); return response.data; },
   deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat-sessions/${args[0]}`); return response.data; },
   appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat-sessions/${args[0]}/messages`, args[1]); return response.data; },
-  
-  infer: async (...args: any[]) => { 
-    const response = await api.post('/infer', args[0]); 
-    return response.data; 
+
+  infer: async (...args: any[]) => {
+    const response = await api.post('/infer', args[0]);
+    return response.data;
   },
-  
+
   inferStream: async (...args: any[]) => {
     let data, onChunkCallback;
     if (typeof args[1] === 'function') {
@@ -390,8 +390,8 @@ export const apiService = {
       data = { model: args[0], prompt: args[1], ...args[2] };
       onChunkCallback = args[3];
     } else {
-        data = args[0];
-        onChunkCallback = args[2] || args[1];
+      data = args[0];
+      onChunkCallback = args[2] || args[1];
     }
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
     const response = await fetch(`${apiUrl}/infer/stream`, {
@@ -414,7 +414,7 @@ export const apiService = {
           try {
             const parsed = JSON.parse(line.slice(6));
             if (parsed.response && onChunkCallback) onChunkCallback(parsed.response);
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     }
@@ -429,11 +429,36 @@ export const apiService = {
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
   registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
-  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset-prompts'); return response.data; },
+  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset/prompts'); return response.data; },
+
+  // Generic POST helper for dynamic endpoints
+  post: async (url: string, data?: any): Promise<any> => {
+    const response = await api.post(url, data);
+    return response.data;
+  },
+
+  // Staff workload API — available-staff with sample-level metrics
+  getAvailableStaff: async (): Promise<{
+    success: boolean;
+    data: Array<{
+      id: string;
+      name: string;
+      email: string;
+      pendingTasks: number;
+      totalAssigned: number;
+      labeledSoFar: number;
+      remainingSamples: number;
+    }>;
+  }> => {
+    const response = await api.get('/dataprep/labeling/assignments/available-staff');
+    return response.data;
+  },
+
   createDatasetPrompt: async (payload: { name: string; content: string; description?: string; isPublic?: boolean }): Promise<any> => {
     const response = await api.post('/dataset-prompts', payload);
     return response.data;
   },
+
   safeSplit: async (payload: {
     data: any[];
     test_percentage?: number;
@@ -444,7 +469,7 @@ export const apiService = {
     const response = await api.post('/cluster/safe-split', payload);
     return response.data;
   },
-  
+
   pushToHuggingFace: async (payload: {
     token: string;
     repoId: string;

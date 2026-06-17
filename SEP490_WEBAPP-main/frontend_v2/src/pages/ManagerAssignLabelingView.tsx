@@ -8,6 +8,7 @@ import {
 import '../styles/assignlabeling.css';
 
 import { api } from '../services/api';
+import TaskAssignmentModal from '../components/dataprep/TaskAssignmentModal';
 
 
 const STATUS_CONFIG = {
@@ -33,6 +34,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [sortBy, setSortBy] = useState('date-desc');
 
   const [showToast, setShowToast] = useState<string | null>(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
 
   const fetchTasks = async () => {
     try {
@@ -51,7 +53,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
   const handleDeleteTask = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!window.confirm('Bạn có chắc chắn muốn hủy (xóa) tiến trình giao việc này? Dữ liệu gốc vẫn được giữ nguyên.')) return;
+    if (!window.confirm('⚠️ Bạn có chắc chắn muốn XÓA TOÀN BỘ tiến trình giao việc này?\n\nSẽ xóa: Task, Batch, Nhãn gán, Hoạt động, Adjudication, Canonical Labels.\n\nHành động này KHÔNG THỂ hoàn tác!')) return;
     try {
       await api.delete(`/dataprep/versions/${id}/assignments/all`);
       setShowToast('Hủy Task thành công!');
@@ -113,7 +115,17 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <p className="al-subtitle">Theo dõi và giám sát tiến độ các Batch bên trong từng Task</p>
           </div>
         </div>
+        <button className="al-btn-create" onClick={() => setShowAssignModal(true)}>
+          <Plus size={16} /> Tạo Task Mới
+        </button>
       </div>
+
+      {/* Task Assignment Modal */}
+      <TaskAssignmentModal
+        isOpen={showAssignModal}
+        onClose={() => setShowAssignModal(false)}
+        onSuccess={() => { fetchTasks(); setShowToast('Giao việc thành công!'); setTimeout(() => setShowToast(null), 3000); }}
+      />
 
       {/* Stats */}
       <div className="al-stats">

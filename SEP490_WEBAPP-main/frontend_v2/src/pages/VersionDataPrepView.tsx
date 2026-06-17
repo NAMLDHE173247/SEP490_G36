@@ -83,6 +83,29 @@ function VersionDataPrepView() {
     window.open(`${api.defaults.baseURL}/dataprep/versions/${id}/export-labeled`, '_blank');
   };
 
+  const handleExportJSONL = async (id: string) => {
+    try {
+      setToastMessage('Đang chốt nhãn và tạo snapshot...');
+      // Step 1: Canonicalize
+      const canon = await api.post(`/dataprep/export/${id}/canonicalize`);
+      if (!canon.data.success) {
+        setToastMessage(null);
+        alert(canon.data.error || 'Lỗi khi chốt nhãn');
+        return;
+      }
+      // Step 2: Snapshot
+      await api.post(`/dataprep/export/${id}/snapshot`);
+      // Step 3: Download JSONL
+      setToastMessage('Đang tải file JSONL...');
+      window.open(`${api.defaults.baseURL}/dataprep/export/${id}/jsonl`, '_blank');
+      setToastMessage('✅ Xuất JSONL thành công!');
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (error: any) {
+      setToastMessage(null);
+      alert(error.response?.data?.error || 'Lỗi khi xuất JSONL. Có thể còn submission chưa được duyệt.');
+    }
+  };
+
   /* Filter & Sort */
   let filtered = VERSIONS.filter(v => {
     const matchSearch = searchQuery.trim() === '' ||
@@ -350,8 +373,21 @@ function VersionDataPrepView() {
                       </button>
                     )}
                     {version.labeling === 'completed' && (
-                      <button className="vdp-action-btn restore" style={{ background: '#10b981', color: 'white', border: 'none' }}>
+                      <button
+                        className="vdp-action-btn restore"
+                        style={{ background: '#10b981', color: 'white', border: 'none' }}
+                        onClick={() => handleExportJSONL(version.id)}
+                      >
                         <Play size={14} /> Tiếp tục Pipeline →
+                      </button>
+                    )}
+                    {version.labeling === 'completed' && (
+                      <button
+                        className="vdp-action-btn export"
+                        style={{ background: '#4f46e5', color: 'white', border: 'none' }}
+                        onClick={() => handleExportJSONL(version.id)}
+                      >
+                        <Download size={14} /> 📦 Xuất JSONL
                       </button>
                     )}
                     <button className="vdp-action-btn export" onClick={() => handleExportOriginal(version.id)}>

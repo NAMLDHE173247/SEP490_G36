@@ -22,6 +22,8 @@ router.post('/labels/:labelId/votes', (req, res) => controller.voteLabel(req, re
 const assignmentController = new AssignmentController();
 router.get('/assignments/stream', sseHandler);
 router.post('/assignments/reset', (req, res) => assignmentController.resetData(req, res));
+router.get('/assignments/available-staff', (req, res) => assignmentController.getAvailableStaff(req, res));
+router.post('/versions/:versionId/assignments/auto-assign', (req, res) => assignmentController.createAutoAssignment(req, res));
 router.post('/versions/:versionId/assignments/batch', (req, res) => assignmentController.createBatchAssignment(req, res));
 router.get('/assignments/my-tasks', (req, res) => assignmentController.getMyTasks(req, res));
 router.get('/assignments/all', (req, res) => assignmentController.getAllTasks(req, res));
@@ -31,5 +33,10 @@ router.get('/assignments/my-task/:submissionId/samples', (req, res) => assignmen
 router.post('/assignments/my-task/:submissionId/save-label', (req, res) => assignmentController.saveSampleLabel(req, res));
 router.post('/assignments/my-task/:submissionId/auto-label-v2', (req, res) => autoLabelV2Controller.preview(req, res));
 router.post('/versions/:versionId/assignments/submit', (req, res) => assignmentController.submitTask(req, res));
+
+// Supervisor Monitoring Routes
+router.get('/assignments/manager/sample/:sampleId/split-view', (req, res) => assignmentController.getSampleSplitView(req, res));
+router.post('/assignments/manager/submission/:submissionId/approve', (req, res) => assignmentController.approveSubmission(req, res));
+router.post('/assignments/manager/submission/:submissionId/reject', (req, res) => assignmentController.rejectSubmission(req, res));
 
 export default router;
