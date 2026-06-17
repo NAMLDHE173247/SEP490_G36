@@ -439,7 +439,7 @@ export const apiService = {
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
   registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
-  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset/prompts'); return response.data; },
+  getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset-prompts'); return response.data; },
 
   // Generic POST helper for dynamic endpoints
   post: async (url: string, data?: any): Promise<any> => {
