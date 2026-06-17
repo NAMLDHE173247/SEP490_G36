@@ -71,6 +71,11 @@
   color: #d97706;
   border-bottom: 2px solid #d97706;
 }
+
+.st-issue-row {
+  color: #b45309;
+}
+
 .st-stats {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
   margin-bottom: 24px;
@@ -221,6 +226,347 @@
 .st-open-btn.disabled {
   background: #f1f5f9; color: #94a3b8; cursor: default;
   box-shadow: none;
+}
+
+.st-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.st-rewrite-modal {
+  width: min(880px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
+  padding: 18px;
+}
+
+.st-rewrite-issue {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.st-rewrite-helper {
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+.st-rewrite-section-title {
+  margin: 10px 0 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.st-rewrite-context-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.st-rewrite-context-toolbar .st-rewrite-section-title {
+  margin: 10px 0 8px;
+}
+
+.st-rewrite-context-toolbar select {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.st-rewrite-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.st-rewrite-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  min-width: 0;
+}
+
+.st-rewrite-panel.student {
+  border-color: #bfdbfe;
+}
+
+.st-rewrite-panel.original {
+  border-color: #fbbf24;
+}
+
+.st-rewrite-panel.revised {
+  border-color: #86efac;
+}
+
+.st-rewrite-panel-title {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.st-rewrite-panel.student .st-rewrite-panel-title {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.st-rewrite-panel.original .st-rewrite-panel-title {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.st-rewrite-panel.revised .st-rewrite-panel-title {
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.st-rewrite-panel-body {
+  padding: 12px;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.st-rewrite-panel .st-rewrite-textarea {
+  min-height: 230px;
+  border: 0;
+  border-radius: 0;
+}
+
+.st-rewrite-panel .st-rewrite-ai-row {
+  margin: 0;
+  border-width: 0 0 1px 0;
+  border-radius: 0;
+}
+
+.st-rewrite-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  margin-bottom: 12px;
+}
+
+.st-target-response {
+  padding: 12px;
+  border: 1.5px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+}
+
+.st-rewrite-ai-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 9px 10px;
+  border: 1px solid #e0e7ff;
+  border-radius: 8px;
+  background: #f8faff;
+}
+
+.st-rewrite-ai-row span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.st-rewrite-ai-row button {
+  border: none;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+.st-rewrite-ai-row button:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+@media (max-width: 980px) {
+  .st-rewrite-workbench {
+    grid-template-columns: 1fr;
+  }
+}
+
+.st-rewrite-message {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: #fff;
+}
+
+.st-rewrite-message.user {
+  align-self: flex-start;
+}
+
+.st-rewrite-message.assistant {
+  align-self: flex-end;
+  background: #f0fdf4;
+}
+
+.st-rewrite-message.target {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.st-rewrite-message-role {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 900;
+  color: #64748b;
+  margin-bottom: 5px;
+}
+
+.st-rewrite-message-role span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.st-rewrite-message-content {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #0f172a;
+}
+
+.st-rewrite-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.st-rewrite-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.st-rewrite-modal-header p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.st-rewrite-modal-header button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.st-rewrite-textarea {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 14px;
+  color: #0f172a;
+  line-height: 1.5;
+}
+
+.st-rewrite-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.st-modal-secondary,
+.st-modal-primary {
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.st-modal-secondary {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+}
+
+.st-modal-primary {
+  border: 1px solid #4f46e5;
+  background: #4f46e5;
+  color: #fff;
+}
+
+.st-modal-primary:disabled,
+.st-modal-secondary:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 @media (max-width: 768px) {

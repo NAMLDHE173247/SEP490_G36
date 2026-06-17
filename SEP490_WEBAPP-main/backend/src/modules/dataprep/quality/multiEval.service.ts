@@ -11,6 +11,20 @@ import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../..
 import { QualityService } from './quality.service';
 
 export class MultiEvalService {
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   private getProvider(modelName: string) {
     const name = String(modelName).toLowerCase();
     if (name === 'openai') {
@@ -90,10 +104,10 @@ export class MultiEvalService {
         job.startedBy ? job.startedBy.toString() : ''
       );
       const toTenPointBaseline = (item: any): number | null => {
-        if (!item || item.bucket === 'Incomplete') return null;
-        if (item.bucket === 'Gold') return 9;
-        if (item.bucket === 'Rewrite') return 5.5;
-        if (item.bucket === 'Reject') return 2;
+        if (Number.isFinite(Number(item?.humanScore))) {
+          return Number(item.humanScore);
+        }
+        if (!item || item.bucket === 'Incomplete' || Number(item.scorableTurns || 0) <= 0) return null;
         const raw = Number(item.score);
         if (!Number.isFinite(raw)) return null;
         if (raw >= -1 && raw <= 1) {
@@ -102,11 +116,24 @@ export class MultiEvalService {
         return Math.max(0, Math.min(10, raw));
       };
       const humanScoresMap = new Map<string, number>();
+      const failedTargetMap = new Map<string, number[]>();
       qualityResult.items.forEach((i: any) => {
         const baseline = toTenPointBaseline(i);
-        if (baseline == null) return;
-        humanScoresMap.set(String(i._id), baseline);
-        humanScoresMap.set(String(i.sampleId), baseline);
+        if (baseline != null) {
+          humanScoresMap.set(String(i._id), baseline);
+          humanScoresMap.set(String(i.sampleId), baseline);
+        }
+        const failedTargets = Array.isArray(i.turnPairs)
+          ? i.turnPairs
+            .filter((pair: any) => pair && (pair.matched === false || (Array.isArray(pair.intentScores) && pair.intentScores.some((score: any) => Array.isArray(score.harmfulActions) && score.harmfulActions.length > 0))))
+            .map((pair: any) => Number(pair.assistantMessageIndex))
+            .filter((idx: number) => Number.isInteger(idx) && idx >= 0)
+          : [];
+        if (failedTargets.length) {
+          const uniqueTargets = Array.from(new Set<number>(failedTargets));
+          failedTargetMap.set(String(i._id), uniqueTargets);
+          failedTargetMap.set(String(i.sampleId), uniqueTargets);
+        }
       });
 
       for (const sample of samples) {
@@ -123,6 +150,8 @@ export class MultiEvalService {
         let targetMessageIndices: number[] = [];
         if (rewriteHistories.length > 0) {
           targetMessageIndices = rewriteHistories.map((h) => h.messageIndex);
+        } else if (failedTargetMap.has(String(sample._id)) || failedTargetMap.has(String((sample as any).sampleId))) {
+          targetMessageIndices = failedTargetMap.get(String(sample._id)) || failedTargetMap.get(String((sample as any).sampleId)) || [];
         } else {
           // Default to the last assistant message in the conversation
           const messages = (sample.data as any)?.messages;
@@ -145,259 +174,264 @@ export class MultiEvalService {
           continue;
         }
 
-        const targetIdx = targetMessageIndices[0];
+        const uniqueTargetMessageIndices = Array.from(new Set(targetMessageIndices));
+        if (uniqueTargetMessageIndices.length > 1) {
+          job.progress.total += uniqueTargetMessageIndices.length - 1;
+          await job.save();
+        }
         const messages = (sample.data as any)?.messages || [];
+        for (const targetIdx of uniqueTargetMessageIndices) {
 
-        // 2. Extract Context Window
-        let start = 0;
-        let end = messages.length - 1;
+          // 2. Extract Context Window
+          let start = 0;
+          let end = messages.length - 1;
 
-        if (contextWindowSetting === 'No Context') {
-          start = targetIdx;
-          end = targetIdx;
-        } else if (contextWindowSetting === 'n - 1') {
-          start = Math.max(0, targetIdx - 1);
-          end = targetIdx;
-        } else if (contextWindowSetting === 'n - 2 to n') {
-          start = Math.max(0, targetIdx - 2);
-          end = targetIdx;
-        } else if (contextWindowSetting === 'n - 1 to n + 1') {
-          start = Math.max(0, targetIdx - 1);
-          end = Math.min(messages.length - 1, targetIdx + 1);
-        } else if (contextWindowSetting === 'n - 2 to n + 2') {
-          start = Math.max(0, targetIdx - 2);
-          end = Math.min(messages.length - 1, targetIdx + 2);
-        }
+          if (contextWindowSetting === 'No Context') {
+            start = targetIdx;
+            end = targetIdx;
+          } else if (contextWindowSetting === 'n - 1') {
+            start = Math.max(0, targetIdx - 1);
+            end = targetIdx;
+          } else if (contextWindowSetting === 'n - 2 to n') {
+            start = Math.max(0, targetIdx - 2);
+            end = targetIdx;
+          } else if (contextWindowSetting === 'n - 1 to n + 1') {
+            start = Math.max(0, targetIdx - 1);
+            end = Math.min(messages.length - 1, targetIdx + 1);
+          } else if (contextWindowSetting === 'n - 2 to n + 2') {
+            start = Math.max(0, targetIdx - 2);
+            end = Math.min(messages.length - 1, targetIdx + 2);
+          }
 
-        const contextWindow = messages.slice(start, end + 1).map((m: any, mIdx: number) => ({
-          role: m.role,
-          content: String(m.content || ''),
-          isTarget: (start + mIdx) === targetIdx,
-        }));
+          const contextWindow = messages.slice(start, end + 1).map((m: any, mIdx: number) => ({
+            role: m.role,
+            content: String(m.content || ''),
+            isTarget: (start + mIdx) === targetIdx,
+          }));
 
-        // 3. Evaluate with each selected model in parallel
-        const modelNames = models;
-        const evaluationPromises = modelNames.map(async (modelName) => {
-          try {
-            const provider = this.getProvider(modelName);
-            const inputData = {
-              contextWindow,
-              originalMessageIndex: targetIdx,
-            };
-
-            const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', () => JSON.stringify(inputData, null, 2));
-            const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
-            const rawResponse = await provider.generateContent(prompt, undefined, systemPrompt);
-
-            const firstBracket = rawResponse.indexOf('{');
-            const lastBracket = rawResponse.lastIndexOf('}');
-            const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
-              ? rawResponse.substring(firstBracket, lastBracket + 1)
-              : rawResponse;
-
-            let parsed: any;
+          // 3. Evaluate with each selected model in parallel
+          const modelNames = models;
+          const evaluationPromises = modelNames.map(async (modelName) => {
             try {
-              parsed = JSON.parse(jsonString);
-            } catch (err) {
-              console.error(`[MultiEval] JSON parse error for model ${modelName}:`, err);
-              parsed = {};
-            }
+              const provider = this.getProvider(modelName);
+              const inputData = {
+                contextWindow,
+                originalMessageIndex: targetIdx,
+              };
 
-            const scorecard: ILlmScorecard = {
-              socratic: parsed.socratic !== undefined ? Number(parsed.socratic) : null,
-              encouragement: parsed.encouragement !== undefined ? Number(parsed.encouragement) : null,
-              factuality: parsed.factuality !== undefined ? Number(parsed.factuality) : null,
-              languageQuality: parsed.languageQuality !== undefined ? Number(parsed.languageQuality) : null,
-              consistency: parsed.consistency !== undefined ? Number(parsed.consistency) : null,
-              completeness: parsed.completeness !== undefined ? Number(parsed.completeness) : null,
-              readiness: parsed.readiness !== undefined ? Number(parsed.readiness) : null,
-              overall: parsed.overall !== undefined ? Number(parsed.overall) : 0,
-              reason: String(parsed.reason || 'Không nhận diện được nhận xét.'),
-              recommendation: ['Pass', 'Need Rewrite', 'Reject'].includes(parsed.recommendation)
-                ? parsed.recommendation
-                : 'Need Rewrite',
-            };
+              const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', () => JSON.stringify(inputData, null, 2));
+              const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
+              const rawResponse = await this.withTimeout(
+                provider.generateContent(prompt, undefined, systemPrompt),
+                45000,
+                `${modelName} evaluation`
+              );
 
-            // Force overall recalculation if model output overall is weird/missing
-            if (!scorecard.overall || isNaN(scorecard.overall)) {
-              const scores = [
-                scorecard.socratic,
-                scorecard.encouragement,
-                scorecard.factuality,
-                scorecard.languageQuality,
-                scorecard.consistency,
-                scorecard.completeness,
-                scorecard.readiness,
-              ].filter((v) => typeof v === 'number' && v !== null) as number[];
+              const firstBracket = rawResponse.indexOf('{');
+              const lastBracket = rawResponse.lastIndexOf('}');
+              const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
+                ? rawResponse.substring(firstBracket, lastBracket + 1)
+                : rawResponse;
 
-              scorecard.overall = scores.length > 0
-                ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
-                : 5;
-            }
-
-            return { modelName, scorecard };
-          } catch (err: any) {
-            console.error(`[MultiEval] Model ${modelName} call failed:`, err.message);
-            return {
-              modelName,
-              scorecard: {
-                socratic: null,
-                encouragement: null,
-                factuality: null,
-                languageQuality: null,
-                consistency: null,
-                completeness: null,
-                readiness: null,
-                overall: 0,
-                reason: `Lỗi API khi gọi model ${modelName}: ${err.message}`,
-                recommendation: 'Reject' as const,
+              let parsed: any;
+              try {
+                parsed = JSON.parse(jsonString);
+              } catch (err) {
+                console.error(`[MultiEval] JSON parse error for model ${modelName}:`, err);
+                parsed = {};
               }
-            };
-          }
-        });
 
-        const evaluationResults = await Promise.all(evaluationPromises);
-        const modelScores: Record<string, ILlmScorecard> = {};
-        evaluationResults.forEach((res) => {
-          modelScores[res.modelName] = res.scorecard;
-        });
+              const scorecard: ILlmScorecard = {
+                socratic: parsed.socratic !== undefined ? Number(parsed.socratic) : null,
+                encouragement: parsed.encouragement !== undefined ? Number(parsed.encouragement) : null,
+                factuality: parsed.factuality !== undefined ? Number(parsed.factuality) : null,
+                languageQuality: parsed.languageQuality !== undefined ? Number(parsed.languageQuality) : null,
+                consistency: parsed.consistency !== undefined ? Number(parsed.consistency) : null,
+                completeness: parsed.completeness !== undefined ? Number(parsed.completeness) : null,
+                readiness: parsed.readiness !== undefined ? Number(parsed.readiness) : null,
+                overall: parsed.overall !== undefined ? Number(parsed.overall) : 0,
+                reason: String(parsed.reason || 'Không nhận diện được nhận xét.'),
+                recommendation: ['Pass', 'Need Rewrite', 'Reject'].includes(parsed.recommendation)
+                  ? parsed.recommendation
+                  : 'Need Rewrite',
+              };
 
-        // 4. Calculate overall statistics, conflict status & auto-select the best model
-        const scores = Object.values(modelScores);
-        const averageOverall = scores.length > 0
-          ? Math.round((scores.reduce((sum, s) => sum + s.overall, 0) / scores.length) * 10) / 10
-          : 0;
+              // Force overall recalculation if model output overall is weird/missing
+              if (!scorecard.overall || isNaN(scorecard.overall)) {
+                const scores = [
+                  scorecard.socratic,
+                  scorecard.encouragement,
+                  scorecard.factuality,
+                  scorecard.languageQuality,
+                  scorecard.consistency,
+                  scorecard.completeness,
+                  scorecard.readiness,
+                ].filter((v) => typeof v === 'number' && v !== null) as number[];
 
-        // Auto-select best model scorecard using a consensus/reliability metric
-        let bestModelSelected = '';
-        let bestModelScorecard: ILlmScorecard | null = null;
-        let maxReliability = -Infinity;
-
-        for (const [modelName, scorecard] of Object.entries(modelScores)) {
-          const metricsCount = [
-            scorecard.socratic,
-            scorecard.encouragement,
-            scorecard.factuality,
-            scorecard.languageQuality,
-            scorecard.consistency,
-            scorecard.completeness,
-            scorecard.readiness
-          ].filter(v => v !== null && v !== undefined).length;
-
-          const reasonLength = scorecard.reason ? scorecard.reason.length : 0;
-          const diffFromAvg = Math.abs(scorecard.overall - averageOverall);
-
-          // Reliability score formula
-          const reliability = (metricsCount * 2) + (Math.min(reasonLength, 300) / 100) - (diffFromAvg * 3);
-
-          if (reliability > maxReliability) {
-            maxReliability = reliability;
-            bestModelSelected = modelName;
-            bestModelScorecard = scorecard;
-          }
-        }
-
-        // Detect Conflict
-        const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
-        const hasConflict = this.detectConflict(modelScores, humanScore);
-        if (hasConflict) {
-          conflictCount += 1;
-        }
-
-        // Resolve Final Recommendation proposal
-        let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = 'Pass';
-        const recs = scores.map((s) => s.recommendation);
-        if (recs.includes('Reject')) {
-          finalRecommendation = 'Reject';
-        } else if (recs.includes('Need Rewrite')) {
-          finalRecommendation = 'Need Rewrite';
-        }
-
-        let autoRefined = false;
-
-        // Auto Rewrite Logic
-        if (finalRecommendation === 'Need Rewrite' && bestModelSelected && bestModelScorecard?.reason) {
-          try {
-            const refineProvider = this.getProvider(bestModelSelected);
-            const assistantString = contextWindow.map((m: any) => `[${m.role.toUpperCase()}${m.isTarget ? ' (TARGET)' : ''}]: ${m.content}`).join('\n\n');
-            const payload = [{
-              index: 0,
-              assistant: assistantString,
-              reason: bestModelScorecard.reason
-            }];
-
-            const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', () => JSON.stringify(payload, null, 2));
-            const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
-            const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
-
-            const firstBracket = rawResponse.indexOf('[');
-            const lastBracket = rawResponse.lastIndexOf(']');
-            const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
-              ? rawResponse.substring(firstBracket, lastBracket + 1)
-              : rawResponse;
-
-            const parsed = JSON.parse(jsonString);
-            const refinedOutput = parsed[0]?.refinedOutput;
-
-            if (typeof refinedOutput === 'string' && refinedOutput.trim()) {
-              if (Array.isArray(messages)) {
-                const updatedMessages = [...messages];
-                let finalCleanOutput = refinedOutput.replace(/^\[ASSISTANT.*?\]:\s*/i, '').trim();
-
-                updatedMessages[targetIdx] = {
-                  ...updatedMessages[targetIdx],
-                  content: finalCleanOutput
-                };
-
-                await ProcessedDatasetItem.findByIdAndUpdate(sample._id, {
-                  $set: { 'data.messages': updatedMessages }
-                });
-
-                await ConversationRewriteHistory.create({
-                  datasetVersionId: new mongoose.Types.ObjectId(versionId),
-                  sampleId: sample._id,
-                  messageIndex: targetIdx,
-                  originalText: messages[targetIdx].content,
-                  proposedText: finalCleanOutput,
-                  approvedText: finalCleanOutput,
-                  editReason: 'Auto-Refined by ' + bestModelSelected + ': ' + bestModelScorecard.reason,
-                  editorId: job.startedBy,
-                  editType: 'ai',
-                  createdAt: new Date()
-                });
-
-                autoRefined = true;
-                job.progress.refinedCount = (job.progress.refinedCount || 0) + 1;
+                scorecard.overall = scores.length > 0
+                  ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
+                  : 5;
               }
+
+              return { modelName, scorecard };
+            } catch (err: any) {
+              console.error(`[MultiEval] Model ${modelName} call failed:`, err.message);
+              return {
+                modelName,
+                scorecard: {
+                  socratic: null,
+                  encouragement: null,
+                  factuality: null,
+                  languageQuality: null,
+                  consistency: null,
+                  completeness: null,
+                  readiness: null,
+                  overall: 5,
+                  reason: `Lỗi API khi gọi model ${modelName}: ${err.message}`,
+                  recommendation: 'Need Rewrite' as const,
+                }
+              };
             }
-          } catch (err: any) {
-            console.error(`[MultiEvalJob] Auto-refine failed for sample ${sample._id}:`, err.message);
+          });
+
+          const evaluationResults = await Promise.all(evaluationPromises);
+          const modelScores: Record<string, ILlmScorecard> = {};
+          evaluationResults.forEach((res) => {
+            modelScores[res.modelName] = res.scorecard;
+          });
+
+          // 4. Calculate overall statistics, conflict status & auto-select the best model
+          const scores = Object.values(modelScores);
+          const averageOverall = scores.length > 0
+            ? Math.round((scores.reduce((sum, s) => sum + s.overall, 0) / scores.length) * 10) / 10
+            : 0;
+
+          // Auto-select best model scorecard using a consensus/reliability metric
+          let bestModelSelected = '';
+          let bestModelScorecard: ILlmScorecard | null = null;
+          let maxReliability = -Infinity;
+
+          for (const [modelName, scorecard] of Object.entries(modelScores)) {
+            const metricsCount = [
+              scorecard.socratic,
+              scorecard.encouragement,
+              scorecard.factuality,
+              scorecard.languageQuality,
+              scorecard.consistency,
+              scorecard.completeness,
+              scorecard.readiness
+            ].filter(v => v !== null && v !== undefined).length;
+
+            const reasonLength = scorecard.reason ? scorecard.reason.length : 0;
+            const diffFromAvg = Math.abs(scorecard.overall - averageOverall);
+
+            // Reliability score formula
+            const reliability = (metricsCount * 2) + (Math.min(reasonLength, 300) / 100) - (diffFromAvg * 3);
+
+            if (reliability > maxReliability) {
+              maxReliability = reliability;
+              bestModelSelected = modelName;
+              bestModelScorecard = scorecard;
+            }
           }
+
+          // Detect Conflict
+          const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
+          const hasConflict = this.detectConflict(modelScores, humanScore);
+          if (hasConflict) {
+            conflictCount += 1;
+          }
+
+          // Resolve Final Recommendation proposal
+          let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = 'Pass';
+          const recs = scores.map((s) => s.recommendation);
+          if (recs.includes('Reject')) {
+            finalRecommendation = 'Reject';
+          } else if (recs.includes('Need Rewrite')) {
+            finalRecommendation = 'Need Rewrite';
+          }
+
+          let autoRefined = false;
+
+          // Auto Rewrite Logic
+          if (finalRecommendation === 'Need Rewrite' && bestModelSelected && bestModelScorecard?.reason) {
+            try {
+              const refineProvider = this.getProvider(bestModelSelected);
+              const assistantString = contextWindow.map((m: any) => `[${m.role.toUpperCase()}${m.isTarget ? ' (TARGET)' : ''}]: ${m.content}`).join('\n\n');
+              const payload = [{
+                index: 0,
+                assistant: assistantString,
+                reason: bestModelScorecard.reason
+              }];
+
+              const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', () => JSON.stringify(payload, null, 2));
+              const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
+              const rawResponse = await this.withTimeout(
+                refineProvider.generateContent(prompt, undefined, systemPrompt),
+                45000,
+                `${bestModelSelected} rewrite refinement`
+              );
+
+              const firstBracket = rawResponse.indexOf('[');
+              const lastBracket = rawResponse.lastIndexOf(']');
+              const jsonString = (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
+                ? rawResponse.substring(firstBracket, lastBracket + 1)
+                : rawResponse;
+
+              const parsed = JSON.parse(jsonString);
+              const refinedOutput = parsed[0]?.refinedOutput;
+
+              if (typeof refinedOutput === 'string' && refinedOutput.trim()) {
+                if (Array.isArray(messages)) {
+                  let finalCleanOutput = refinedOutput.replace(/^\[ASSISTANT.*?\]:\s*/i, '').trim();
+
+                  await ConversationRewriteHistory.create({
+                    datasetVersionId: new mongoose.Types.ObjectId(versionId),
+                    sampleId: sample._id,
+                    messageIndex: targetIdx,
+                    originalText: messages[targetIdx].content,
+                    proposedText: finalCleanOutput,
+                    approvedText: '',
+                    editReason: 'AI rewrite proposal by ' + bestModelSelected + ': ' + bestModelScorecard.reason,
+                    editorId: job.startedBy,
+                    editType: 'ai',
+                    createdAt: new Date()
+                  });
+
+                  autoRefined = true;
+                  job.progress.refinedCount = (job.progress.refinedCount || 0) + 1;
+                }
+              }
+            } catch (err: any) {
+              console.error(`[MultiEvalJob] Auto-refine failed for sample ${sample._id}:`, err.message);
+            }
+          }
+
+          // Save evaluation scorecard result
+          await MultiModelEvaluationResult.create({
+            jobId: job._id,
+            datasetVersionId: new mongoose.Types.ObjectId(versionId),
+            sampleId: sample._id,
+            modelScores,
+            averageOverall,
+            humanScore,
+            finalRecommendation,
+            hasConflict,
+            bestModelSelected,
+            bestModelScorecard: bestModelScorecard || undefined,
+            autoRefined,
+            targetIdx,
+            contextSize: contextWindow.length,
+          });
+
+          evaluatedCount += 1;
+          job.progress.evaluated = evaluatedCount + failedCount;
+          job.progress.conflictCount = conflictCount;
+          await job.save();
+
+          // Pause briefly to manage API rate limit
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
-
-        // Save evaluation scorecard result
-        await MultiModelEvaluationResult.create({
-          jobId: job._id,
-          datasetVersionId: new mongoose.Types.ObjectId(versionId),
-          sampleId: sample._id,
-          modelScores,
-          averageOverall,
-          finalRecommendation,
-          hasConflict,
-          bestModelSelected,
-          bestModelScorecard: bestModelScorecard || undefined,
-          autoRefined,
-          targetIdx,
-          contextSize: contextWindow.length,
-        });
-
-        evaluatedCount += 1;
-        job.progress.evaluated = evaluatedCount + failedCount;
-        job.progress.conflictCount = conflictCount;
-        await job.save();
-
-        // Pause briefly to manage API rate limit
-        await new Promise((resolve) => setTimeout(resolve, 500));
       }
 
       job.status = 'completed';
@@ -510,6 +544,14 @@ export class MultiEvalService {
       .sort({ averageOverall: 1 }) // Show lowest scoring items first
       .lean();
 
+    const qualityService = new QualityService();
+    const qualityResult = await qualityService.classify(versionId, '');
+    const qualityBySampleId = new Map<string, any>();
+    qualityResult.items.forEach((item: any) => {
+      qualityBySampleId.set(String(item._id), item);
+      qualityBySampleId.set(String(item.sampleId), item);
+    });
+
     const sampleIds = results.map(r => r.sampleId?._id).filter(Boolean);
     const rewriteHistories = await ConversationRewriteHistory.find({ sampleId: { $in: sampleIds } }).lean();
     const historyMap = new Map();
@@ -518,17 +560,39 @@ export class MultiEvalService {
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
+      const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
+      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
+        ? Number(qualityItem.humanScore)
+        : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
+          ? Number((r as any).humanScore)
+          : null;
+
+      // Unified 0..10 final score:
+      //  - staff + AI present  -> weighted blend (60% staff rule, 40% AI semantic)
+      //  - only one present     -> use whichever exists (AI covers "Other"/unscorable samples)
+      const avgAI = Number.isFinite(Number(r.averageOverall)) ? Number(r.averageOverall) : null;
+      const combinedScore = (humanScore != null && avgAI != null)
+        ? Math.round((0.6 * humanScore + 0.4 * avgAI) * 10) / 10
+        : (humanScore ?? avgAI);
+      const finalBucket = combinedScore == null
+        ? 'Incomplete'
+        : combinedScore >= 7 ? 'Gold' : combinedScore >= 5 ? 'Rewrite' : 'Reject';
       return {
         _id: r._id,
         jobId: r.jobId,
         datasetVersionId: r.datasetVersionId,
         sampleId: sample?._id,
         sampleData: sample?.data || {},
-        subject: sample?.data?.subject || sample?.data?.meta?.subject || 'Unknown',
+        subject: qualityItem?.data?.subject || sample?.data?.subject || sample?.data?.meta?.subject || 'Unknown',
         modelScores: r.modelScores,
+        scores: { human: humanScore },
+        humanScore,
+        combinedScore,
+        finalBucket,
         averageOverall: r.averageOverall,
         finalRecommendation: r.finalRecommendation,
-        hasConflict: r.hasConflict,
+        hasConflict: humanScore == null ? false : r.hasConflict,
         supervisorAction: r.supervisorAction,
         supervisorNote: r.supervisorNote,
         adjudicatedBy: r.adjudicatedBy,
@@ -539,6 +603,8 @@ export class MultiEvalService {
         targetIdx: r.targetIdx,
         contextSize: r.contextSize,
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
+        turnPairs: qualityItem?.turnPairs || [],
+        staffTargets: qualityItem?.staffTargets || [],
       };
     });
 

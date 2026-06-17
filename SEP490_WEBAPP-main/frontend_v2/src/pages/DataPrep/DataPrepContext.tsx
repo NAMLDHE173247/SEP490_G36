@@ -219,6 +219,62 @@ export const PREVIEW_REMOVED = [
 
 const DataPrepContext = createContext<any>(null);
 
+const resolveStageFromResumeStep = (step: number) => {
+  if (step >= 13) return 5;
+  if (step >= 7) return 4;
+  if (step >= 5) return 3;
+  if (step >= 2) return 2;
+  return 1;
+};
+
+const buildConversationRowsFromVersionItems = (items: any[]) => {
+  if (!Array.isArray(items)) return [];
+  return items.map((item: any, index: number) => {
+    const data = item.data || {};
+    const sourceMessages = Array.isArray(data.messages)
+      ? data.messages
+      : Array.isArray(data.conversations)
+        ? data.conversations
+        : [];
+    const messages: any[] = [];
+
+    if (sourceMessages.length) {
+      for (let i = 0; i < sourceMessages.length; i++) {
+        const current = sourceMessages[i];
+        const role = current.role || current.from;
+        if (role === 'user' || role === 'human') {
+          const assistant = sourceMessages.slice(i + 1).find((msg: any) => ['assistant', 'gpt'].includes(msg.role || msg.from));
+          messages.push({
+            user: current.content || current.value || '',
+            assistant: assistant ? assistant.content || assistant.value || '' : '',
+          });
+        }
+      }
+    }
+
+    if (!messages.length && data.instruction) {
+      messages.push({
+        user: data.instruction + (data.input ? '\n' + data.input : ''),
+        assistant: data.output || '',
+      });
+    }
+
+    return {
+      id: data.conversation_id || data.id || item.sampleKey || `conv_${String(index + 1).padStart(3, '0')}`,
+      sampleObjectId: item._id || item.sampleId,
+      datasetVersionId: item.datasetVersionId,
+      subject: data.subject || data.metadata?.subject || '',
+      messages: messages.length ? messages : [{ user: 'No user message', assistant: 'No assistant message' }],
+      groupId: data.groupId || data.group_id || data.clusterId || ((index % 15) + 1),
+      groupLabel: data.groupLabel || data.group_label || data.subject || '',
+      groupColor: data.groupColor || '#64748b',
+      groupBg: data.groupBg || '#f8fafc',
+      subGroup: data.subGroup || data.sub_group || 'A',
+      confidence: data.confidence || 0,
+    };
+  });
+};
+
 export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentStage, setCurrentStage] = useState(() => {
     const saved = localStorage.getItem('dp_currentStage');
@@ -610,13 +666,116 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [exportPage, setExportPage] = useState(1);
   const [cloudProvider, setCloudProvider] = useState('gcloud');
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [workflowVersions, setWorkflowVersions] = useState<any[]>([]);
+  const [activeWorkflowVersion, setActiveWorkflowVersion] = useState<any>(null);
+  const [isHydratingWorkflow, setIsHydratingWorkflow] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadWorkflowVersions = React.useCallback(async () => {
+    try {
+      const res = await apiService.listDatasetVersions();
+      setWorkflowVersions(Array.isArray(res.data) ? res.data : []);
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (error) {
+      console.error('Failed to load workflow versions', error);
+      return [];
+    }
+  }, []);
+
+  const openWorkflowVersion = React.useCallback(async (versionId: string) => {
+    if (!versionId) return;
+    setIsHydratingWorkflow(true);
+    try {
+      const detail = await apiService.getDatasetVersionDetail(versionId);
+      const version = detail.datasetVersion;
+      const rows = buildConversationRowsFromVersionItems(detail.items || []);
+      localStorage.setItem('current_version_id', versionId);
+      setActiveWorkflowVersion(version);
+      setProjectName(version?.projectName || 'Dataset');
+      setConversationsList(rows);
+      setStage3Convs(rows);
+      setConversionStats({
+        total: rows.length,
+        converted: rows.length,
+        datasetVersionId: versionId,
+      });
+
+      const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
+      const stage = resolveStageFromResumeStep(resumeStep);
+      setCurrentStage(stage);
+      if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
+      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(6, resumeStep)));
+      if (stage === 4) setCurrentSubStep4(Math.max(7, Math.min(12, resumeStep)));
+      if (stage === 5) setCurrentSubStep6(Math.max(13, Math.min(14, resumeStep)));
+    } catch (error) {
+      console.error('Failed to open workflow version', error);
+    } finally {
+      setIsHydratingWorkflow(false);
+    }
+  }, []);
+
+  const startNewWorkflow = React.useCallback(() => {
+    localStorage.removeItem('current_version_id');
+    localStorage.removeItem('dp_currentStage');
+    localStorage.removeItem('dp_currentSubStep');
+    localStorage.removeItem('dp_currentSubStep3');
+    localStorage.removeItem('dp_currentSubStep4');
+    localStorage.removeItem('dp_currentSubStep6');
+    setActiveWorkflowVersion(null);
+    setCurrentStage(1);
+    setCurrentSubStep(1);
+    setCurrentSubStep3(5);
+    setCurrentSubStep4(7);
+    setCurrentSubStep6(13);
+    setFile(null);
+    setConversationsList([]);
+    setStage3Convs([]);
+    setConversionStats(null);
+  }, []);
+
+  React.useEffect(() => {
+    loadWorkflowVersions().then((versions) => {
+      const versionId = localStorage.getItem('current_version_id');
+      if (versionId) {
+        openWorkflowVersion(versionId);
+        return;
+      }
+      setActiveWorkflowVersion(null);
+      setCurrentStage(1);
+      setCurrentSubStep(1);
+      setCurrentSubStep3(5);
+      setCurrentSubStep4(7);
+      setCurrentSubStep6(13);
+    });
+  }, [loadWorkflowVersions, openWorkflowVersion]);
+
+  React.useEffect(() => {
+    if (isHydratingWorkflow) return;
+    const versionId = localStorage.getItem('current_version_id');
+    if (!versionId) return;
+
+    const step =
+      currentStage === 5 ? currentSubStep6
+      : currentStage === 4 ? currentSubStep4
+      : currentStage === 3 ? currentSubStep3
+      : currentStage === 2 ? currentSubStep
+      : 1;
+    if (step <= 1) return;
+
+    const timeoutId = window.setTimeout(() => {
+      apiService.updateDatasetVersionPrepareProgress(versionId, step).catch((error) => {
+        console.error('Failed to save workflow progress', error);
+      });
+    }, 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [currentStage, currentSubStep, currentSubStep3, currentSubStep4, currentSubStep6, isHydratingWorkflow]);
 
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
       localStorage.removeItem('current_version_id');
+      setActiveWorkflowVersion(null);
       try {
         setUploadProgress(0);
         setFile({
@@ -1285,6 +1444,12 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       cloudProvider, setCloudProvider,
       EXPORT_ROWS,
       uploadProgress, setUploadProgress,
+      workflowVersions,
+      activeWorkflowVersion,
+      isHydratingWorkflow,
+      loadWorkflowVersions,
+      openWorkflowVersion,
+      startNewWorkflow,
       fileInputRef,
       handleFileUpload,
       handleRemoveFile,

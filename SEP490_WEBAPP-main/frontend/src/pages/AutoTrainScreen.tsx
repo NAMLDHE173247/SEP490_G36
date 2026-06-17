@@ -233,6 +233,7 @@ export const AutoTrainScreen: React.FC = () => {
     JSON.stringify(defaultParams, null, 2),
   );
   const [showStartError, setShowStartError] = useState(false);
+  const [isStartingTraining, setIsStartingTraining] = useState(false);
 
   // Parallel Training state
   const {
@@ -630,12 +631,24 @@ export const AutoTrainScreen: React.FC = () => {
   };
 
   const handleStartTraining = async () => {
+    if (isStartingTraining) return;
     if (!validateForm()) return;
 
     setShowStartError(false);
+    setIsStartingTraining(true);
 
     try {
       const formData = new FormData();
+      const clientTrainingKey = [
+        Date.now(),
+        projectName.trim(),
+        baseModel,
+        datasetSource,
+        datasetSource === "local" && localFile ? localFile.name : hubPath.trim(),
+        hfRepoId.trim(),
+      ].join("|");
+
+      formData.append("clientTrainingKey", clientTrainingKey);
       formData.append("model_name", baseModel);
       formData.append("push_to_hub", "true");
       formData.append("hf_repo_id", hfRepoId);
@@ -694,6 +707,8 @@ export const AutoTrainScreen: React.FC = () => {
       startTrackingJob(newJobId, jobConfig);
     } catch (err: any) {
       alert(err.message || "Error starting training");
+    } finally {
+      setIsStartingTraining(false);
     }
   };
 
@@ -1582,9 +1597,21 @@ export const AutoTrainScreen: React.FC = () => {
                   : "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 hover:shadow-md active:scale-[0.98]"
                   }`}
                 onClick={handleStartTraining}
-                disabled={activeJobCount >= 3}
+                disabled={activeJobCount >= 3 || isStartingTraining}
               >
-                {activeJobCount >= 3 ? (
+                {isStartingTraining ? (
+                  <>
+                    <svg
+                      className="w-4 h-4 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    Starting...
+                  </>
+                ) : activeJobCount >= 3 ? (
                   <>
                     <svg
                       className="w-4 h-4"

@@ -6,6 +6,7 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { DatasetAssignmentActivity } from '../../../models/DatasetAssignmentActivity';
 import { User } from '../../../models/User';
+import { Stage4Notification } from '../../../models/Stage4Notification';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
 import { broadcastAssignmentUpdate } from './assignment.events';
@@ -24,7 +25,7 @@ function parseSavedLabel(snapshot?: string): any {
 }
 
 export class AssignmentController {
-  
+
   /**
    * API: Xóa toàn bộ dữ liệu Test của Assignment
    * POST /api/dataprep/assignments/reset
@@ -254,7 +255,7 @@ export class AssignmentController {
           dataset: datasetName,
           version: version?.versionName || 'v1'
         });
-        
+
         await submission.save();
 
         // Fetch actual ProcessedDatasetItem from DB for this version
@@ -277,6 +278,16 @@ export class AssignmentController {
           });
         }
         await DatasetSampleAssignment.insertMany(sampleDocs);
+
+        if (mongoose.Types.ObjectId.isValid(String(assigneeId))) {
+          await Stage4Notification.create({
+            datasetVersionId: versionId,
+            recipientId: new mongoose.Types.ObjectId(String(assigneeId)),
+            actorId: mongoose.Types.ObjectId.isValid(String(assignedBy)) ? new mongoose.Types.ObjectId(String(assignedBy)) : undefined,
+            type: 'info',
+            message: `New labeling batch assigned: ${submission.name} (${sampleCount} samples).`,
+          });
+        }
       }
 
       return res.status(201).json({
@@ -296,8 +307,11 @@ export class AssignmentController {
    */
   async getMyTasks(req: Request, res: Response) {
     try {
-      const userId = req.query.userId || (req as any).user?.id || (req as any).user?._id || 'fake-staff-1';
-      
+      const userId = req.query.userId || (req as any).user?.id || (req as any).user?._id;
+      if (!userId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
       const myTasks = await DatasetAssignmentSubmission.find({ assigneeId: userId }).sort({ createdAt: -1 });
 
       // Transform _id to id for frontend compatibility
@@ -344,7 +358,7 @@ export class AssignmentController {
       const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
 
       const grouped: { [key: string]: any } = {};
-      
+
       submissions.forEach(sub => {
         const vid = String(sub.datasetVersionId);
         const versionDoc = versionMap.get(vid);
@@ -357,11 +371,11 @@ export class AssignmentController {
         }
 
         const groupId = `${vid}_${baseName}`;
-        
+
         if (!grouped[groupId]) {
           grouped[groupId] = {
             id: groupId,
-            name: baseName !== 'Default Task' ? baseName : (versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0,6)}...`),
+            name: baseName !== 'Default Task' ? baseName : (versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0, 6)}...`),
             dataset: versionDoc ? versionDoc.projectName : (sub.dataset || 'Project Dataset'),
             version: sub.version || vid,
             totalSamples: 0,
@@ -372,7 +386,7 @@ export class AssignmentController {
             batches: []
           };
         }
-        
+
         let batch = grouped[groupId].batches.find((b: any) => b.name === sub.name);
         if (!batch) {
           batch = {
@@ -386,12 +400,12 @@ export class AssignmentController {
           grouped[groupId].totalSamples += sub.totalSamples;
           grouped[groupId].labeledCount += (sub.status === 'submitted' ? sub.totalSamples : sub.labeledCount || 0);
         }
-        
+
         let finalName = userMap.get(String(sub.assigneeId));
         if (!finalName) {
-           if (sub.assigneeId === 'fake-staff-1') finalName = 'Nguyễn Văn A';
-           else if (sub.assigneeId === 'fake-staff-2') finalName = 'Trần Thị B';
-           else finalName = String(sub.assigneeId);
+          if (sub.assigneeId === 'fake-staff-1') finalName = 'Nguyễn Văn A';
+          else if (sub.assigneeId === 'fake-staff-2') finalName = 'Trần Thị B';
+          else finalName = String(sub.assigneeId);
         }
 
         batch.assignees.push({
@@ -416,7 +430,7 @@ export class AssignmentController {
   async getTaskDetail(req: Request, res: Response) {
     try {
       const { taskId } = req.params;
-      
+
       let versionId = taskId;
       let baseName = '';
       if (taskId.includes('_')) {
@@ -434,9 +448,10 @@ export class AssignmentController {
 
       const subs = await DatasetAssignmentSubmission.find(query);
       if (subs.length === 0) {
-        return res.status(200).json({ 
-          success: true, 
-          data: { id: taskId, name: baseName || taskId, batches: [], staffList: [], conflicts: [], samples: [], labeledCount: 0, totalSamples: 0 } 
+        // Return empty structure instead of 404 so UI can render
+        return res.status(200).json({
+          success: true,
+          data: { id: taskId, batches: [], staffList: [], conflicts: [], samples: [] }
         });
       }
 
@@ -455,12 +470,12 @@ export class AssignmentController {
 
       subs.forEach(sub => {
         const assigneeIdStr = String(sub.assigneeId);
-        
+
         let finalName = userMap.get(assigneeIdStr);
         if (!finalName) {
-           if (assigneeIdStr === 'fake-staff-1') finalName = 'Nguyễn Văn A';
-           else if (assigneeIdStr === 'fake-staff-2') finalName = 'Trần Thị B';
-           else finalName = assigneeIdStr;
+          if (assigneeIdStr === 'fake-staff-1') finalName = 'Nguyễn Văn A';
+          else if (assigneeIdStr === 'fake-staff-2') finalName = 'Trần Thị B';
+          else finalName = assigneeIdStr;
         }
 
         // Build Staff — tích lũy submissionIds
@@ -529,7 +544,7 @@ export class AssignmentController {
         }
         const assigneeName = staffMap[String(sa.assigneeId)]?.name || String(sa.assigneeId);
         if (!samplesMap[sa.sampleIndex].assignees.includes(assigneeName)) {
-           samplesMap[sa.sampleIndex].assignees.push(assigneeName);
+          samplesMap[sa.sampleIndex].assignees.push(assigneeName);
         }
         samplesMap[sa.sampleIndex].staffStatus[String(sa.assigneeId)] = 'pending';
       }
@@ -569,34 +584,34 @@ export class AssignmentController {
       for (const label of labels) {
         const sIndex = sampleIdMap[String(label.sampleId)];
         if (sIndex && samplesMap[sIndex]) {
-           samplesMap[sIndex].staffStatus[String(label.createdBy)] = 'done';
-           samplesMap[sIndex].staffLabels[String(label.createdBy)] = label.name;
-           if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
-           conflictMap[sIndex].push(label);
+          samplesMap[sIndex].staffStatus[String(label.createdBy)] = 'done';
+          samplesMap[sIndex].staffLabels[String(label.createdBy)] = label.name;
+          if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
+          conflictMap[sIndex].push(label);
         }
       }
 
       const samples = Object.values(samplesMap);
       const conflicts = [];
       for (const sIndexStr of Object.keys(conflictMap)) {
-         const sIndex = Number(sIndexStr);
-         const sLabels = conflictMap[sIndex];
-         if (sLabels.length > 1) {
-            const firstLabelName = sLabels[0].name;
-            const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
-            if (hasConflict) {
-              samplesMap[sIndex].conflict = true;
-              conflicts.push({
-                sampleId: sIndex,
-                key: samplesMap[sIndex].key,
-                annotators: sLabels.length,
-                iaa: 0.45,
-                status: 'pending',
-                labelA: { subject: staffMap[String(sLabels[0].createdBy)]?.name || String(sLabels[0].createdBy), quality: sLabels[0].name },
-                labelB: { subject: staffMap[String(sLabels[1].createdBy)]?.name || String(sLabels[1].createdBy), quality: sLabels[1].name }
-              });
-            }
-         }
+        const sIndex = Number(sIndexStr);
+        const sLabels = conflictMap[sIndex];
+        if (sLabels.length > 1) {
+          const firstLabelName = sLabels[0].name;
+          const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
+          if (hasConflict || true) { // Always show as conflict for now if > 1 label for demo purposes
+            samplesMap[sIndex].conflict = true;
+            conflicts.push({
+              sampleId: sIndex,
+              key: samplesMap[sIndex].key,
+              annotators: sLabels.length,
+              iaa: 0.45,
+              status: 'pending',
+              labelA: { subject: staffMap[String(sLabels[0].createdBy)]?.name || String(sLabels[0].createdBy), quality: sLabels[0].name },
+              labelB: { subject: staffMap[String(sLabels[1].createdBy)]?.name || String(sLabels[1].createdBy), quality: sLabels[1].name }
+            });
+          }
+        }
       }
 
       // Tên hiển thị: ưu tiên dataset + taskName
@@ -633,7 +648,7 @@ export class AssignmentController {
     try {
       const { submissionId } = req.params;
       const submission = await DatasetAssignmentSubmission.findById(submissionId);
-      
+
       if (!submission) {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
@@ -654,19 +669,19 @@ export class AssignmentController {
       const samples = sampleAssigns.map(sa => {
         const item = processedItems.find(p => p._id.toString() === sa.sampleId.toString());
         const data = item?.data || {};
-        
+
         let messages = [];
         if (Array.isArray(data.messages)) {
-           messages = data.messages;
+          messages = data.messages;
         } else if (data.prompt || data.response) {
-           messages = [];
-           if (data.prompt) messages.push({ role: 'user', content: data.prompt });
-           if (data.response) messages.push({ role: 'assistant', content: data.response });
+          messages = [];
+          if (data.prompt) messages.push({ role: 'user', content: data.prompt });
+          if (data.response) messages.push({ role: 'assistant', content: data.response });
         } else {
-           messages = [
-             { role: 'user', content: `[Lô ${submission.name} - Câu ${sa.sampleIndex}] Xin chào, em cần trợ giúp.` },
-             { role: 'assistant', content: `Đây là dữ liệu của câu ${sa.sampleIndex}. Tôi có thể giúp gì cho bạn?` },
-           ];
+          messages = [
+            { role: 'user', content: `[Lô ${submission.name} - Câu ${sa.sampleIndex}] Xin chào, em cần trợ giúp.` },
+            { role: 'assistant', content: `Đây là dữ liệu của câu ${sa.sampleIndex}. Tôi có thể giúp gì cho bạn?` },
+          ];
         }
 
         return {
@@ -720,11 +735,11 @@ export class AssignmentController {
         return res.status(400).json({ success: false, error: 'Batch already submitted' });
       }
 
-      // Find the specific assignment
+      // Find the specific assignment (sampleId from FE is the sampleIndex, may come as string)
       const sa = await DatasetSampleAssignment.findOne({
         datasetVersionId: submission.datasetVersionId,
         assigneeId: submission.assigneeId,
-        sampleIndex: sampleId
+        sampleIndex: Number(sampleId)
       });
 
       if (!sa) {
@@ -759,10 +774,10 @@ export class AssignmentController {
       const assignmentSampleIds = submissionAssignments.map((item: any) => item.sampleId);
       const savedLabels = assignmentSampleIds.length
         ? await LabelAssignment.find({
-            createdBy: submission.assigneeId,
-            sampleId: { $in: assignmentSampleIds },
-            targetScope: 'sample',
-          }).select('targetTextSnapshot').lean()
+          createdBy: submission.assigneeId,
+          sampleId: { $in: assignmentSampleIds },
+          targetScope: 'sample',
+        }).select('targetTextSnapshot').lean()
         : [];
       submission.labeledCount = savedLabels.filter((item: any) => isCompleteStaffLabel(parseSavedLabel(item.targetTextSnapshot))).length;
 
@@ -785,37 +800,93 @@ export class AssignmentController {
   /**
    * API: Staff nộp bài (Submit Batch)
    * POST /api/dataprep/versions/:versionId/assignments/submit
+   * Body: { submissionId, labels?: Record<string|number, any> }
+   *   labels: map từ sampleIndex -> label object (gửi kèm để đảm bảo không mất data dù staff chưa Save Draft)
    */
   async submitTask(req: Request, res: Response) {
     try {
-      const { submissionId } = req.body;
-      
+      const { submissionId, labels: labelsPayload } = req.body;
+
       if (!submissionId) {
         return res.status(400).json({ success: false, error: 'Missing submissionId' });
       }
 
       const submission = await DatasetAssignmentSubmission.findById(submissionId);
-      if (submission) {
-        submission.status = 'submitted';
-        submission.submittedAt = new Date();
-        
-        // Promote soft labels to hard labels on successful submission
-        const hardLabels = await promoteSubmissionLabels(submission);
-        
-        // Auto-calculate human score if missing
-        if (submission.humanScore === undefined || submission.humanScore === null) {
-          submission.humanScore = calculateHumanScore(hardLabels || [], submission.totalSamples || 0);
-        }
-
-        await submission.save();
-
-        // Trigger SSE update for Step 7 real-time reflection
-        broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit' });
-
-        return res.status(200).json({ success: true, data: submission });
-      } else {
+      if (!submission) {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
+
+      // ── Step 1: Nếu FE gửi kèm labels, upsert soft-label trước khi promote ──
+      // Điều này đảm bảo staff chưa Save Draft vẫn có labels được lưu đúng.
+      if (labelsPayload && typeof labelsPayload === 'object') {
+        const sampleAssigns = await DatasetSampleAssignment.find({
+          datasetVersionId: submission.datasetVersionId,
+          assigneeId: submission.assigneeId,
+          sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount }
+        }).lean();
+
+        const upsertOps = sampleAssigns.map(async (sa: any) => {
+          const labelData = labelsPayload[sa.sampleIndex] ?? labelsPayload[String(sa.sampleIndex)];
+          if (!labelData || (typeof labelData === 'object' && Object.keys(labelData).length === 0)) return;
+          await LabelAssignment.findOneAndUpdate(
+            { createdBy: submission.assigneeId, sampleId: sa.sampleId },
+            {
+              $set: {
+                name: 'Label',
+                type: 'soft',
+                targetScope: 'sample',
+                targetTextSnapshot: JSON.stringify(labelData),
+              }
+            },
+            { upsert: true }
+          );
+        });
+        await Promise.all(upsertOps);
+      }
+
+      // ── Step 2: Mark submitted & promote to hard labels ──
+      const wasSubmitted = submission.status === 'submitted';
+      submission.status = 'submitted';
+      submission.submittedAt = new Date();
+
+      const { hardLabels, messagesBySample } = await promoteSubmissionLabels(submission);
+
+      // Prefer the rule-based score (intent/action matching, mirrors the Quality stage).
+      // Fall back to the coverage-based score only when no sample has a scorable turn.
+      const ruleScore = computeRuleBasedHumanScore(hardLabels || [], messagesBySample);
+      submission.humanScore = ruleScore != null
+        ? ruleScore
+        : calculateHumanScore(hardLabels || [], submission.totalSamples || 0);
+
+      await submission.save();
+
+      if (!wasSubmitted) {
+        const actorId = mongoose.Types.ObjectId.isValid(String(submission.assigneeId))
+          ? new mongoose.Types.ObjectId(String(submission.assigneeId))
+          : undefined;
+        const submitMessage = `Staff submitted ${submission.name || 'labeling task'}.`;
+        await Stage4Notification.insertMany([
+          {
+            datasetVersionId: submission.datasetVersionId,
+            recipientRole: 'admin',
+            actorId,
+            type: 'success',
+            message: submitMessage,
+          },
+          {
+            datasetVersionId: submission.datasetVersionId,
+            recipientRole: 'supervisor',
+            actorId,
+            type: 'success',
+            message: submitMessage,
+          },
+        ]);
+      }
+
+      // Trigger SSE update for Step 7 real-time reflection
+      broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit' });
+
+      return res.status(200).json({ success: true, data: submission });
     } catch (error: any) {
       console.error('[AssignmentController] Error submitting task:', error);
       return res.status(500).json({ success: false, error: error.message });
@@ -970,41 +1041,136 @@ export class AssignmentController {
 // --- AUTO SCORE LOGIC ---
 function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
   if (totalSamples <= 0 || !hardLabels.length) return 0;
-  
-  let score = 10;
+
   const labeledSamples = new Set(hardLabels.map(l => String(l.sampleId)));
   const coverageRatio = labeledSamples.size / totalSamples;
-  
-  // 1. Coverage Penalty: -1 for every 20% unlabeled
-  if (coverageRatio < 1) {
-    const missingRatio = 1 - coverageRatio;
-    score -= Math.floor(missingRatio / 0.2) * 1;
+  let score = coverageRatio * 8;
+  const messageLabels = hardLabels.filter(l => l.targetScope === 'message');
+  const sampleLabels = hardLabels.filter(l => l.targetScope === 'sample');
+  const samplesWithMessageLabels = new Set(messageLabels.map(l => String(l.sampleId)));
+
+  if (labeledSamples.size > 0) {
+    score += (samplesWithMessageLabels.size / labeledSamples.size) * 2;
   }
-  
-  // 2. Consistency & Richness Checks
+  if (sampleLabels.length > 0 && messageLabels.length === 0) {
+    score = Math.min(score, 7);
+  }
+
   let conflicts = 0;
-  let shallowLabels = 0;
-  
+
   labeledSamples.forEach(sampleId => {
     const sampleLabels = hardLabels.filter(l => String(l.sampleId) === sampleId && l.targetScope === 'message');
     const userIntents = sampleLabels.filter(l => l.messageRole === 'user').map(l => l.name);
     const assistantActions = sampleLabels.filter(l => l.messageRole === 'assistant').map(l => l.name);
-    
-    // Simple consistency check: e.g. HINT intent shouldn't map to DIRECT_ANSWER action (INCORRECT is direct answer equivalent here)
-    if (userIntents.includes('REQUEST_HINT') && (assistantActions.includes('INCORRECT') || assistantActions.includes('WAITING'))) {
+
+    if (userIntents.includes('REQUEST_HINT') && assistantActions.includes('DIRECT_ANSWER')) {
       conflicts++;
     }
-    
-    // Richness check: Is it just a single label for the entire sample?
-    if (sampleLabels.length <= 1) {
-      shallowLabels++;
+  });
+
+  score -= conflicts * 1.5;
+
+  return Number(Math.max(0, Math.min(10, score)).toFixed(1));
+}
+
+// --- RULE-BASED HUMAN SCORE (mirrors quality.service intent/action logic) ---
+// Maps staff per-message intent (user) + action (assistant) labels to a 0-10 score
+// using the same valid/harmful action rules as the Quality stage, so the Staff Rule
+// Score is computed the moment a staff member submits.
+const RULE_INTENTS = [
+  'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
+  'REQUEST_SIMPLER', 'SKIP_EXERCISE', 'ENCOURAGE', 'OFF_TOPIC', 'NEXT_SECTION',
+] as const;
+const RULE_VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
+  CORRECT: new Set(['PRAISING']),
+  INCORRECT: new Set(['SCAFFOLDING']),
+  REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
+  ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
+  REQUEST_EXPLANATION: new Set(['LOGIC_BREAKDOWN', 'CONCEPT_CLARIFY']),
+  REQUEST_SIMPLER: new Set(['SIMPLIFYING']),
+  SKIP_EXERCISE: new Set(['NAVIGATING']),
+  ENCOURAGE: new Set(['MOTIVATING']),
+  OFF_TOPIC: new Set(['REDIRECTING', 'TRANSITIONING']),
+  NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
+};
+const RULE_HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  INCORRECT: new Set(['PRAISING']),
+  REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
+};
+const RULE_HARMFUL_ACTION_PENALTY = -2;
+const RULE_USER_INTENT_SET = new Set<string>(RULE_INTENTS);
+const RULE_ASSISTANT_ACTION_SET = new Set<string>(
+  Array.from(new Set(Object.values(RULE_VALID_ACTIONS).flatMap((actions) => Array.from(actions))))
+);
+
+function ruleToTenPointScore(raw: number): number {
+  return Number(Math.max(0, Math.min(10, ((raw + 1) / 2) * 10)).toFixed(1));
+}
+
+/**
+ * Computes the average rule-based human score (0-10) across all submitted samples.
+ * Returns null when no sample has a scorable turn (so caller can fall back).
+ */
+function computeRuleBasedHumanScore(
+  hardLabels: any[],
+  messagesBySample: Map<string, Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>>
+): number | null {
+  if (!hardLabels.length) return null;
+
+  // Group message-level hard labels by sample -> "index:role" -> Set(label names)
+  const labelMap = new Map<string, Set<string>>();
+  for (const label of hardLabels) {
+    if (label.targetScope !== 'message') continue;
+    const role = label.messageRole === 'assistant' || label.messageRole === 'user' ? label.messageRole : null;
+    if (!role) continue;
+    const key = `${String(label.sampleId)}:${Number(label.messageIndex)}:${role}`;
+    const set = labelMap.get(key) || new Set<string>();
+    const name = String(label.name || '').trim().toUpperCase();
+    if (name) set.add(name);
+    labelMap.set(key, set);
+  }
+
+  const perSampleScores: number[] = [];
+
+  messagesBySample.forEach((messages, sampleId) => {
+    let totalTurnScore = 0;
+    let scorableTurns = 0;
+
+    for (let index = 0; index < messages.length; index += 1) {
+      const userMessage = messages[index];
+      if (userMessage.role !== 'user') continue;
+      const assistantMessage = messages.slice(index + 1).find((m) => m.role === 'assistant');
+      if (!assistantMessage) continue;
+
+      const userLabels = Array.from(labelMap.get(`${sampleId}:${userMessage.messageIndex}:user`) || [])
+        .filter((label) => RULE_USER_INTENT_SET.has(label));
+      const assistantLabels = Array.from(labelMap.get(`${sampleId}:${assistantMessage.messageIndex}:assistant`) || [])
+        .filter((label) => RULE_ASSISTANT_ACTION_SET.has(label));
+      if (!userLabels.length || !assistantLabels.length) continue;
+
+      const intentValues: number[] = [];
+      for (const userLabel of userLabels) {
+        const validActions = RULE_VALID_ACTIONS[userLabel];
+        if (!validActions) continue;
+        const matched = assistantLabels.some((action) => validActions.has(action));
+        const harmfulCount = assistantLabels.filter((action) => RULE_HARMFUL_ACTIONS[userLabel]?.has(action)).length;
+        const value = (matched ? 1 : -1) + (harmfulCount * RULE_HARMFUL_ACTION_PENALTY);
+        intentValues.push(value);
+      }
+      if (!intentValues.length) continue;
+
+      totalTurnScore += intentValues.reduce((sum, v) => sum + v, 0) / intentValues.length;
+      scorableTurns += 1;
+    }
+
+    if (scorableTurns > 0) {
+      perSampleScores.push(ruleToTenPointScore(totalTurnScore / scorableTurns));
     }
   });
-  
-  score -= conflicts * 2; // -2 for each conflict
-  score -= shallowLabels * 0.5; // -0.5 for shallow labeling
-  
-  return Math.max(0, Math.min(10, score));
+
+  if (!perSampleScores.length) return null;
+  const avg = perSampleScores.reduce((sum, v) => sum + v, 0) / perSampleScores.length;
+  return Number(Math.max(0, Math.min(10, avg)).toFixed(1));
 }
 
 // --- MAPPING UTILITIES & PROMOTION HELPER ---
@@ -1028,6 +1194,9 @@ const INTENT_MAP: Record<string, string> = {
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
+  'Hint': 'REQUEST_HINT',
+  'Ques': 'REQUEST_EXPLANATION',
+  'Ques/Hint': 'REQUEST_HINT',
   'Other': 'WAIT_READY'
 };
 
@@ -1039,6 +1208,9 @@ const ACTION_MAP: Record<string, string> = {
   'Encourage': 'MOTIVATING',
   'Correct Error': 'SCAFFOLDING',
   'Summarize': 'TRANSITIONING',
+  'Hint': 'HINTING',
+  'Ques': 'SCAFFOLDING',
+  'Ques/Hint': 'SCAFFOLDING',
   'Other': 'WAITING'
 };
 
@@ -1089,7 +1261,13 @@ function serializeMessages(data: Record<string, any>): Array<{ messageIndex: num
   return messages;
 }
 
-async function promoteSubmissionLabels(submission: any) {
+type PromotionResult = {
+  hardLabels: any[];
+  messagesBySample: Map<string, Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>>;
+};
+
+async function promoteSubmissionLabels(submission: any): Promise<PromotionResult> {
+  const messagesBySample = new Map<string, Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>>();
   try {
     const sampleAssigns = await DatasetSampleAssignment.find({
       datasetVersionId: submission.datasetVersionId,
@@ -1099,7 +1277,7 @@ async function promoteSubmissionLabels(submission: any) {
 
     const sampleIds = sampleAssigns.map(sa => sa.sampleId);
     if (!sampleIds.length) {
-      return [];
+      return { hardLabels: [], messagesBySample };
     }
 
     const softLabels = await LabelAssignment.find({
@@ -1109,7 +1287,7 @@ async function promoteSubmissionLabels(submission: any) {
     }).lean();
 
     if (!softLabels.length) {
-      return [];
+      return { hardLabels: [], messagesBySample };
     }
 
     const processedItems = await ProcessedDatasetItem.find({
@@ -1132,6 +1310,9 @@ async function promoteSubmissionLabels(submission: any) {
       const sampleIdStr = String(softLabel.sampleId);
       const item = processedItems.find(p => String(p._id) === sampleIdStr);
       const serializedMsgs = item ? serializeMessages(item.data || {}) : [];
+      if (serializedMsgs.length) {
+        messagesBySample.set(sampleIdStr, serializedMsgs);
+      }
 
       // 1. Promote subject as a hard sample-level label
       if (labelObj.subject) {
@@ -1201,9 +1382,9 @@ async function promoteSubmissionLabels(submission: any) {
         }
       }
     }
-    return hardLabelsToInsert;
+    return { hardLabels: hardLabelsToInsert, messagesBySample };
   } catch (error) {
     console.error('[Promotion] Error promoting soft labels to hard:', error);
-    return [];
+    return { hardLabels: [], messagesBySample };
   }
 }

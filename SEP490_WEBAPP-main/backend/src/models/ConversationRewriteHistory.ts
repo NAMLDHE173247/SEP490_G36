@@ -6,7 +6,7 @@ export interface IConversationRewriteHistory extends Document {
   messageIndex: number;
   originalText: string;
   proposedText: string;
-  approvedText: string;
+  approvedText?: string;
   editorId: Types.ObjectId;
   editReason: string;
   editType: 'ai' | 'manual';
@@ -41,7 +41,7 @@ const ConversationRewriteHistorySchema = new Schema<IConversationRewriteHistory>
     },
     approvedText: {
       type: String,
-      required: true,
+      default: '',
     },
     editorId: {
       type: Schema.Types.ObjectId,

@@ -1,15 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Activity, User, Settings, CreditCard, Shield, LogOut } from 'lucide-react';
+import { Activity, User, Settings, CreditCard, Shield, LogOut, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiService } from '../services/api';
+import { stage4Api } from '../services/stage4Api';
 
 function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
 
   // GPU Connection Widget states
   const [inputUrl, setInputUrl] = useState('');
@@ -24,10 +28,57 @@ function Navbar() {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setNotificationOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+
+    const loadNotifications = async () => {
+      const currentVersionId = localStorage.getItem('current_version_id') || '';
+      let versionIds = currentVersionId ? [currentVersionId] : [];
+      try {
+        const versionRes = await apiService.listDatasetVersions();
+        const activeVersionIds = (versionRes.data || [])
+          .filter((version: any) => Number(version.prepareResumeStep || 1) > 1 || Number(version.labelingTasks || 0) > 0)
+          .map((version: any) => String(version.id))
+          .slice(0, 8);
+        versionIds = Array.from(new Set([...versionIds, ...activeVersionIds]));
+      } catch {
+        // Keep notification polling alive even if the version list fails.
+      }
+
+      try {
+        const [globalRes, ...responses] = await Promise.all([
+          stage4Api.listMyNotifications().catch(() => ({ notifications: [] })),
+          ...versionIds.map((versionId) =>
+            stage4Api.listNotifications(versionId).catch(() => ({ notifications: [] }))
+          ),
+        ]);
+        const merged = [
+          ...(globalRes.notifications || []),
+          ...responses.flatMap((res) => res.notifications || []),
+        ];
+        const unique = Array.from(new Map(merged.map((note: any) => [String(note._id || `${note.message}-${note.createdAt}`), note])).values());
+        unique.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setNotifications(unique);
+      } catch (error) {
+        console.error('Failed to load notifications', error);
+      }
+    };
+
+    loadNotifications();
+    const intervalId = window.setInterval(loadNotifications, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -115,6 +166,22 @@ function Navbar() {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+  const unreadNotificationCount = notifications.filter((note: any) => !note.readAt).length;
+
+  const toggleNotifications = async () => {
+    const nextOpen = !notificationOpen;
+    setNotificationOpen(nextOpen);
+    if (!nextOpen || unreadNotificationCount === 0) return;
+
+    const versionIds = Array.from(new Set(
+      notifications
+        .filter((note: any) => !note.readAt && note.datasetVersionId)
+        .map((note: any) => String(note.datasetVersionId))
+    ));
+    if (!versionIds.length) return;
+    setNotifications(prev => prev.map((note: any) => ({ ...note, readAt: note.readAt || new Date().toISOString() })));
+    await Promise.all(versionIds.map((versionId) => stage4Api.markNotificationsRead(versionId).catch(() => null)));
   };
 
   // Hide header on login and register pages
@@ -243,59 +310,97 @@ function Navbar() {
             ) : null}
           </div>
 
-          {/* Right: User Profile (Logged in) */}
-          <div 
-            className="user-profile" 
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            ref={dropdownRef}
-          >
-            <div className="user-info">
-              <div className="user-name">{user.name}</div>
-              <div className="user-role">{user.role}</div>
-            </div>
-            <div className="user-avatar">
-              <User size={20} />
-            </div>
+          {/* Right: Notifications + User Profile (Logged in) */}
+          <div className="header-actions">
+            <div className="notification-wrapper" ref={notificationRef}>
+              <button
+                type="button"
+                className={`notification-button ${notificationOpen ? 'active' : ''}`}
+                onClick={toggleNotifications}
+                title="Notifications"
+              >
+                <Bell size={20} />
+                {unreadNotificationCount > 0 && (
+                  <span className="notification-badge">{Math.min(unreadNotificationCount, 99)}</span>
+                )}
+              </button>
 
-            {/* Dropdown Menu */}
-            {dropdownOpen && (
-              <div className="dropdown-menu">
-                <div className="dropdown-header">
-                  <div className="user-avatar">
-                    <User size={24} />
+              {notificationOpen && (
+                <div className="notification-menu">
+                  <div className="notification-header">
+                    <strong>Notifications</strong>
+                    <span>{notifications.length} item{notifications.length === 1 ? '' : 's'}</span>
                   </div>
-                  <div className="user-info">
-                    <div className="user-name">{user.name}</div>
-                    <div className="user-email">{user.email}</div>
+                  <div className="notification-list">
+                    {notifications.length === 0 ? (
+                      <div className="notification-empty">No notifications yet.</div>
+                    ) : notifications.slice(0, 8).map((note: any) => (
+                      <div key={note._id || `${note.message}-${note.createdAt}`} className={`notification-row ${note.type || 'info'}`}>
+                        <div className="notification-dot"></div>
+                        <div>
+                          <p>{note.message}</p>
+                          {note.createdAt && <time>{new Date(note.createdAt).toLocaleString()}</time>}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <ul className="dropdown-list">
-                  <li className="dropdown-item">
-                    <User size={18} className="dropdown-item-icon" />
-                    Profile Settings
-                  </li>
-                  <li className="dropdown-item">
-                    <CreditCard size={18} className="dropdown-item-icon" />
-                    API Tokens
-                  </li>
-                  <li className="dropdown-item">
-                    <Settings size={18} className="dropdown-item-icon" />
-                    Settings
-                  </li>
-                  {user.role === 'admin' && (
-                    <li className="dropdown-item">
-                      <Shield size={18} className="dropdown-item-icon" />
-                      Admin Panel
-                    </li>
-                  )}
-                  <div className="dropdown-divider"></div>
-                  <li className="dropdown-item danger" onClick={handleLogout}>
-                    <LogOut size={18} className="dropdown-item-icon" />
-                    Logout
-                  </li>
-                </ul>
+              )}
+            </div>
+
+            <div
+              className="user-profile"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              ref={dropdownRef}
+            >
+              <div className="user-info">
+                <div className="user-name">{user.name}</div>
+                <div className="user-role">{user.role}</div>
               </div>
-            )}
+              <div className="user-avatar">
+                <User size={20} />
+              </div>
+
+              {/* Dropdown Menu */}
+              {dropdownOpen && (
+                <div className="dropdown-menu">
+                  <div className="dropdown-header">
+                    <div className="user-avatar">
+                      <User size={24} />
+                    </div>
+                    <div className="user-info">
+                      <div className="user-name">{user.name}</div>
+                      <div className="user-email">{user.email}</div>
+                    </div>
+                  </div>
+                  <ul className="dropdown-list">
+                    <li className="dropdown-item">
+                      <User size={18} className="dropdown-item-icon" />
+                      Profile Settings
+                    </li>
+                    <li className="dropdown-item">
+                      <CreditCard size={18} className="dropdown-item-icon" />
+                      API Tokens
+                    </li>
+                    <li className="dropdown-item">
+                      <Settings size={18} className="dropdown-item-icon" />
+                      Settings
+                    </li>
+                    {user.role === 'admin' && (
+                      <li className="dropdown-item">
+                        <Shield size={18} className="dropdown-item-icon" />
+                        Admin Panel
+                      </li>
+                    )}
+                    <div className="dropdown-divider"></div>
+                    <li className="dropdown-item danger" onClick={handleLogout}>
+                      <LogOut size={18} className="dropdown-item-icon" />
+                      Logout
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
         </>
       ) : (

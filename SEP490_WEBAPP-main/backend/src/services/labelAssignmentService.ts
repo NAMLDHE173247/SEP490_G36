@@ -798,15 +798,17 @@ export async function getEffectiveSampleLabelsForVersion(
   }
 
   const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
-  const canonicalSampleIds = new Set(canonical.map((c) => String(c.sampleId)));
-  const missingSampleIds = sampleIds.filter((id) => !canonicalSampleIds.has(String(id)));
+  const aggregated = await getAggregatedHardSampleLabels(sampleIds);
 
-  if (missingSampleIds.length > 0) {
-    const aggregated = await getAggregatedHardSampleLabels(missingSampleIds);
-    return [...canonical, ...(aggregated as any)];
-  }
+  const canonicalKeys = new Set(canonical.map(c => 
+    `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
+  ));
 
-  return canonical;
+  const effectiveAggregated = (aggregated as any).filter((a: any) => 
+    !canonicalKeys.has(`${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`)
+  );
+
+  return [...canonical, ...effectiveAggregated];
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
@@ -877,6 +879,115 @@ function getLogicalMessagesForSample(sample: any): Array<{ messageIndex: number;
       content: String(sample?.data?.output || ''),
     },
   ].filter((message) => message.content.trim().length > 0);
+}
+
+const DRAFT_INTENT_MAP: Record<string, string> = {
+  'Ask Explanation': 'REQUEST_EXPLANATION',
+  'Solve Exercise': 'INCORRECT',
+  'Request Formula': 'ASK_THEORY',
+  'Confirm Understanding': 'NEXT_SECTION',
+  'Ask Example': 'REQUEST_SIMPLER',
+  Hint: 'REQUEST_HINT',
+  Ques: 'REQUEST_EXPLANATION',
+  'Ques/Hint': 'REQUEST_HINT',
+  Other: 'WAIT_READY',
+};
+
+const DRAFT_ACTION_MAP: Record<string, string> = {
+  'Guide Step-by-step': 'LOGIC_BREAKDOWN',
+  'Give Hint': 'HINTING',
+  'Ask Probing Question': 'SCAFFOLDING',
+  'Provide Formula': 'CONCEPT_CLARIFY',
+  Encourage: 'MOTIVATING',
+  'Correct Error': 'SCAFFOLDING',
+  Summarize: 'TRANSITIONING',
+  Hint: 'HINTING',
+  Ques: 'SCAFFOLDING',
+  'Ques/Hint': 'SCAFFOLDING',
+  Other: 'WAITING',
+};
+
+const USER_INTENT_SET = new Set([
+  'CORRECT',
+  'INCORRECT',
+  'REQUEST_HINT',
+  'ASK_THEORY',
+  'REQUEST_EXPLANATION',
+  'REQUEST_SIMPLER',
+  'SKIP_EXERCISE',
+  'ENCOURAGE',
+  'OFF_TOPIC',
+  'NEXT_SECTION',
+  'WAIT_READY',
+]);
+
+const ASSISTANT_ACTION_SET = new Set([
+  'PRAISING',
+  'SCAFFOLDING',
+  'HINTING',
+  'CONCEPT_CLARIFY',
+  'LOGIC_BREAKDOWN',
+  'SIMPLIFYING',
+  'NAVIGATING',
+  'MOTIVATING',
+  'REDIRECTING',
+  'TRANSITIONING',
+  'WAITING',
+]);
+
+const SUBJECT_CODE_SET = new Set([
+  'MATH',
+  'PHYSICAL',
+  'PHYSICS',
+  'CHEMISTRY',
+  'LITERATURE',
+  'BIOLOGY',
+  'HISTORY',
+  'CODING',
+  'GEOGRAPHY',
+  'ENGLISH',
+  'OTHER',
+]);
+
+function resolveStaffLabelName(
+  raw: string,
+  role: LabelRole | null,
+  targetScope: LabelScope
+): { code: string; display: string } {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return { code: '', display: '' };
+
+  if (targetScope === 'sample') {
+    const upper = trimmed.toUpperCase();
+    if (SUBJECT_CODE_SET.has(upper)) {
+      return { code: upper, display: trimmed };
+    }
+    return { code: trimmed, display: trimmed };
+  }
+
+  if (role === 'user') {
+    if (DRAFT_INTENT_MAP[trimmed]) {
+      return { code: DRAFT_INTENT_MAP[trimmed], display: trimmed };
+    }
+    const upper = trimmed.toUpperCase();
+    if (USER_INTENT_SET.has(upper)) {
+      return { code: upper, display: trimmed };
+    }
+    return { code: upper, display: trimmed };
+  }
+
+  if (role === 'assistant') {
+    if (DRAFT_ACTION_MAP[trimmed]) {
+      return { code: DRAFT_ACTION_MAP[trimmed], display: trimmed };
+    }
+    const upper = trimmed.toUpperCase();
+    if (ASSISTANT_ACTION_SET.has(upper)) {
+      return { code: upper, display: trimmed };
+    }
+    return { code: upper, display: trimmed };
+  }
+
+  return { code: trimmed.toUpperCase(), display: trimmed };
 }
 
 function buildRequiredTargets(sample: any): DecisionTarget[] {
@@ -1028,29 +1139,6 @@ function computeAgreement(annotatorSets: Array<{ annotatorId: string; labels: st
   return Number((scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(4));
 }
 
-async function getSubmittedAssigneeIds(
-  datasetVersionId: mongoose.Types.ObjectId,
-  assigneeIds: string[]
-): Promise<string[]> {
-  if (!assigneeIds.length) {
-    return [];
-  }
-
-  const submissions = await DatasetAssignmentSubmission.find({
-    datasetVersionId,
-    assigneeId: { $in: assigneeIds.map((id) => new mongoose.Types.ObjectId(id)) },
-    status: { $in: ['submitted', 'approved'] },
-  })
-    .select('assigneeId')
-    .lean();
-
-  return Array.from(new Set(
-    submissions
-      .map((item: any) => String(item.assigneeId || ''))
-      .filter(Boolean)
-  ));
-}
-
 async function syncAdjudicationForTarget(params: {
   datasetVersionId: mongoose.Types.ObjectId;
   sampleId: mongoose.Types.ObjectId;
@@ -1149,17 +1237,57 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   }).lean();
 
   const assigneeIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
-  const submittedAssigneeIds = await getSubmittedAssigneeIds(versionOid, assigneeIds);
+  const allSampleAssignments = await LabelAssignment.find({
+    sampleId: sampleOid,
+    type: { $in: ['hard', 'soft'] },
+  }).lean();
+  const labelAuthorIds = allSampleAssignments
+    .map((item: any) => String(item.createdBy || ''))
+    .filter((id) => mongoose.Types.ObjectId.isValid(id));
   const comparisonAnnotatorIds = Array.from(new Set(
-    [...submittedAssigneeIds, ownerId].filter(Boolean)
-  ));
-  const hardAssignments = comparisonAnnotatorIds.length
-    ? await LabelAssignment.find({
-        sampleId: sampleOid,
-        type: 'hard',
-        createdBy: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) },
-      }).lean()
-    : [];
+    [...assigneeIds, ...labelAuthorIds, ownerId].filter(Boolean)
+  )).filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard');
+  const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample');
+  const sampleMessages = Array.isArray((sample as any).data?.messages) ? (sample as any).data.messages : [];
+  const softDerivedAssignments: any[] = [];
+  softAssignments.forEach((doc: any) => {
+    if (!doc.targetTextSnapshot) return;
+    let saved: any = null;
+    try {
+      saved = JSON.parse(String(doc.targetTextSnapshot));
+    } catch {
+      saved = null;
+    }
+    if (!saved || typeof saved !== 'object') return;
+    ['subject', 'completion', 'quality'].forEach((field) => {
+      if (saved[field]) {
+        softDerivedAssignments.push({
+          ...doc,
+          targetScope: 'sample',
+          messageIndex: null,
+          messageRole: null,
+          name: String(saved[field]),
+        });
+      }
+    });
+    if (saved.messages && typeof saved.messages === 'object') {
+      Object.entries(saved.messages).forEach(([idx, value]: [string, any]) => {
+        const messageIndex = Number(idx);
+        if (!Number.isInteger(messageIndex) || !value) return;
+        const role = sampleMessages[messageIndex]?.role === 'assistant' ? 'assistant' : 'user';
+        const labelName = role === 'assistant' ? value.action : value.intent;
+        if (!labelName) return;
+        softDerivedAssignments.push({
+          ...doc,
+          targetScope: 'message',
+          messageIndex,
+          messageRole: role,
+          name: String(labelName),
+        });
+      });
+    }
+  });
   const userRows = comparisonAnnotatorIds.length
     ? await User.find({ _id: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
     : [];
@@ -1170,33 +1298,41 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     ])
   );
 
-  const decisionsByTarget = new Map<string, Map<string, Set<string>>>();
-  hardAssignments.forEach((doc: any) => {
+  const decisionsByTarget = new Map<string, Map<string, Map<string, string>>>();
+  [...hardAssignments, ...softDerivedAssignments].forEach((doc: any) => {
+    const targetScope: LabelScope = doc.targetScope === 'message' ? 'message' : 'sample';
+    const messageRole: LabelRole | null = doc.messageRole === 'user' || doc.messageRole === 'assistant'
+      ? doc.messageRole
+      : null;
     const targetKey = buildTargetKey(
-      doc.targetScope === 'message' ? 'message' : 'sample',
+      targetScope,
       Number.isInteger(Number(doc.messageIndex)) ? Number(doc.messageIndex) : null,
-      doc.messageRole === 'user' || doc.messageRole === 'assistant' ? doc.messageRole : null
+      messageRole
     );
     const annotatorId = String(doc.createdBy);
+    const { code, display } = resolveStaffLabelName(String(doc.name || ''), messageRole, targetScope);
+    if (!code) return;
     if (!decisionsByTarget.has(targetKey)) {
-      decisionsByTarget.set(targetKey, new Map<string, Set<string>>());
+      decisionsByTarget.set(targetKey, new Map<string, Map<string, string>>());
     }
     if (!decisionsByTarget.get(targetKey)!.has(annotatorId)) {
-      decisionsByTarget.get(targetKey)!.set(annotatorId, new Set<string>());
+      decisionsByTarget.get(targetKey)!.set(annotatorId, new Map<string, string>());
     }
-    decisionsByTarget.get(targetKey)!.get(annotatorId)!.add(String(doc.name || '').toUpperCase());
+    decisionsByTarget.get(targetKey)!.get(annotatorId)!.set(code, display);
   });
 
   const requiredTargets = buildRequiredTargets(sample);
   const targetSummaries = await Promise.all(
     requiredTargets.map(async (target) => {
       const targetKey = target.key;
-      const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Set<string>>();
+      const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Map<string, string>>();
       const annotatorSets = comparisonAnnotatorIds
-        .map((annotatorId) => ({
-          annotatorId,
-          labels: Array.from(perUserMap.get(annotatorId) || new Set<string>()).sort(),
-        }))
+        .map((annotatorId) => {
+          const labelMap = perUserMap.get(annotatorId) || new Map<string, string>();
+          const labels = Array.from(labelMap.keys()).sort();
+          const displayLabels = labels.map((code) => labelMap.get(code) || code);
+          return { annotatorId, labels, displayLabels };
+        })
         .filter((item) => item.labels.length > 0);
 
       const { labelCounts, majorityLabels } = computeMajorityLabels(annotatorSets);
@@ -1226,6 +1362,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         annotators: annotatorSets.map((item) => ({
           annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
           labels: item.labels,
+          displayLabels: item.displayLabels,
           isOwner: item.annotatorId === ownerId,
         })),
       };
@@ -1547,7 +1684,42 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
         assigneeId: { $in: assigneeIds.flatMap(idVariants) },
       }).lean()
     : [];
-  const submissionMap = new Map(submissions.map((item: any) => [String(item.assigneeId), item]));
+  const submissionMap = new Map<string, any>();
+  submissions.forEach((item: any) => {
+    const key = String(item.assigneeId);
+    const current = submissionMap.get(key) || {
+      assigneeId: item.assigneeId,
+      status: 'draft',
+      submittedAt: null,
+      name: '',
+      labeledCount: 0,
+      totalSamples: 0,
+      humanScoreTotal: 0,
+      humanScoreCount: 0,
+      submissions: [],
+    };
+    current.submissions.push(item);
+    current.labeledCount += Number(item.labeledCount || 0);
+    current.totalSamples += Number(item.totalSamples || 0);
+    if (Number.isFinite(Number(item.humanScore))) {
+      current.humanScoreTotal += Number(item.humanScore);
+      current.humanScoreCount += 1;
+    }
+    current.name = current.name ? `${current.name}, ${item.name || 'Batch'}` : (item.name || 'Batch');
+    if (item.submittedAt && (!current.submittedAt || new Date(item.submittedAt).getTime() > new Date(current.submittedAt).getTime())) {
+      current.submittedAt = item.submittedAt;
+    }
+    submissionMap.set(key, current);
+  });
+  submissionMap.forEach((value, key) => {
+    const rows = value.submissions || [];
+    const allSubmitted = rows.length > 0 && rows.every((row: any) => ['submitted', 'approved'].includes(String(row.status || '')));
+    const anyStarted = rows.some((row: any) => ['in_progress', 'submitted', 'approved'].includes(String(row.status || '')));
+    submissionMap.set(key, {
+      ...value,
+      status: allSubmitted ? 'submitted' : anyStarted ? 'draft' : 'draft',
+    });
+  });
 
   const now = Date.now();
   const hourAgo = new Date(now - (60 * 60 * 1000));
@@ -1602,6 +1774,9 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
               submittedAt: submission.submittedAt || null,
               name: submission.name || null,
               labeledCount: draftLabeledSamples,
+              humanScore: submission.humanScoreCount > 0
+                ? Number((submission.humanScoreTotal / submission.humanScoreCount).toFixed(1))
+                : null,
             }
           : null,
       };

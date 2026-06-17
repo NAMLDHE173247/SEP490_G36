@@ -15,27 +15,49 @@ import { LabelAssignment } from '../../../models/LabelAssignment';
 const legacyEvaluationController = new EvaluationController();
 
 export class DataPrepVersionController {
-  async listVersions(_req: Request, res: Response): Promise<void> {
+  async listVersions(req: Request, res: Response): Promise<void> {
     try {
-      const versions = await DatasetVersion.find().sort({ createdAt: -1 });
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+      const versions = await DatasetVersion.find({
+        $or: [
+          { ownerId },
+          { isPublic: true },
+          { sharedWithUserIds: ownerId },
+        ],
+      }).sort({ updatedAt: -1, createdAt: -1 }).limit(50);
       const versionsWithStats = await Promise.all(versions.map(async (v) => {
-        const tasksCount = await DatasetAssignmentSubmission.countDocuments({ datasetVersionId: v._id });
+        const [tasksCount, submittedTasks] = await Promise.all([
+          DatasetAssignmentSubmission.countDocuments({ datasetVersionId: v._id }),
+          DatasetAssignmentSubmission.countDocuments({ datasetVersionId: v._id, status: 'submitted' }),
+        ]);
+        const resumeStep = Number((v as any).prepareResumeStep || 1);
+        const stage =
+          resumeStep >= 13 ? 'Finish'
+          : resumeStep >= 7 ? 'Stage 4 / Staff Labeling'
+          : resumeStep >= 5 ? 'Stage 3 Labeling'
+          : resumeStep >= 2 ? 'Preprocessing'
+          : 'Upload';
         return {
-          id: v._id,
+          id: String(v._id),
           projectName: v.projectName,
           description: v.versionName,
-          status: 'completed',
+          status: tasksCount > submittedTasks ? 'active' : 'ready',
           createdAt: v.createdAt,
           updatedAt: v.updatedAt,
-          stage: 'Labeling (Stage 4)', 
+          prepareResumeStep: resumeStep,
+          stage,
           conversations: v.totalSamples,
           messages: 0,
-          author: 'admin',
+          author: String(v.ownerId) === String(ownerId) ? 'me' : 'shared',
           tags: [],
           accuracy: null,
           labeling: tasksCount > 0 ? 'in_progress' : 'completed',
           labelingTasks: tasksCount,
-          labelingTasksDone: 0
+          labelingTasksDone: submittedTasks
         };
       }));
       res.status(200).json({ success: true, data: versionsWithStats });

@@ -82,18 +82,20 @@ export function useStage4Data(versionId: string | null) {
     try {
       const job = await stage4Api.getJobStatus(vId, jobId);
       setLatestJob(job);
+      const evalResults = await stage4Api.getMultiEvalResults(vId).catch(() => []);
+      setResults(evalResults);
 
       if (job.status === 'completed' || job.status === 'failed') {
         stopPolling();
         // Refresh statistics and results
-        const [statsData, qualityData, evalResults] = await Promise.all([
+        const [statsData, qualityData, finalEvalResults] = await Promise.all([
           stage4Api.getStatistics(vId).catch(() => null),
           stage4Api.getQualitySamples(vId).catch(() => null),
           stage4Api.getMultiEvalResults(vId).catch(() => []),
         ]);
         setStatistics(statsData);
         setQualityResult(qualityData);
-        setResults(evalResults);
+        setResults(finalEvalResults);
       }
     } catch (err) {
       console.error('Error polling job status:', err);
