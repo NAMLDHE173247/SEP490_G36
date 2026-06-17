@@ -17,7 +17,7 @@ export class GeminiProvider implements ILlmProvider {
             config.responseMimeType = "application/json";
         }
         this.model = genAI.getGenerativeModel({
-            model: 'gemini-flash-latest',
+            model: 'gemini-2.0-flash',
             generationConfig: config
         });
     }

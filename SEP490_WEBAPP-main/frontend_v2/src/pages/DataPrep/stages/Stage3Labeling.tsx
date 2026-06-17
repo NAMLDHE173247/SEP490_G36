@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
   Search, Users, Star, Plus, Upload, Link as LinkIcon, Trash2, Edit3, X, Eye,
-  MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2
+  MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2, Layers
 } from 'lucide-react';
 import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
@@ -78,6 +78,7 @@ export const Stage3Labeling: React.FC = () => {
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
+  const [overlapCount, setOverlapCount] = React.useState(1);
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -2291,9 +2292,70 @@ export const Stage3Labeling: React.FC = () => {
                     )}
                   </div>
 
+                  {/* Overlap Config */}
+                  {(staffAssignments['__selected__'] || []).length >= 2 && (
+                    <div style={{
+                      marginTop: '12px', border: '1px solid #e0e7ff', borderRadius: '10px',
+                      background: 'linear-gradient(135deg, #f5f3ff, #eef2ff)', overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+                        background: 'rgba(99, 102, 241, 0.08)', borderBottom: '1px solid #e0e7ff',
+                        fontWeight: 600, fontSize: '13px', color: '#4f46e5'
+                      }}>
+                        <Layers size={16} />
+                        <span>Gán trùng lặp (Overlap)</span>
+                      </div>
+                      <div style={{ padding: '12px 14px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <label style={{ fontSize: '13px', color: '#475569', whiteSpace: 'nowrap' }}>Số người cùng gán 1 lô:</label>
+                          <select
+                            value={overlapCount}
+                            onChange={e => setOverlapCount(Number(e.target.value))}
+                            style={{
+                              flex: 1, maxWidth: '200px', padding: '8px 12px', border: '1px solid #d1d5db',
+                              borderRadius: '8px', fontSize: '13px', fontWeight: 600, background: '#fff'
+                            }}
+                          >
+                            {(() => {
+                              const M = (staffAssignments['__selected__'] || []).length;
+                              const values: number[] = [];
+                              for (let i = 1; i <= M; i++) { values.push(i); }
+                              return values.map(v => (
+                                <option key={v} value={v}>
+                                  {v === 1 ? '1 (Không trùng lặp)' : `${v} người/nhóm`}
+                                </option>
+                              ));
+                            })()}
+                          </select>
+                        </div>
+                        {overlapCount > 1 && (() => {
+                          const M = (staffAssignments['__selected__'] || []).length;
+                          const groups = Math.ceil(M / overlapCount);
+                          const perGroup = Math.floor(assignmentSamples.length / groups);
+                          return (
+                            <div style={{ marginTop: '10px' }}>
+                              <span style={{
+                                display: 'inline-block', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                color: '#fff', padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 500
+                              }}>
+                                📊 {groups} nhóm × {overlapCount} người — mỗi nhóm cùng gán {perGroup} câu giống nhau
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Selected count */}
                   <div style={{ marginTop: '16px', fontSize: '13px', color: '#64748b', textAlign: 'right' }}>
                     Đã chọn: <strong style={{ color: '#6366f1' }}>{(staffAssignments['__selected__'] || []).length}</strong> nhân viên
+                    {overlapCount > 1 && (
+                      <span style={{ marginLeft: 8, color: '#8b5cf6' }}>
+                        • Overlap: <strong>{overlapCount}</strong> người/nhóm
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -2360,10 +2422,11 @@ export const Stage3Labeling: React.FC = () => {
                     borderRadius: '14px', padding: '20px', marginTop: '20px'
                   }}>
                     <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#4338ca', margin: '0 0 4px 0' }}>
-                      📊 Phân bổ tự động
+                      📊 Phân bổ {overlapCount > 1 ? `(Overlap ${overlapCount} người/nhóm)` : 'tự động'}
                     </h3>
                     <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
                       {assignmentSamples.length} samples ÷ {(staffAssignments['__selected__'] || []).length} nhân viên
+                      {overlapCount > 1 && ` (${Math.ceil((staffAssignments['__selected__'] || []).length / overlapCount)} nhóm × tối đa ${overlapCount} người)`}
                     </p>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -2372,14 +2435,69 @@ export const Stage3Labeling: React.FC = () => {
                         const N = assignmentSamples.length;
                         const M = selectedIds.length;
                         if (M === 0) return null;
-                        const perStaff = Math.floor(N / M);
-                        const remainder = N % M;
-                        let cursor = 1;
+                        const K = overlapCount;
+                        const numberOfGroups = Math.ceil(M / K);
+                        const perGroup = Math.floor(N / numberOfGroups);
+                        const remainder = N % numberOfGroups;
+                        let sampleCursor = 1;
+
+                        if (K > 1) {
+                          // Grouped display
+                          return Array.from({ length: numberOfGroups }).map((_, gIdx) => {
+                            const chunkSize = perGroup + (gIdx < remainder ? 1 : 0);
+                            const staffStart = gIdx * K;
+                            const groupStaffIds = selectedIds.slice(staffStart, Math.min(staffStart + K, M));
+                            const range = `#${sampleCursor}–${sampleCursor + chunkSize - 1}`;
+                            const startIdx = sampleCursor;
+                            sampleCursor += chunkSize;
+                            return (
+                              <div key={gIdx} style={{
+                                border: '1px solid #e0e7ff', borderRadius: '10px', overflow: 'hidden',
+                                background: '#fafafe', marginBottom: '4px'
+                              }}>
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px',
+                                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06))',
+                                  borderBottom: '1px solid #e0e7ff', fontSize: '12px', fontWeight: 600, color: '#4f46e5'
+                                }}>
+                                  <Layers size={14} />
+                                  <span>Nhóm {gIdx + 1} — Câu {range} ({chunkSize} samples)</span>
+                                </div>
+                                {groupStaffIds.map((staffId: string) => {
+                                  const user = shareUsers.find((u: any) => u._id === staffId);
+                                  return (
+                                    <div key={staffId} style={{
+                                      display: 'flex', alignItems: 'center', gap: '12px',
+                                      padding: '8px 14px 8px 28px', borderBottom: '1px solid #f1f5f9'
+                                    }}>
+                                      <div style={{
+                                        width: '28px', height: '28px', borderRadius: '50%',
+                                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 700, fontSize: '12px', flexShrink: 0
+                                      }}>
+                                        {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                      </div>
+                                      <span style={{ flex: 1, fontWeight: 600, fontSize: '13px', color: '#334155' }}>
+                                        {user?.name || staffId}
+                                      </span>
+                                      <span style={{ fontWeight: 700, fontSize: '13px', color: '#6366f1' }}>
+                                        {chunkSize} samples
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          });
+                        }
+
+                        // Normal (no overlap) display
                         return selectedIds.map((staffId: string, i: number) => {
                           const user = shareUsers.find((u: any) => u._id === staffId);
-                          const count = perStaff + (i < remainder ? 1 : 0);
-                          const range = `#${cursor}–${cursor + count - 1}`;
-                          cursor += count;
+                          const count = perGroup + (i < remainder ? 1 : 0);
+                          const range = `#${sampleCursor}–${sampleCursor + count - 1}`;
+                          sampleCursor += count;
                           return (
                             <div key={staffId} style={{
                               display: 'flex', alignItems: 'center', gap: '12px',
@@ -2434,6 +2552,7 @@ export const Stage3Labeling: React.FC = () => {
                           assigneeIds: selectedIds,
                           taskName: taskNameInput.trim() || 'Labeling Task',
                           priority: taskPriority,
+                          overlapCount,
                         });
 
                         alert('Đã Giao Việc thành công!');

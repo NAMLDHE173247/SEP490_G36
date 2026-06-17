@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, Users, Eye,
   BarChart2, AlertTriangle, ChevronRight, Shield, X, Send,
-  FileText, MessageSquare, RefreshCw, Calendar, Tag, Database, Activity, Layers
+  FileText, MessageSquare, RefreshCw, Calendar, Tag, Database, Activity, Layers, GitCompare
 } from 'lucide-react';
 import { api } from '../services/api';
 import SplitViewModal from '../components/dataprep/SplitViewModal';
@@ -20,6 +20,10 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   const [currentPage, setCurrentPage] = useState(1);
   const [sampleFilter, setSampleFilter] = useState('all');
   const itemsPerPage = 10;
+
+  // Compare tab state
+  const [comparePage, setComparePage] = useState(1);
+  const comparePageSize = 15;
 
   // Split-View state
   const [splitViewOpen, setSplitViewOpen] = useState(false);
@@ -109,11 +113,18 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
     // Filter samples assigned to this staff
     const staffSamples = samples
       .filter((s: any) => s.staffStatus?.hasOwnProperty(staff.id))
-      .map((s: any) => ({
-        ...s,
-        isLabeled: s.staffStatus?.[staff.id] === 'done',
-        labelName: s.staffLabels?.[staff.id] || null,
-      }))
+      .map((s: any) => {
+        const labelObj = s.staffLabels?.[staff.id];
+        const labelName = typeof labelObj === 'object' ? labelObj?.raw : labelObj;
+        const isDraft = typeof labelObj === 'object' ? labelObj?.isDraft : false;
+        return {
+          ...s,
+          isLabeled: s.staffStatus?.[staff.id] === 'done',
+          isDraft,
+          labelName: labelName || null,
+          labelDetail: typeof labelObj === 'object' ? labelObj : null,
+        };
+      })
       // Ưu tiên câu đã labeled lên trước
       .sort((a, b) => (b.isLabeled ? 1 : 0) - (a.isLabeled ? 1 : 0));
 
@@ -238,6 +249,12 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             <button className={`td-tab ${activeTab === 'samples' ? 'active' : ''}`} onClick={() => setActiveTab('samples')}>
               <Database size={16} /> Dữ liệu Chi tiết
             </button>
+            {staffList.length > 1 && (
+              <button className={`td-tab ${activeTab === 'compare' ? 'active' : ''}`} onClick={() => { setActiveTab('compare'); setComparePage(1); }}>
+                <GitCompare size={16} /> So sánh Overlap
+                {conflicts.length > 0 && <span className="td-badge" style={{ background: '#ef4444' }}>{conflicts.length}</span>}
+              </button>
+            )}
           </div>
 
           <div className="td-tab-content">
@@ -474,6 +491,188 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                 )}
               </div>
             )}
+
+            {/* ===== TAB 4: SO SÁNH OVERLAP ===== */}
+            {activeTab === 'compare' && (
+              <div className="td-panel">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>So sánh nhãn đa người gán</h3>
+                    <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
+                      {staffList.length} người cùng gán · {samples.filter((s: any) => s.conflict).length} xung đột
+                    </p>
+                  </div>
+                </div>
+
+                {/* Compare Table */}
+                <div className="td-table-wrapper" style={{ overflowX: 'auto' }}>
+                  <table className="td-table" style={{ minWidth: `${400 + staffList.length * 220}px` }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '50px', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>#</th>
+                        <th style={{ width: '200px', position: 'sticky', left: '50px', background: '#f8fafc', zIndex: 2 }}>Preview</th>
+                        <th style={{ width: '70px', textAlign: 'center' }}>Trạng thái</th>
+                        {staffList.map((staff: any) => (
+                          <th key={staff.id} style={{ minWidth: '200px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                              <div className="al-avatar xs" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+                                {staff.name ? staff.name.split(' ').pop()[0] : 'U'}
+                              </div>
+                              <span style={{ fontSize: '12px', fontWeight: 600, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {staff.name}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
+                        <th style={{ width: '60px', textAlign: 'center' }}>Xem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {samples
+                        .slice((comparePage - 1) * comparePageSize, comparePage * comparePageSize)
+                        .map((s: any) => {
+                          const hasConflict = s.conflict;
+                          const allLabels = staffList.map((staff: any) => {
+                            const labelObj = s.staffLabels?.[staff.id];
+                            const labelRaw = typeof labelObj === 'object' ? labelObj?.raw : labelObj;
+                            const isDraft = typeof labelObj === 'object' ? labelObj?.isDraft : false;
+                            return {
+                              staffId: staff.id,
+                              staffName: staff.name,
+                              status: s.staffStatus?.[staff.id] || 'not_assigned',
+                              label: labelRaw || null,
+                              isDraft,
+                              detail: typeof labelObj === 'object' ? labelObj : null,
+                            };
+                          });
+                          // Check if all done labels agree
+                          const doneLabels = allLabels.filter(l => l.label);
+                          const uniqueLabels = new Set(doneLabels.map(l => l.label));
+                          const isAgreed = doneLabels.length > 1 && uniqueLabels.size === 1;
+                          const isConflict = doneLabels.length > 1 && uniqueLabels.size > 1;
+
+                          return (
+                            <tr key={s.id} style={{
+                              background: isConflict ? 'rgba(239, 68, 68, 0.04)' : isAgreed ? 'rgba(16, 185, 129, 0.04)' : 'transparent'
+                            }}>
+                              <td style={{ fontWeight: 600, color: '#6366f1', position: 'sticky', left: 0, background: isConflict ? '#fef2f2' : isAgreed ? '#ecfdf5' : '#fff', zIndex: 1 }}>
+                                #{s.id}
+                              </td>
+                              <td style={{ position: 'sticky', left: '50px', background: isConflict ? '#fef2f2' : isAgreed ? '#ecfdf5' : '#fff', zIndex: 1 }}>
+                                <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', color: '#475569' }}>
+                                  {s.preview || `Sample #${s.id}`}
+                                </div>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                {isConflict && (
+                                  <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                    background: '#fef2f2', color: '#dc2626', padding: '2px 8px',
+                                    borderRadius: '6px', fontSize: '11px', fontWeight: 600, border: '1px solid #fecaca'
+                                  }}>
+                                    ⚠️ Conflict
+                                  </span>
+                                )}
+                                {isAgreed && (
+                                  <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                    background: '#ecfdf5', color: '#059669', padding: '2px 8px',
+                                    borderRadius: '6px', fontSize: '11px', fontWeight: 600, border: '1px solid #a7f3d0'
+                                  }}>
+                                    ✅ Đồng ý
+                                  </span>
+                                )}
+                                {!isConflict && !isAgreed && doneLabels.length <= 1 && (
+                                  <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                    background: '#f8fafc', color: '#94a3b8', padding: '2px 8px',
+                                    borderRadius: '6px', fontSize: '11px', fontWeight: 500
+                                  }}>
+                                    ⏳ Chờ
+                                  </span>
+                                )}
+                              </td>
+                              {allLabels.map((l, idx) => (
+                                <td key={idx} style={{ textAlign: 'center', padding: '8px 6px' }}>
+                                  {l.status === 'not_assigned' ? (
+                                    <span style={{ color: '#d1d5db', fontSize: '12px' }}>—</span>
+                                  ) : l.label ? (
+                                    <div
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => openSplitView(s.sampleObjectId, l.staffId, l.staffName)}
+                                      title={`Xem chi tiết nhãn của ${l.staffName}`}
+                                    >
+                                      <div style={{
+                                        padding: '6px 10px', borderRadius: '8px', fontSize: '11px', fontWeight: 600,
+                                        lineHeight: '1.4', maxWidth: '180px', margin: '0 auto', wordBreak: 'break-word',
+                                        background: l.isDraft ? '#fffbeb' : isConflict ? '#fef2f2' : '#ecfdf5',
+                                        color: l.isDraft ? '#92400e' : isConflict ? '#b91c1c' : '#047857',
+                                        border: `1px solid ${l.isDraft ? '#fcd34d' : isConflict ? '#fecaca' : '#a7f3d0'}`,
+                                        transition: 'all 0.15s ease'
+                                      }}>
+                                        {l.isDraft && (
+                                          <span style={{
+                                            display: 'inline-block', background: '#f59e0b', color: '#fff',
+                                            padding: '1px 5px', borderRadius: '4px', fontSize: '9px',
+                                            fontWeight: 700, marginBottom: '3px', letterSpacing: '0.5px'
+                                          }}>DRAFT</span>
+                                        )}
+                                        <div>{l.label.length > 50 ? l.label.substring(0, 50) + '...' : l.label}</div>
+                                        {l.detail && (
+                                          <div style={{ fontSize: '10px', marginTop: '3px', opacity: 0.75, fontWeight: 500 }}>
+                                            {l.detail.quality && <span>Chất lượng: {l.detail.quality}</span>}
+                                            {l.detail.completion && <span>{l.detail.quality ? ' · ' : ''}Hoàn thành: {l.detail.completion}</span>}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ) : l.status === 'done' ? (
+                                    <span style={{
+                                      display: 'inline-block', padding: '4px 8px', background: '#f0fdf4',
+                                      color: '#15803d', borderRadius: '6px', fontSize: '11px', fontWeight: 500
+                                    }}>✅ Done</span>
+                                  ) : (
+                                    <span style={{
+                                      display: 'inline-block', padding: '4px 8px', background: '#fefce8',
+                                      color: '#a16207', borderRadius: '6px', fontSize: '11px', fontWeight: 500
+                                    }}>⏳ Chưa làm</span>
+                                  )}
+                                </td>
+                              ))}
+                              <td style={{ textAlign: 'center' }}>
+                                <button
+                                  className="td-icon-btn"
+                                  title="Mở Split-View"
+                                  onClick={() => openSplitView(s.sampleObjectId, '', '')}
+                                >
+                                  <Eye size={16}/>
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                {Math.ceil(samples.length / comparePageSize) > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '20px', gap: '12px' }}>
+                    <button className="al-btn al-btn-outline" disabled={comparePage === 1} onClick={() => setComparePage(p => p - 1)}>Trước</button>
+                    <span style={{ fontSize: '14px', color: '#4b5563' }}>Trang {comparePage} / {Math.ceil(samples.length / comparePageSize)}</span>
+                    <button className="al-btn al-btn-outline" disabled={comparePage >= Math.ceil(samples.length / comparePageSize)} onClick={() => setComparePage(p => p + 1)}>Sau</button>
+                  </div>
+                )}
+
+                {/* Legend */}
+                <div style={{ display: 'flex', gap: '16px', marginTop: '16px', padding: '12px 16px', background: '#f8fafc', borderRadius: '10px', fontSize: '12px', color: '#64748b' }}>
+                  <span>✅ <strong style={{ color: '#059669' }}>Đồng ý</strong> = Tất cả nhãn giống nhau</span>
+                  <span>⚠️ <strong style={{ color: '#dc2626' }}>Conflict</strong> = Nhãn khác nhau cần phân xử</span>
+                  <span>⏳ <strong style={{ color: '#94a3b8' }}>Chờ</strong> = Chưa đủ nhãn để so sánh</span>
+                  <span>💡 Bấm vào nhãn để xem Split-View chi tiết</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -508,7 +707,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       {/* ===== MODAL: STAFF SAMPLE LIST (Option B) ===== */}
       {staffSamplesModal && (
         <div className="td-modal-overlay" onClick={() => setStaffSamplesModal(null)}>
-          <div className="td-modal" style={{ maxWidth: '800px', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+          <div className="td-modal td-modal-large" onClick={e => e.stopPropagation()}>
             <div className="td-modal-header">
               <h3>
                 <Eye size={18} style={{ marginRight: 8 }} />
@@ -517,23 +716,62 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               <button className="td-modal-close" onClick={() => setStaffSamplesModal(null)}><X size={20}/></button>
             </div>
             <div className="td-modal-body" style={{ padding: 0 }}>
-              {/* Summary bar */}
-              <div style={{ display: 'flex', gap: '16px', padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
-                <span>📊 Tổng: <strong>{staffSamplesModal.samples.length}</strong></span>
-                <span style={{ color: '#10b981' }}>✅ Đã gán nhãn: <strong>{staffSamplesModal.samples.filter(s => s.isLabeled).length}</strong></span>
-                <span style={{ color: '#f59e0b' }}>⏳ Chưa làm: <strong>{staffSamplesModal.samples.filter(s => !s.isLabeled).length}</strong></span>
+              {/* Summary grid */}
+              <div className="td-modal-summary-grid">
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon total">
+                    <Database size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Tổng số mẫu</span>
+                    <span className="td-summary-card-value">{staffSamplesModal.samples.length}</span>
+                  </div>
+                </div>
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon labeled">
+                    <CheckCircle size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Hoàn thành</span>
+                    <span className="td-summary-card-value">
+                      {staffSamplesModal.samples.filter((s: any) => s.isLabeled).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon" style={{ background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', color: '#b45309' }}>
+                    <FileText size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Draft</span>
+                    <span className="td-summary-card-value" style={{ color: '#b45309' }}>
+                      {staffSamplesModal.samples.filter((s: any) => s.isDraft).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon pending">
+                    <Clock size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Chưa gán nhãn</span>
+                    <span className="td-summary-card-value">
+                      {staffSamplesModal.samples.filter((s: any) => !s.isLabeled).length}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Sample list table */}
-              <div style={{ maxHeight: '55vh', overflowY: 'auto', padding: '0' }}>
-                <table className="td-table" style={{ margin: 0 }}>
+              <div className="td-modal-table-container">
+                <table className="td-modal-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '60px' }}>#</th>
-                      <th style={{ width: '100px' }}>Trạng thái</th>
-                      <th>Nhãn</th>
-                      <th>Preview</th>
-                      <th style={{ width: '80px' }}>Xem</th>
+                      <th className="td-col-id">#</th>
+                      <th className="td-col-status">Trạng thái</th>
+                      <th className="td-col-label">Nhãn</th>
+                      <th className="td-col-preview">Preview</th>
+                      <th className="td-col-action">Xem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -542,7 +780,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                       .map((s: any) => (
                         <tr 
                           key={s.id} 
-                          style={{ cursor: s.isLabeled ? 'pointer' : 'default', background: s.isLabeled ? '#f0fdf4' : 'transparent' }}
+                          className={s.sampleObjectId ? "row-clickable" : ""}
+                          style={{ background: s.isLabeled ? 'rgba(12, 166, 120, 0.04)' : s.isDraft ? 'rgba(245, 158, 11, 0.04)' : 'transparent' }}
                           onClick={() => {
                             if (s.sampleObjectId) {
                               openSplitView(s.sampleObjectId, staffSamplesModal.staff.id, staffSamplesModal.staff.name);
@@ -552,24 +791,54 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                           <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
                           <td>
                             {s.isLabeled ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#dcfce7', color: '#166534' }}>
-                                <CheckCircle size={12} /> Đã gán
+                              <span className="td-status-pill labeled">
+                                <CheckCircle size={12} /> Hoàn thành
+                              </span>
+                            ) : s.isDraft ? (
+                              <span className="td-status-pill" style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d' }}>
+                                <FileText size={12} /> Draft
                               </span>
                             ) : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#fef3c7', color: '#92400e' }}>
+                              <span className="td-status-pill pending">
                                 <Clock size={12} /> Chưa làm
                               </span>
                             )}
                           </td>
-                          <td style={{ fontSize: '13px', color: s.labelName ? '#374151' : '#d1d5db' }}>
-                            {s.labelName || '—'}
-                          </td>
-                          <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', color: '#6b7280' }}>
-                            {s.preview || `Sample #${s.id}`}
+                          <td>
+                            {s.labelName ? (
+                              <div>
+                                <span className="td-label-badge" title={s.labelName} style={{
+                                  background: s.isDraft ? '#fffbeb' : undefined,
+                                  color: s.isDraft ? '#92400e' : undefined,
+                                  borderColor: s.isDraft ? '#fcd34d' : undefined,
+                                }}>
+                                  {s.isDraft && (
+                                    <span style={{
+                                      background: '#f59e0b', color: '#fff', padding: '1px 4px',
+                                      borderRadius: '3px', fontSize: '9px', fontWeight: 700, marginRight: '4px'
+                                    }}>DRAFT</span>
+                                  )}
+                                  {s.labelName}
+                                </span>
+                                {s.labelDetail && (s.labelDetail.quality || s.labelDetail.completion) && (
+                                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '2px' }}>
+                                    {s.labelDetail.quality && <span>Chất lượng: {s.labelDetail.quality}</span>}
+                                    {s.labelDetail.completion && <span>{s.labelDetail.quality ? ' · ' : ''}Hoàn thành: {s.labelDetail.completion}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="td-label-empty">—</span>
+                            )}
                           </td>
                           <td>
+                            <div className="td-text-truncate" title={s.preview || `Sample #${s.id}`}>
+                              {s.preview || `Sample #${s.id}`}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
                             <button
-                              className="td-icon-btn"
+                              className="td-btn-view-circle"
                               title="Mở Split-View"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -590,9 +859,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
 
               {/* Pagination */}
               {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize) > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px', gap: '12px', borderTop: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '16px', borderTop: '1px solid #e5e7eb' }}>
                   <button className="al-btn al-btn-outline" disabled={staffSamplePage === 1} onClick={() => setStaffSamplePage(p => p - 1)}>Trước</button>
-                  <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                  <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 500 }}>
                     Trang {staffSamplePage} / {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)}
                   </span>
                   <button className="al-btn al-btn-outline" disabled={staffSamplePage >= Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)} onClick={() => setStaffSamplePage(p => p + 1)}>Sau</button>

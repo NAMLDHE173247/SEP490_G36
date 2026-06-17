@@ -666,6 +666,7 @@
   .al-stats { grid-template-columns: repeat(2, 1fr); }
   .al-task-row { flex-wrap: wrap; }
   .al-details-grid { grid-template-columns: repeat(2, 1fr); }
+  .al-batch-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -675,4 +676,162 @@
   .al-toolbar { flex-direction: column; }
   .al-details-grid { grid-template-columns: 1fr; }
   .al-form-row { flex-direction: column; }
+}
+
+/* ── Expanded Task Card ── */
+.al-task-card.expanded {
+  border-color: #c7d2fe;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.12);
+}
+
+.al-task-expanded {
+  border-top: 1px solid #e5e7eb;
+  padding: 16px 20px;
+  background: linear-gradient(180deg, #fafafe, #f8fafc);
+  animation: alExpandIn 0.25s ease;
+}
+
+@keyframes alExpandIn {
+  from { opacity: 0; max-height: 0; }
+  to { opacity: 1; max-height: 600px; }
+}
+
+.al-batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.al-batch-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.al-batch-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.al-batch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.al-batch-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: #334155;
+}
+
+.al-batch-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6366f1;
+  background: #eef2ff;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.al-batch-assignees {
+  padding: 6px 0;
+}
+
+.al-assignee-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-bottom: 1px solid #f8fafc;
+  transition: background 0.15s ease;
+}
+
+.al-assignee-row:last-child {
+  border-bottom: none;
+}
+
+.al-assignee-row:hover {
+  background: #f8fafc;
+}
+
+.al-assignee-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.al-assignee-name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-assignee-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100px;
+}
+
+.al-mini-progress-bar {
+  width: 60px;
+  height: 5px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.al-mini-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.al-assignee-status {
+  flex-shrink: 0;
+}
+
+.al-batch-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.al-btn-view-detail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.al-btn-view-detail:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
