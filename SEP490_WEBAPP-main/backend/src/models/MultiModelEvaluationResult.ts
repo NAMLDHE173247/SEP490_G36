@@ -19,6 +19,7 @@ export interface IMultiModelEvaluationResult extends Document {
   sampleId: Types.ObjectId;
   modelScores: Map<string, ILlmScorecard>;
   averageOverall: number;
+  humanScore?: number | null;
   finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject';
   hasConflict: boolean;
   targetIdx?: number;
@@ -79,6 +80,10 @@ const MultiModelEvaluationResultSchema = new Schema<IMultiModelEvaluationResult>
       type: Number,
       required: true,
       index: true,
+    },
+    humanScore: {
+      type: Number,
+      default: null,
     },
     finalRecommendation: {
       type: String,

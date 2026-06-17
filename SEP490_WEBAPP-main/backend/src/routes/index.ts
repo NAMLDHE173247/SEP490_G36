@@ -52,6 +52,7 @@ import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
 import { getGpuConfig, updateGpuConfig } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
+import { isManager } from '../utils/auth';
 
 
 const router = express.Router();
@@ -60,6 +61,14 @@ const hfController = new HuggingFaceController();
 const evalController = new EvaluationController();
 const registryController = new ModelRegistryController();
 const promptController = new PromptController();
+
+const requireManager: express.RequestHandler = (req, res, next) => {
+  if (!isManager(req)) {
+    res.status(403).json({ error: 'Admin or supervisor role required.' });
+    return;
+  }
+  next();
+};
 
 // Cấu hình multer cho upload
 // Cấu hình multer cho upload
@@ -103,25 +112,25 @@ router.get('/preview/:fileId', (req, res) => controller.previewData(req, res));
 router.delete('/file/:fileId', (req, res) => controller.deleteFile(req, res));
 
 // Chat Route
-router.post('/chat', chatWithAI);
-router.post('/infer', inferWithAI);
-router.post('/chat/stream', chatWithAIStream);
-router.post('/infer/stream', inferWithAIStream);
-router.post('/chat/validate-model', validateModel);
-router.get('/infer/logs', getInferenceLogs);
-router.post('/model/load', loadModel);
-router.post('/infer/stop/:slotId', stopInference);
-router.post('/model/unload/:slotId', unloadModel);
-router.post('/chat/history', saveChatHistory);
-router.get('/chat/history', getChatHistory);
+router.post('/chat', authMiddleware, chatWithAI);
+router.post('/infer', authMiddleware, inferWithAI);
+router.post('/chat/stream', authMiddleware, chatWithAIStream);
+router.post('/infer/stream', authMiddleware, inferWithAIStream);
+router.post('/chat/validate-model', authMiddleware, validateModel);
+router.get('/infer/logs', authMiddleware, getInferenceLogs);
+router.post('/model/load', authMiddleware, requireManager, loadModel);
+router.post('/infer/stop/:slotId', authMiddleware, stopInference);
+router.post('/model/unload/:slotId', authMiddleware, requireManager, unloadModel);
+router.post('/chat/history', authMiddleware, saveChatHistory);
+router.get('/chat/history', authMiddleware, getChatHistory);
 
 // Chat Session Routes
-router.get('/chat/sessions', getSessions);
-router.get('/chat/sessions/:id', getSessionById);
-router.post('/chat/sessions', createSession);
-router.put('/chat/sessions/:id', appendMessageToSession);
-router.delete('/chat/sessions/:id', deleteSession);
-router.patch('/chat/sessions/:id/title', updateSessionTitle);
+router.get('/chat/sessions', authMiddleware, getSessions);
+router.get('/chat/sessions/:id', authMiddleware, getSessionById);
+router.post('/chat/sessions', authMiddleware, createSession);
+router.put('/chat/sessions/:id', authMiddleware, appendMessageToSession);
+router.delete('/chat/sessions/:id', authMiddleware, deleteSession);
+router.patch('/chat/sessions/:id/title', authMiddleware, updateSessionTitle);
 
 
 // Hugging Face Routes
@@ -164,26 +173,26 @@ router.delete('/cluster/cache', deleteClusterCache);
 router.post('/auto-label', autoLabelGroups);
 
 // Config Routes
-router.get('/config/gpu-url', getGpuConfig);
-router.post('/config/gpu-url', updateGpuConfig);
+router.get('/config/gpu-url', authMiddleware, requireManager, getGpuConfig);
+router.post('/config/gpu-url', authMiddleware, requireManager, updateGpuConfig);
 
 // Training Routes
-router.post('/train/start', upload.single('dataset_file'), startTraining);
-router.post('/train/download-cloud', downloadCloudDataset);
-router.get('/train/active', getActiveTrainingJobs);
-router.get('/train/status/:jobId', getTrainingStatus);
-router.get('/train/stream/:jobId', streamTrainingStatus);
-router.post('/train/stop/:jobId', stopTraining);
-router.post('/train/resume/:jobId', resumeTraining);
-router.get('/system/resources', getSystemResources);
+router.post('/train/start', authMiddleware, requireManager, upload.single('dataset_file'), startTraining);
+router.post('/train/download-cloud', authMiddleware, requireManager, downloadCloudDataset);
+router.get('/train/active', authMiddleware, getActiveTrainingJobs);
+router.get('/train/status/:jobId', authMiddleware, getTrainingStatus);
+router.get('/train/stream/:jobId', authMiddleware, streamTrainingStatus);
+router.post('/train/stop/:jobId', authMiddleware, requireManager, stopTraining);
+router.post('/train/resume/:jobId', authMiddleware, requireManager, resumeTraining);
+router.get('/system/resources', authMiddleware, requireManager, getSystemResources);
 router.get('/system/dashboard-stats', authMiddleware, getDashboardStats);
 
 // Training History Routes  (⚠️ /models MUST come before /:jobId)
-router.get('/train/history/models', getDistinctBaseModels);
-router.post('/train/history', saveTrainingHistory);
-router.get('/train/history', getTrainingHistoryList);
-router.get('/train/history/:jobId', getTrainingHistoryDetail);
-router.delete('/train/history/:jobId', deleteTrainingHistory);
+router.get('/train/history/models', authMiddleware, getDistinctBaseModels);
+router.post('/train/history', authMiddleware, requireManager, saveTrainingHistory);
+router.get('/train/history', authMiddleware, getTrainingHistoryList);
+router.get('/train/history/:jobId', authMiddleware, getTrainingHistoryDetail);
+router.delete('/train/history/:jobId', authMiddleware, requireManager, deleteTrainingHistory);
 
 // Model Eval Routes
 router.patch('/model-eval/:evalId/review/:convIndex', reviewConversation);

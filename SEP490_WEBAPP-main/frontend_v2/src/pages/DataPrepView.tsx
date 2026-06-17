@@ -232,12 +232,27 @@ function DataPrepInner() {
     cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied,
     showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab,
     conversionStats, setConversionStats, isCleaningLoading, setIsCleaningLoading,
-    pendingCleanedList, setPendingCleanedList
+    pendingCleanedList, setPendingCleanedList,
+    workflowVersions, activeWorkflowVersion, isHydratingWorkflow, openWorkflowVersion, startNewWorkflow
   } = useDataPrep();
 
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const pendingWorkflow = (workflowVersions || []).find((version: any) => Number(version.prepareResumeStep || 1) > 1) || null;
+  const activeResumeStep = Number(activeWorkflowVersion?.prepareResumeStep || pendingWorkflow?.prepareResumeStep || 1);
+  const shouldShowWorkflowBar = Boolean(activeWorkflowVersion || pendingWorkflow);
+  const getResumeLabel = (step: number) => {
+    if (step >= 13) return 'Continue final export';
+    if (step >= 12) return 'Continue dataset distribution';
+    if (step >= 11) return 'Continue rewrite review';
+    if (step >= 10) return 'Continue rewrite assignment';
+    if (step >= 8) return 'Continue quality review';
+    if (step >= 7) return 'Waiting for staff labels';
+    if (step >= 5) return 'Continue labeling setup';
+    if (step >= 2) return 'Continue preprocessing';
+    return 'Continue upload';
+  };
 
   /* Cleaning options */
   const [removeErrorKeywords, setRemoveErrorKeywords] = useState(true);
@@ -4203,6 +4218,41 @@ function DataPrepInner() {
                 Xác nhận & Áp dụng
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {shouldShowWorkflowBar && (
+        <div className="dataprep-workflow-bar">
+          <div className="dataprep-workflow-copy">
+            <span className="dataprep-workflow-label">Resume draft</span>
+            <strong>{activeWorkflowVersion?.projectName || pendingWorkflow?.projectName || projectName}</strong>
+            <span>
+              {activeWorkflowVersion
+                ? getResumeLabel(activeResumeStep)
+                : getResumeLabel(Number(pendingWorkflow?.prepareResumeStep || 1))}
+            </span>
+          </div>
+          <div className="dataprep-workflow-actions">
+            {pendingWorkflow && !activeWorkflowVersion && (
+              <button
+                type="button"
+                className="dataprep-workflow-continue"
+              disabled={isHydratingWorkflow}
+              onClick={() => openWorkflowVersion(pendingWorkflow.id)}
+            >
+              {getResumeLabel(Number(pendingWorkflow.prepareResumeStep || 1))}
+            </button>
+            )}
+            {activeWorkflowVersion && (
+              <button
+                type="button"
+                className="dataprep-workflow-new"
+                onClick={() => startNewWorkflow ? startNewWorkflow() : null}
+              >
+                Start new file
+              </button>
+            )}
           </div>
         </div>
       )}

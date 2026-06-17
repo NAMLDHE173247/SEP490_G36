@@ -10455,3 +10455,90 @@
     border-bottom: 1px solid #e2e8f0;
   }
 }
+.dataprep-workflow-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.dataprep-workflow-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dataprep-workflow-copy strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.dataprep-workflow-copy span:last-child {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.dataprep-workflow-label {
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dataprep-workflow-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dataprep-workflow-continue {
+  padding: 8px 14px;
+  border: 1px solid #1d4ed8;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dataprep-workflow-continue:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.dataprep-workflow-continue:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.dataprep-workflow-new {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dataprep-workflow-new:hover {
+  background: #f1f5f9;
+}
+
+@media (max-width: 900px) {
+  .dataprep-workflow-bar,
+  .dataprep-workflow-copy,
+  .dataprep-workflow-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

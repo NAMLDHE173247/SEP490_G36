@@ -6,6 +6,7 @@ import { ConversationQualityAdjudication } from '../../../models/ConversationQua
 import { User } from '../../../models/User';
 import { QUALITY_AUTO_REJECT_MARKER } from './quality.constants';
 import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery } from '../../../services/labelAssignmentService';
+import { LabelAssignment } from '../../../models/LabelAssignment';
 
 export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as const;
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
@@ -21,7 +22,6 @@ const INTENTS = [
   'ENCOURAGE',
   'OFF_TOPIC',
   'NEXT_SECTION',
-  'WAIT_READY',
 ] as const;
 
 const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
@@ -38,7 +38,6 @@ const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   ENCOURAGE: new Set(['MOTIVATING']),
   OFF_TOPIC: new Set(['REDIRECTING', 'TRANSITIONING']),
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
-  WAIT_READY: new Set(['WAITING']),
 };
 const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
   INCORRECT: new Set(['PRAISING']),
@@ -75,6 +74,7 @@ export type QualityItem = {
   data: Record<string, unknown>;
   bucket: QualityBucket;
   score: number;
+  humanScore?: number | null;
   scoreScale: 'turn-average-raw';
   vector: number[];
   intentCounts: number[];
@@ -207,11 +207,13 @@ function incrementWrongPair(map: Map<string, QualityWrongPair>, intent: string, 
   map.set(key, current);
 }
 
-function resolveBucket(score: number): QualityBucket {
-  if (score >= 0.5) {
+// All bucketing now runs on the unified 0..10 scale.
+// Gold >= 7, Rewrite >= 5, otherwise Reject.
+function resolveBucketFromTen(tenPointScore: number): QualityBucket {
+  if (tenPointScore >= 7) {
     return 'Gold';
   }
-  if (score >= 0) {
+  if (tenPointScore >= 5) {
     return 'Rewrite';
   }
   return 'Reject';
@@ -225,6 +227,85 @@ function getBucketScore(bucket: QualityBucket): number {
     return 0.5;
   }
   return 0;
+}
+
+function toTenPointScore(raw: number): number {
+  return Number(Math.max(0, Math.min(10, ((raw + 1) / 2) * 10)).toFixed(1));
+}
+
+// Map human-readable draft labels to the standard codes used by the scoring rules.
+const DRAFT_INTENT_MAP: Record<string, string> = {
+  'Ask Explanation': 'REQUEST_EXPLANATION',
+  'Solve Exercise': 'INCORRECT',
+  'Request Formula': 'ASK_THEORY',
+  'Confirm Understanding': 'NEXT_SECTION',
+  'Ask Example': 'REQUEST_SIMPLER',
+  'Hint': 'REQUEST_HINT',
+  'Ques': 'REQUEST_EXPLANATION',
+  'Ques/Hint': 'REQUEST_HINT',
+  'Other': 'WAIT_READY',
+};
+const DRAFT_ACTION_MAP: Record<string, string> = {
+  'Guide Step-by-step': 'LOGIC_BREAKDOWN',
+  'Give Hint': 'HINTING',
+  'Ask Probing Question': 'SCAFFOLDING',
+  'Provide Formula': 'CONCEPT_CLARIFY',
+  'Encourage': 'MOTIVATING',
+  'Correct Error': 'SCAFFOLDING',
+  'Summarize': 'TRANSITIONING',
+  'Hint': 'HINTING',
+  'Ques': 'SCAFFOLDING',
+  'Ques/Hint': 'SCAFFOLDING',
+  'Other': 'WAITING',
+};
+function mapDraftIntent(raw: string): string | null {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  if (DRAFT_INTENT_MAP[trimmed]) return DRAFT_INTENT_MAP[trimmed];
+  const upper = trimmed.toUpperCase();
+  return USER_INTENT_SET.has(upper) ? upper : null;
+}
+function mapDraftAction(raw: string): string | null {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  if (DRAFT_ACTION_MAP[trimmed]) return DRAFT_ACTION_MAP[trimmed];
+  const upper = trimmed.toUpperCase();
+  return ASSISTANT_ACTION_SET.has(upper) ? upper : null;
+}
+
+/**
+ * Reads SOFT (draft) sample-scope labels and expands them into synthetic message-level
+ * label rows, so the Staff Rule Score appears even before submission promotes them to hard.
+ */
+async function getDraftMessageLabels(
+  sampleIds: mongoose.Types.ObjectId[],
+  itemsById: Map<string, any>
+): Promise<Array<{ sampleId: any; name: string; messageIndex: number; messageRole: 'user' | 'assistant' }>> {
+  if (!sampleIds.length) return [];
+  const softDocs = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'soft',
+    targetScope: 'sample',
+  }).select('sampleId targetTextSnapshot').lean();
+
+  const out: Array<{ sampleId: any; name: string; messageIndex: number; messageRole: 'user' | 'assistant' }> = [];
+  for (const doc of softDocs as any[]) {
+    if (!doc.targetTextSnapshot) continue;
+    let parsed: any;
+    try { parsed = JSON.parse(String(doc.targetTextSnapshot)); } catch { continue; }
+    if (!parsed?.messages || typeof parsed.messages !== 'object') continue;
+    const item = itemsById.get(String(doc.sampleId));
+    const messages = item ? serializeMessages(item.data || {}) : [];
+    for (const [idxStr, value] of Object.entries(parsed.messages as Record<string, any>)) {
+      const messageIndex = Number(idxStr);
+      if (!Number.isInteger(messageIndex) || !value) continue;
+      const role = messages[messageIndex]?.role === 'assistant' ? 'assistant' : 'user';
+      const mapped = role === 'assistant' ? mapDraftAction((value as any).action) : mapDraftIntent((value as any).intent);
+      if (!mapped) continue;
+      out.push({ sampleId: doc.sampleId, name: mapped, messageIndex, messageRole: role });
+    }
+  }
+  return out;
 }
 
 export class QualityService {
@@ -258,18 +339,34 @@ export class QualityService {
     }
 
     const itemIds = items.map((item: any) => item._id);
+    const itemsById = new Map<string, any>(items.map((item: any) => [String(item._id), item]));
     const allLabels = await getEffectiveSampleLabelsForVersion(version._id, itemIds);
     const labels = allLabels.filter(
       (label: any) => label.targetScope === 'message' && label.type === 'hard'
     );
-    const labelMap = buildLabelMap(labels);
+
+    // Fallback: for samples that have NO hard message labels yet (e.g. staff saved a
+    // draft but the submission has not promoted them), expand soft draft labels so the
+    // Staff Rule Score still shows up in the table.
+    const samplesWithHardMessageLabels = new Set(labels.map((l: any) => String(l.sampleId)));
+    const draftMessageLabels = await getDraftMessageLabels(itemIds, itemsById);
+    const draftFallbackLabels = draftMessageLabels.filter(
+      (l) => !samplesWithHardMessageLabels.has(String(l.sampleId))
+    );
+    const labelMap = buildLabelMap([...labels, ...draftFallbackLabels]);
 
     const SUBJECT_LABELS = new Set([
       'MATH',
       'PHYSICAL',
+      'PHYSICS',
       'CHEMISTRY',
       'LITERATURE',
       'BIOLOGY',
+      'HISTORY',
+      'CODING',
+      'GEOGRAPHY',
+      'ENGLISH',
+      'OTHER',
     ]);
 
     const sampleSubjectLabelsMap = new Map<string, Array<{ name: string; type: string; assignedUserCount: number }>>();
@@ -411,6 +508,9 @@ export class QualityService {
       const sid = String(item._id);
       const adj = adjudicationBySample.get(sid);
       const sReviews = reviewsBySample.get(sid) || [];
+      const displaySubject = resolvedSubject !== 'OUT_OF_SCOPE'
+        ? resolvedSubject
+        : String((item.data as any)?.groupLabel || (item.data as any)?.group_label || (item.data as any)?.subject || (item.data as any)?.meta?.subject || 'OUT_OF_SCOPE');
 
       let resolvedBucket: QualityBucket = 'Incomplete';
       let reviewStatus: 'pending' | 'reviewed' | 'conflict' = 'pending';
@@ -445,14 +545,16 @@ export class QualityService {
         intentCounts[index] > 0 ? value / intentCounts[index] : null
       ));
       const score = scorableTurns > 0 ? totalTurnScore / scorableTurns : -1;
+      const humanScore = scorableTurns > 0 ? toTenPointScore(score) : null;
 
       if (isClassified) {
         qualityItems.push({
           _id: sid,
           sampleId: String(item.sampleId),
-          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+          data: { ...(item.data || {}), subject: displaySubject },
           bucket: resolvedBucket,
           score: getBucketScore(resolvedBucket === 'Reject' ? 'Reject' : resolvedBucket),
+          humanScore,
           scoreScale: 'turn-average-raw',
           vector,
           intentCounts,
@@ -475,9 +577,10 @@ export class QualityService {
         qualityItems.push({
           _id: sid,
           sampleId: String(item.sampleId),
-          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+          data: { ...(item.data || {}), subject: displaySubject },
           bucket: incompleteBucket,
           score: getBucketScore(incompleteBucket),
+          humanScore,
           scoreScale: 'turn-average-raw',
           vector,
           intentCounts,
@@ -496,9 +599,10 @@ export class QualityService {
         qualityItems.push({
           _id: sid,
           sampleId: String(item.sampleId),
-          data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+          data: { ...(item.data || {}), subject: displaySubject },
           bucket: 'Incomplete',
           score: 0,
+          humanScore,
           scoreScale: 'turn-average-raw',
           vector,
           intentCounts,
@@ -513,13 +617,14 @@ export class QualityService {
         continue;
       }
 
-      const bucket = resolveBucket(score);
+      const bucket = resolveBucketFromTen(humanScore ?? 0);
       qualityItems.push({
         _id: sid,
         sampleId: String(item.sampleId),
-        data: { ...(item.data || {}), subject: (item.data as any)?.subject || resolvedSubject },
+        data: { ...(item.data || {}), subject: displaySubject },
         bucket,
         score,
+        humanScore,
         scoreScale: 'turn-average-raw',
         vector,
         intentCounts,

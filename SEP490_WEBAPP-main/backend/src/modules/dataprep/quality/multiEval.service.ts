@@ -11,6 +11,20 @@ import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../..
 import { QualityService } from './quality.service';
 
 export class MultiEvalService {
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, timeout]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
   private getProvider(modelName: string) {
     const name = String(modelName).toLowerCase();
     if (name === 'openai') {
@@ -90,10 +104,10 @@ export class MultiEvalService {
         job.startedBy ? job.startedBy.toString() : ''
       );
       const toTenPointBaseline = (item: any): number | null => {
-        if (!item || item.bucket === 'Incomplete') return null;
-        if (item.bucket === 'Gold') return 9;
-        if (item.bucket === 'Rewrite') return 5.5;
-        if (item.bucket === 'Reject') return 2;
+        if (Number.isFinite(Number(item?.humanScore))) {
+          return Number(item.humanScore);
+        }
+        if (!item || item.bucket === 'Incomplete' || Number(item.scorableTurns || 0) <= 0) return null;
         const raw = Number(item.score);
         if (!Number.isFinite(raw)) return null;
         if (raw >= -1 && raw <= 1) {
@@ -102,11 +116,24 @@ export class MultiEvalService {
         return Math.max(0, Math.min(10, raw));
       };
       const humanScoresMap = new Map<string, number>();
+      const failedTargetMap = new Map<string, number[]>();
       qualityResult.items.forEach((i: any) => {
         const baseline = toTenPointBaseline(i);
-        if (baseline == null) return;
-        humanScoresMap.set(String(i._id), baseline);
-        humanScoresMap.set(String(i.sampleId), baseline);
+        if (baseline != null) {
+          humanScoresMap.set(String(i._id), baseline);
+          humanScoresMap.set(String(i.sampleId), baseline);
+        }
+        const failedTargets = Array.isArray(i.turnPairs)
+          ? i.turnPairs
+            .filter((pair: any) => pair && (pair.matched === false || (Array.isArray(pair.intentScores) && pair.intentScores.some((score: any) => Array.isArray(score.harmfulActions) && score.harmfulActions.length > 0))))
+            .map((pair: any) => Number(pair.assistantMessageIndex))
+            .filter((idx: number) => Number.isInteger(idx) && idx >= 0)
+          : [];
+        if (failedTargets.length) {
+          const uniqueTargets = Array.from(new Set<number>(failedTargets));
+          failedTargetMap.set(String(i._id), uniqueTargets);
+          failedTargetMap.set(String(i.sampleId), uniqueTargets);
+        }
       });
 
       for (const sample of samples) {
@@ -123,6 +150,8 @@ export class MultiEvalService {
         let targetMessageIndices: number[] = [];
         if (rewriteHistories.length > 0) {
           targetMessageIndices = rewriteHistories.map((h) => h.messageIndex);
+        } else if (failedTargetMap.has(String(sample._id)) || failedTargetMap.has(String((sample as any).sampleId))) {
+          targetMessageIndices = failedTargetMap.get(String(sample._id)) || failedTargetMap.get(String((sample as any).sampleId)) || [];
         } else {
           // Default to the last assistant message in the conversation
           const messages = (sample.data as any)?.messages;
@@ -145,8 +174,13 @@ export class MultiEvalService {
           continue;
         }
 
-        const targetIdx = targetMessageIndices[0];
+        const uniqueTargetMessageIndices = Array.from(new Set(targetMessageIndices));
+        if (uniqueTargetMessageIndices.length > 1) {
+          job.progress.total += uniqueTargetMessageIndices.length - 1;
+          await job.save();
+        }
         const messages = (sample.data as any)?.messages || [];
+        for (const targetIdx of uniqueTargetMessageIndices) {
         
         // 2. Extract Context Window
         let start = 0;
@@ -187,7 +221,11 @@ export class MultiEvalService {
 
             const prompt = MULTI_MODEL_JUDGE_SYSTEM_PROMPT.replace('${sampleJson}', JSON.stringify(inputData, null, 2));
             const systemPrompt = "You are a strict educational quality assurance assistant. You must return ONLY a raw, valid JSON object matching the requested schema. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text. Just the raw JSON object starting with { and ending with }.";
-            const rawResponse = await provider.generateContent(prompt, undefined, systemPrompt);
+            const rawResponse = await this.withTimeout(
+              provider.generateContent(prompt, undefined, systemPrompt),
+              45000,
+              `${modelName} evaluation`
+            );
 
             const firstBracket = rawResponse.indexOf('{');
             const lastBracket = rawResponse.lastIndexOf('}');
@@ -248,9 +286,9 @@ export class MultiEvalService {
                 consistency: null,
                 completeness: null,
                 readiness: null,
-                overall: 0,
+                overall: 5,
                 reason: `Lỗi API khi gọi model ${modelName}: ${err.message}`,
-                recommendation: 'Reject' as const,
+                recommendation: 'Need Rewrite' as const,
               }
             };
           }
@@ -328,7 +366,11 @@ export class MultiEvalService {
 
             const prompt = REFINEMENT_SYSTEM_PROMPT.replace('${samplesJson}', JSON.stringify(payload, null, 2));
             const systemPrompt = "You are a strict text refinement assistant. You must return ONLY a raw, valid JSON array containing the refined output items. Do NOT wrap the JSON in markdown formatting. Do NOT include any explanations, greetings, or conversational text.";
-            const rawResponse = await refineProvider.generateContent(prompt, undefined, systemPrompt);
+            const rawResponse = await this.withTimeout(
+              refineProvider.generateContent(prompt, undefined, systemPrompt),
+              45000,
+              `${bestModelSelected} rewrite refinement`
+            );
             
             const firstBracket = rawResponse.indexOf('[');
             const lastBracket = rawResponse.lastIndexOf(']');
@@ -341,26 +383,16 @@ export class MultiEvalService {
             
             if (typeof refinedOutput === 'string' && refinedOutput.trim()) {
               if (Array.isArray(messages)) {
-                const updatedMessages = [...messages];
                 let finalCleanOutput = refinedOutput.replace(/^\[ASSISTANT.*?\]:\s*/i, '').trim();
-                
-                updatedMessages[targetIdx] = {
-                  ...updatedMessages[targetIdx],
-                  content: finalCleanOutput
-                };
-                
-                await ProcessedDatasetItem.findByIdAndUpdate(sample._id, {
-                  $set: { 'data.messages': updatedMessages }
-                });
-                
+
                 await ConversationRewriteHistory.create({
                   datasetVersionId: new mongoose.Types.ObjectId(versionId),
                   sampleId: sample._id,
                   messageIndex: targetIdx,
                   originalText: messages[targetIdx].content,
                   proposedText: finalCleanOutput,
-                  approvedText: finalCleanOutput,
-                  editReason: 'Auto-Refined by ' + bestModelSelected + ': ' + bestModelScorecard.reason,
+                  approvedText: '',
+                  editReason: 'AI rewrite proposal by ' + bestModelSelected + ': ' + bestModelScorecard.reason,
                   editorId: job.startedBy,
                   editType: 'ai',
                   createdAt: new Date()
@@ -382,6 +414,7 @@ export class MultiEvalService {
           sampleId: sample._id,
           modelScores,
           averageOverall,
+          humanScore,
           finalRecommendation,
           hasConflict,
           bestModelSelected,
@@ -398,6 +431,7 @@ export class MultiEvalService {
 
         // Pause briefly to manage API rate limit
         await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
 
       job.status = 'completed';
@@ -510,6 +544,14 @@ export class MultiEvalService {
       .sort({ averageOverall: 1 }) // Show lowest scoring items first
       .lean();
 
+    const qualityService = new QualityService();
+    const qualityResult = await qualityService.classify(versionId, '');
+    const qualityBySampleId = new Map<string, any>();
+    qualityResult.items.forEach((item: any) => {
+      qualityBySampleId.set(String(item._id), item);
+      qualityBySampleId.set(String(item.sampleId), item);
+    });
+
     const sampleIds = results.map(r => r.sampleId?._id).filter(Boolean);
     const rewriteHistories = await ConversationRewriteHistory.find({ sampleId: { $in: sampleIds } }).lean();
     const historyMap = new Map();
@@ -518,17 +560,39 @@ export class MultiEvalService {
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
+      const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
+      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
+        ? Number(qualityItem.humanScore)
+        : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
+          ? Number((r as any).humanScore)
+          : null;
+
+      // Unified 0..10 final score:
+      //  - staff + AI present  -> weighted blend (60% staff rule, 40% AI semantic)
+      //  - only one present     -> use whichever exists (AI covers "Other"/unscorable samples)
+      const avgAI = Number.isFinite(Number(r.averageOverall)) ? Number(r.averageOverall) : null;
+      const combinedScore = (humanScore != null && avgAI != null)
+        ? Math.round((0.6 * humanScore + 0.4 * avgAI) * 10) / 10
+        : (humanScore ?? avgAI);
+      const finalBucket = combinedScore == null
+        ? 'Incomplete'
+        : combinedScore >= 7 ? 'Gold' : combinedScore >= 5 ? 'Rewrite' : 'Reject';
       return {
         _id: r._id,
         jobId: r.jobId,
         datasetVersionId: r.datasetVersionId,
         sampleId: sample?._id,
         sampleData: sample?.data || {},
-        subject: sample?.data?.subject || sample?.data?.meta?.subject || 'Unknown',
+        subject: qualityItem?.data?.subject || sample?.data?.subject || sample?.data?.meta?.subject || 'Unknown',
         modelScores: r.modelScores,
+        scores: { human: humanScore },
+        humanScore,
+        combinedScore,
+        finalBucket,
         averageOverall: r.averageOverall,
         finalRecommendation: r.finalRecommendation,
-        hasConflict: r.hasConflict,
+        hasConflict: humanScore == null ? false : r.hasConflict,
         supervisorAction: r.supervisorAction,
         supervisorNote: r.supervisorNote,
         adjudicatedBy: r.adjudicatedBy,
@@ -539,6 +603,8 @@ export class MultiEvalService {
         targetIdx: r.targetIdx,
         contextSize: r.contextSize,
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
+        turnPairs: qualityItem?.turnPairs || [],
+        staffTargets: qualityItem?.staffTargets || [],
       };
     });
 

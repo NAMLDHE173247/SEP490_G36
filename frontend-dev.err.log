@@ -1,126 +1,220 @@
-[2m11:03:35 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:03:38 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:03:46 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:14:05 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:14:14 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:14:26 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:14:38 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mUpload failed: AxiosError: Request failed with status code 400
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
+[2m3:20:14 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load GPU config AxiosError: Request failed with status code 403
+    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:1752:14)
+    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2105:4)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getGpuConfig (http://localhost:5173/src/services/api.ts:37:20)
+    at async fetchConfig (http://localhost:5173/src/components/Navbar.tsx:76:18)
+[2m3:21:35 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:21:41 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:21:46 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:21:52 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:21:57 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:22:02 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:22:08 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m3:22:13 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:02:33 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:02:33 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:02:33 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:02:58 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:00 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:03 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:08 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:13 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:13 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:15 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:18 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:23 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:30 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:30 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:33 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:03:45 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:45 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:54 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load GPU config AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getGpuConfig (http://localhost:5173/src/services/api.ts:37:20)
+    at async fetchConfig (http://localhost:5173/src/components/Navbar.tsx:76:18)
+[2m4:03:55 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:56 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:56 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load workflow versions AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.listDatasetVersions (http://localhost:5173/src/services/api.ts:164:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1157:16
+[2m4:03:56 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load GPU config AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getGpuConfig (http://localhost:5173/src/services/api.ts:37:20)
+    at async fetchConfig (http://localhost:5173/src/components/Navbar.tsx:76:18)
+[2m4:03:57 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:03:59 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment dashboard for Stage 4 Lobby: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:59 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch users: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:03:59 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load workflow versions AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.listDatasetVersions (http://localhost:5173/src/services/api.ts:164:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1157:16
+[2m4:03:59 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:01 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:01 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment data: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionAssignmentDashboard (http://localhost:5173/src/services/api.ts:133:20)
+    at async Promise.all (index 0)
+    at async fetchAssignmentData (http://localhost:5173/src/pages/DataPrep/stages/Stage3Labeling.tsx:103:40)
+[2m4:04:02 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:04:03 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:03 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to open workflow version AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionDetail (http://localhost:5173/src/services/api.ts:160:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1169:19
+[2m4:04:03 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to open workflow version AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionDetail (http://localhost:5173/src/services/api.ts:160:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1169:19
+[2m4:04:06 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:07 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:04:09 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError fetching dashboard stats: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:09 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError fetching dashboard stats: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:10 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment data: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionAssignmentDashboard (http://localhost:5173/src/services/api.ts:133:20)
+    at async Promise.all (index 0)
+    at async fetchAssignmentData (http://localhost:5173/src/pages/DataPrep/stages/Stage3Labeling.tsx:103:40)
+[2m4:04:11 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load workflow versions AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.listDatasetVersions (http://localhost:5173/src/services/api.ts:164:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1157:16
+[2m4:04:11 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to fetch assignment data: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionAssignmentDashboard (http://localhost:5173/src/services/api.ts:133:20)
+    at async Promise.all (index 0)
+    at async fetchAssignmentData (http://localhost:5173/src/pages/DataPrep/stages/Stage3Labeling.tsx:103:40)
+[2m4:04:13 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to load workflow versions AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.listDatasetVersions (http://localhost:5173/src/services/api.ts:164:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1157:16
+[2m4:04:14 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:14 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to save workflow progress AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+[2m4:04:14 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to open workflow version AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionDetail (http://localhost:5173/src/services/api.ts:160:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1169:19
+[2m4:04:15 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to open workflow version AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getDatasetVersionDetail (http://localhost:5173/src/services/api.ts:160:20)
+    at async http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1169:19
+[2m4:04:18 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mUpload failed: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
     at async Object.uploadFile (http://localhost:5173/src/services/api.ts:58:20)
-    at async handleFileUpload (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1091:17)
-[2m11:14:48 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:14:57 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mConversion failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.convertData (http://localhost:5173/src/services/api.ts:69:20)
-    at async handleConvert (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1224:16)
-[2m11:15:11 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mUpload failed: AxiosError: Request failed with status code 500
-    at settle (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:1752:14)
-    at XMLHttpRequest.onloadend (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2105:4)
-    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=d1dcfd1c:2854:37)
-    at async Object.uploadFile (http://localhost:5173/src/services/api.ts:58:20)
-    at async handleFileUpload (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1091:17)
-[2m11:15:26 AM[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 2 errors:
-
-[31m[PARSE_ERROR] [0mIdentifier `dash` has already been declared
-     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/DataPrep/stages/Stage3Labeling.tsx:145:14 [38;5;246m][0m
-     [38;5;246m│[0m
- [38;5;246m145 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0mdash[38;5;249m,[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m              ──┬─  
- [38;5;240m    │[0m                ╰─── `dash` has already been declared here
- [38;5;240m    │[0m 
- [38;5;246m153 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0mdash[38;5;249m,[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m              ──┬─  
- [38;5;240m    │[0m                ╰─── It can not be redeclared here
-[38;5;246m─────╯[0m
-
-[31m[PARSE_ERROR] [0mIdentifier `assign` has already been declared
-     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/DataPrep/stages/Stage3Labeling.tsx:145:20 [38;5;246m][0m
-     [38;5;246m│[0m
- [38;5;246m145 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0m[38;5;249md[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mh[0m[38;5;249m,[0m[38;5;249m [0massign[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m                    ───┬──  
- [38;5;240m    │[0m                       ╰──── `assign` has already been declared here
- [38;5;240m    │[0m 
- [38;5;246m153 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0m[38;5;249md[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mh[0m[38;5;249m,[0m[38;5;249m [0massign[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m                    ───┬──  
- [38;5;240m    │[0m                       ╰──── It can not be redeclared here
-[38;5;246m─────╯[0m
-[39m
-  Plugin: [35mvite:oxc[39m
-  File: [36mD:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/src/pages/DataPrep/stages/Stage3Labeling.tsx[39m
-      at transformWithOxc (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:3344:19)
-      at TransformPluginContext.transform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:3415:26)
-      at EnvironmentPluginContainer.transform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:30387:51)
-      at async loadAndTransform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:24646:26)
-[2m11:15:26 AM[22m [31m[1m[vite][22m[39m [31mInternal server error: Transform failed with 2 errors:
-
-[31m[PARSE_ERROR] [0mIdentifier `dash` has already been declared
-     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/DataPrep/stages/Stage3Labeling.tsx:145:14 [38;5;246m][0m
-     [38;5;246m│[0m
- [38;5;246m145 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0mdash[38;5;249m,[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m              ──┬─  
- [38;5;240m    │[0m                ╰─── `dash` has already been declared here
- [38;5;240m    │[0m 
- [38;5;246m153 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0mdash[38;5;249m,[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249mi[0m[38;5;249mg[0m[38;5;249mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m              ──┬─  
- [38;5;240m    │[0m                ╰─── It can not be redeclared here
-[38;5;246m─────╯[0m
-
-[31m[PARSE_ERROR] [0mIdentifier `assign` has already been declared
-     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m src/pages/DataPrep/stages/Stage3Labeling.tsx:145:20 [38;5;246m][0m
-     [38;5;246m│[0m
- [38;5;246m145 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0m[38;5;249md[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mh[0m[38;5;249m,[0m[38;5;249m [0massign[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m                    ───┬──  
- [38;5;240m    │[0m                       ╰──── `assign` has already been declared here
- [38;5;240m    │[0m 
- [38;5;246m153 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0m[38;5;249md[0m[38;5;249ma[0m[38;5;249ms[0m[38;5;249mh[0m[38;5;249m,[0m[38;5;249m [0massign[38;5;249m][0m[38;5;249m [0m[38;5;249m=[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mw[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249m.[0m[38;5;249ma[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249m[[0m
- [38;5;240m    │[0m                    ───┬──  
- [38;5;240m    │[0m                       ╰──── It can not be redeclared here
-[38;5;246m─────╯[0m
-[39m
-  Plugin: [35mvite:oxc[39m
-  File: [36mD:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/src/pages/DataPrep/stages/Stage3Labeling.tsx[39m
-      at transformWithOxc (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:3344:19)
-      at TransformPluginContext.transform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:3415:26)
-      at EnvironmentPluginContainer.transform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:30387:51)
-      at async loadAndTransform (file:///D:/Sep_G36/SEP490_G36/SEP490_WEBAPP-main/frontend_v2/node_modules/vite/dist/node/chunks/node.js:24646:26)
-[2m11:15:26 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[vite] Failed to reload /src/pages/DataPrep/stages/Stage3Labeling.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
-[2m11:15:26 AM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[vite] Failed to reload /src/pages/DataPrep/stages/Stage3Labeling.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above)
+    at async handleFileUpload (http://localhost:5173/src/pages/DataPrep/DataPrepContext.tsx:1264:17)
+[2m4:08:06 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:08:11 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:22 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:28 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:33 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:39 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:44 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:49 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:39:55 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:00 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:05 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:11 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:16 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:21 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:27 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:40:32 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22m[SSE] EventSource failed: {"isTrusted":true}
+[2m4:41:02 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:41:03 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError polling job status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getJobStatus (http://localhost:5173/src/services/stage4Api.ts:54:15)
+    at async http://localhost:5173/src/hooks/useStage4Data.ts:66:16
+[2m4:41:04 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError polling job status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getJobStatus (http://localhost:5173/src/services/stage4Api.ts:54:15)
+    at async http://localhost:5173/src/hooks/useStage4Data.ts:66:16
+[2m4:41:06 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)
+[2m4:41:07 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError polling job status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getJobStatus (http://localhost:5173/src/services/stage4Api.ts:54:15)
+    at async http://localhost:5173/src/hooks/useStage4Data.ts:66:16
+[2m4:41:12 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mError polling job status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getJobStatus (http://localhost:5173/src/services/stage4Api.ts:54:15)
+    at async http://localhost:5173/src/hooks/useStage4Data.ts:66:16
+[2m4:41:12 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m [2m[console.error] [22mFailed to refresh labeling status: AxiosError: Network Error
+    at XMLHttpRequest.handleError (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2134:16)
+    at Axios$1.request (http://localhost:5173/node_modules/.vite/deps/axios.js?v=459b233d:2854:37)
+    at async Object.getLabelingStatus (http://localhost:5173/src/services/stage4Api.ts:6:15)
+    at async refreshStatus (http://localhost:5173/src/hooks/useStage4Data.ts:136:24)

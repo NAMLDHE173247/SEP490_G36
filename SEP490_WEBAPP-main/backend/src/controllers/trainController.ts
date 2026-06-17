@@ -192,6 +192,8 @@ export const startTraining = async (req: Request, res: Response) => {
       totalTokens,
       totalRecords,
       cloudLoadedDataset,
+      clientTrainingKey,
+      idempotencyKey,
     } = req.body;
 
     console.log('[Backend] Received columnMapping:', columnMapping);
@@ -281,6 +283,24 @@ export const startTraining = async (req: Request, res: Response) => {
       return res.status(400).json({
         error: "Provide either a 'dataset_file' upload, a 'cloudLoadedDataset' file path, or a 'dataset' HuggingFace Hub ID.",
       });
+    }
+
+    const trainingRequestKey = String(clientTrainingKey || idempotencyKey || '').trim();
+    if (trainingRequestKey) {
+      const existingJob = await TrainingHistory.findOne({
+        ownerId,
+        'config_snapshot.clientTrainingKey': trainingRequestKey,
+        status: { $in: ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'] },
+      }).sort({ startedAt: -1 }).lean();
+
+      if (existingJob) {
+        return res.status(200).json({
+          message: 'Training job already exists for this request.',
+          job_id: existingJob.jobId,
+          status: existingJob.status,
+          duplicate: true,
+        });
+      }
     }
 
     // ── Generate job ID ─────────────────────────────────────────────────────
@@ -442,6 +462,7 @@ export const startTraining = async (req: Request, res: Response) => {
         startedAt: new Date(),
         config_snapshot: {
           ...req.body,
+          clientTrainingKey: trainingRequestKey || undefined,
           column_mapping: finalColumnMapping,
           dataset_text_field: finalColumnMapping,
         },

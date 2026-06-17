@@ -172,7 +172,6 @@ Bạn sẽ nhận một JSON array. Mỗi phần tử có cấu trúc:
 - ENCOURAGE: User thể hiện cần được động viên, xác nhận, hoặc khích lệ tinh thần.
 - OFF_TOPIC: User đi chệch khỏi bài học hiện tại.
 - NEXT_SECTION: User muốn chuyển sang phần/bài/chủ đề tiếp theo.
-- WAIT_READY: User chưa sẵn sàng, muốn tạm chờ hoặc chuẩn bị thêm trước khi tiếp tục.
 
 ĐỊNH NGHĨA ASSISTANT ACTIONS:
 - PRAISING: Khen ngợi, xác nhận nỗ lực hoặc kết quả đúng của user.
@@ -185,7 +184,6 @@ Bạn sẽ nhận một JSON array. Mỗi phần tử có cấu trúc:
 - MOTIVATING: Động viên, khích lệ, tạo tinh thần tích cực cho user.
 - REDIRECTING: Kéo user quay lại đúng chủ đề khi bị off-topic.
 - TRANSITIONING: Chuyển mạch mềm giữa các phần/chủ đề.
-- WAITING: Xác nhận sẽ chờ user sẵn sàng rồi mới tiếp tục.
 
 NGUYÊN TẮC MATCH CẦN TÔN TRỌNG:
 - expectedActions là tập action đúng mà assistant nên thể hiện cho turn đó.

@@ -29,6 +29,7 @@ export interface QualityItem {
   sampleId: string;
   bucket: QualityBucket;
   score: number;
+  humanScore?: number | null;
   vector: number[];
   intentCounts: number[];
   iar: Array<number | null>;
@@ -286,6 +287,80 @@ export const stage4Api = {
     note?: string
   ): Promise<any> => {
     const res = await api.post(`/dataprep/versions/${versionId}/multi-eval/adjudicate/${resultId}`, { action, note });
+    return res.data;
+  },
+
+  listRewriteAssignments: async (versionId: string): Promise<{ tasks: any[] }> => {
+    const res = await api.get(`/dataprep/versions/${versionId}/quality/rewrite-assignments`);
+    return res.data;
+  },
+
+  listMyRewriteAssignments: async (): Promise<{ tasks: any[] }> => {
+    const res = await api.get('/dataprep/stage4/rewrite-assignments');
+    return res.data;
+  },
+
+  assignRewrite: async (versionId: string, payload: {
+    sampleId: string;
+    assigneeId: string;
+    convId: string;
+    subject?: string;
+    reason?: string;
+    originalText?: string;
+    targetMessageIndex?: number | null;
+    contextMode?: string;
+  }): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments`, payload);
+    return res.data;
+  },
+
+  submitRewrite: async (versionId: string, taskId: string, submittedText: string): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/submit`, { submittedText });
+    return res.data;
+  },
+
+  suggestRewrite: async (versionId: string, taskId: string): Promise<{ suggestedText: string }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/suggest`);
+    return res.data;
+  },
+
+  reviewRewrite: async (
+    versionId: string,
+    taskId: string,
+    action: 'approved' | 'rejected' | 'redo',
+    note?: string
+  ): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/review`, { action, note });
+    return res.data;
+  },
+
+  remindRewrite: async (versionId: string, taskId: string): Promise<any> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/remind`);
+    return res.data;
+  },
+
+  listNotifications: async (versionId: string): Promise<{ notifications: any[] }> => {
+    const res = await api.get(`/dataprep/versions/${versionId}/quality/notifications`);
+    return res.data;
+  },
+
+  listMyNotifications: async (): Promise<{ notifications: any[] }> => {
+    const res = await api.get('/dataprep/stage4/notifications');
+    return res.data;
+  },
+
+  createNotification: async (versionId: string, payload: {
+    recipientId?: string;
+    recipientRole?: 'admin' | 'supervisor' | 'staff';
+    type?: 'info' | 'success' | 'warning';
+    message: string;
+  }): Promise<any> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/notifications`, payload);
+    return res.data;
+  },
+
+  markNotificationsRead: async (versionId: string): Promise<any> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/notifications/read`);
     return res.data;
   },
 };

@@ -1,6 +1,6 @@
 
-> chatbot-converter-backend@1.0.0 start
-> node dist/index.js
+> chatbot-converter-backend@1.0.0 dev
+> tsx watch src/index.ts
 
 === APP STARTING ===
 PORT: 3000
@@ -11,30 +11,16 @@ MONGO_URI exists: true
 ✅ MongoDB connected: mongodb://127.0.0.1:27017/sep_training
 ✅ Stage 4 seeded data already exists
 [ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[Backend] Visualize 10 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
-[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":0.9513572454452515},{"k":2,"wcss":0.8087756633758545},{"k":3,"wcss":0.6761716604232788},{"k":4,"wcss":0.5562117099761963},{"k":5,"wcss":0.4496777057647705},{"k":6,"wcss":0.35194647312164307},{"k":7,"wcss":0.26572054624557495},{"k":8,"wcss":0.15879279375076294},{"k":9,"wcss":0
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
-[Backend] Visualize 10 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
-[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":0.9513572454452515},{"k":2,"wcss":0.8087756633758545},{"k":3,"wcss":0.6761716604232788},{"k":4,"wcss":0.5562117099761963},{"k":5,"wcss":0.4496777057647705},{"k":6,"wcss":0.35194647312164307},{"k":7,"wcss":0.26572054624557495},{"k":8,"wcss":0.15879279375076294},{"k":9,"wcss":0
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
-[ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[Backend] Visualize 10 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
-[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":0.9513572454452515},{"k":2,"wcss":0.8087756633758545},{"k":3,"wcss":0.6761716604232788},{"k":4,"wcss":0.5562117099761963},{"k":5,"wcss":0.4496777057647705},{"k":6,"wcss":0.35194647312164307},{"k":7,"wcss":0.26572054624557495},{"k":8,"wcss":0.15879279375076294},{"k":9,"wcss":0
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
-[ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[Backend] Visualize 10 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
-[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":0.9513572454452515},{"k":2,"wcss":0.8087756633758545},{"k":3,"wcss":0.6761716604232788},{"k":4,"wcss":0.5562117099761963},{"k":5,"wcss":0.4496777057647705},{"k":6,"wcss":0.35194647312164307},{"k":7,"wcss":0.26572054624557495},{"k":8,"wcss":0.15879279375076294},{"k":9,"wcss":0
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
-[ConfigService] GPU_SERVICE_URL updated to: [ 'https://sep490-socratic-gpu.loca.lt' ]
-[Backend] Visualize 10 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
-[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":0.9513572454452515},{"k":2,"wcss":0.8087756633758545},{"k":3,"wcss":0.6761716604232788},{"k":4,"wcss":0.5562117099761963},{"k":5,"wcss":0.4496777057647705},{"k":6,"wcss":0.35194647312164307},{"k":7,"wcss":0.26572054624557495},{"k":8,"wcss":0.15879279375076294},{"k":9,"wcss":0
-[Backend] Clustering 10 conversations (K=3, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
-[Backend] Cluster response (200): {"assignments":[2,2,2,0,0,1,2,2,1,1],"avgSimilarity":0.9656,"clusterStats":[{"avgSimilarity":0.9782,"clusterId":0,"count":2},{"avgSimilarity":0.9703,"clusterId":1,"count":3},{"avgSimilarity":0.9576,"clusterId":2,"count":5}],"data":[{"cluster":2,"conversation_id":"conv_001","messages":[{"content":"Em
+[Backend] Visualize 424 items (max_k=20, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster/visualize
+[Backend] Visualize response (200): {"elbow":[{"k":1,"wcss":39.17827606201172},{"k":2,"wcss":37.545501708984375},{"k":3,"wcss":36.142250061035156},{"k":4,"wcss":35.274574279785156},{"k":5,"wcss":34.88348388671875},{"k":6,"wcss":33.77458572387695},{"k":7,"wcss":33.2146110534668},{"k":8,"wcss":32.15265655517578},{"k":9,"wcss":31.5393333
+[Backend] Clustering 424 conversations (K=9, eps=0.1, min_samples=3) → https://sep490-socratic-gpu.loca.lt/api/cluster
+[Backend] Cluster response (200): {"assignments":[7,7,7,3,4,4,8,3,4,4,3,3,4,4,7,7,3,4,3,4,7,7,3,3,3,4,4,3,8,7,3,4,3,4,3,0,3,4,7,3,7,7,2,7,7,7,4,7,3,4,3,7,7,3,4,4,3,4,7,3,3,4,3,4,4,3,4,4,3,3,4,3,3,3,3,7,4,8,4,3,3,3,4,4,7,3,4,4,3,3,4,4,4,3,4,3,5,7,4,4,3,4,3,8,3,4,3,3,4,3,4,3,-1,3,3,3,3,2,3,4,3,8,7,8,4,3,4,3,3,3,3,3,3,3,3,4,8,3,3,4,4,3
+4:02:22 PM [tsx] change in ./src\modules\dataprep\quality\quality.service.ts Restarting...
+c4:02:22 PM [tsx] change in ./src\modules\dataprep\quality\quality.service.ts Restarting...
+c4:02:33 PM [tsx] change in ./src\modules\dataprep\labeling\assignment.controller.ts Rerunning...
+c4:02:35 PM [tsx] change in ./src\modules\dataprep\labeling\assignment.controller.ts Rerunning...
+c4:36:20 PM [tsx] change in ./src\modules\dataprep\quality\quality.service.ts Rerunning...
+c4:36:33 PM [tsx] change in ./src\modules\dataprep\quality\quality.service.ts Rerunning...
+c4:36:55 PM [tsx] change in ./src\modules\dataprep\quality\multiEval.service.ts Rerunning...
+c4:37:05 PM [tsx] change in ./src\modules\dataprep\quality\multiEval.service.ts Rerunning...
+c

@@ -365,6 +365,16 @@ export const apiService = {
     const response = await api.get(`/dataprep/versions/${id}`);
     return response.data;
   },
+
+  listDatasetVersions: async (): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get('/dataprep/versions');
+    return response.data;
+  },
+
+  updateDatasetVersionPrepareProgress: async (id: string, prepareResumeStep: number): Promise<any> => {
+    const response = await api.patch(`/dataprep/versions/${id}/prepare-progress`, { prepareResumeStep });
+    return response.data;
+  },
   // ----------------------------------------------
   // ==========================================
   // Chat & Inference Endpoints
