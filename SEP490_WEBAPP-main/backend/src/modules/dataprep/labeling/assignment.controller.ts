@@ -98,18 +98,29 @@ export class AssignmentController {
   }
 
   /**
-   * API: Tự động chia đều hội thoại cho danh sách nhân viên (Array Chunking)
+   * API: Tự động chia hội thoại cho danh sách nhân viên
+   * Hỗ trợ 2 chế độ:
+   *   - overlapCount = 1 (mặc định): Chia đều, mỗi người nhận phần riêng
+   *   - overlapCount > 1: Gom nhóm, mỗi nhóm overlapCount người cùng gán nhãn cho CÙNG 1 lô samples
+   *     VD: 9 staff, overlapCount=3, 90 samples → 3 nhóm x 3 người, mỗi nhóm làm 30 câu giống nhau
    * POST /api/dataprep/versions/:versionId/assignments/auto-assign
-   * Body: { assigneeIds: string[], taskName: string, priority?: string, deadline?: string }
+   * Body: { assigneeIds: string[], taskName: string, priority?: string, deadline?: string, overlapCount?: number }
    */
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length) {
         return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên' });
+      }
+
+      const overlapCount = Math.max(1, parseInt(rawOverlap) || 1);
+      const M = assigneeIds.length;
+
+      if (overlapCount > M) {
+        return res.status(400).json({ success: false, error: `Số người trùng lặp (${overlapCount}) không được lớn hơn tổng số nhân viên (${M})` });
       }
 
       // 1. Lấy version metadata
@@ -119,7 +130,7 @@ export class AssignmentController {
       }
       const datasetName = version.projectName || version.versionName || 'Dataset';
 
-      // 2. Lấy TOÀN BỘ danh sách sample IDs (Array Chunking cần ID cụ thể)
+      // 2. Lấy TOÀN BỘ danh sách sample IDs
       const allSamples = await ProcessedDatasetItem.find({ datasetVersionId: versionId })
         .select('_id')
         .sort({ _id: 1 })
@@ -130,89 +141,104 @@ export class AssignmentController {
         return res.status(400).json({ success: false, error: 'Version này chưa có dữ liệu (0 samples)' });
       }
 
-      const M = assigneeIds.length;
-      const perStaff = Math.floor(N / M);
-      const remainder = N % M;
+      // 3. Tính toán phân bổ — hỗ trợ M không chia hết cho overlapCount
+      //    VD: 5 staff, overlap=2 → 3 nhóm (2+2+1), 5 staff overlap=3 → 2 nhóm (3+2)
+      const numberOfGroups = Math.ceil(M / overlapCount);
+      const perGroup = Math.floor(N / numberOfGroups);
+      const remainder = N % numberOfGroups;
 
-      // 3. Array Chunking: chia mảng ID thành các cụm
-      const chunks: Array<{ assigneeId: string; sampleIds: any[]; startIndex: number }> = [];
-      let cursor = 0;
-      for (let i = 0; i < M; i++) {
-        const chunkSize = perStaff + (i < remainder ? 1 : 0);
-        chunks.push({
-          assigneeId: assigneeIds[i],
-          sampleIds: allSamples.slice(cursor, cursor + chunkSize),
-          startIndex: cursor + 1, // 1-indexed for display
+      // 4. Tạo các nhóm staff
+      const groups: Array<{ staffIds: string[]; sampleIds: any[]; startIndex: number }> = [];
+      let sampleCursor = 0;
+      let staffCursor = 0;
+      for (let g = 0; g < numberOfGroups; g++) {
+        const chunkSize = perGroup + (g < remainder ? 1 : 0);
+        const groupStaffIds = assigneeIds.slice(staffCursor, Math.min(staffCursor + overlapCount, M));
+        staffCursor += overlapCount;
+        groups.push({
+          staffIds: groupStaffIds,
+          sampleIds: allSamples.slice(sampleCursor, sampleCursor + chunkSize),
+          startIndex: sampleCursor + 1, // 1-indexed
         });
-        cursor += chunkSize;
+        sampleCursor += chunkSize;
       }
 
-      // 4. Ghi DB trực tiếp (không dùng transaction — standalone MongoDB)
+      // 5. Ghi DB — mỗi người trong nhóm nhận CÙNG MỘT lô samples
       const allActivityDocs: any[] = [];
+      const distributionResult: any[] = [];
 
-      for (const chunk of chunks) {
-        // 4a. Tạo DatasetAssignmentSubmission
-        const submission = new DatasetAssignmentSubmission({
-          datasetVersionId: versionId,
-          assigneeId: chunk.assigneeId,
-          status: 'pending',
-          name: `${taskName} - Batch ${chunk.startIndex}`,
-          batchStart: chunk.startIndex,
-          batchCount: chunk.sampleIds.length,
-          taskType: 'labeling',
-          priority: priority || 'medium',
-          deadline: deadline ? new Date(deadline) : undefined,
-          supervisor: assignedBy,
-          labeledCount: 0,
-          totalSamples: chunk.sampleIds.length,
-          dataset: datasetName,
-          version: version.versionName || 'v1',
-          progressSnapshot: { totalAssigned: chunk.sampleIds.length },
-        });
-        await submission.save();
+      for (const group of groups) {
+        for (const staffId of group.staffIds) {
+          // 5a. Tạo DatasetAssignmentSubmission cho từng người
+          const submission = new DatasetAssignmentSubmission({
+            datasetVersionId: versionId,
+            assigneeId: staffId,
+            status: 'pending',
+            name: `${taskName} - Batch ${group.startIndex}`,
+            batchStart: group.startIndex,
+            batchCount: group.sampleIds.length,
+            taskType: 'labeling',
+            priority: priority || 'medium',
+            deadline: deadline ? new Date(deadline) : undefined,
+            supervisor: assignedBy,
+            labeledCount: 0,
+            totalSamples: group.sampleIds.length,
+            dataset: datasetName,
+            version: version.versionName || 'v1',
+            progressSnapshot: { totalAssigned: group.sampleIds.length },
+          });
+          await submission.save();
 
-        // 4b. Tạo DatasetSampleAssignment (ánh xạ sampleId cụ thể)
-        const sampleDocs = chunk.sampleIds.map((item, i) => ({
-          datasetVersionId: versionId,
-          sampleId: item._id,
-          assigneeId: chunk.assigneeId,
-          assignedBy,
-          sampleIndex: chunk.startIndex + i,
-          taskType: 'labeling',
-          priority: priority || 'medium',
-        }));
-        await DatasetSampleAssignment.insertMany(sampleDocs);
-
-        // 4c. Ghi Audit log (DatasetAssignmentActivity)
-        for (const item of chunk.sampleIds) {
-          allActivityDocs.push({
+          // 5b. Tạo DatasetSampleAssignment — ánh xạ sampleId cụ thể
+          const sampleDocs = group.sampleIds.map((item, i) => ({
             datasetVersionId: versionId,
             sampleId: item._id,
-            annotatorId: chunk.assigneeId,
-            labelName: 'assignment',
-            labelType: 'hard',
-            targetScope: 'sample',
-            activityType: 'assign',
+            assigneeId: staffId,
+            assignedBy,
+            sampleIndex: group.startIndex + i,
+            taskType: 'labeling',
+            priority: priority || 'medium',
+          }));
+          await DatasetSampleAssignment.insertMany(sampleDocs);
+
+          // 5c. Audit log
+          for (const item of group.sampleIds) {
+            allActivityDocs.push({
+              datasetVersionId: versionId,
+              sampleId: item._id,
+              annotatorId: staffId,
+              labelName: 'assignment',
+              labelType: 'hard',
+              targetScope: 'sample',
+              activityType: 'assign',
+            });
+          }
+
+          distributionResult.push({
+            assigneeId: staffId,
+            groupIndex: groups.indexOf(group) + 1,
+            sampleCount: group.sampleIds.length,
+            range: `${group.startIndex}–${group.startIndex + group.sampleIds.length - 1}`,
           });
         }
       }
 
-      // 4d. Bulk insert audit logs
+      // 5d. Bulk insert audit logs
       if (allActivityDocs.length > 0) {
         await DatasetAssignmentActivity.insertMany(allActivityDocs);
       }
 
-      // 5. Broadcast SSE update
+      // 6. Broadcast SSE update
       broadcastAssignmentUpdate({ type: 'assignment_created', versionId, action: 'auto_assign' });
+
+      const overlapMsg = overlapCount > 1
+        ? ` (${numberOfGroups} nhóm x ${overlapCount} người/nhóm, mỗi nhóm cùng gán ${perGroup} câu)`
+        : '';
 
       return res.status(201).json({
         success: true,
-        message: `Đã giao ${N} samples cho ${M} nhân viên`,
-        distribution: chunks.map(c => ({
-          assigneeId: c.assigneeId,
-          sampleCount: c.sampleIds.length,
-          range: `${c.startIndex}–${c.startIndex + c.sampleIds.length - 1}`,
-        })),
+        message: `Đã giao ${N} samples cho ${M} nhân viên${overlapMsg}`,
+        distribution: distributionResult,
       });
     } catch (error: any) {
       console.error('[AssignmentController] createAutoAssignment error:', error);
@@ -573,7 +599,14 @@ export class AssignmentController {
            const parsed = parseSavedLabel(label.targetTextSnapshot);
            const isComplete = isCompleteStaffLabel(parsed);
            samplesMap[sIndex].staffStatus[String(label.createdBy)] = isComplete ? 'done' : 'in_progress';
-           samplesMap[sIndex].staffLabels[String(label.createdBy)] = parsed?.subject || label.name;
+           samplesMap[sIndex].staffLabels[String(label.createdBy)] = {
+             name: label.name,
+             subject: parsed?.subject || null,
+             quality: parsed?.quality || null,
+             completion: parsed?.completion || null,
+             isDraft: !isComplete,
+             raw: parsed?.subject || label.name,
+           };
            if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
            conflictMap[sIndex].push(label);
         }

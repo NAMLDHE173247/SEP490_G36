@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   X, Users, Database, Search, CheckCircle, ChevronRight,
-  ChevronLeft, AlertCircle, ClipboardList, Calendar, Sparkles
+  ChevronLeft, AlertCircle, ClipboardList, Calendar, Sparkles, Layers
 } from 'lucide-react';
 import { api } from '../../services/api';
 import '../../styles/taskassignment.css';
@@ -37,6 +37,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [taskName, setTaskName] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
+  const [overlapCount, setOverlapCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -49,6 +50,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setTaskName('');
       setPriority('medium');
       setDeadline('');
+      setOverlapCount(1);
       setError('');
       fetchVersions();
     }
@@ -57,6 +59,13 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   useEffect(() => {
     if (step === 2) fetchStaff();
   }, [step]);
+
+  // Auto-adjust overlapCount when staff selection changes
+  useEffect(() => {
+    if (overlapCount > selectedStaff.length) {
+      setOverlapCount(Math.max(1, selectedStaff.length));
+    }
+  }, [selectedStaff.length]);
 
   const fetchVersions = async () => {
     setLoading(true);
@@ -80,20 +89,46 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
     setSelectedStaff(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
   };
 
+  // Valid overlap values: divisors of selectedStaff.length
+  const getValidOverlapValues = () => {
+    const M = selectedStaff.length;
+    if (M <= 1) return [1];
+    const values: number[] = [];
+    for (let i = 1; i <= M; i++) {
+      if (M % i === 0) values.push(i);
+    }
+    return values;
+  };
+
   const getDistribution = () => {
     if (!selectedVersion || selectedStaff.length === 0) return [];
     const N = selectedVersion.totalSamples;
     const M = selectedStaff.length;
-    const perStaff = Math.floor(N / M);
-    const remainder = N % M;
-    let cursor = 1;
-    return selectedStaff.map((staffId, i) => {
-      const count = perStaff + (i < remainder ? 1 : 0);
-      const staff = staffList.find(s => s.id === staffId);
-      const result = { name: staff?.name || staffId, count, range: `${cursor}–${cursor + count - 1}` };
-      cursor += count;
-      return result;
-    });
+    const K = overlapCount;
+    const numberOfGroups = M / K;
+    const perGroup = Math.floor(N / numberOfGroups);
+    const remainder = N % numberOfGroups;
+
+    const result: Array<{ name: string; count: number; range: string; groupIndex: number }> = [];
+    let sampleCursor = 1;
+
+    for (let g = 0; g < numberOfGroups; g++) {
+      const chunkSize = perGroup + (g < remainder ? 1 : 0);
+      const groupStaffIds = selectedStaff.slice(g * K, (g + 1) * K);
+      const range = `${sampleCursor}–${sampleCursor + chunkSize - 1}`;
+
+      for (const staffId of groupStaffIds) {
+        const staff = staffList.find(s => s.id === staffId);
+        result.push({
+          name: staff?.name || staffId,
+          count: chunkSize,
+          range,
+          groupIndex: g + 1,
+        });
+      }
+      sampleCursor += chunkSize;
+    }
+    return result;
   };
 
   const handleSubmit = async () => {
@@ -106,6 +141,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         taskName: taskName || `${selectedVersion.projectName} Labeling`,
         priority,
         deadline: deadline || undefined,
+        overlapCount,
       });
       if (res.data.success) {
         onSuccess();
@@ -125,7 +161,12 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
     s.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const canProceedStep2 = selectedStaff.length > 0 && selectedStaff.length % overlapCount === 0;
+
   if (!isOpen) return null;
+
+  const distribution = getDistribution();
+  const numberOfGroups = selectedStaff.length > 0 ? selectedStaff.length / overlapCount : 0;
 
   return (
     <div className="ta-modal-overlay" onClick={onClose}>
@@ -190,7 +231,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
             </div>
           )}
 
-          {/* Step 2: Chọn Staff */}
+          {/* Step 2: Chọn Staff + Cấu hình Overlap */}
           {step === 2 && (
             <div className="ta-step-content">
               <h4><Users size={16} /> Chọn nhân viên thực hiện</h4>
@@ -226,8 +267,48 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                   </div>
                 ))}
               </div>
+
+              {/* Overlap Config */}
+              {selectedStaff.length >= 2 && (
+                <div className="ta-overlap-config">
+                  <div className="ta-overlap-header">
+                    <Layers size={16} />
+                    <span>Gán trùng lặp (Overlap)</span>
+                  </div>
+                  <div className="ta-overlap-body">
+                    <div className="ta-overlap-select">
+                      <label>Số người cùng gán 1 lô:</label>
+                      <select
+                        value={overlapCount}
+                        onChange={e => setOverlapCount(Number(e.target.value))}
+                        className="ta-select"
+                      >
+                        {getValidOverlapValues().map(v => (
+                          <option key={v} value={v}>
+                            {v === 1 ? '1 (Không trùng lặp)' : `${v} người/nhóm`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {overlapCount > 1 && (
+                      <div className="ta-overlap-preview">
+                        <span className="ta-overlap-badge">
+                          📊 {numberOfGroups} nhóm × {overlapCount} người — mỗi nhóm cùng gán{' '}
+                          {selectedVersion ? Math.floor(selectedVersion.totalSamples / numberOfGroups) : '?'} câu giống nhau
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="ta-selected-count">
                 Đã chọn: <strong>{selectedStaff.length}</strong> nhân viên
+                {overlapCount > 1 && (
+                  <span style={{ marginLeft: 8, color: '#8b5cf6' }}>
+                    • Overlap: <strong>{overlapCount}</strong> người/nhóm
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -252,10 +333,10 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                 <div className="ta-config-group">
                   <label>Độ ưu tiên</label>
                   <select value={priority} onChange={e => setPriority(e.target.value)} className="ta-select">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
+                    <option value="low">Thấp</option>
+                    <option value="medium">Trung bình</option>
+                    <option value="high">Cao</option>
+                    <option value="urgent">Khẩn cấp</option>
                   </select>
                 </div>
                 <div className="ta-config-group">
@@ -265,14 +346,43 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
               </div>
 
               <div className="ta-summary-card">
-                <div className="ta-summary-title">📊 Phân bổ tự động</div>
+                <div className="ta-summary-title">
+                  📊 Phân bổ {overlapCount > 1 ? `(Overlap ${overlapCount} người/nhóm)` : 'tự động'}
+                </div>
                 <div className="ta-summary-info">
                   <span>Dataset: <strong>{selectedVersion?.projectName}</strong></span>
                   <span>Tổng: <strong>{selectedVersion?.totalSamples} samples</strong></span>
                   <span>Nhân viên: <strong>{selectedStaff.length} người</strong></span>
+                  {overlapCount > 1 && (
+                    <span>Nhóm: <strong>{numberOfGroups} nhóm × {overlapCount} người</strong></span>
+                  )}
                 </div>
                 <div className="ta-distribution">
-                  {getDistribution().map((d, i) => (
+                  {overlapCount > 1 && (
+                    // Group view: show groups
+                    <>
+                      {Array.from({ length: numberOfGroups }).map((_, gIdx) => {
+                        const groupItems = distribution.filter(d => d.groupIndex === gIdx + 1);
+                        if (groupItems.length === 0) return null;
+                        return (
+                          <div key={gIdx} className="ta-dist-group">
+                            <div className="ta-dist-group-header">
+                              <Layers size={14} />
+                              <span>Nhóm {gIdx + 1} — Câu #{groupItems[0].range} ({groupItems[0].count} samples)</span>
+                            </div>
+                            {groupItems.map((d, i) => (
+                              <div key={i} className="ta-dist-row ta-dist-row-grouped">
+                                <div className="ta-dist-avatar">{d.name.split(' ').pop()?.[0] || 'U'}</div>
+                                <span className="ta-dist-name">{d.name}</span>
+                                <span className="ta-dist-count">{d.count} samples</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+                  {overlapCount === 1 && distribution.map((d, i) => (
                     <div key={i} className="ta-dist-row">
                       <div className="ta-dist-avatar">{d.name.split(' ').pop()?.[0] || 'U'}</div>
                       <span className="ta-dist-name">{d.name}</span>
@@ -304,7 +414,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
             <button
               className="ta-btn ta-btn-primary"
               onClick={() => setStep(step + 1)}
-              disabled={(step === 1 && !selectedVersion) || (step === 2 && selectedStaff.length === 0)}
+              disabled={(step === 1 && !selectedVersion) || (step === 2 && !canProceedStep2)}
             >
               Tiếp theo <ChevronRight size={16} />
             </button>

@@ -3,7 +3,8 @@ import {
   ClipboardList, Search, Filter, ChevronDown, ChevronRight,
   CheckCircle, Clock, AlertCircle, XCircle, UserCheck, Users,
   Eye, Plus, Calendar, ArrowUpDown, BarChart2, Tag,
-  MessageSquare, RefreshCw, Send, X, FileText, Sparkles, Trash2
+  MessageSquare, RefreshCw, Send, X, FileText, Sparkles, Trash2,
+  Layers, ChevronUp, Activity
 } from 'lucide-react';
 import '../styles/assignlabeling.css';
 
@@ -12,19 +13,19 @@ import TaskAssignmentModal from '../components/dataprep/TaskAssignmentModal';
 
 
 const STATUS_CONFIG = {
-  'completed':    { label: 'Completed',    icon: <CheckCircle size={14} />,  className: 'al-status-completed' },
-  'submitted':    { label: 'Submitted',    icon: <Send size={14} />,         className: 'al-status-submitted' },
-  'needs_review': { label: 'Needs Review', icon: <AlertCircle size={14} />,  className: 'al-status-review' },
-  'in_progress':  { label: 'In Progress',  icon: <Clock size={14} />,        className: 'al-status-in-progress' },
-  'pending':      { label: 'Pending',      icon: <AlertCircle size={14} />,  className: 'al-status-pending' },
-  'draft':        { label: 'Draft',        icon: <FileText size={14} />,     className: 'al-status-draft' },
+  'completed':    { label: 'Hoàn thành',    icon: <CheckCircle size={14} />,  className: 'al-status-completed' },
+  'submitted':    { label: 'Đã nộp',        icon: <Send size={14} />,         className: 'al-status-submitted' },
+  'needs_review': { label: 'Cần review',    icon: <AlertCircle size={14} />,  className: 'al-status-review' },
+  'in_progress':  { label: 'Đang làm',      icon: <Clock size={14} />,        className: 'al-status-in-progress' },
+  'pending':      { label: 'Chờ xử lý',     icon: <AlertCircle size={14} />,  className: 'al-status-pending' },
+  'draft':        { label: 'Nháp',          icon: <FileText size={14} />,     className: 'al-status-draft' },
 };
 
 const PRIORITY_CONFIG = {
-  'urgent': { label: 'Urgent', className: 'al-priority-urgent' },
-  'high': { label: 'High', className: 'al-priority-high' },
-  'medium': { label: 'Medium', className: 'al-priority-medium' },
-  'low': { label: 'Low', className: 'al-priority-low' },
+  'urgent': { label: 'Khẩn cấp', className: 'al-priority-urgent' },
+  'high':   { label: 'Cao',      className: 'al-priority-high' },
+  'medium': { label: 'Trung bình', className: 'al-priority-medium' },
+  'low':    { label: 'Thấp',     className: 'al-priority-low' },
 };
 
 function ManagerAssignLabelingView({ onViewDetail }) {
@@ -32,19 +33,29 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
+  const [expandedTask, setExpandedTask] = useState<string | null>(null);
 
   const [showToast, setShowToast] = useState<string | null>(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const fetchTasks = async () => {
+    setIsRefreshing(true);
+    setFetchError(null);
     try {
       const res = await api.get('/dataprep/assignments/manager/overview');
       if (res.data.success) {
         setTasks(res.data.data);
+      } else {
+        setFetchError(res.data.error || 'API returned success=false');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to fetch tasks', e);
+      const msg = e.response?.data?.error || e.message || 'Unknown error';
+      setFetchError(`Lỗi tải dữ liệu: ${msg}`);
     }
+    setIsRefreshing(false);
   };
 
   React.useEffect(() => {
@@ -64,12 +75,18 @@ function ManagerAssignLabelingView({ onViewDetail }) {
     setTimeout(() => setShowToast(null), 3000);
   };
 
+  const toggleExpand = (e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    setExpandedTask(prev => prev === taskId ? null : taskId);
+  };
+
   /* Filter & Sort */
   let filtered = TASKS.filter(t => {
     const matchSearch = searchQuery.trim() === '' ||
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.dataset.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSearch;
+    const matchStatus = statusFilter === 'all' || t.status === statusFilter;
+    return matchSearch && matchStatus;
   });
 
   filtered.sort((a, b) => {
@@ -79,6 +96,11 @@ function ManagerAssignLabelingView({ onViewDetail }) {
       case 'priority': {
         const order = { urgent: 0, high: 1, medium: 2, low: 3 };
         return (order[a.priority] || 2) - (order[b.priority] || 2);
+      }
+      case 'progress': {
+        const pA = a.totalSamples > 0 ? a.labeledCount / a.totalSamples : 0;
+        const pB = b.totalSamples > 0 ? b.labeledCount / b.totalSamples : 0;
+        return pB - pA;
       }
       default: return 0;
     }
@@ -96,8 +118,16 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
   const totalLabeled = TASKS.reduce((s, t) => s + (t.labeledCount || 0), 0);
   const totalSamples = TASKS.reduce((s, t) => s + (t.totalSamples || 0), 0);
+  const overallProgress = totalSamples > 0 ? Math.round((totalLabeled / totalSamples) * 100) : 0;
 
+  // Count unique assignees across all tasks
+  const allAssignees = new Set<string>();
+  TASKS.forEach(t => t.batches?.forEach((b: any) => b.assignees?.forEach((a: any) => allAssignees.add(a.id))));
 
+  // Detect overlap tasks (batches with >1 assignee)
+  const overlapTaskCount = TASKS.filter(t =>
+    t.batches?.some((b: any) => b.assignees?.length > 1)
+  ).length;
 
   return (
     <div className="al-container">
@@ -111,13 +141,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
         <div className="al-header-left">
           <div className="al-icon-wrapper"><ClipboardList size={24} /></div>
           <div>
-            <h2>Quản lý Task (Theo file dữ liệu)</h2>
-            <p className="al-subtitle">Theo dõi và giám sát tiến độ các Batch bên trong từng Task</p>
+            <h2>Giám sát & Quản lý Task</h2>
+            <p className="al-subtitle">Theo dõi tiến độ, phát hiện xung đột, và quản lý phân công gán nhãn</p>
           </div>
         </div>
-        <button className="al-btn-create" onClick={() => setShowAssignModal(true)}>
-          <Plus size={16} /> Tạo Task Mới
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            className="al-btn-create"
+            style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}
+            onClick={fetchTasks}
+            disabled={isRefreshing}
+          >
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} /> Làm mới
+          </button>
+          <button className="al-btn-create" onClick={() => setShowAssignModal(true)}>
+            <Plus size={16} /> Tạo Task Mới
+          </button>
+        </div>
       </div>
 
       {/* Task Assignment Modal */}
@@ -133,28 +173,28 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           <div className="al-stat-icon total"><ClipboardList size={20} /></div>
           <div className="al-stat-info">
             <span className="al-stat-value">{TASKS.length}</span>
-            <span className="al-stat-label">Tổng số Batch</span>
+            <span className="al-stat-label">Tổng Task</span>
           </div>
         </div>
         <div className="al-stat-card">
-          <div className="al-stat-icon labeled"><Clock size={20} /></div>
+          <div className="al-stat-icon labeled"><Users size={20} /></div>
           <div className="al-stat-info">
-            <span className="al-stat-value">{statusCounts.pending}</span>
-            <span className="al-stat-label">Đang chờ</span>
+            <span className="al-stat-value">{allAssignees.size}</span>
+            <span className="al-stat-label">Nhân viên</span>
           </div>
         </div>
         <div className="al-stat-card">
-          <div className="al-stat-icon reviewed"><AlertCircle size={20} /></div>
+          <div className="al-stat-icon reviewed"><Activity size={20} /></div>
           <div className="al-stat-info">
-            <span className="al-stat-value">{statusCounts.in_progress}</span>
-            <span className="al-stat-label">Đang thực hiện</span>
+            <span className="al-stat-value">{overallProgress}%</span>
+            <span className="al-stat-label">Tiến độ chung</span>
           </div>
         </div>
         <div className="al-stat-card">
-          <div className="al-stat-icon team"><CheckCircle size={20} /></div>
+          <div className="al-stat-icon team"><Layers size={20} /></div>
           <div className="al-stat-info">
-            <span className="al-stat-value">{statusCounts.completed}</span>
-            <span className="al-stat-label">Hoàn thành</span>
+            <span className="al-stat-value">{overlapTaskCount}</span>
+            <span className="al-stat-label">Overlap Task</span>
           </div>
         </div>
       </div>
@@ -169,47 +209,94 @@ function ManagerAssignLabelingView({ onViewDetail }) {
         </div>
         <div className="al-filter-group">
           <Filter size={14} />
-          {Object.entries(statusCounts).map(([key, count]) => (
+          {Object.entries(statusCounts).filter(([_, count]) => count > 0 || _ === 'all').map(([key, count]) => (
             <button key={key}
               className={`al-filter-btn ${statusFilter === key ? 'active' : ''}`}
               onClick={() => setStatusFilter(key)}>
-              {key === 'all' ? 'All' : STATUS_CONFIG[key]?.label || key} ({count})
+              {key === 'all' ? 'Tất cả' : STATUS_CONFIG[key]?.label || key} ({count})
             </button>
           ))}
         </div>
         <div className="al-sort-wrapper">
           <ArrowUpDown size={14} />
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="al-sort-select">
-            <option value="date-desc">Newest First</option>
-            <option value="date-asc">Oldest First</option>
-            <option value="priority">Priority</option>
-            <option value="progress">Progress</option>
+            <option value="date-desc">Mới nhất</option>
+            <option value="date-asc">Cũ nhất</option>
+            <option value="priority">Ưu tiên</option>
+            <option value="progress">Tiến độ</option>
           </select>
         </div>
       </div>
 
       {/* Task List */}
       <div className="al-task-list">
-        {filtered.length === 0 && (
-          <div className="al-empty"><ClipboardList size={48} /><p>Không tìm thấy batch dữ liệu nào.</p></div>
+        {fetchError && (
+          <div style={{
+            padding: '16px 20px', background: '#fef2f2', border: '1px solid #fecaca',
+            borderRadius: '10px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px'
+          }}>
+            <AlertCircle size={20} style={{ color: '#dc2626', flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, color: '#b91c1c', fontSize: '14px' }}>Lỗi tải danh sách Task</div>
+              <div style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '2px' }}>{fetchError}</div>
+            </div>
+            <button onClick={fetchTasks} style={{
+              padding: '6px 14px', background: '#dc2626', color: '#fff', border: 'none',
+              borderRadius: '6px', fontWeight: 600, cursor: 'pointer', fontSize: '13px'
+            }}>Thử lại</button>
+          </div>
+        )}
+        {isRefreshing && TASKS.length === 0 && (
+          <div className="al-empty" style={{ flexDirection: 'column' }}>
+            <RefreshCw size={40} className="animate-spin" style={{ color: '#6366f1', marginBottom: '12px' }} />
+            <p style={{ color: '#6366f1', fontWeight: 600 }}>Đang tải dữ liệu từ server...</p>
+            <p style={{ fontSize: '13px', color: '#94a3b8' }}>Kết nối MongoDB Atlas có thể mất vài giây</p>
+          </div>
+        )}
+        {filtered.length === 0 && !fetchError && !isRefreshing && (
+          <div className="al-empty"><ClipboardList size={48} /><p>Không tìm thấy task nào.</p></div>
         )}
 
         {filtered.map((task) => {
-          const statusInfo = STATUS_CONFIG[task.status];
-          const priorityInfo = PRIORITY_CONFIG[task.priority];
+          const statusInfo = STATUS_CONFIG[task.status] || STATUS_CONFIG['pending'];
+          const priorityInfo = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG['medium'];
           const progress = task.totalSamples > 0
             ? Math.round((task.labeledCount / task.totalSamples) * 100) : 0;
+          const isExpanded = expandedTask === task.id;
+          const hasOverlap = task.batches?.some((b: any) => b.assignees?.length > 1);
+          const totalBatches = task.batches?.length || 0;
+          const uniqueAssignees = new Set<string>();
+          task.batches?.forEach((b: any) => b.assignees?.forEach((a: any) => uniqueAssignees.add(a.name)));
 
           return (
-            <div key={task.id} className="al-task-card">
+            <div key={task.id} className={`al-task-card ${isExpanded ? 'expanded' : ''}`}>
+              {/* Main Row */}
               <div className="al-task-row" onClick={() => onViewDetail(task, null)}>
                 <div className="al-task-title-col">
-                  <span className="al-task-title">{task.dataset} - {task.name}</span>
-                  <span className="al-task-desc">Tổng cộng: {task.totalSamples} samples · {task.batches.length} Batch</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="al-task-title">{task.dataset} — {task.name}</span>
+                    {hasOverlap && (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        background: 'linear-gradient(135deg, #ede9fe, #e0e7ff)', color: '#6d28d9',
+                        padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600
+                      }}>
+                        <Layers size={12} /> Overlap
+                      </span>
+                    )}
+                  </div>
+                  <span className="al-task-desc">
+                    {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
+                  </span>
                 </div>
 
                 <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>
-                <div className="al-task-type" style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', backgroundColor: task.taskType === 'cross-check' ? '#e0e7ff' : '#f3f4f6', color: task.taskType === 'cross-check' ? '#4f46e5' : '#4b5563', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                <div className="al-task-type" style={{
+                  fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px',
+                  backgroundColor: task.taskType === 'cross-check' ? '#e0e7ff' : '#f3f4f6',
+                  color: task.taskType === 'cross-check' ? '#4f46e5' : '#4b5563',
+                  fontWeight: 500, whiteSpace: 'nowrap'
+                }}>
                   {task.taskType === 'cross-check' ? '🔍 Cross-check' : '🏷 Labeling'}
                 </div>
                 <div className={`al-task-status ${statusInfo.className}`}>
@@ -217,16 +304,107 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                 </div>
                 <div className="al-task-progress-col">
                   <div className="al-progress-bar">
-                    <div className="al-progress-fill" style={{ width: `${progress}%` }}></div>
+                    <div className="al-progress-fill" style={{
+                      width: `${progress}%`,
+                      background: progress === 100
+                        ? 'linear-gradient(135deg, #10b981, #059669)'
+                        : progress > 50
+                          ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                          : 'linear-gradient(135deg, #f59e0b, #d97706)'
+                    }}></div>
                   </div>
-                  <span className="al-progress-text">{progress}%</span>
+                  <span className="al-progress-text" style={{
+                    color: progress === 100 ? '#059669' : progress > 50 ? '#4f46e5' : '#d97706'
+                  }}>{progress}%</span>
                 </div>
-                <div className="al-task-actions">
-                  <button className="al-action-btn delete" onClick={(e) => handleDeleteTask(e, task.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
+                <div className="al-task-actions" style={{ display: 'flex', gap: '4px' }}>
+                  <button
+                    className="al-action-btn"
+                    onClick={(e) => toggleExpand(e, task.id)}
+                    style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '4px' }}
+                    title="Xem chi tiết batch"
+                  >
+                    {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+                  <button
+                    className="al-action-btn delete"
+                    onClick={(e) => handleDeleteTask(e, task.id)}
+                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                    title="Xóa task"
+                  >
                     <Trash2 size={18} />
                   </button>
                 </div>
               </div>
+
+              {/* Expanded: Batch & Staff Detail */}
+              {isExpanded && (
+                <div className="al-task-expanded" onClick={e => e.stopPropagation()}>
+                  <div className="al-batch-grid">
+                    {task.batches?.map((batch: any, bIdx: number) => {
+                      const batchHasOverlap = batch.assignees?.length > 1;
+                      return (
+                        <div key={bIdx} className="al-batch-card">
+                          <div className="al-batch-header">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <FileText size={14} />
+                              <span className="al-batch-name">{batch.name}</span>
+                              {batchHasOverlap && (
+                                <span style={{
+                                  background: '#ede9fe', color: '#7c3aed', padding: '1px 6px',
+                                  borderRadius: '4px', fontSize: '10px', fontWeight: 600
+                                }}>
+                                  {batch.assignees.length} người
+                                </span>
+                              )}
+                            </div>
+                            <span className="al-batch-count">{batch.totalSamples} samples</span>
+                          </div>
+                          <div className="al-batch-assignees">
+                            {batch.assignees?.map((a: any, aIdx: number) => {
+                              const aProgress = Math.round(a.progress || 0);
+                              const aStatusInfo = STATUS_CONFIG[a.status] || STATUS_CONFIG['pending'];
+                              return (
+                                <div key={aIdx} className="al-assignee-row">
+                                  <div className="al-assignee-avatar">
+                                    {(a.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                  </div>
+                                  <span className="al-assignee-name">{a.name}</span>
+                                  <div className="al-assignee-progress">
+                                    <div className="al-mini-progress-bar">
+                                      <div className="al-mini-progress-fill" style={{
+                                        width: `${aProgress}%`,
+                                        background: aProgress === 100 ? '#10b981' : '#6366f1'
+                                      }}></div>
+                                    </div>
+                                    <span style={{
+                                      fontSize: '11px', fontWeight: 600, minWidth: '32px', textAlign: 'right',
+                                      color: aProgress === 100 ? '#059669' : '#6366f1'
+                                    }}>{aProgress}%</span>
+                                  </div>
+                                  <span className={`al-assignee-status ${aStatusInfo.className}`} style={{
+                                    fontSize: '11px', padding: '2px 6px', borderRadius: '4px'
+                                  }}>
+                                    {aStatusInfo.label}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="al-batch-footer">
+                    <button
+                      className="al-btn-view-detail"
+                      onClick={() => onViewDetail(task, null)}
+                    >
+                      <Eye size={14} /> Xem chi tiết đầy đủ <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
