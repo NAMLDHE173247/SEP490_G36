@@ -508,7 +508,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       {/* ===== MODAL: STAFF SAMPLE LIST (Option B) ===== */}
       {staffSamplesModal && (
         <div className="td-modal-overlay" onClick={() => setStaffSamplesModal(null)}>
-          <div className="td-modal" style={{ maxWidth: '800px', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+          <div className="td-modal td-modal-large" onClick={e => e.stopPropagation()}>
             <div className="td-modal-header">
               <h3>
                 <Eye size={18} style={{ marginRight: 8 }} />
@@ -517,23 +517,51 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               <button className="td-modal-close" onClick={() => setStaffSamplesModal(null)}><X size={20}/></button>
             </div>
             <div className="td-modal-body" style={{ padding: 0 }}>
-              {/* Summary bar */}
-              <div style={{ display: 'flex', gap: '16px', padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e5e7eb', fontSize: '13px' }}>
-                <span>📊 Tổng: <strong>{staffSamplesModal.samples.length}</strong></span>
-                <span style={{ color: '#10b981' }}>✅ Đã gán nhãn: <strong>{staffSamplesModal.samples.filter(s => s.isLabeled).length}</strong></span>
-                <span style={{ color: '#f59e0b' }}>⏳ Chưa làm: <strong>{staffSamplesModal.samples.filter(s => !s.isLabeled).length}</strong></span>
+              {/* Summary grid */}
+              <div className="td-modal-summary-grid">
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon total">
+                    <Database size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Tổng số mẫu</span>
+                    <span className="td-summary-card-value">{staffSamplesModal.samples.length}</span>
+                  </div>
+                </div>
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon labeled">
+                    <CheckCircle size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Đã gán nhãn</span>
+                    <span className="td-summary-card-value">
+                      {staffSamplesModal.samples.filter((s: any) => s.isLabeled).length}
+                    </span>
+                  </div>
+                </div>
+                <div className="td-summary-card">
+                  <div className="td-summary-card-icon pending">
+                    <Clock size={16} />
+                  </div>
+                  <div className="td-summary-card-info">
+                    <span className="td-summary-card-label">Chưa gán nhãn</span>
+                    <span className="td-summary-card-value">
+                      {staffSamplesModal.samples.filter((s: any) => !s.isLabeled).length}
+                    </span>
+                  </div>
+                </div>
               </div>
 
               {/* Sample list table */}
-              <div style={{ maxHeight: '55vh', overflowY: 'auto', padding: '0' }}>
-                <table className="td-table" style={{ margin: 0 }}>
+              <div className="td-modal-table-container">
+                <table className="td-modal-table">
                   <thead>
                     <tr>
-                      <th style={{ width: '60px' }}>#</th>
-                      <th style={{ width: '100px' }}>Trạng thái</th>
-                      <th>Nhãn</th>
-                      <th>Preview</th>
-                      <th style={{ width: '80px' }}>Xem</th>
+                      <th className="td-col-id">#</th>
+                      <th className="td-col-status">Trạng thái</th>
+                      <th className="td-col-label">Nhãn</th>
+                      <th className="td-col-preview">Preview</th>
+                      <th className="td-col-action">Xem</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -542,7 +570,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                       .map((s: any) => (
                         <tr 
                           key={s.id} 
-                          style={{ cursor: s.isLabeled ? 'pointer' : 'default', background: s.isLabeled ? '#f0fdf4' : 'transparent' }}
+                          className={s.sampleObjectId ? "row-clickable" : ""}
+                          style={{ background: s.isLabeled ? 'rgba(12, 166, 120, 0.04)' : 'transparent' }}
                           onClick={() => {
                             if (s.sampleObjectId) {
                               openSplitView(s.sampleObjectId, staffSamplesModal.staff.id, staffSamplesModal.staff.name);
@@ -552,24 +581,32 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                           <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
                           <td>
                             {s.isLabeled ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#dcfce7', color: '#166534' }}>
+                              <span className="td-status-pill labeled">
                                 <CheckCircle size={12} /> Đã gán
                               </span>
                             ) : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: '12px', fontSize: '12px', fontWeight: 500, background: '#fef3c7', color: '#92400e' }}>
+                              <span className="td-status-pill pending">
                                 <Clock size={12} /> Chưa làm
                               </span>
                             )}
                           </td>
-                          <td style={{ fontSize: '13px', color: s.labelName ? '#374151' : '#d1d5db' }}>
-                            {s.labelName || '—'}
-                          </td>
-                          <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', color: '#6b7280' }}>
-                            {s.preview || `Sample #${s.id}`}
+                          <td>
+                            {s.labelName ? (
+                              <span className="td-label-badge" title={s.labelName}>
+                                {s.labelName}
+                              </span>
+                            ) : (
+                              <span className="td-label-empty">—</span>
+                            )}
                           </td>
                           <td>
+                            <div className="td-text-truncate" title={s.preview || `Sample #${s.id}`}>
+                              {s.preview || `Sample #${s.id}`}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
                             <button
-                              className="td-icon-btn"
+                              className="td-btn-view-circle"
                               title="Mở Split-View"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -590,9 +627,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
 
               {/* Pagination */}
               {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize) > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '12px', gap: '12px', borderTop: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', gap: '16px', borderTop: '1px solid #e5e7eb' }}>
                   <button className="al-btn al-btn-outline" disabled={staffSamplePage === 1} onClick={() => setStaffSamplePage(p => p - 1)}>Trước</button>
-                  <span style={{ fontSize: '13px', color: '#6b7280' }}>
+                  <span style={{ fontSize: '13px', color: '#4b5563', fontWeight: 500 }}>
                     Trang {staffSamplePage} / {Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)}
                   </span>
                   <button className="al-btn al-btn-outline" disabled={staffSamplePage >= Math.ceil(staffSamplesModal.samples.length / staffSamplePageSize)} onClick={() => setStaffSamplePage(p => p + 1)}>Sau</button>

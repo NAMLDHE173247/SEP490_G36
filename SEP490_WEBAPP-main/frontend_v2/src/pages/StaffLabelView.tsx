@@ -87,6 +87,13 @@ function StaffLabelView({ task, onBack }) {
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiBackup, setAiBackup] = useState({});
+  const [aiProvider, setAiProvider] = useState('gemini');
+  const AI_PROVIDERS = [
+    { value: 'gemini', label: '🟢 Gemini 2.0 Flash' },
+    { value: 'openai', label: '🔵 OpenAI (GPT-4o-mini)' },
+    { value: 'deepseek', label: '🟣 Deepseek Chat' },
+    { value: 'openrouter', label: '🟠 OpenRouter' },
+  ];
 
   const handleAIAssist = async (sampleId) => {
     const sample = samples.find(s => s.id === sampleId);
@@ -98,12 +105,13 @@ function StaffLabelView({ task, onBack }) {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
 
       const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, {
-        messages: sample.messages
+        messages: sample.messages,
+        provider: aiProvider
       });
 
       if (res.data.success && res.data.data) {
         const suggestion = res.data.data;
-        const aiLabels = {
+        const aiLabels: any = {
           subject: suggestion.subject || '',
           completion: suggestion.completion || '',
           quality: suggestion.quality || '',
@@ -111,9 +119,9 @@ function StaffLabelView({ task, onBack }) {
           messages: {}
         };
         // Kiểm tra xem có nhãn mới không
-        const newSubjects = [];
-        const newIntents = [];
-        const newActions = [];
+        const newSubjects: string[] = [];
+        const newIntents: string[] = [];
+        const newActions: string[] = [];
 
         if (suggestion.subject && !subjectOptions.includes(suggestion.subject)) {
           newSubjects.push(suggestion.subject);
@@ -141,31 +149,44 @@ function StaffLabelView({ task, onBack }) {
           allowAdd = window.confirm(msg);
         }
 
+        // Luôn thêm nhãn mới vào danh sách tùy chọn nếu user đồng ý
         if (allowAdd) {
+          if (newSubjects.length) setSubjectOptions(prev => [...prev, ...newSubjects]);
+          if (newIntents.length) setIntentOptions(prev => [...prev, ...newIntents]);
+          if (newActions.length) setActionOptions(prev => [...prev, ...newActions]);
+        } else {
+          // Nếu user từ chối: vẫn thêm vào option list (để dropdown hiển thị được giá trị AI đề xuất)
+          // nhưng không hiện popup nữa
           if (newSubjects.length) setSubjectOptions(prev => [...prev, ...newSubjects]);
           if (newIntents.length) setIntentOptions(prev => [...prev, ...newIntents]);
           if (newActions.length) setActionOptions(prev => [...prev, ...newActions]);
         }
 
-        // Nếu user từ chối thêm nhãn mới, gán các nhãn mới này về 'Other' hoặc ''
-        if (!allowAdd && newSubjects.includes(aiLabels.subject)) {
-          aiLabels.subject = ''; 
-        }
+        // Giữ nguyên nhãn AI đề xuất — KHÔNG gán về 'Other' hay '' 
+        // để người dùng thấy kết quả AI gợi ý và tự quyết định chỉnh sửa
 
         if (Array.isArray(suggestion.messages)) {
           suggestion.messages.forEach((msg, idx) => {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
             if (msg.intent) {
-              aiLabels.messages[messageIndex].intent = (!allowAdd && newIntents.includes(msg.intent)) ? 'Other' : msg.intent;
+              aiLabels.messages[messageIndex].intent = msg.intent;
             }
             if (msg.action) {
-              aiLabels.messages[messageIndex].action = (!allowAdd && newActions.includes(msg.action)) ? 'Other' : msg.action;
+              aiLabels.messages[messageIndex].action = msg.action;
             }
           });
         }
         
-        setLabels(prev => ({ ...prev, [sampleId]: { ...prev[sampleId], ...aiLabels } }));
+        // Giữ lại flags đã chọn trước đó khi merge AI labels
+        setLabels(prev => {
+          const existingFlags = prev[sampleId]?.flags || [];
+          const existingNote = prev[sampleId]?.note || '';
+          return {
+            ...prev,
+            [sampleId]: { ...prev[sampleId], ...aiLabels, flags: existingFlags, note: existingNote }
+          };
+        });
         setSavedDraft(false);
       }
     } catch (e) {
@@ -227,26 +248,7 @@ function StaffLabelView({ task, onBack }) {
     setSavedDraft(false);
   };
 
-  const applyAiSuggestion = (sampleId, sample) => {
-    if (task?.disableAi || submitted) return;
-    const aiLabels = {
-      subject: 'Vật lý',
-      completion: 'Completed',
-      quality: 'Good',
-      note: 'AI: Hội thoại Socratic method tốt',
-      flags: [],
-      messages: {}
-    };
-    sample.messages.forEach((msg, idx) => {
-      if (msg.role === 'user') {
-        aiLabels.messages[idx] = { intent: 'Ask Explanation' };
-      } else {
-        aiLabels.messages[idx] = { action: 'Ask Probing Question' };
-      }
-    });
-    setLabels(prev => ({ ...prev, [sampleId]: { ...prev[sampleId], ...aiLabels } }));
-    setSavedDraft(false);
-  };
+  // Hàm applyAiSuggestion hardcoded đã bị xóa — thay thế bởi handleAIAssist gọi API thực
 
   const isSampleComplete = (sampleId) => Boolean(labels[sampleId]?.subject && labels[sampleId]?.completion && labels[sampleId]?.quality);
   const labeledCount = samples.filter(s => isSampleComplete(s.id)).length;
@@ -590,7 +592,27 @@ function StaffLabelView({ task, onBack }) {
                     </div>
 
                     {!task?.disableAi && (
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <select
+                          value={aiProvider}
+                          onChange={(e) => setAiProvider(e.target.value)}
+                          className="sl-inline-select"
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0',
+                            background: '#f8fafc',
+                            fontSize: '12px',
+                            color: '#475569',
+                            cursor: 'pointer',
+                            minWidth: '170px'
+                          }}
+                          disabled={isAiLoading}
+                        >
+                          {AI_PROVIDERS.map(p => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                          ))}
+                        </select>
                         <button className="sl-ai-btn" onClick={() => handleAIAssist(sample.id)} disabled={isAiLoading}>
                           {isAiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
                           {isAiLoading ? '🤖 Đang phân tích...' : '🤖 Gợi ý AI'}

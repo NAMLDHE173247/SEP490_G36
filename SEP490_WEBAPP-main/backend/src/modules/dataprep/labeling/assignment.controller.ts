@@ -569,8 +569,11 @@ export class AssignmentController {
       for (const label of labels) {
         const sIndex = sampleIdMap[String(label.sampleId)];
         if (sIndex && samplesMap[sIndex]) {
-           samplesMap[sIndex].staffStatus[String(label.createdBy)] = 'done';
-           samplesMap[sIndex].staffLabels[String(label.createdBy)] = label.name;
+           // Only mark 'done' if the saved label is complete (has subject + completion + quality)
+           const parsed = parseSavedLabel(label.targetTextSnapshot);
+           const isComplete = isCompleteStaffLabel(parsed);
+           samplesMap[sIndex].staffStatus[String(label.createdBy)] = isComplete ? 'done' : 'in_progress';
+           samplesMap[sIndex].staffLabels[String(label.createdBy)] = parsed?.subject || label.name;
            if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
            conflictMap[sIndex].push(label);
         }
