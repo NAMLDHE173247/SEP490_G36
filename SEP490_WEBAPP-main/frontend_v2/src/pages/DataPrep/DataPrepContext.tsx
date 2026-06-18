@@ -664,7 +664,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [sampleQuestion, setSampleQuestion] = useState('Hãy giải phương trình bậc hai sau đây: x² - 5x + 6 = 0');
   const [trialResponse, setTrialResponse] = useState('');
   const [exportPage, setExportPage] = useState(1);
-  const [cloudProvider, setCloudProvider] = useState('gcloud');
+  const [cloudProvider, setCloudProvider] = useState('azure');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [workflowVersions, setWorkflowVersions] = useState<any[]>([]);
   const [activeWorkflowVersion, setActiveWorkflowVersion] = useState<any>(null);

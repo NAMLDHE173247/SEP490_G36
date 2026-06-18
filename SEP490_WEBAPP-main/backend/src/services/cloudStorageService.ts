@@ -34,8 +34,8 @@ export class CloudStorageService {
             const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
             const containerClient = blobServiceClient.getContainerClient(containerName);
 
-            // Tạo container nếu chưa tồn tại
-            await containerClient.createIfNotExists({ access: 'container' });
+            // Tạo container nếu chưa tồn tại (private access - tương thích với mọi loại Azure Storage Account)
+            await containerClient.createIfNotExists();
 
             const blockBlobClient = containerClient.getBlockBlobClient(fileName);
             

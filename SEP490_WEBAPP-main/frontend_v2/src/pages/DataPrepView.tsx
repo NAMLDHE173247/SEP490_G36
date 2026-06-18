@@ -766,7 +766,7 @@ function DataPrepInner() {
     { id: 3, name: 'Project 27/05 11:11', desc: 'Added Socratic method', date: '2026-05-27 11:11', content: 'You are a Socratic tutor specializing in STEM education. Always ask guiding questions. Never give direct answers. Encourage step-by-step reasoning.' },
   ];
   const [exportPage, setExportPage] = useState(1);
-  const [cloudProvider, setCloudProvider] = useState('gcloud');
+  const [cloudProvider, setCloudProvider] = useState('azure');
   const EXPORT_ROWS = [
     { user: 'Hãy giải phương trình bậc hai sau đây: x^2 - 5x + 6 = 0', assistant: 'Để giải phương trình bậc hai này, mình sẽ hỏi một số câu hỏi...' },
     { user: 'Giải phương trình bậc hai có chứa tham số m', assistant: 'Mối giá trị của tham số bậc hai như thế nào với thi dùng chưa có một...' },
@@ -4228,11 +4228,11 @@ function DataPrepInner() {
               <button
                 type="button"
                 className="dataprep-workflow-continue"
-              disabled={isHydratingWorkflow}
-              onClick={() => openWorkflowVersion(pendingWorkflow.id)}
-            >
-              {getResumeLabel(Number(pendingWorkflow.prepareResumeStep || 1))}
-            </button>
+                disabled={isHydratingWorkflow}
+                onClick={() => openWorkflowVersion(pendingWorkflow.id)}
+              >
+                {getResumeLabel(Number(pendingWorkflow.prepareResumeStep || 1))}
+              </button>
             )}
             {activeWorkflowVersion && (
               <button

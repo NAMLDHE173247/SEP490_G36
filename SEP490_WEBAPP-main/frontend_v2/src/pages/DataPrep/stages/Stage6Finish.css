@@ -123,6 +123,49 @@
 }
 
 /* Editor Column */
+/* History Pagination */
+.s6-history-paging {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 0 4px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 8px;
+}
+
+.s6-history-paging-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.s6-history-paging-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+.s6-history-paging-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.s6-history-paging-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Editor Column */
 .s6-editor-col {
   display: flex;
   flex-direction: column;
@@ -713,6 +756,26 @@
   color: #64748b;
 }
 
+.sg-conflict-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sg-detail-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.sg-detail-btn:hover { color: #4338ca; }
+
 .sg-exclude-btn {
   background: none;
   border: none;
@@ -723,6 +786,153 @@
   transition: color 0.15s;
 }
 .sg-exclude-btn:hover { color: #dc2626; }
+
+/* Conflict Detail Modal */
+.sg-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.sg-detail-modal {
+  background: white;
+  width: 900px;
+  max-width: 90vw;
+  height: 85vh;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sg-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.sg-detail-header h4 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  color: #0f172a;
+}
+.sg-detail-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.sg-detail-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  transition: all 0.15s;
+}
+.sg-detail-close:hover { background: #f1f5f9; color: #0f172a; }
+
+.sg-detail-why {
+  display: flex;
+  gap: 12px;
+  margin: 16px 24px 0;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border-left: 4px solid #ef4444;
+  border-radius: 0 8px 8px 0;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sg-detail-why svg { flex-shrink: 0; margin-top: 2px; }
+
+.sg-detail-compare {
+  display: flex;
+  flex: 1;
+  gap: 16px;
+  padding: 16px 24px 24px;
+  overflow: hidden;
+}
+
+.sg-detail-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sg-detail-side-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 13px;
+}
+.sg-detail-side-header strong { color: #0f172a; }
+.sg-detail-id {
+  margin-left: auto;
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.sg-detail-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sg-detail-msg {
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sg-detail-msg-system { background: #f1f5f9; border-left: 3px solid #94a3b8; }
+.sg-detail-msg-user { background: #eff6ff; border-left: 3px solid #3b82f6; }
+.sg-detail-msg-assistant { background: #f0fdf4; border-left: 3px solid #22c55e; }
+
+.sg-detail-role {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+.sg-detail-content {
+  color: #1e293b;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 
 /* ============================================
    Sub-step 15 — Export
@@ -985,33 +1195,225 @@
 }
 .ex-btn-hub:hover { background: #f8fafc; border-color: #7c3aed; color: #7c3aed; }
 
-/* Cloud Provider */
-.ex-cloud-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 6px;
+/* Cloud Sync Card — Premium Azure */
+.ex-cloud-card {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 50%, #f5f3ff 100%);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 14px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.ex-cloud-card::before {
+  content: '';
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+.ex-cloud-card:hover {
+  box-shadow: 0 8px 32px rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
 }
 
-.ex-cloud-btn {
-  padding: 14px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+.ex-cloud-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.ex-cloud-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+
+.ex-cloud-header-text h4 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.ex-cloud-header-text p {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Provider Badge */
+.ex-cloud-provider-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
   background: white;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  text-align: center;
-  transition: all 0.15s;
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 10px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
-.ex-cloud-btn:hover { border-color: #7c3aed; }
 
-.ex-cloud-active {
-  border-color: #7c3aed;
-  background: #f5f3ff;
-  color: #7c3aed;
+.ex-cloud-azure-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #e8f0fe, #dbeafe);
+  border: 1px solid rgba(59, 130, 246, 0.12);
+  flex-shrink: 0;
 }
+
+.ex-cloud-provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ex-cloud-provider-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ex-cloud-provider-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.ex-cloud-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 106, 0.4);
+  animation: ex-pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes ex-pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(22, 163, 106, 0.4); }
+  50% { opacity: 0.6; box-shadow: 0 0 10px rgba(22, 163, 106, 0.6); }
+}
+
+/* Detail rows */
+.ex-cloud-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 18px;
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.ex-cloud-detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+}
+
+.ex-cloud-detail-item + .ex-cloud-detail-item {
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.ex-cloud-detail-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ex-cloud-detail-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* Sync Button */
+.ex-btn-azure {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+  position: relative;
+  overflow: hidden;
+}
+
+.ex-btn-azure::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  transition: left 0.5s ease;
+}
+
+.ex-btn-azure:hover::before {
+  left: 100%;
+}
+
+.ex-btn-azure:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+}
+
+.ex-btn-azure:active {
+  transform: translateY(0);
+}
+
+.ex-btn-azure:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+.ex-btn-azure-success {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 4px 14px rgba(22, 163, 106, 0.3);
+}
+
+.ex-btn-azure-success:hover {
+  box-shadow: 0 6px 20px rgba(22, 163, 106, 0.4);
+}
+
 
 /* ============================================
    SEP490 imported Stage 4 and Stage 5 UI

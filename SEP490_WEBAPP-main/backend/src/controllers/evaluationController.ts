@@ -1152,8 +1152,8 @@ export class EvaluationController {
         return;
       }
 
-      if (!Number.isInteger(prepareResumeStep) || prepareResumeStep < 1 || prepareResumeStep > 14) {
-        res.status(400).json({ error: 'prepareResumeStep phải là số nguyên từ 1 đến 14.' });
+      if (!Number.isInteger(prepareResumeStep) || prepareResumeStep < 1 || prepareResumeStep > 15) {
+        res.status(400).json({ error: 'prepareResumeStep phải là số nguyên từ 1 đến 15.' });
         return;
       }
 

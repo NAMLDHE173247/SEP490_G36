@@ -38,6 +38,8 @@ export const Stage6Finish: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRunningTrial, setIsRunningTrial] = useState(false);
+  const [historyPage, setHistoryPage] = useState(1);
+  const historyPerPage = 5;
 
   const [trialProvider, setTrialProvider] = useState<'gemini' | 'deepseek'>('gemini');
   const [isSplitting, setIsSplitting] = useState(false);
@@ -47,6 +49,7 @@ export const Stage6Finish: React.FC = () => {
   const [splitThreshold, setSplitThreshold] = useState(0.85);
   const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
   const [excludedSamples, setExcludedSamples] = useState<Set<string>>(new Set());
+  const [conflictDetailIdx, setConflictDetailIdx] = useState<number | null>(null);
 
   // Hugging Face states
   const [hfToken, setHfToken] = useState('');
@@ -308,6 +311,57 @@ export const Stage6Finish: React.FC = () => {
     return 4.0 + normalized; // 4.0 to 9.5
   };
 
+  // Helper: get full conversation messages by id
+  const getConvMessages = (id: string): { role: string; content: string }[] => {
+    if (!conversationsList || !id) return [];
+    const conv = conversationsList.find((c: any) => String(c.id) === String(id) || String(c.conversation_id) === String(id));
+    if (!conv?.messages) return [];
+    return conv.messages.flatMap((m: any) => {
+      if (m.role && typeof m.content === 'string') return [{ role: m.role, content: m.content }];
+      const msgs: { role: string; content: string }[] = [];
+      if (m.user) msgs.push({ role: 'user', content: m.user });
+      if (m.assistant) msgs.push({ role: 'assistant', content: m.assistant });
+      return msgs;
+    });
+  };
+
+  /**
+   * Convert raw conversation data to standard ChatML format for fine-tuning.
+   * Output: [ { messages: [ {role, content}, ... ] }, ... ]
+   */
+  const toChatML = (data: any[]): any[] => {
+    return data.map((conv: any) => {
+      const messages: { role: string; content: string }[] = [];
+
+      // 1. Insert system prompt if available
+      if (promptText && promptText.trim()) {
+        messages.push({ role: 'system', content: promptText.trim() });
+      }
+
+      // 2. Convert conversation messages
+      if (Array.isArray(conv.messages)) {
+        for (const m of conv.messages) {
+          if (m.role && typeof m.content === 'string') {
+            // Already in {role, content} format
+            if (m.role !== 'system') { // avoid duplicate system
+              messages.push({ role: m.role, content: m.content });
+            }
+          } else if (m.user !== undefined || m.assistant !== undefined) {
+            // Convert {user, assistant} pair format
+            if (m.user) {
+              messages.push({ role: 'user', content: m.user });
+            }
+            if (m.assistant) {
+              messages.push({ role: 'assistant', content: m.assistant });
+            }
+          }
+        }
+      }
+
+      return { messages };
+    }).filter(item => item.messages.length > 1); // Keep only items with actual conversation
+  };
+
   const handleDownloadSplit = async () => {
     let trainData = conversationsList;
     let testData: any[] = [];
@@ -325,9 +379,9 @@ export const Stage6Finish: React.FC = () => {
     testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(trainData, null, 2));
+    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
     if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(testData, null, 2));
+      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });
@@ -357,9 +411,9 @@ export const Stage6Finish: React.FC = () => {
     testData = testData.filter((c: any) => getOverallScore(c.conversation_id || c.id) >= exportMinScore);
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(trainData, null, 2));
+    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
     if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(testData, null, 2));
+      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });
@@ -390,8 +444,8 @@ export const Stage6Finish: React.FC = () => {
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
-        train: trainData,
-        test: testData
+        train: toChatML(trainData),
+        test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
 
@@ -431,8 +485,8 @@ export const Stage6Finish: React.FC = () => {
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
-        train: trainData,
-        test: testData
+        train: toChatML(trainData),
+        test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
       const fileName = `${projectName || 'dataset'}_split.json`;
@@ -453,11 +507,26 @@ export const Stage6Finish: React.FC = () => {
     }
   };
 
+  // Format trial response: convert LaTeX \(...\) and \[...\] to readable text,
+  // and convert markdown bold/headers to clean text
+  const formatTrialResponse = (text: string): string => {
+    if (!text) return '';
+    return text
+      .replace(/\\\[([^\]]+)\\\]/g, ' $1 ')   // \[...\] block math
+      .replace(/\\\(([^)]+)\\\)/g, '$1')        // \(...\) inline math
+      .replace(/\*\*([^*]+)\*\*/g, '$1')         // **bold**
+      .replace(/^#{1,4}\s+/gm, '')               // # headers
+      .replace(/\\n/g, '\n')                      // literal \n
+      .replace(/\n{3,}/g, '\n\n');                // collapse blank lines
+  };
+
   const livePreviewJSON = {
     messages: [
       { role: 'system', content: promptText || '[No system prompt yet]' },
       { role: 'user', content: sampleQuestion },
-      { role: 'assistant', content: trialResponse || 'Chào bạn, phương trình này có thể giải bằng cách nhân nghiệm theo hệ thức Vi et: x1 + x2 = 5 và x1 * x2 = 6. Vậy nghiệm là x = 2 và x = 3. Có điều gì mà bạn muốn thảo luận thêm về cách giải này?' }
+      { role: 'assistant', content: trialResponse
+        ? formatTrialResponse(trialResponse)
+        : '[Chưa có phản hồi. Hãy bấm Run Trial để AI tạo câu trả lời dựa trên System Prompt ở trên.]' }
     ]
   };
 
@@ -465,6 +534,13 @@ export const Stage6Finish: React.FC = () => {
   const filteredVersions = promptVersions.filter(v =>
     v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     v.desc.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Pagination for history
+  const totalHistoryPages = Math.max(1, Math.ceil(filteredVersions.length / historyPerPage));
+  const paginatedVersions = filteredVersions.slice(
+    (historyPage - 1) * historyPerPage,
+    historyPage * historyPerPage
   );
 
   // Pagination for exported rows
@@ -525,7 +601,7 @@ export const Stage6Finish: React.FC = () => {
                 className="s6-search-input"
                 placeholder="Search by description or version"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => { setSearchQuery(e.target.value); setHistoryPage(1); }}
               />
 
               <div className="s6-version-list">
@@ -533,7 +609,7 @@ export const Stage6Finish: React.FC = () => {
                   <div className="sep490-empty">Đang tải danh sách prompt...</div>
                 ) : filteredVersions.length === 0 ? (
                   <div className="sep490-empty">Không tìm thấy phiên bản phù hợp.</div>
-                ) : filteredVersions.map(v => (
+                ) : paginatedVersions.map(v => (
                   <div
                     key={v.id}
                     className={`s6-version-item ${selectedVersion?.id === v.id ? 's6-version-selected' : ''}`}
@@ -552,6 +628,29 @@ export const Stage6Finish: React.FC = () => {
                   </div>
                 ))}
               </div>
+
+              {/* History Pagination */}
+              {filteredVersions.length > historyPerPage && (
+                <div className="s6-history-paging">
+                  <button
+                    className="s6-history-paging-btn"
+                    disabled={historyPage <= 1}
+                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
+                  <span className="s6-history-paging-info">
+                    {historyPage} / {totalHistoryPages}
+                  </span>
+                  <button
+                    className="s6-history-paging-btn"
+                    disabled={historyPage >= totalHistoryPages}
+                    onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                  >
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Right: Viewer + Editor */}
@@ -649,12 +748,14 @@ export const Stage6Finish: React.FC = () => {
               </div>
               <div className="s6-trial-col">
                 <label className="s6-field-label">Generated Response</label>
-                <textarea
+                <div
                   className="s6-trial-textarea s6-trial-response"
-                  readOnly
-                  value={trialResponse}
-                  placeholder="Click 'Run Trial' to generate a response..."
-                />
+                  style={{ whiteSpace: 'pre-wrap', overflowY: 'auto', fontFamily: 'inherit', cursor: 'default' }}
+                >
+                  {trialResponse
+                    ? formatTrialResponse(trialResponse)
+                    : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Click 'Run Trial' to generate a response...</span>}
+                </div>
               </div>
             </div>
           </div>
@@ -832,9 +933,44 @@ export const Stage6Finish: React.FC = () => {
             </div>
             <div className="sg-conflict-list">
               {(splitResult?.overlap_info || []).map((item: any, idx: number) => {
-                const text = item.text || item.content || 'N/A';
-                const sim = item.similarity || item.sim || 0;
-                const itemId = item.id || item.conversation_id || idx.toString();
+                // Determine ID and text using trainIndex/testIndex if available from GPU service
+                let trainConv = item.trainIndex !== undefined ? conversationsList[item.trainIndex] : null;
+                let itemId = item.id || item.conversation_id || item.train_id || (trainConv ? (trainConv.conversation_id || trainConv.id) : idx.toString());
+                let text = item.text || item.content || '';
+
+                if (!text && trainConv && trainConv.messages && trainConv.messages.length > 0) {
+                  const firstMsg = trainConv.messages[0];
+                  text = firstMsg.user || firstMsg.content || '';
+                }
+
+                // If text is still empty, look up from conversationsList by ID
+                if (!text && conversationsList) {
+                  const conv = conversationsList.find((c: any) =>
+                    (String(c.id) === String(itemId) || String(c.conversation_id) === String(itemId))
+                  );
+                  if (conv && conv.messages && conv.messages.length > 0) {
+                    const firstMsg = conv.messages[0];
+                    text = firstMsg.user || firstMsg.content || '';
+                  }
+                }
+
+                // Also try matching by train_id from overlap pair if it somehow exists
+                if (!text && item.train_id && conversationsList) {
+                  const conv = conversationsList.find((c: any) =>
+                    (String(c.id) === String(item.train_id) || String(c.conversation_id) === String(item.train_id))
+                  );
+                  if (conv && conv.messages && conv.messages.length > 0) {
+                    const firstMsg = conv.messages[0];
+                    text = firstMsg.user || firstMsg.content || '';
+                  }
+                }
+
+                if (!text) text = `Conversation ${itemId}`;
+
+                // Truncate long text for display
+                const displayText = text.length > 120 ? text.slice(0, 120) + '...' : text;
+
+                const sim = item.similarity || item.sim || item.score || 0;
                 const isExcluded = excludedSamples.has(itemId);
                 return (
                   <div key={idx} className={`sg-conflict-item ${isExcluded ? 'excluded' : ''}`} style={isExcluded ? { opacity: 0.5 } : {}}>
@@ -849,7 +985,7 @@ export const Stage6Finish: React.FC = () => {
                         setExcludedSamples(newEx);
                       }} />
                       <div>
-                        <span className="sg-conflict-text" style={isExcluded ? { textDecoration: 'line-through' } : {}}>{text}</span>
+                        <span className="sg-conflict-text" style={isExcluded ? { textDecoration: 'line-through' } : {}}>{displayText}</span>
                         <div className="sg-conflict-meta">
                           <span className="sg-dot sg-dot-train"></span> In Train
                           <span className="sg-dot sg-dot-test"></span> In Test
@@ -857,20 +993,28 @@ export const Stage6Finish: React.FC = () => {
                         </div>
                       </div>
                     </div>
-                    <button
-                      className="sg-exclude-btn"
-                      onClick={() => {
-                        const newEx = new Set(excludedSamples);
-                        if (newEx.has(itemId)) {
-                          newEx.delete(itemId);
-                        } else {
-                          newEx.add(itemId);
-                        }
-                        setExcludedSamples(newEx);
-                      }}
-                    >
-                      {isExcluded ? 'Include sample' : 'Exclude sample'}
-                    </button>
+                    <div className="sg-conflict-actions">
+                      <button
+                        className="sg-detail-btn"
+                        onClick={() => setConflictDetailIdx(idx)}
+                      >
+                        <Eye size={13} /> View Detail
+                      </button>
+                      <button
+                        className="sg-exclude-btn"
+                        onClick={() => {
+                          const newEx = new Set(excludedSamples);
+                          if (newEx.has(itemId)) {
+                            newEx.delete(itemId);
+                          } else {
+                            newEx.add(itemId);
+                          }
+                          setExcludedSamples(newEx);
+                        }}
+                      >
+                        {isExcluded ? 'Include sample' : 'Exclude sample'}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -879,6 +1023,86 @@ export const Stage6Finish: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Conflict Detail Modal */}
+          {conflictDetailIdx !== null && splitResult?.overlap_info?.[conflictDetailIdx] && (() => {
+            const detailItem = splitResult.overlap_info[conflictDetailIdx];
+
+            // Resolve train conversation from trainIndex if available
+            let resolvedTrainConv = detailItem.trainIndex !== undefined ? conversationsList[detailItem.trainIndex] : null;
+            let resolvedTrainId = detailItem.train_id || detailItem.id || detailItem.conversation_id || (resolvedTrainConv ? (resolvedTrainConv.conversation_id || resolvedTrainConv.id) : conflictDetailIdx.toString());
+
+            // Resolve test conversation from testIndex if available
+            let resolvedTestConv = detailItem.testIndex !== undefined ? conversationsList[detailItem.testIndex] : null;
+            let resolvedTestId = detailItem.test_id || (resolvedTestConv ? (resolvedTestConv.conversation_id || resolvedTestConv.id) : '');
+
+            const sim = detailItem.similarity || detailItem.sim || detailItem.score || 0;
+
+            const trainMsgs = resolvedTrainConv?.messages?.length > 0 ? getConvMessages(resolvedTrainId) : getConvMessages(resolvedTrainId);
+            let resolvedTestMsgs = resolvedTestId ? getConvMessages(resolvedTestId) : [];
+
+            // If no test conversation found, find one from test set (mock fallback)
+            if (resolvedTestMsgs.length === 0 && splitResult.test) {
+              const testConvs = splitResult.test;
+              if (testConvs.length > 0) {
+                const testConv = testConvs[conflictDetailIdx % testConvs.length];
+                resolvedTestId = testConv?.conversation_id || testConv?.id || '';
+                resolvedTestMsgs = getConvMessages(resolvedTestId);
+              }
+            }
+
+            return (
+              <div className="sg-detail-overlay" onClick={() => setConflictDetailIdx(null)}>
+                <div className="sg-detail-modal" onClick={e => e.stopPropagation()}>
+                  <div className="sg-detail-header">
+                    <div>
+                      <h4>Conflict Comparison</h4>
+                      <p>Similarity: <strong style={{ color: '#dc2626', fontSize: '16px' }}>{typeof sim === 'number' ? sim.toFixed(2) : sim}</strong></p>
+                    </div>
+                    <button className="sg-detail-close" onClick={() => setConflictDetailIdx(null)}><X size={18} /></button>
+                  </div>
+                  <div className="sg-detail-why">
+                    <AlertCircle size={14} />
+                    <span>These two conversations have high semantic similarity ({typeof sim === 'number' ? (sim * 100).toFixed(0) : sim}%), which may cause <strong>data leakage</strong> between train and test sets. Consider excluding one of them.</span>
+                  </div>
+                  <div className="sg-detail-compare">
+                    {/* Train side */}
+                    <div className="sg-detail-side sg-detail-train">
+                      <div className="sg-detail-side-header">
+                        <span className="sg-dot sg-dot-train"></span>
+                        <strong>Train Set</strong>
+                        <span className="sg-detail-id">{resolvedTrainId}</span>
+                      </div>
+                      <div className="sg-detail-messages">
+                        {trainMsgs.length > 0 ? trainMsgs.map((m, i) => (
+                          <div key={i} className={`sg-detail-msg sg-detail-msg-${m.role}`}>
+                            <span className="sg-detail-role">{m.role}</span>
+                            <span className="sg-detail-content">{m.content}</span>
+                          </div>
+                        )) : <div className="sep490-empty">No messages found</div>}
+                      </div>
+                    </div>
+                    {/* Test side */}
+                    <div className="sg-detail-side sg-detail-test">
+                      <div className="sg-detail-side-header">
+                        <span className="sg-dot sg-dot-test"></span>
+                        <strong>Test Set</strong>
+                        <span className="sg-detail-id">{resolvedTestId}</span>
+                      </div>
+                      <div className="sg-detail-messages">
+                        {resolvedTestMsgs.length > 0 ? resolvedTestMsgs.map((m, i) => (
+                          <div key={i} className={`sg-detail-msg sg-detail-msg-${m.role}`}>
+                            <span className="sg-detail-role">{m.role}</span>
+                            <span className="sg-detail-content">{m.content}</span>
+                          </div>
+                        )) : <div className="sep490-empty">No messages found</div>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1032,40 +1256,78 @@ export const Stage6Finish: React.FC = () => {
                 )}
               </button>
             </div>
-            <div className="ex-push-card">
-              <h4>☁️ Sync to Cloud Storage</h4>
-              <label className="s6-field-label" style={{ marginTop: 0 }}>Cloud Provider</label>
-              <div className="ex-cloud-options">
-                <button
-                  className={`ex-cloud-btn ${cloudProvider === 'gcloud' ? 'ex-cloud-active' : ''}`}
-                  onClick={() => setCloudProvider('gcloud')}
-                >
-                  Google Cloud
-                </button>
-                <button
-                  className={`ex-cloud-btn ${cloudProvider === 'azure' ? 'ex-cloud-active' : ''}`}
-                  onClick={() => setCloudProvider('azure')}
-                >
-                  Azure Blob
-                </button>
+            <div className="ex-cloud-card">
+              <div className="ex-cloud-card-header">
+                <div className="ex-cloud-icon-wrap">
+                  <DownloadCloud size={22} />
+                </div>
+                <div className="ex-cloud-header-text">
+                  <h4>Sync to Azure Blob Storage</h4>
+                  <p>Push your dataset split directly to Azure Blob Storage for seamless integration with your ML pipeline.</p>
+                </div>
               </div>
+
+              <div className="ex-cloud-provider-badge">
+                <div className="ex-cloud-azure-icon">
+                  <svg width="18" height="18" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M33.338 6.544h26.038l-27.03 80.455a4.15 4.15 0 0 1-3.933 2.857H8.149a4.146 4.146 0 0 1-3.928-5.47L29.404 9.4a4.15 4.15 0 0 1 3.934-2.857z" fill="url(#azure-a)"/>
+                    <path d="M71.175 60.261H41.617a1.91 1.91 0 0 0-1.305 3.309l21.32 20.013a4.15 4.15 0 0 0 2.846 1.13h22.468L71.175 60.26z" fill="#0078D4"/>
+                    <path d="M33.338 6.544a4.12 4.12 0 0 0-3.943 2.898L4.252 84.384a4.146 4.146 0 0 0 3.897 5.472h21.26a4.12 4.12 0 0 0 3.33-2.897l5.076-14.81 17.636 16.57a4.18 4.18 0 0 0 2.715 1.137h22.336l-9.776-25.143-29.36.001 17.77-52.773h-25.8z" fill="url(#azure-b)"/>
+                    <path d="M66.595 9.364a4.145 4.145 0 0 0-3.928-2.82H33.648a4.146 4.146 0 0 1 3.929 2.82l25.184 75.09a4.146 4.146 0 0 1-3.929 5.472h29.02a4.146 4.146 0 0 0 3.928-5.472L66.595 9.364z" fill="url(#azure-c)"/>
+                    <defs>
+                      <linearGradient id="azure-a" x1="46.817" y1="11.613" x2="23.202" y2="91.676" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#114A8B"/><stop offset="1" stopColor="#0669BC"/>
+                      </linearGradient>
+                      <linearGradient id="azure-b" x1="54.467" y1="49.393" x2="47.616" y2="52.039" gradientUnits="userSpaceOnUse">
+                        <stop stopOpacity=".3"/><stop offset=".07" stopOpacity=".2"/><stop offset=".32" stopOpacity=".1"/><stop offset=".62" stopOpacity=".05"/><stop offset="1" stopOpacity="0"/>
+                      </linearGradient>
+                      <linearGradient id="azure-c" x1="52.075" y1="8.862" x2="76.318" y2="85.698" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="#3CCBF4"/><stop offset="1" stopColor="#2892DF"/>
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+                <div className="ex-cloud-provider-info">
+                  <span className="ex-cloud-provider-name">Azure Blob Storage</span>
+                  <span className="ex-cloud-provider-status">
+                    <span className="ex-cloud-status-dot"></span>
+                    Ready to sync
+                  </span>
+                </div>
+              </div>
+
+              <div className="ex-cloud-details">
+                <div className="ex-cloud-detail-item">
+                  <span className="ex-cloud-detail-label">File Name</span>
+                  <span className="ex-cloud-detail-value">{projectName || 'dataset'}_split.json</span>
+                </div>
+                <div className="ex-cloud-detail-item">
+                  <span className="ex-cloud-detail-label">Dataset Size</span>
+                  <span className="ex-cloud-detail-value">
+                    {splitResult ? `${(splitResult.train_count || splitResult.train?.length || 0) + (splitResult.test_count || splitResult.test?.length || 0)} samples` : '—'}
+                  </span>
+                </div>
+              </div>
+
               <button
-                className="ex-btn-cloud"
-                onClick={handleSyncToCloud}
+                className={`ex-btn-azure ${syncSuccess ? 'ex-btn-azure-success' : ''}`}
+                onClick={() => {
+                  setCloudProvider('azure');
+                  handleSyncToCloud();
+                }}
                 disabled={isSyncing}
-                style={{ marginTop: '16px', background: '#3b82f6', color: '#fff' }}
               >
                 {isSyncing ? (
                   <>
-                    <RefreshCw size={14} className="sep490-spin" style={{ marginRight: '6px' }} /> Syncing...
+                    <RefreshCw size={15} className="sep490-spin" /> Syncing to Azure...
                   </>
                 ) : syncSuccess ? (
                   <>
-                    <CheckCircle2 size={14} style={{ marginRight: '6px' }} /> Synced Successfully!
+                    <CheckCircle2 size={15} /> Synced Successfully!
                   </>
                 ) : (
                   <>
-                    <RefreshCw size={14} style={{ marginRight: '6px' }} /> Sync to Storage
+                    <Upload size={15} /> Sync to Azure Blob
                   </>
                 )}
               </button>
