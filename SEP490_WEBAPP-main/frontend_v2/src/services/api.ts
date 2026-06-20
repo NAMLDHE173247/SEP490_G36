@@ -314,6 +314,27 @@ export const apiService = {
     return response.data;
   },
 
+  // --- DataPrep Projects ---
+  listProjects: async (): Promise<{ projects: any[] }> => {
+    const response = await api.get('/dataprep/projects');
+    return response.data;
+  },
+
+  createProject: async (payload: { name: string; sourceType?: 'chat' | 'lesson' }): Promise<{ project: any }> => {
+    const response = await api.post('/dataprep/projects', payload);
+    return response.data;
+  },
+
+  getProjectTasks: async (projectId: string): Promise<{ project: any; tasks: any[] }> => {
+    const response = await api.get(`/dataprep/projects/${projectId}/tasks`);
+    return response.data;
+  },
+
+  deleteProject: async (projectId: string): Promise<{ success: boolean }> => {
+    const response = await api.delete(`/dataprep/projects/${projectId}`);
+    return response.data;
+  },
+
   // --- Added for Assignment & Task Allocation ---
   getDatasetVersionAssignments: async (id: string): Promise<DatasetAssignmentsResponse> => {
     const response = await api.get(`/dataprep/versions/${id}/assignments`);

@@ -302,6 +302,18 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [pendingCleanedList, setPendingCleanedList] = useState<any[]>([]);
   const [isCleaningLoading, setIsCleaningLoading] = useState(false);
   const [projectName, setProjectName] = useState('Project_01/06_16:14');
+  // Project được chọn/tạo ở Stage 1 — mọi dataset/task sẽ nằm trong project này
+  const [projects, setProjects] = useState<any[]>([]);
+  const [selectedProjectId, setSelectedProjectIdState] = useState<string>(() => {
+    try { return localStorage.getItem('current_project_id') || ''; } catch { return ''; }
+  });
+  const setSelectedProjectId = React.useCallback((id: string) => {
+    setSelectedProjectIdState(id);
+    try {
+      if (id) localStorage.setItem('current_project_id', id);
+      else localStorage.removeItem('current_project_id');
+    } catch { /* ignore */ }
+  }, []);
   const [rawPreviewOpen, setRawPreviewOpen] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState('openai');
   const [removeThinkTags, setRemoveThinkTags] = useState(true);
@@ -1340,6 +1352,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       pendingCleanedList, setPendingCleanedList,
       isCleaningLoading, setIsCleaningLoading,
       projectName, setProjectName,
+      projects, setProjects,
+      selectedProjectId, setSelectedProjectId,
       rawPreviewOpen, setRawPreviewOpen,
       selectedFormat, setSelectedFormat,
       removeThinkTags, setRemoveThinkTags,

@@ -38,25 +38,49 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [samples, setSamples] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  React.useEffect(() => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const reloadSamples = React.useCallback(async () => {
     if (!task) return;
-    const fetchSamples = async () => {
-      try {
-        setLoading(true);
-        const res = await api.get(`/dataprep/assignments/my-task/${task.id}/samples`);
-        if (res.data.success) {
-          setSamples(res.data.data.samples);
-          const initialLabels: Record<string, any> = {};
-          res.data.data.samples.forEach((s: any) => {
-            if (s.savedLabel) initialLabels[s.id] = s.savedLabel;
-          });
-          setLabels(initialLabels);
-        }
-      } catch (e) { console.error('Failed to fetch samples', e); }
-      finally { setLoading(false); }
-    };
-    fetchSamples();
+    try {
+      setLoading(true);
+      const res = await api.get(`/dataprep/assignments/my-task/${task.id}/samples`);
+      if (res.data.success) {
+        setSamples(res.data.data.samples);
+        const initialLabels: Record<string, any> = {};
+        res.data.data.samples.forEach((s: any) => {
+          if (s.savedLabel) initialLabels[s.id] = s.savedLabel;
+        });
+        setLabels(initialLabels);
+      }
+    } catch (e) { console.error('Failed to fetch samples', e); }
+    finally { setLoading(false); }
   }, [task]);
+
+  React.useEffect(() => { reloadSamples(); }, [reloadSamples]);
+
+  // reviewStatus helpers (nộp lẻ)
+  const reviewOf = (sampleId: string): string => {
+    const s = samples.find((x: any) => x.id === sampleId);
+    return s?.reviewStatus || 'labeling';
+  };
+  const isSampleLocked = (sampleId: string) => ['submitted', 'approved'].includes(reviewOf(sampleId));
+  const rejectedSamples = samples.filter((s: any) => s.reviewStatus === 'rejected');
+
+  const handleSubmitSamples = async (indexes: any[]) => {
+    if (!task || !indexes.length) return;
+    setIsSubmitting(true);
+    try {
+      const payloadLabels: Record<string, any> = {};
+      indexes.forEach((i: any) => { if (labels[i]) payloadLabels[i] = labels[i]; });
+      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/samples/submit`, { sampleIndexes: indexes, labels: payloadLabels });
+      await reloadSamples();
+      alert(res.data?.message || `Đã nộp ${indexes.length} câu.`);
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Nộp câu thất bại.');
+    }
+    setIsSubmitting(false);
+  };
 
   const getLabel = (sampleId: string, field: string) => labels[sampleId]?.[field] || '';
   const getMsgLabel = (sampleId: string, msgIdx: number, field: string) => labels[sampleId]?.messages?.[msgIdx]?.[field] || '';
@@ -83,6 +107,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const handleAIAssist = async (sampleId: string) => {
     const sample = samples.find((s: any) => s.id === sampleId);
     if (!sample || !task) return;
+    if (!task?.aiAssistEnabled) { alert('Bạn không được cấp quyền dùng AI cho task này.'); return; }
     setIsAiLoading(true);
     try {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
@@ -168,8 +193,10 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const progress = samples.length > 0 ? Math.round((labeledCount / samples.length) * 100) : 0;
   const [isSaving, setIsSaving] = useState(false);
 
+  const isLocked = task?.active === false;
+
   const handleSaveSampleDraft = async (sampleId: string) => {
-    if (!task) return;
+    if (!task || isLocked) return;
     const currentLabel = labels[sampleId];
     if (!currentLabel || Object.keys(currentLabel).length === 0) return;
     try {
@@ -180,6 +207,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   const handleSaveDraft = async () => {
     if (!task) return;
+    if (isLocked) { alert('Task này đã bị thu hồi/thay thế. Bạn không thể chỉnh sửa tiếp.'); return; }
     setIsSaving(true);
     try {
       const promises = Object.keys(labels).map(sampleId => {
@@ -194,6 +222,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   const handleSubmit = async () => {
     if (!task) return;
+    if (isLocked) { alert('Task này đã bị thu hồi/thay thế. Bạn không thể nộp.'); return; }
     try {
       const res = await api.post(`/dataprep/versions/${task.datasetVersionId || 'default'}/assignments/submit`, { submissionId: task.id, labels });
       if (res.data.success) { setSubmitted(true); setShowSubmitModal(false); alert('Nộp bài thành công!'); }
@@ -285,6 +314,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
         </div>
       ) : (
         <>
+          {isLocked && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', padding: '10px 16px', borderRadius: 10, margin: '0 0 12px 0', display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              🔒 Task này đã bị thu hồi/thay thế. Bạn chỉ có thể xem; phần còn lại không thể chỉnh sửa. (Lịch sử đã làm vẫn được giữ để tính công.)
+            </div>
+          )}
           {/* Top bar */}
           <div className="sl-topbar">
             <div className="sl-topbar-left">
@@ -296,10 +330,29 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
             </div>
             <div className="sl-topbar-right">
               {task?.guideline && <button className="sl-guide-btn" onClick={() => setShowGuideline(!showGuideline)}><FileText size={14} /> Hướng dẫn</button>}
-              <button className="sl-save-btn" onClick={handleSaveDraft} disabled={isSaving || submitted}><Save size={16} />{isSaving ? 'Đang lưu...' : 'Lưu nháp'}</button>
-              <button className="sl-submit-btn" onClick={() => !submitted && setShowSubmitModal(true)} disabled={submitted}><Send size={16} />{submitted ? 'Đã Submit ✓' : 'Submit'}</button>
+              <button className="sl-save-btn" onClick={handleSaveDraft} disabled={isSaving || submitted || isLocked}><Save size={16} />{isSaving ? 'Đang lưu...' : 'Lưu nháp'}</button>
+              {(() => {
+                // Các câu đã hoàn chỉnh nhưng chưa nộp (status labeling/rejected)
+                const submittable = samples.filter((s: any) => isSampleComplete(s.id) && ['labeling', 'rejected'].includes(s.reviewStatus || 'labeling'));
+                return (
+                  <button
+                    className="sl-submit-btn"
+                    onClick={() => submittable.length && handleSubmitSamples(submittable.map((s: any) => s.id))}
+                    disabled={isSubmitting || isLocked || submittable.length === 0}
+                    title="Nộp tất cả câu đã hoàn chỉnh (không cần xong cả lô)"
+                  >
+                    <Send size={16} /> {isSubmitting ? 'Đang nộp...' : `Nộp ${submittable.length} câu đã xong`}
+                  </button>
+                );
+              })()}
             </div>
           </div>
+
+          {rejectedSamples.length > 0 && (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '8px 14px', borderRadius: 10, margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+              🔴 Có {rejectedSamples.length} câu bị từ chối, cần chỉnh sửa lại.
+            </div>
+          )}
 
           {showGuideline && task?.guideline && (
             <div className="sl-guideline-panel">
@@ -425,12 +478,39 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                   <div className="sl-drawer-title">
                     <span className="sl-drawer-id">#{String(drawerSample.id).substring(0, 8)}</span>
                     {renderStatusBadge(getSampleStatus(drawerSample.id))}
+                    {(() => {
+                      const rs = reviewOf(drawerSample.id);
+                      const map: any = {
+                        submitted: { t: '⏳ Đã nộp – chờ duyệt', c: '#92400e', b: '#fef3c7' },
+                        approved: { t: '✅ Đã duyệt', c: '#166534', b: '#dcfce7' },
+                        rejected: { t: '🔴 Bị từ chối', c: '#b91c1c', b: '#fee2e2' },
+                      };
+                      return map[rs] ? (
+                        <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: map[rs].c, background: map[rs].b }}>{map[rs].t}</span>
+                      ) : null;
+                    })()}
                   </div>
                   <div className="sl-drawer-actions">
+                    {!isSampleLocked(drawerSample.id) && (
+                      <button
+                        className="sl-drawer-next-btn"
+                        style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff' }}
+                        onClick={() => handleSubmitSamples([drawerSample.id])}
+                        disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
+                        title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần chọn đủ Subject/Completion/Quality trước khi nộp'}
+                      >
+                        <Send size={14} /> Nộp câu này
+                      </button>
+                    )}
                     <button className="sl-drawer-next-btn" onClick={handleNextUnlabeled}>Lưu & Tới câu kế <ChevronRight size={16} /></button>
                     <button className="sl-drawer-close-btn" onClick={handleCloseDrawer}><X size={20} /></button>
                   </div>
                 </div>
+                {reviewOf(drawerSample.id) === 'rejected' && drawerSample.rejectReason && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '8px 14px', margin: '0 16px 8px', borderRadius: 8, fontSize: 13 }}>
+                    <strong>Lý do từ chối:</strong> {drawerSample.rejectReason}
+                  </div>
+                )}
 
                 {/* Drawer Body: Label Panel (LEFT) | Chat (RIGHT) */}
                 <div className="sl-drawer-body">
@@ -482,7 +562,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <label>📝 Ghi chú</label>
                       <textarea className="sl-textarea" placeholder="Ghi chú của bạn..." value={getLabel(drawerSample.id, 'note')} onChange={(e) => setLabel(drawerSample.id, 'note', e.target.value)} rows={2} />
                     </div>
-                    {!task?.disableAi && (
+                    {task?.aiAssistEnabled && (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', cursor: 'pointer', minWidth: '170px' }} disabled={isAiLoading}>
                           {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}

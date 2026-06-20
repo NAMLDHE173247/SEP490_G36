@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, Users, Eye,
   BarChart2, AlertTriangle, ChevronRight, Shield, X, Send,
-  FileText, MessageSquare, RefreshCw, Calendar, Tag, Database, Activity, Layers, GitCompare
+  FileText, MessageSquare, RefreshCw, Calendar, Tag, Database, Activity, Layers, GitCompare,
+  UserPlus, UserMinus, Sparkles
 } from 'lucide-react';
 import { api } from '../services/api';
 import SplitViewModal from '../components/dataprep/SplitViewModal';
@@ -38,6 +39,45 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
 
   // Approve/Reject loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // ── Quản lý nhân sự (thay thế / thêm / gỡ) ──
+  const versionId = String(task?.id || '').split('_')[0];
+  const [staffModal, setStaffModal] = useState<null | { mode: 'replace' | 'add'; fromId?: string; fromName?: string }>(null);
+  const [availStaff, setAvailStaff] = useState<any[]>([]);
+  const [pickStaffId, setPickStaffId] = useState('');
+  const [pickAi, setPickAi] = useState(false);
+  const [staffBusy, setStaffBusy] = useState(false);
+
+  const openStaffModal = (mode: 'replace' | 'add', fromId?: string, fromName?: string) => {
+    setStaffModal({ mode, fromId, fromName });
+    setPickStaffId(''); setPickAi(false);
+    (async () => {
+      try { const res = await api.get('/dataprep/assignments/available-staff'); if (res.data.success) setAvailStaff(res.data.data || []); } catch { /* ignore */ }
+    })();
+  };
+
+  const submitStaffModal = async () => {
+    if (!staffModal || !pickStaffId) return;
+    setStaffBusy(true);
+    try {
+      if (staffModal.mode === 'replace') {
+        await api.post(`/dataprep/versions/${versionId}/assignments/replace`, { fromAssigneeId: staffModal.fromId, toAssigneeId: pickStaffId, aiAssistEnabled: pickAi });
+      } else {
+        await api.post(`/dataprep/versions/${versionId}/assignments/add-staff`, { assigneeIds: [pickStaffId], aiAssigneeIds: pickAi ? [pickStaffId] : [], fromAssigneeId: staffModal.fromId });
+      }
+      setStaffModal(null);
+      await refreshTaskDetail();
+    } catch (e: any) { alert(e.response?.data?.error || 'Thao tác thất bại'); }
+    setStaffBusy(false);
+  };
+
+  const handleRevokeStaff = async (assigneeId: string, name: string) => {
+    if (!window.confirm(`Gỡ "${name}" khỏi task?\n\nLịch sử & nhãn đã làm vẫn được giữ để tính công. Người này sẽ không gán tiếp được; dùng "Thêm nhân viên" để giao phần còn lại cho người khác.`)) return;
+    try {
+      await api.post(`/dataprep/versions/${versionId}/assignments/revoke`, { assigneeId });
+      await refreshTaskDetail();
+    } catch (e: any) { alert(e.response?.data?.error || 'Gỡ thất bại'); }
+  };
   
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -298,7 +338,16 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             {/* ===== TAB 1: TIẾN ĐỘ NHÂN VIÊN ===== */}
             {activeTab === 'progress' && (
               <div className="td-panel">
-                <h3>Thống kê Tiến độ</h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>Thống kê Tiến độ</h3>
+                  <button
+                    onClick={() => openStaffModal('add', staffList[0]?.id, staffList[0]?.name)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontWeight: 600, cursor: 'pointer', fontSize: 13 }}
+                    title="Thêm nhân viên vào xử lý tập dữ liệu này"
+                  >
+                    <UserPlus size={15} /> Thêm nhân viên
+                  </button>
+                </div>
                 <div className="td-table-wrapper">
                   <table className="td-table">
                     <thead>
@@ -386,6 +435,20 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                                 )}
                                 {p.status === 'approved' && <span className="td-status-sm done">✅ Đã duyệt</span>}
                                 {p.status === 'rejected' && <span className="td-status-sm" style={{color:'#dc2626'}}>🔴 Đã từ chối</span>}
+
+                                {/* Quản lý nhân sự */}
+                                <button
+                                  className="td-action-btn"
+                                  style={{ background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe' }}
+                                  onClick={() => openStaffModal('replace', p.id, p.name)}
+                                  title="Thay thế nhân sự này (giữ lịch sử người cũ)"
+                                ><RefreshCw size={13} /> Thay thế</button>
+                                <button
+                                  className="td-action-btn"
+                                  style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}
+                                  onClick={() => handleRevokeStaff(p.id, p.name)}
+                                  title="Gỡ khỏi task (giữ lịch sử để tính công)"
+                                ><UserMinus size={13} /> Gỡ</button>
                               </div>
                             </td>
                           </tr>
@@ -530,38 +593,62 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             )}
 
             {/* ===== TAB 4: SO SÁNH OVERLAP ===== */}
-            {activeTab === 'compare' && (
+            {activeTab === 'compare' && (() => {
+              // Thống kê tổng quan để hiển thị chip
+              let agreed = 0, conflict = 0, waiting = 0;
+              samples.forEach((s: any) => {
+                const done = staffList
+                  .map((st: any) => { const lo = s.staffLabels?.[st.id]; return typeof lo === 'object' ? lo?.raw : lo; })
+                  .filter(Boolean);
+                const uniq = new Set(done);
+                if (done.length > 1 && uniq.size === 1) agreed++;
+                else if (done.length > 1 && uniq.size > 1) conflict++;
+                else waiting++;
+              });
+              const chip = (bg: string, color: string, label: string, val: number) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 12, background: bg }}>
+                  <span style={{ fontSize: 20, fontWeight: 800, color }}>{val}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>{label}</span>
+                </div>
+              );
+              return (
               <div className="td-panel">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, marginBottom: '18px', flexWrap: 'wrap' }}>
                   <div>
                     <h3 style={{ margin: 0 }}>So sánh nhãn đa người gán</h3>
                     <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0' }}>
-                      {staffList.length} người cùng gán · {samples.filter((s: any) => s.conflict).length} xung đột
+                      <strong>{staffList.length}</strong> người cùng gán trên <strong>{samples.length}</strong> câu
                     </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {chip('#ecfdf5', '#059669', 'Đồng ý', agreed)}
+                    {chip('#fef2f2', '#dc2626', 'Xung đột', conflict)}
+                    {chip('#f8fafc', '#64748b', 'Chờ', waiting)}
                   </div>
                 </div>
 
                 {/* Compare Table */}
-                <div className="td-table-wrapper" style={{ overflowX: 'auto' }}>
-                  <table className="td-table" style={{ minWidth: `${400 + staffList.length * 220}px` }}>
+                <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                  <table className="td-table" style={{ minWidth: `${420 + staffList.length * 220}px`, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
-                      <tr>
-                        <th style={{ width: '50px', position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>#</th>
-                        <th style={{ width: '200px', position: 'sticky', left: '50px', background: '#f8fafc', zIndex: 2 }}>Preview</th>
-                        <th style={{ width: '70px', textAlign: 'center' }}>Trạng thái</th>
+                      <tr style={{ background: '#f8fafc', color: '#64748b' }}>
+                        <th style={{ width: '54px', padding: '12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>#</th>
+                        <th style={{ width: '240px', padding: '12px', textAlign: 'left', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, position: 'sticky', left: '54px', background: '#f8fafc', zIndex: 2, boxShadow: '6px 0 8px -6px rgba(0,0,0,0.12)' }}>Preview</th>
+                        <th style={{ width: '110px', padding: '12px', textAlign: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>Trạng thái</th>
                         {staffList.map((staff: any) => (
-                          <th key={staff.id} style={{ minWidth: '200px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                              <div className="al-avatar xs" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+                          <th key={staff.id} style={{ minWidth: '210px', padding: '10px 12px', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                              <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12 }}>
                                 {staff.name ? staff.name.split(' ').pop()[0] : 'U'}
                               </div>
-                              <span style={{ fontSize: '12px', fontWeight: 600, maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {staff.name}
-                              </span>
+                              <div style={{ textAlign: 'left', minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{staff.name}</div>
+                                <div style={{ fontSize: 11, fontWeight: 500, color: '#94a3b8', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{staff.email || ''}</div>
+                              </div>
                             </div>
                           </th>
                         ))}
-                        <th style={{ width: '60px', textAlign: 'center' }}>Xem</th>
+                        <th style={{ width: '60px', padding: '12px', textAlign: 'center', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Xem</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -665,14 +752,14 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                                     </div>
                                   ) : l.status === 'done' ? (
                                     <span style={{
-                                      display: 'inline-block', padding: '4px 8px', background: '#f0fdf4',
-                                      color: '#15803d', borderRadius: '6px', fontSize: '11px', fontWeight: 500
-                                    }}>✅ Done</span>
+                                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#ecfdf5',
+                                      color: '#059669', borderRadius: '999px', fontSize: '11px', fontWeight: 600
+                                    }}>✅ Đã làm</span>
                                   ) : (
                                     <span style={{
-                                      display: 'inline-block', padding: '4px 8px', background: '#fefce8',
-                                      color: '#a16207', borderRadius: '6px', fontSize: '11px', fontWeight: 500
-                                    }}>⏳ Chưa làm</span>
+                                      display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#f1f5f9',
+                                      color: '#94a3b8', borderRadius: '999px', fontSize: '11px', fontWeight: 600
+                                    }}>Chưa làm</span>
                                   )}
                                 </td>
                               ))}
@@ -702,14 +789,21 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                 )}
 
                 {/* Legend */}
-                <div style={{ display: 'flex', gap: '16px', marginTop: '16px', padding: '12px 16px', background: '#f8fafc', borderRadius: '10px', fontSize: '12px', color: '#64748b' }}>
-                  <span>✅ <strong style={{ color: '#059669' }}>Đồng ý</strong> = Tất cả nhãn giống nhau</span>
-                  <span>⚠️ <strong style={{ color: '#dc2626' }}>Conflict</strong> = Nhãn khác nhau cần phân xử</span>
-                  <span>⏳ <strong style={{ color: '#94a3b8' }}>Chờ</strong> = Chưa đủ nhãn để so sánh</span>
-                  <span>💡 Bấm vào nhãn để xem Split-View chi tiết</span>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+                  {[
+                    { e: '✅', t: 'Đồng ý = mọi nhãn giống nhau', c: '#059669', b: '#ecfdf5' },
+                    { e: '⚠️', t: 'Xung đột = nhãn khác nhau, cần phân xử', c: '#dc2626', b: '#fef2f2' },
+                    { e: '⏳', t: 'Chờ = chưa đủ nhãn để so sánh', c: '#64748b', b: '#f1f5f9' },
+                    { e: '💡', t: 'Bấm vào nhãn để mở Split-View', c: '#6d28d9', b: '#f5f3ff' },
+                  ].map((x, i) => (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, background: x.b, color: x.c, fontSize: 12, fontWeight: 600 }}>
+                      {x.e} {x.t}
+                    </span>
+                  ))}
                 </div>
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -917,6 +1011,40 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
         staffId={splitViewStaffId}
         staffName={splitViewStaffName}
       />
+
+      {/* ===== MODAL QUẢN LÝ NHÂN SỰ ===== */}
+      {staffModal && (
+        <div onClick={() => setStaffModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 440, maxWidth: '92vw', padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, fontSize: 17 }}>{staffModal.mode === 'replace' ? '🔄 Thay thế nhân sự' : '➕ Thêm nhân viên'}</h3>
+              <button onClick={() => setStaffModal(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><X size={20} /></button>
+            </div>
+            <p style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>
+              {staffModal.mode === 'replace'
+                ? <>Rút phần của <strong>{staffModal.fromName}</strong> và giao người mới làm tiếp. Nhãn & lịch sử người cũ vẫn giữ để tính công.</>
+                : <>Thêm một nhân viên vào cùng lô dữ liệu đã giao (overlap/cross-check).</>}
+            </p>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', margin: '12px 0 6px' }}>Chọn nhân viên</label>
+            <select value={pickStaffId} onChange={(e) => setPickStaffId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <option value="">— Chọn nhân viên —</option>
+              {availStaff.filter((s: any) => s.id !== staffModal.fromId).map((s: any) => (
+                <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
+              ))}
+            </select>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, color: '#334155', cursor: 'pointer' }}>
+              <input type="checkbox" checked={pickAi} onChange={(e) => setPickAi(e.target.checked)} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={14} style={{ color: '#6d28d9' }} /> Cho phép dùng AI key</span>
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button onClick={() => setStaffModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Hủy</button>
+              <button onClick={submitStaffModal} disabled={!pickStaffId || staffBusy} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !pickStaffId || staffBusy ? '#cbd5e1' : 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', fontWeight: 700, cursor: !pickStaffId || staffBusy ? 'not-allowed' : 'pointer' }}>
+                {staffBusy ? 'Đang xử lý...' : (staffModal.mode === 'replace' ? 'Thay thế' : 'Thêm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

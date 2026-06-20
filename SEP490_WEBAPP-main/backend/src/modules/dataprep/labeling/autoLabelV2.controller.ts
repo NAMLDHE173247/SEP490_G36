@@ -6,6 +6,7 @@ import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
 import { ILlmProvider } from '../../../services/providers/ILlmProvider';
 import { AutoLabelV2Service } from './autoLabelV2.service';
+import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 
 function createProvider(providerName?: string): ILlmProvider {
   switch (providerName) {
@@ -28,6 +29,24 @@ export class AutoLabelV2Controller {
       if (!ownerId) {
         res.status(401).json({ error: 'Unauthorized' });
         return;
+      }
+
+      // Chỉ cho dùng AI key của hệ thống nếu task này được cấp quyền AI
+      const submissionId = (req.params as any).submissionId;
+      if (submissionId) {
+        const submission = await DatasetAssignmentSubmission.findById(submissionId).select('aiAssistEnabled active').lean();
+        if (!submission) {
+          res.status(404).json({ success: false, error: 'Không tìm thấy task.' });
+          return;
+        }
+        if ((submission as any).active === false) {
+          res.status(403).json({ success: false, error: 'Task đã bị thu hồi/thay thế.' });
+          return;
+        }
+        if (!(submission as any).aiAssistEnabled) {
+          res.status(403).json({ success: false, error: 'Bạn không được cấp quyền dùng AI cho task này.' });
+          return;
+        }
       }
 
       const { messages, provider: providerName } = req.body as {

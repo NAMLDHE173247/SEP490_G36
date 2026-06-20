@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
   Search, Users, Star, Plus, Upload, Link as LinkIcon, Trash2, Edit3, X, Eye,
-  MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2, Layers
+  MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2, Layers, ClipboardList
 } from 'lucide-react';
 import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
@@ -79,6 +79,21 @@ export const Stage3Labeling: React.FC = () => {
   const [taskPriority, setTaskPriority] = React.useState('medium');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
   const [overlapCount, setOverlapCount] = React.useState(1);
+  // Nhân viên được phép dùng AI key của hệ thống khi gán nhãn
+  const [aiSelected, setAiSelected] = React.useState<string[]>([]);
+  const [aiSearch, setAiSearch] = React.useState('');
+  // Màn thông báo sau khi giao việc (thay cho popup alert)
+  const [assignDone, setAssignDone] = React.useState(false);
+  const [assignedStaffCount, setAssignedStaffCount] = React.useState(0);
+
+  const resetAssignModal = () => {
+    setShowCreateTaskModal(false);
+    setAssignDone(false);
+    setDrawerStep(1);
+    setStaffAssignments({});
+    setAiSelected([]);
+    setTaskNameInput('');
+  };
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
@@ -105,6 +120,7 @@ export const Stage3Labeling: React.FC = () => {
 
     const payload = {
       projectName: 'Auto-Label Dataset',
+      projectId: (localStorage.getItem('current_project_id') || undefined) as any,
       operationType: 'labeling_base' as const,
       similarityThreshold: 0.85,
       format: 'openai' as const,
@@ -883,6 +899,7 @@ export const Stage3Labeling: React.FC = () => {
                           if (!versionId) {
                             const payload = {
                               projectName: 'Auto-Label Dataset',
+      projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,
                               format: 'openai' as const,
@@ -2075,8 +2092,36 @@ export const Stage3Labeling: React.FC = () => {
 
       {/* Create Labeling Task Drawer — Refactored: Staff-First Flow */}
       {showCreateTaskModal && (
-        <div className="ct-drawer-overlay" onClick={() => setShowCreateTaskModal(false)}>
+        <div className="ct-drawer-overlay" onClick={() => { setShowCreateTaskModal(false); setAssignDone(false); }}>
           <div className="ct-drawer" onClick={(e) => e.stopPropagation()}>
+            {assignDone ? (
+              <div style={{ padding: '56px 32px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 18 }}>
+                <div style={{ width: 76, height: 76, borderRadius: '50%', background: 'linear-gradient(135deg, #10b981, #059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 24px rgba(16,185,129,0.35)' }}>
+                  <Check size={40} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 22, color: '#0f172a' }}>Đã giao việc thành công!</h2>
+                  <p style={{ margin: '8px 0 0', fontSize: 14, color: '#64748b' }}>
+                    Task <strong>“{taskNameInput || 'Labeling Task'}”</strong> đã được giao cho <strong>{assignedStaffCount}</strong> nhân viên.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => { window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'Assign Labeling' })); resetAssignModal(); }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 14, color: '#fff', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', boxShadow: '0 6px 18px rgba(99,102,241,0.35)' }}
+                  >
+                    <ClipboardList size={18} /> Mở màn Quản lý Task
+                  </button>
+                  <button
+                    onClick={resetAssignModal}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 22px', borderRadius: 10, cursor: 'pointer', fontWeight: 700, fontSize: 14, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe' }}
+                  >
+                    <ChevronRight size={18} style={{ transform: 'rotate(180deg)' }} /> Ở lại Stage 3
+                  </button>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="ct-drawer-header" style={{ flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                 <div>
@@ -2085,7 +2130,7 @@ export const Stage3Labeling: React.FC = () => {
                     ? 'Chọn nhân viên sẽ tham gia gán nhãn. Hệ thống sẽ tự động chia đều dữ liệu.'
                     : 'Cấu hình tên Task, mức ưu tiên và xem preview phân bổ.'}</p>
                 </div>
-                <button className="ct-drawer-close" onClick={() => setShowCreateTaskModal(false)}><X size={20} /></button>
+                <button className="ct-drawer-close" onClick={() => { setShowCreateTaskModal(false); setAssignDone(false); }}><X size={20} /></button>
               </div>
               {/* Step indicators */}
               <div className="ct-drawer-tabs">
@@ -2208,6 +2253,7 @@ export const Stage3Labeling: React.FC = () => {
                                 setStaffAssignments(prev => {
                                   const current = prev['__selected__'] || [];
                                   if (current.includes(user._id)) {
+                                    setAiSelected(a => a.filter(id => id !== user._id)); // bỏ chọn thì gỡ quyền AI
                                     return { ...prev, '__selected__': current.filter((id: string) => id !== user._id) };
                                   } else {
                                     return { ...prev, '__selected__': [...current, user._id] };
@@ -2254,6 +2300,15 @@ export const Stage3Labeling: React.FC = () => {
                                 <span style={{ fontSize: '11px', color: '#64748b', whiteSpace: 'nowrap' }}>
                                   Còn {rem} câu chờ
                                 </span>
+                                {aiSelected.includes(user._id) && (
+                                  <span title="Được phép dùng AI key (cấu hình ở Bước 2)" style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '3px',
+                                    padding: '2px 7px', borderRadius: '999px', fontSize: '10px', fontWeight: 700,
+                                    background: 'linear-gradient(135deg, #ede9fe, #e0e7ff)', color: '#6d28d9'
+                                  }}>
+                                    <Sparkles size={10} /> AI
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );
@@ -2359,14 +2414,20 @@ export const Stage3Labeling: React.FC = () => {
                 <div className="ct-wizard-step2" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
                   <div className="ct-wizard-config">
                     <div className="ct-form-group">
-                      <label>Tên Task (Tùy chọn)</label>
+                      <label>Tên Task <span style={{ color: '#ef4444' }}>*</span></label>
                       <input
                         type="text"
                         className="ct-input"
                         placeholder="Nhập tên chung cho Task..."
                         value={taskNameInput}
                         onChange={(e) => setTaskNameInput(e.target.value)}
+                        style={!taskNameInput.trim() ? { borderColor: '#ef4444' } : undefined}
                       />
+                      {!taskNameInput.trim() && (
+                        <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>
+                          Bắt buộc nhập tên Task để phân biệt Project/Dataset.
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
@@ -2388,6 +2449,77 @@ export const Stage3Labeling: React.FC = () => {
                         <input type="date" className="ct-input" />
                       </div>
                     </div>
+
+                    {/* AI permission panel */}
+                    {(() => {
+                      const selIds: string[] = staffAssignments['__selected__'] || [];
+                      const selUsers = selIds.map(id => shareUsers.find((u: any) => u._id === id)).filter(Boolean) as any[];
+                      const q = aiSearch.trim().toLowerCase();
+                      const shown = selUsers.filter(u => !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
+                      const aiCount = selIds.filter(id => aiSelected.includes(id)).length;
+                      const pillBtn = (active: boolean): React.CSSProperties => ({
+                        padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        border: '1px solid', borderColor: active ? '#a78bfa' : '#e2e8f0',
+                        background: active ? '#ede9fe' : '#fff', color: active ? '#6d28d9' : '#64748b',
+                      });
+                      return (
+                        <div style={{ marginTop: 18, border: '1px solid #e0e7ff', borderRadius: 14, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff, #eef2ff)', borderBottom: '1px solid #e0e7ff' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: '#6d28d9' }}>
+                              <Sparkles size={16} /> Quyền dùng AI key
+                              <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', background: '#fff', border: '1px solid #ddd6fe', borderRadius: 999, padding: '1px 8px' }}>{aiCount}/{selIds.length}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button type="button" onClick={() => setAiSelected([...selIds])} style={pillBtn(false)}>Bật tất cả</button>
+                              <button type="button" onClick={() => setAiSelected([])} style={pillBtn(false)}>Tắt tất cả</button>
+                            </div>
+                          </div>
+                          <div style={{ padding: '12px 14px' }}>
+                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
+                              Chỉ nhân viên được bật mới thấy nút <strong>“Gợi ý AI”</strong> khi gán nhãn.
+                            </p>
+                            {selIds.length > 5 && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', marginBottom: 10 }}>
+                                <Search size={15} style={{ color: '#94a3b8' }} />
+                                <input type="text" placeholder="Lọc nhân viên..." value={aiSearch} onChange={e => setAiSearch(e.target.value)}
+                                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#334155' }} />
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                              {selIds.length === 0 && (
+                                <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '14px 0' }}>
+                                  Chưa chọn nhân viên nào ở Bước 1.
+                                </div>
+                              )}
+                              {shown.map((u: any) => {
+                                const on = aiSelected.includes(u._id);
+                                return (
+                                  <div key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${on ? '#ddd6fe' : '#eef2f7'}`, background: on ? '#faf5ff' : '#fff' }}>
+                                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                                      {(u.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || u.username}</div>
+                                      <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={on}
+                                      onClick={() => setAiSelected(prev => prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id])}
+                                      title={on ? 'Đang cho phép AI — bấm để tắt' : 'Bấm để cho phép dùng AI'}
+                                      style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background .2s', background: on ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#cbd5e1' }}
+                                    >
+                                      <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Distribution Preview */}
@@ -2517,6 +2649,7 @@ export const Stage3Labeling: React.FC = () => {
                     onClick={async () => {
                       const selectedIds = staffAssignments['__selected__'] || [];
                       if (selectedIds.length === 0) return;
+                      if (!taskNameInput.trim()) { alert('Vui lòng nhập Tên Task.'); return; }
                       let versionId: string;
                       try { versionId = await ensureDatasetVersionId(); } catch (e: any) { alert('Missing dataset version: ' + (e.message || '')); return; }
 
@@ -2524,12 +2657,12 @@ export const Stage3Labeling: React.FC = () => {
                       try {
                         await apiService.post(`/dataprep/versions/${versionId}/assignments/auto-assign`, {
                           assigneeIds: selectedIds,
-                          taskName: taskNameInput.trim() || 'Labeling Task',
+                          aiAssigneeIds: aiSelected.filter(id => selectedIds.includes(id)),
+                          taskName: taskNameInput.trim(),
                           priority: taskPriority,
                           overlapCount,
                         });
 
-                        alert('Đã Giao Việc thành công!');
                         // Refresh dashboard
                         const [dash, assign] = await Promise.all([
                           apiService.getDatasetVersionAssignmentDashboard(versionId),
@@ -2538,9 +2671,9 @@ export const Stage3Labeling: React.FC = () => {
                         setAssignmentDashboard(dash);
                         setAssignmentTotals(assign.totals);
                         setAssignmentSamples(assign.samples || []);
-                        setShowCreateTaskModal(false);
-                        setDrawerStep(1);
-                        setStaffAssignments({});
+                        // Hiện màn thông báo thành công (thay cho popup)
+                        setAssignedStaffCount(selectedIds.length);
+                        setAssignDone(true);
                       } catch (err: any) {
                         console.error('Error assigning task:', err);
                         alert(err?.response?.data?.error || err.message || 'Có lỗi xảy ra khi giao việc.');
@@ -2557,6 +2690,8 @@ export const Stage3Labeling: React.FC = () => {
                   </button>
                 </div>
               </>
+            )}
+            </>
             )}
           </div>
         </div>

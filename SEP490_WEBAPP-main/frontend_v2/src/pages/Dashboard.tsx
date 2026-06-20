@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -17,6 +17,7 @@ import ManagerAssignLabelingView from './ManagerAssignLabelingView';
 import StaffTasksView from './StaffTasksView';
 import StaffLabelView from './StaffLabelView';
 import LabelingTaskDetailView from './LabelingTaskDetailView';
+import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 
@@ -47,6 +48,7 @@ function Dashboard() {
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -69,6 +71,16 @@ function Dashboard() {
     localStorage.setItem('dashboard_active_tab', tab);
     setActiveTabState(tab);
   };
+
+  // Cho phép các màn con điều hướng tab qua custom event (vd: sau khi giao việc xong)
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail;
+      if (typeof tab === 'string' && tab) setActiveTab(tab);
+    };
+    window.addEventListener('lh-navigate-tab', handler);
+    return () => window.removeEventListener('lh-navigate-tab', handler);
+  }, []);
 
   React.useEffect(() => {
     if (user) {
@@ -141,6 +153,8 @@ function Dashboard() {
         return <VersionDataPrepView />;
       case 'Assign Labeling':
         return <ManagerAssignLabelingView onViewDetail={handleViewTaskDetail} />;
+      case 'Review Queue':
+        return <ReviewQueueView />;
       case 'Task Detail':
         return <LabelingTaskDetailView onBack={handleBackFromDetail} task={managerSelectedTask} initialBatchId={managerSelectedBatchId} />;
       case 'Manager Account':

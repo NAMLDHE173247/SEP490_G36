@@ -57,7 +57,7 @@ export class DataPrepPreprocessingController {
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
-          projectName: version.projectName,
+          projectName: version.projectName || 'Legacy Project',
           parentVersionId: String(version._id),
           operationType: 'cluster',
           operationParams: { k: req.body.k, eps: req.body.eps, min_samples: req.body.min_samples },
@@ -84,7 +84,7 @@ export class DataPrepPreprocessingController {
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
-          projectName: version.projectName,
+          projectName: version.projectName || 'Legacy Project',
           parentVersionId: String(version._id),
           operationType: 'clean',
           operationParams: { threshold: req.body.threshold },
@@ -116,7 +116,7 @@ export class DataPrepPreprocessingController {
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
-          projectName: version.projectName,
+          projectName: version.projectName || 'Legacy Project',
           parentVersionId: String(version._id),
           operationType: 'clean',
           operationParams: { action: 'remove-noise' },
@@ -148,7 +148,7 @@ export class DataPrepPreprocessingController {
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
-          projectName: version.projectName,
+          projectName: version.projectName || 'Legacy Project',
           parentVersionId: String(version._id),
           operationType: 'clean',
           operationParams: { action: 'deduplicate', threshold: req.body.threshold },
@@ -175,3 +175,4 @@ export class DataPrepPreprocessingController {
     }
   }
 }
+
