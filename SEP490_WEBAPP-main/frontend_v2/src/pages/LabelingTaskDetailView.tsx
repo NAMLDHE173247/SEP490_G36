@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useToast } from '../hooks/useToast';
+import ToastContainer from '../components/ToastContainer';
 import {
   ArrowLeft, CheckCircle, Clock, AlertCircle, Users, Eye,
   BarChart2, AlertTriangle, ChevronRight, Shield, X, Send,
@@ -45,6 +47,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
 
   // ── Quản lý nhân sự (thay thế / thêm / gỡ) ──
   const versionId = String(task?.id || '').split('_')[0];
+  const { toasts, toast } = useToast();
   const [staffModal, setStaffModal] = useState<null | { mode: 'replace' | 'add'; fromId?: string; fromName?: string }>(null);
   const [availStaff, setAvailStaff] = useState<any[]>([]);
   const [pickStaffId, setPickStaffId] = useState('');
@@ -70,16 +73,18 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       }
       setStaffModal(null);
       await refreshTaskDetail();
-    } catch (e: any) { alert(e.response?.data?.error || 'Thao tác thất bại'); }
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Thao tác thất bại'); }
     setStaffBusy(false);
   };
+
+  const handleStaffModalConfirm = submitStaffModal;
 
   const handleRevokeStaff = async (assigneeId: string, name: string) => {
     if (!window.confirm(`Gỡ "${name}" khỏi task?\n\nLịch sử & nhãn đã làm vẫn được giữ để tính công. Người này sẽ không gán tiếp được; dùng "Thêm nhân viên" để giao phần còn lại cho người khác.`)) return;
     try {
       await api.post(`/dataprep/versions/${versionId}/assignments/revoke`, { assigneeId });
       await refreshTaskDetail();
-    } catch (e: any) { alert(e.response?.data?.error || 'Gỡ thất bại'); }
+    } catch (e: any) { toast.error(e.response?.data?.error || 'Gỡ thất bại'); }
   };
 
   const handleToggleAi = async (staffId: string, currentEnabled: boolean) => {
@@ -91,7 +96,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       });
       await refreshTaskDetail(true);
     } catch (e: any) {
-      alert(e.response?.data?.error || 'Toggle AI thất bại');
+      toast.error(e.response?.data?.error || 'Toggle AI thất bại');
     }
     setAiToggleLoading(null);
   };
@@ -221,7 +226,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   };
 
   return (
-    <div className="td-container new-layout">
+    <>
+      <ToastContainer toasts={toasts} />
+      <div className="td-container new-layout">
       <div className="td-layout-wrapper">
         
         {/* Left Sidebar: Navigation & Batches */}
@@ -447,7 +454,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                                         try {
                                           await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/approve`);
                                           await refreshTaskDetail();
-                                        } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                        } catch (e: any) { toast.error(e.response?.data?.error || 'Có lỗi xảy ra'); }
                                         setActionLoading(null);
                                       }}
                                     >✅ Duyệt</button>
@@ -457,14 +464,14 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                                       onClick={async () => {
                                         const reason = window.prompt('Nhập lý do từ chối (bắt buộc):');
                                         if (!reason || reason.trim() === '') {
-                                          if (reason !== null) alert('Vui lòng nhập lý do từ chối!');
+                                          if (reason !== null) { toast.warning('Vui lòng nhập lý do từ chối!'); return; }
                                           return;
                                         }
                                         setActionLoading(p.submissionId);
                                         try {
                                           await api.post(`/dataprep/assignments/manager/submission/${p.submissionId}/reject`, { reason: reason.trim() });
                                           await refreshTaskDetail();
-                                        } catch (e: any) { alert(e.response?.data?.error || 'Lỗi'); }
+                                        } catch (e: any) { toast.error(e.response?.data?.error || 'Có lỗi xảy ra'); }
                                         setActionLoading(null);
                                       }}
                                     >❌ Từ chối</button>
@@ -1060,28 +1067,31 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             <p style={{ fontSize: 13, color: '#64748b', marginTop: 6 }}>
               {staffModal.mode === 'replace'
                 ? <>Rút phần của <strong>{staffModal.fromName}</strong> và giao người mới làm tiếp. Nhãn & lịch sử người cũ vẫn giữ để tính công.</>
-                : <>Thêm một nhân viên vào cùng lô dữ liệu đã giao (overlap/cross-check).</>}
+                : <>Thêm một nhân viên vào cùng lô dữ liệu đã giao (overlap/cross-check).</>              }
             </p>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', margin: '12px 0 6px' }}>Chọn nhân viên</label>
-            <select value={pickStaffId} onChange={(e) => setPickStaffId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-              <option value="">— Chọn nhân viên —</option>
-              {availStaff.filter((s: any) => s.id !== staffModal.fromId).map((s: any) => (
-                <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
-              ))}
-            </select>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, color: '#334155', cursor: 'pointer' }}>
-              <input type="checkbox" checked={pickAi} onChange={(e) => setPickAi(e.target.checked)} />
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={14} style={{ color: '#6d28d9' }} /> Cho phép dùng AI key</span>
-            </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setStaffModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Hủy</button>
-              <button onClick={submitStaffModal} disabled={!pickStaffId || staffBusy} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !pickStaffId || staffBusy ? '#cbd5e1' : 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', fontWeight: 700, cursor: !pickStaffId || staffBusy ? 'not-allowed' : 'pointer' }}>
-                {staffBusy ? 'Đang xử lý...' : (staffModal.mode === 'replace' ? 'Thay thế' : 'Thêm')}
+            <div style={{ marginTop: 16 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Chọn nhân viên:</label>
+              <select value={pickStaffId} onChange={e => setPickStaffId(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 6, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}>
+                <option value="">-- Chọn nhân viên --</option>
+                {availStaff.map((s: any) => <option key={s._id} value={s._id}>{s.name || s.email}</option>)}
+              </select>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={pickAi} onChange={e => setPickAi(e.target.checked)} />
+                Bật AI Assist cho nhân viên này
+              </label>
+            </div>
+            <div style={{ marginTop: 20, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setStaffModal(null)} style={{ padding: '8px 18px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 13 }}>Hủy</button>
+              <button onClick={handleStaffModalConfirm} disabled={!pickStaffId} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: pickStaffId ? '#4f46e5' : '#c7d2fe', color: '#fff', cursor: pickStaffId ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 600 }}>
+                {staffModal.mode === 'replace' ? 'Thay thế' : 'Thêm nhân viên'}
               </button>
             </div>
           </div>
         </div>
       )}
     </div>
+    </>
   );
 }

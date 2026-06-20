@@ -890,7 +890,8 @@ export class AssignmentController {
       }
 
       const sampleIdArray = Object.keys(sampleIdMap);
-      const labels = await LabelAssignment.find({ sampleId: { $in: sampleIdArray } });
+      const sampleObjectIdArray = sampleIdArray.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+      const labels = await LabelAssignment.find({ sampleId: { $in: sampleObjectIdArray } });
 
       const conflictMap: { [key: number]: any } = {};
 
@@ -1481,9 +1482,22 @@ export class AssignmentController {
       }
 
       // 2. NỬA PHẢI: Labels overlay
-      const labelQuery: any = { sampleId };
-      if (staffId) labelQuery.createdBy = staffId;
-      const labels = await LabelAssignment.find(labelQuery).lean();
+      // Query with $or for both ObjectId and string representations to be robust
+      const sampleObjectId = mongoose.Types.ObjectId.isValid(sampleId) ? new mongoose.Types.ObjectId(sampleId) : sampleId;
+      const sampleQuery = mongoose.Types.ObjectId.isValid(sampleId)
+        ? { $or: [{ sampleId: new mongoose.Types.ObjectId(sampleId) }, { sampleId: sampleId }] }
+        : { sampleId: sampleId };
+      let labelQuery: any = { ...sampleQuery };
+      if (staffId) {
+        const createdByVariants: any[] = [staffId]; // always include string form
+        if (mongoose.Types.ObjectId.isValid(staffId)) createdByVariants.push(new mongoose.Types.ObjectId(staffId));
+        labelQuery.createdBy = { $in: createdByVariants };
+      }
+      let labels = await LabelAssignment.find(labelQuery).lean();
+      // Fallback: if no labels found with staffId filter, try without (show any label for sample)
+      if (labels.length === 0 && staffId) {
+        labels = await LabelAssignment.find(sampleQuery).lean();
+      }
 
       // 3. NỬA PHẢI: Rewrites overlay
       const { ConversationRewriteHistory } = require('../../../models/ConversationRewriteHistory');
@@ -1503,7 +1517,37 @@ export class AssignmentController {
             role: label.messageRole,
           });
         } else if (label.targetScope === 'sample') {
-          sampleLabels.push({ name: label.name, type: label.type });
+          // Parse soft label blob for Socratic taxonomy (subject/completion/quality + per-message intent/action)
+          const parsed = parseSavedLabel((label as any).targetTextSnapshot);
+          if (parsed) {
+            // Conversation-level summary
+            const parts: string[] = [];
+            if (parsed.subject) parts.push(parsed.subject);
+            if (parsed.quality) parts.push('Chất lượng: ' + parsed.quality);
+            if (parsed.completion) parts.push('Hoàn thành: ' + parsed.completion);
+            if (parts.length) sampleLabels.push({ name: parts.join(' · '), type: label.type });
+            // Message-level intent/action extracted from blob
+            if (parsed.messages && typeof parsed.messages === 'object') {
+              for (const [msgIdxStr, msgData] of Object.entries(parsed.messages as Record<string, any>)) {
+                const msgIdx = parseInt(msgIdxStr);
+                if (isNaN(msgIdx)) continue;
+                if (!labelsByMsg[msgIdx]) labelsByMsg[msgIdx] = [];
+                const labelName = msgData.intent || msgData.action || '';
+                if (labelName) {
+                  const conf = msgData.confidence != null ? Math.round(msgData.confidence * 100) + '%' : '';
+                  const pedFlag = msgData.is_correct_pedagogy === false ? ' ⚠️' : '';
+                  labelsByMsg[msgIdx].push({
+                    name: labelName + (conf ? ' (' + conf + ')' : '') + pedFlag,
+                    type: 'soft',
+                    role: msgData.intent ? 'user' : 'assistant',
+                    pedagogy_note: msgData.pedagogy_note || '',
+                  });
+                }
+              }
+            }
+          } else {
+            sampleLabels.push({ name: label.name, type: label.type });
+          }
         }
       }
 
