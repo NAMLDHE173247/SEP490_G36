@@ -39,14 +39,21 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   // Approve/Reject loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   
-  const refreshTaskDetail = async () => {
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refreshTaskDetail = async (silent = false) => {
     try {
+      if (!silent) setIsRefreshing(true);
       const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
       if (res.data.success) {
         setTaskDetail(res.data.data);
+        setLastRefresh(new Date());
       }
     } catch (err) {
       console.error('Failed to refresh task detail', err);
+    } finally {
+      if (!silent) setIsRefreshing(false);
     }
   };
 
@@ -58,6 +65,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
         const res = await api.get(`/dataprep/assignments/manager/task/${task.id}`);
         if (res.data.success) {
           setTaskDetail(res.data.data);
+          setLastRefresh(new Date());
         }
       } catch (err) {
         console.error('Failed to fetch task detail', err);
@@ -66,6 +74,10 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       }
     };
     fetchDetail();
+
+    // Auto-refresh mỗi 10 giây để manager thấy tiến độ real-time
+    const interval = setInterval(() => refreshTaskDetail(true), 10000);
+    return () => clearInterval(interval);
   }, [task]);
 
   if (!task) return null;
@@ -201,11 +213,36 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
 
         {/* Right Content: Dashboard */}
         <div className="td-main-content">
-          <div className="td-content-header">
-            <h2>{selectedBatch ? selectedBatch.name : taskDetail.name}</h2>
-            {selectedBatch && (
-              <span className="td-header-badge">{selectedBatch.status === 'completed' ? '✅ Completed' : '⏳ In Progress'}</span>
-            )}
+          <div className="td-content-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h2>{selectedBatch ? selectedBatch.name : taskDetail.name}</h2>
+              {selectedBatch && (
+                <span className="td-header-badge">{selectedBatch.status === 'completed' ? '✅ Completed' : '⏳ In Progress'}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              {/* Live indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#6b7280' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', display: 'inline-block', animation: 'pulse 2s infinite' }}></span>
+                <span style={{ color: '#22c55e', fontWeight: 600 }}>LIVE</span>
+                {lastRefresh && (
+                  <span>· cập nhật {lastRefresh.toLocaleTimeString('vi-VN')}</span>
+                )}
+              </div>
+              {/* Manual refresh button */}
+              <button 
+                onClick={() => refreshTaskDetail(false)}
+                disabled={isRefreshing}
+                style={{
+                  padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                  background: isRefreshing ? '#f1f5f9' : 'white', cursor: isRefreshing ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#475569', fontWeight: 500
+                }}
+              >
+                <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+                {isRefreshing ? 'Đang tải...' : 'Làm mới'}
+              </button>
+            </div>
           </div>
 
           {/* KPI Cards */}

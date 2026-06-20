@@ -3404,29 +3404,6 @@ function DataPrepInner() {
                 </div>
               </div>
 
-              {/* Right Sidebar */}
-              <div className="sa-right">
-                <div className="sa-section-card">
-                  <h4 className="sa-section-title"><FileText size={14} /> Realtime Productivity</h4>
-                  <div className="sa-productivity-info">
-                    <span className="sa-prod-name">hoang22</span>
-                    <span className="sa-prod-detail">Last active: 0 seconds ago</span>
-                    <span className="sa-prod-detail">0/30 pages · 05:0h samples</span>
-                    <span className="sa-prod-detail">0.00s/page (avg. 0 samples)</span>
-                  </div>
-                </div>
-
-                <div className="sa-section-card sa-conflict-card">
-                  <h4 className="sa-section-title sa-conflict-title">⊘ Conflict Review Queue</h4>
-                  <div className="sa-conflict-item">
-                    <div className="sa-conflict-left">
-                      <span className="sa-conflict-id">#1 : conv-1</span>
-                      <span className="sa-conflict-meta">IAA 0.11 · 3 annotators</span>
-                    </div>
-                    <span className="sa-pending-count">3 pending</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}

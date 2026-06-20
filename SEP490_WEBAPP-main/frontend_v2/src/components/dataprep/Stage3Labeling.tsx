@@ -1270,34 +1270,6 @@ export const Stage3Labeling = (dataPrep: any) => {
                 </div>
               </div>
 
-              {/* Right Sidebar */}
-              <div className="sa-right">
-                <div className="sa-section-card">
-                  <h4 className="sa-section-title"><FileText size={14} /> Realtime Productivity</h4>
-                  {assignmentDashboard?.users && assignmentDashboard.users.length > 0 ? (
-                    assignmentDashboard.users.map((u: any, i: number) => (
-                      <div className="sa-productivity-info" key={i} style={{marginBottom: '12px'}}>
-                        <span className="sa-prod-name">{u.user.name || u.user.username}</span>
-                        <span className="sa-prod-detail">Last active: {u.latestActivityAt ? new Date(u.latestActivityAt).toLocaleString() : 'N/A'}</span>
-                        <span className="sa-prod-detail">{u.completedTargets}/{u.totalTargets} targets ┬╖ {u.labelsPerHour.toFixed(1)} labels/h</span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="sa-productivity-info" style={{color: '#64748b'}}>No productivity data.</div>
-                  )}
-                </div>
-
-                <div className="sa-section-card sa-conflict-card">
-                  <h4 className="sa-section-title sa-conflict-title">Γèÿ Conflict Review Queue</h4>
-                  <div className="sa-conflict-item">
-                    <div className="sa-conflict-left">
-                      <span className="sa-conflict-id">#1 : conv-1</span>
-                      <span className="sa-conflict-meta">IAA 0.11 ┬╖ 3 annotators</span>
-                    </div>
-                    <span className="sa-pending-count">3 pending</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         )}
