@@ -88,45 +88,76 @@ function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: '
     subject: 'Unclear',
     completion: 'Completed',
     quality: 'Medium',
+    quality_reason: 'Không thể kết nối AI — nhãn được gợi ý tự động bằng quy tắc từ khóa, độ tin cậy thấp.',
     messages: messages.map((message) => {
       const text = message.content.toLowerCase();
+
       if (message.role === 'user') {
-        let intent = 'Ask Explanation';
-        if (text.includes('bài tập') || text.includes('giải') || text.includes('tính') || text.includes('tìm') || text.includes('exercise') || text.includes('solve')) {
-          intent = 'Solve Exercise';
-        } else if (text.includes('ví dụ') || text.includes('example') || text.includes('cho em ví dụ') || text.includes('minh họa')) {
-          intent = 'Ask Example';
-        } else if (text.includes('công thức') || text.includes('formula') || text.includes('quy tắc') || text.includes('định lý')) {
-          intent = 'Request Formula';
-        } else if (text.includes('đúng không') || text.includes('phải không') || text.includes('em hiểu') || text.includes('confirm') || text.includes('vậy là')) {
-          intent = 'Confirm Understanding';
-        } else if (text.includes('giải thích') || text.includes('vì sao') || text.includes('tại sao') || text.includes('why') || text.includes('thế nào') || text.includes('là gì') || text.includes('nghĩa là') || text.includes('hiểu')) {
-          intent = 'Ask Explanation';
-        } else if (text.includes('giúp') || text.includes('hướng dẫn') || text.includes('cách') || text.includes('làm sao') || text.includes('how') || text.includes('help')) {
-          intent = 'Ask Explanation';
+        let intent = 'REQUEST_EXPLANATION';
+        let confidence = 0.45;
+
+        if (/bài tập|giải|tính|tìm|solve|exercise/.test(text)) {
+          intent = 'INCORRECT'; confidence = 0.5;
+        } else if (/đúng không|phải không|em hiểu|vậy là|confirm/.test(text)) {
+          intent = 'CONFIRM_UNDERSTANDING'; confidence = 0.55;
+        } else if (/công thức|formula|quy tắc|định lý|định nghĩa/.test(text)) {
+          intent = 'ASK_THEORY'; confidence = 0.6;
+        } else if (/ví dụ|example|minh họa/.test(text)) {
+          intent = 'REQUEST_SIMPLER'; confidence = 0.55;
+        } else if (/xin gợi ý|hint|mẹo|gợi ý cho em/.test(text)) {
+          intent = 'REQUEST_HINT'; confidence = 0.65;
+        } else if (/chán|khó quá|không hiểu gì|bỏ cuộc|nản/.test(text)) {
+          intent = 'DISCOURAGED'; confidence = 0.7;
+        } else if (/sang bài|bài khác|skip|chuyển/.test(text)) {
+          intent = 'SKIP_EXERCISE'; confidence = 0.65;
+        } else if (/xong rồi|hiểu rồi|làm được rồi|bài tiếp/.test(text)) {
+          intent = 'READY_NEXT'; confidence = 0.6;
+        } else if (/nói chuyện|chơi|game|phim|hát/.test(text)) {
+          intent = 'OFF_TOPIC'; confidence = 0.7;
+        } else if (/giải thích|vì sao|tại sao|why|thế nào|là gì|nghĩa là/.test(text)) {
+          intent = 'REQUEST_EXPLANATION'; confidence = 0.55;
         }
-        return { messageIndex: message.messageIndex, intent };
+
+        return { messageIndex: message.messageIndex, intent, confidence };
       }
 
-      let action = 'Guide Step-by-step';
-      if (text.includes('?') && (text.includes('em thử') || text.includes('em nghĩ') || text.includes('theo em') || text.includes('sao lại'))) {
-        action = 'Ask Probing Question';
-      } else if (text.includes('gợi ý') || text.includes('hint') || text.includes('mẹo') || text.includes('lưu ý')) {
-        action = 'Give Hint';
-      } else if (text.includes('công thức') || text.includes('formula') || text.includes('áp dụng')) {
-        action = 'Provide Formula';
-      } else if (text.includes('sai') || text.includes('chưa đúng') || text.includes('nhầm') || text.includes('lỗi') || text.includes('error') || text.includes('incorrect')) {
-        action = 'Correct Error';
-      } else if (text.includes('giỏi') || text.includes('tốt lắm') || text.includes('đúng rồi') || text.includes('hay') || text.includes('great') || text.includes('cố lên')) {
-        action = 'Encourage';
-      } else if (text.includes('tóm lại') || text.includes('tổng kết') || text.includes('summary') || text.includes('vậy')) {
-        action = 'Summarize';
-      } else if (text.includes('bước') || text.includes('step') || text.includes('đầu tiên') || text.includes('tiếp theo') || text.includes('hãy')) {
-        action = 'Guide Step-by-step';
-      } else if (text.includes('?')) {
-        action = 'Ask Probing Question';
+      // assistant
+      let action = 'SCAFFOLDING';
+      let confidence = 0.4;
+      let is_correct_pedagogy = true;
+      let pedagogy_note = '';
+
+      if (/\?/.test(text) && /em thử|em nghĩ|theo em|sao lại|em làm|em có thể/.test(text)) {
+        action = 'SCAFFOLDING'; confidence = 0.65;
+      } else if (/gợi ý|hint|lưu ý|mẹo/.test(text)) {
+        action = 'HINTING'; confidence = 0.6;
+      } else if (/công thức|formula|áp dụng|định lý|định nghĩa/.test(text)) {
+        action = 'CONCEPT_CLARIFY'; confidence = 0.6;
+      } else if (/sai|chưa đúng|nhầm|lỗi|incorrect/.test(text) && /\?/.test(text)) {
+        action = 'SCAFFOLDING'; confidence = 0.6;
+      } else if (/sai|chưa đúng|nhầm/.test(text) && !/\?/.test(text)) {
+        action = 'DIRECT_ANSWER'; confidence = 0.5;
+        is_correct_pedagogy = false;
+        pedagogy_note = 'Gia sư có thể đang chỉ ra lỗi mà không đặt câu hỏi gợi mở — cần xem xét lại.';
+      } else if (/giỏi|tốt lắm|đúng rồi|chính xác|hay|great|cố lên/.test(text)) {
+        action = 'PRAISING'; confidence = 0.7;
+      } else if (/tóm lại|tổng kết|summary|vậy ta có/.test(text)) {
+        action = 'TRANSITIONING'; confidence = 0.6;
+      } else if (/bước|step|đầu tiên|tiếp theo|thứ nhất/.test(text)) {
+        action = 'LOGIC_BREAKDOWN'; confidence = 0.55;
+      } else if (/ví dụ|chẳng hạn|hình dung/.test(text)) {
+        action = 'SIMPLIFYING'; confidence = 0.6;
+      } else if (/cố lên|không sao|bình thường|thử lại/.test(text)) {
+        action = 'MOTIVATING'; confidence = 0.65;
+      } else if (/\?/.test(text)) {
+        action = 'WAITING'; confidence = 0.45;
+      } else {
+        action = 'DIRECT_ANSWER'; confidence = 0.4;
+        is_correct_pedagogy = false;
+        pedagogy_note = 'Phản hồi không có câu hỏi gợi mở — khả năng gia sư đang trả lời trực tiếp (cần kiểm tra lại).';
       }
-      return { messageIndex: message.messageIndex, action };
+
+      return { messageIndex: message.messageIndex, action, confidence, is_correct_pedagogy, pedagogy_note };
     }),
   };
 }

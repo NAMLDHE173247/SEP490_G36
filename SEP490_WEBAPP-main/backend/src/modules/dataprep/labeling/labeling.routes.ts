@@ -45,5 +45,6 @@ router.post('/versions/:versionId/assignments/submit', (req, res) => assignmentC
 router.get('/assignments/manager/sample/:sampleId/split-view', (req, res) => assignmentController.getSampleSplitView(req, res));
 router.post('/assignments/manager/submission/:submissionId/approve', (req, res) => assignmentController.approveSubmission(req, res));
 router.post('/assignments/manager/submission/:submissionId/reject', (req, res) => assignmentController.rejectSubmission(req, res));
+router.patch('/versions/:versionId/assignments/toggle-ai', (req, res) => assignmentController.toggleAiAssist(req, res));
 
 export default router;

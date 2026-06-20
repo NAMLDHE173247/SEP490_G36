@@ -39,7 +39,8 @@ function useStaffTasks() {
             deadline: t.deadline?.split('T')[0] || '',
             totalSamples: t.totalSamples || t.batchCount,
             labeledCount: t.labeledCount || 0,
-            reviewedCount: 0
+            reviewedCount: 0,
+            aiAssistEnabled: !!t.aiAssistEnabled,
           }));
           setTasks(fetchedTasks);
           return fetchedTasks;

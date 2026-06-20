@@ -40,6 +40,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   // Approve/Reject loading
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // AI Assist toggle loading
+  const [aiToggleLoading, setAiToggleLoading] = useState<string | null>(null);
+
   // ── Quản lý nhân sự (thay thế / thêm / gỡ) ──
   const versionId = String(task?.id || '').split('_')[0];
   const [staffModal, setStaffModal] = useState<null | { mode: 'replace' | 'add'; fromId?: string; fromName?: string }>(null);
@@ -78,7 +81,21 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       await refreshTaskDetail();
     } catch (e: any) { alert(e.response?.data?.error || 'Gỡ thất bại'); }
   };
-  
+
+  const handleToggleAi = async (staffId: string, currentEnabled: boolean) => {
+    setAiToggleLoading(staffId);
+    try {
+      await api.patch(`/dataprep/versions/${versionId}/assignments/toggle-ai`, {
+        assigneeId: staffId,
+        enabled: !currentEnabled,
+      });
+      await refreshTaskDetail(true);
+    } catch (e: any) {
+      alert(e.response?.data?.error || 'Toggle AI thất bại');
+    }
+    setAiToggleLoading(null);
+  };
+
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -357,6 +374,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                         <th>Tiến độ</th>
                         <th>Số lượng</th>
                         <th>Cập nhật cuối</th>
+                        <th>AI Assist</th>
                         <th>Thao tác</th>
                       </tr>
                     </thead>
@@ -386,6 +404,25 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                               {p.progress}/{p.total} samples
                             </td>
                             <td>{p.submittedAt ? new Date(p.submittedAt).toLocaleString() : 'Chưa cập nhật'}</td>
+                            <td>
+                              <button
+                                onClick={() => handleToggleAi(p.id, !!p.aiAssistEnabled)}
+                                disabled={aiToggleLoading === p.id}
+                                title={p.aiAssistEnabled ? 'Nhấn để TẮT AI cho nhân viên này' : 'Nhấn để BẬT AI cho nhân viên này'}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                                  padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                                  border: 'none', cursor: aiToggleLoading === p.id ? 'wait' : 'pointer',
+                                  background: p.aiAssistEnabled ? '#ede9fe' : '#f1f5f9',
+                                  color: p.aiAssistEnabled ? '#6d28d9' : '#94a3b8',
+                                  transition: 'all 0.2s',
+                                  opacity: aiToggleLoading === p.id ? 0.6 : 1,
+                                }}
+                              >
+                                <Sparkles size={13} />
+                                {aiToggleLoading === p.id ? '...' : p.aiAssistEnabled ? 'Bật' : 'Tắt'}
+                              </button>
+                            </td>
                             <td>
                               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                 {/* Nút Xem chi tiết → mở danh sách samples của staff */}

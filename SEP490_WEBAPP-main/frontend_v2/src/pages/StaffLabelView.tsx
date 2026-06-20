@@ -9,8 +9,17 @@ import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 
 const SUBJECT_OPTIONS = ['Toán', 'Vật lý', 'Hóa học', 'Sinh học', 'Tiếng Anh', 'Lịch sử', 'Địa lý', 'GDCD', 'Tin học', 'Multi-subject', 'Unclear'];
-const INTENT_OPTIONS = ['Ask Explanation', 'Solve Exercise', 'Request Formula', 'Confirm Understanding', 'Ask Example', 'Other'];
-const ACTION_OPTIONS = ['Guide Step-by-step', 'Give Hint', 'Ask Probing Question', 'Provide Formula', 'Encourage', 'Correct Error', 'Summarize', 'Other'];
+// Nhãn chuẩn Socratic — đồng bộ với autoLabelV2.service.ts
+const INTENT_OPTIONS = [
+  'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY',
+  'REQUEST_EXPLANATION', 'REQUEST_SIMPLER', 'SKIP_EXERCISE',
+  'DISCOURAGED', 'OFF_TOPIC', 'READY_NEXT', 'CONFIRM_UNDERSTANDING',
+];
+const ACTION_OPTIONS = [
+  'PRAISING', 'SCAFFOLDING', 'HINTING', 'CONCEPT_CLARIFY',
+  'LOGIC_BREAKDOWN', 'SIMPLIFYING', 'MOTIVATING', 'REDIRECTING',
+  'TRANSITIONING', 'DIRECT_ANSWER', 'WAITING',
+];
 const COMPLETION_OPTIONS = ['Completed', 'Incomplete', 'Abandoned'];
 const QUALITY_OPTIONS = ['Good', 'Medium', 'Poor'];
 const FLAG_OPTIONS = ['Factual Error', 'Direct Answer', 'Language Issue'];
@@ -37,6 +46,8 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const taskName = task?.name || 'Gán nhãn Toán 11 — Batch 1';
   const [samples, setSamples] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // aiAssistEnabled: ưu tiên giá trị fresh từ server (submission), fallback về task prop
+  const [aiAssistEnabled, setAiAssistEnabled] = useState<boolean>(!!task?.aiAssistEnabled);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -47,6 +58,10 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       const res = await api.get(`/dataprep/assignments/my-task/${task.id}/samples`);
       if (res.data.success) {
         setSamples(res.data.data.samples);
+        // Đọc aiAssistEnabled fresh từ submission để phản ánh toggle của manager
+        if (res.data.data.submission?.aiAssistEnabled !== undefined) {
+          setAiAssistEnabled(!!res.data.data.submission.aiAssistEnabled);
+        }
         const initialLabels: Record<string, any> = {};
         res.data.data.samples.forEach((s: any) => {
           if (s.savedLabel) initialLabels[s.id] = s.savedLabel;
@@ -97,6 +112,10 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiBackup, setAiBackup] = useState<Record<string, any>>({});
   const [aiProvider, setAiProvider] = useState('gemini');
+  // aiMeta[sampleId][msgIdx] = { confidence, is_correct_pedagogy, pedagogy_note }
+  const [aiMeta, setAiMeta] = useState<Record<string, Record<number, any>>>({});
+  // aiSummary[sampleId] = { subject, completion, quality, quality_reason }
+  const [aiSummary, setAiSummary] = useState<Record<string, any>>({});
   const AI_PROVIDERS = [
     { value: 'gemini', label: '🟢 Gemini 2.0 Flash' },
     { value: 'openai', label: '🔵 OpenAI (GPT-4o-mini)' },
@@ -107,42 +126,55 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const handleAIAssist = async (sampleId: string) => {
     const sample = samples.find((s: any) => s.id === sampleId);
     if (!sample || !task) return;
-    if (!task?.aiAssistEnabled) { alert('Bạn không được cấp quyền dùng AI cho task này.'); return; }
+    if (!aiAssistEnabled) { alert('Bạn không được cấp quyền dùng AI cho task này.'); return; }
     setIsAiLoading(true);
     try {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
       const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages, provider: aiProvider });
       if (res.data.success && res.data.data) {
         const suggestion = res.data.data;
-        const aiLabels: any = { subject: suggestion.subject || '', completion: suggestion.completion || '', quality: suggestion.quality || '', status: 'reviewing', messages: {} };
-        const newSubjects: string[] = [], newIntents: string[] = [], newActions: string[] = [];
+
+        // Lưu summary (subject/completion/quality/quality_reason) cho panel hiển thị
+        setAiSummary(prev => ({
+          ...prev,
+          [sampleId]: {
+            subject: suggestion.subject || '',
+            completion: suggestion.completion || '',
+            quality: suggestion.quality || '',
+            quality_reason: suggestion.quality_reason || '',
+          },
+        }));
+
+        const aiLabels: any = {
+          subject: suggestion.subject || '',
+          completion: suggestion.completion || '',
+          quality: suggestion.quality || '',
+          status: 'reviewing',
+          messages: {},
+        };
+
+        // Thêm nhãn mới vào option list nếu AI đề xuất ngoài danh sách
+        const newSubjects: string[] = [];
         if (suggestion.subject && !subjectOptions.includes(suggestion.subject)) newSubjects.push(suggestion.subject);
-        if (Array.isArray(suggestion.messages)) {
-          suggestion.messages.forEach((msg: any) => {
-            if (msg.intent && !intentOptions.includes(msg.intent) && !newIntents.includes(msg.intent)) newIntents.push(msg.intent);
-            if (msg.action && !actionOptions.includes(msg.action) && !newActions.includes(msg.action)) newActions.push(msg.action);
-          });
-        }
-        const totalNew = newSubjects.length + newIntents.length + newActions.length;
-        if (totalNew > 0) {
-          let msg = 'AI đề xuất một số nhãn mới chưa có trong danh sách gốc:\n';
-          if (newSubjects.length) msg += `- Môn học: ${newSubjects.join(', ')}\n`;
-          if (newIntents.length) msg += `- Intent: ${newIntents.join(', ')}\n`;
-          if (newActions.length) msg += `- Action: ${newActions.join(', ')}\n`;
-          msg += '\nBạn có muốn tự động thêm chúng vào các Menu Tùy chọn không?';
-          window.confirm(msg);
-        }
         if (newSubjects.length) setSubjectOptions(prev => [...prev, ...newSubjects]);
-        if (newIntents.length) setIntentOptions(prev => [...prev, ...newIntents]);
-        if (newActions.length) setActionOptions(prev => [...prev, ...newActions]);
+
+        // Gán nhãn + lưu metadata (confidence, pedagogy)
+        const metaByMsg: Record<number, any> = {};
         if (Array.isArray(suggestion.messages)) {
           suggestion.messages.forEach((msg: any, idx: number) => {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
             if (msg.intent) aiLabels.messages[messageIndex].intent = msg.intent;
             if (msg.action) aiLabels.messages[messageIndex].action = msg.action;
+            metaByMsg[messageIndex] = {
+              confidence: typeof msg.confidence === 'number' ? msg.confidence : 0.5,
+              is_correct_pedagogy: msg.is_correct_pedagogy !== false,
+              pedagogy_note: msg.pedagogy_note || '',
+            };
           });
         }
+        setAiMeta(prev => ({ ...prev, [sampleId]: metaByMsg }));
+
         setLabels(prev => {
           const existingFlags = prev[sampleId]?.flags || [];
           const existingNote = prev[sampleId]?.note || '';
@@ -562,7 +594,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <label>📝 Ghi chú</label>
                       <textarea className="sl-textarea" placeholder="Ghi chú của bạn..." value={getLabel(drawerSample.id, 'note')} onChange={(e) => setLabel(drawerSample.id, 'note', e.target.value)} rows={2} />
                     </div>
-                    {task?.aiAssistEnabled && (
+                    {aiAssistEnabled && (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', cursor: 'pointer', minWidth: '170px' }} disabled={isAiLoading}>
                           {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
@@ -576,6 +608,28 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         )}
                       </div>
                     )}
+
+                    {/* AI Summary Panel — hiện sau khi chạy AI */}
+                    {aiSummary[drawerSample.id] && (() => {
+                      const s = aiSummary[drawerSample.id];
+                      const qualityColor: Record<string, string> = { Good: '#059669', Medium: '#d97706', Poor: '#dc2626' };
+                      const qColor = qualityColor[s.quality] || '#64748b';
+                      return (
+                        <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 10, background: '#f0f9ff', border: '1px solid #bae6fd', fontSize: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, fontWeight: 700, color: '#0369a1' }}>
+                            <Sparkles size={13} /> Phân tích AI
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: s.quality_reason ? 6 : 0 }}>
+                            <span style={{ padding: '2px 8px', borderRadius: 99, background: '#e0f2fe', color: '#0369a1', fontWeight: 600 }}>📚 {s.subject}</span>
+                            <span style={{ padding: '2px 8px', borderRadius: 99, background: '#f0fdf4', color: '#15803d', fontWeight: 600 }}>✅ {s.completion}</span>
+                            <span style={{ padding: '2px 8px', borderRadius: 99, background: '#fef9c3', color: qColor, fontWeight: 700 }}>⭐ {s.quality}</span>
+                          </div>
+                          {s.quality_reason && (
+                            <div style={{ color: '#475569', fontStyle: 'italic' }}>💬 {s.quality_reason}</div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* RIGHT: Chat Messages */}
@@ -588,45 +642,86 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         <button onClick={() => setChatFontSize(f => Math.min(24, f + 1))}>A+</button>
                       </div>
                     </div>
-                    {drawerSample.messages?.map((msg: any, mIdx: number) => (
-                      <div key={mIdx} className={`sl-msg ${msg.role}`}>
+                    {drawerSample.messages?.map((msg: any, mIdx: number) => {
+                      const meta = aiMeta[drawerSample.id]?.[mIdx];
+                      const conf = meta?.confidence ?? null;
+                      const badOk = meta?.is_correct_pedagogy !== false;
+                      const confColor = conf === null ? undefined
+                        : conf >= 0.8 ? '#059669' : conf >= 0.6 ? '#d97706' : '#dc2626';
+                      const confLabel = conf === null ? null
+                        : conf >= 0.8 ? 'Cao' : conf >= 0.6 ? 'Trung bình' : 'Thấp';
+                      const borderColor = conf === null ? undefined
+                        : conf >= 0.8 ? '#a7f3d0' : conf >= 0.6 ? '#fde68a' : '#fecaca';
+                      return (
+                      <div key={mIdx} className={`sl-msg ${msg.role}`} style={!badOk ? { outline: '2px solid #fca5a5', borderRadius: 8 } : undefined}>
                         <div className="sl-msg-header">
                           <span className="sl-msg-icon">{msg.role === 'user' ? '🧑' : '🤖'}</span>
                           <span className="sl-msg-role">{msg.role === 'user' ? 'Học sinh' : 'Trợ lý'}</span>
                           <span className="sl-msg-turn">Turn {Math.floor(mIdx / 2) + 1}</span>
+                          {!badOk && (
+                            <span title={meta?.pedagogy_note || 'Có thể vi phạm Socratic'} style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'help' }}>
+                              ⚠️ Socratic
+                            </span>
+                          )}
                         </div>
                         <div className={`sl-msg-bubble ${msg.role}`} style={{ fontSize: `${chatFontSize}px` }}><p>{msg.content}</p></div>
+                        {!badOk && meta?.pedagogy_note && (
+                          <div style={{ margin: '2px 8px 4px', padding: '4px 10px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 11, fontStyle: 'italic' }}>
+                            💡 {meta.pedagogy_note}
+                          </div>
+                        )}
                         <div className="sl-msg-label-row">
                           {msg.role === 'user' ? (
                             <div className="sl-inline-label">
                               <span className="sl-label-tag">Intent:</span>
-                              <select value={getMsgLabel(drawerSample.id, mIdx, 'intent')} onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__add_new__') { const n = window.prompt('Nhập Intent mới:'); if (n?.trim()) { if (!intentOptions.includes(n.trim())) setIntentOptions([...intentOptions, n.trim()]); setMsgLabel(drawerSample.id, mIdx, 'intent', n.trim()); } }
-                                else setMsgLabel(drawerSample.id, mIdx, 'intent', val);
-                              }} className="sl-inline-select">
+                              <select
+                                value={getMsgLabel(drawerSample.id, mIdx, 'intent')}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__add_new__') { const n = window.prompt('Nhập Intent mới:'); if (n?.trim()) { if (!intentOptions.includes(n.trim())) setIntentOptions([...intentOptions, n.trim()]); setMsgLabel(drawerSample.id, mIdx, 'intent', n.trim()); } }
+                                  else setMsgLabel(drawerSample.id, mIdx, 'intent', val);
+                                }}
+                                className="sl-inline-select"
+                                style={borderColor ? { borderColor, boxShadow: `0 0 0 2px ${borderColor}` } : undefined}
+                              >
                                 <option value="">— Chọn —</option>
                                 {intentOptions.map(o => <option key={o} value={o}>{o}</option>)}
                                 <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Intent mới...</option>
                               </select>
+                              {confLabel && (
+                                <span style={{ marginLeft: 5, padding: '1px 7px', borderRadius: 99, background: borderColor, color: confColor, fontSize: 10, fontWeight: 700 }}>
+                                  {confLabel} {Math.round((conf ?? 0) * 100)}%
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <div className="sl-inline-label">
                               <span className="sl-label-tag">Action:</span>
-                              <select value={getMsgLabel(drawerSample.id, mIdx, 'action')} onChange={(e) => {
-                                const val = e.target.value;
-                                if (val === '__add_new__') { const n = window.prompt('Nhập Action mới:'); if (n?.trim()) { if (!actionOptions.includes(n.trim())) setActionOptions([...actionOptions, n.trim()]); setMsgLabel(drawerSample.id, mIdx, 'action', n.trim()); } }
-                                else setMsgLabel(drawerSample.id, mIdx, 'action', val);
-                              }} className="sl-inline-select">
+                              <select
+                                value={getMsgLabel(drawerSample.id, mIdx, 'action')}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__add_new__') { const n = window.prompt('Nhập Action mới:'); if (n?.trim()) { if (!actionOptions.includes(n.trim())) setActionOptions([...actionOptions, n.trim()]); setMsgLabel(drawerSample.id, mIdx, 'action', n.trim()); } }
+                                  else setMsgLabel(drawerSample.id, mIdx, 'action', val);
+                                }}
+                                className="sl-inline-select"
+                                style={borderColor ? { borderColor, boxShadow: `0 0 0 2px ${borderColor}` } : undefined}
+                              >
                                 <option value="">— Chọn —</option>
                                 {actionOptions.map(o => <option key={o} value={o}>{o}</option>)}
                                 <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Action mới...</option>
                               </select>
+                              {confLabel && (
+                                <span style={{ marginLeft: 5, padding: '1px 7px', borderRadius: 99, background: borderColor, color: confColor, fontSize: 10, fontWeight: 700 }}>
+                                  {confLabel} {Math.round((conf ?? 0) * 100)}%
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>

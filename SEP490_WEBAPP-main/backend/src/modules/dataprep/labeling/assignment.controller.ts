@@ -190,7 +190,7 @@ export class AssignmentController {
             projectId,
             datasetVersionId: versionId,
             assigneeId: staffId,
-            status: 'pending',
+            status: 'pending' as const,
             name: `${cleanTaskName} - Batch ${group.startIndex}`,
             aiAssistEnabled: aiAllowed.has(String(staffId)),
             batchStart: group.startIndex,
@@ -306,7 +306,7 @@ export class AssignmentController {
           projectId,
           datasetVersionId: versionId,
           assigneeId: assigneeId,
-          status: 'pending',
+          status: 'pending' as const,
           progressSnapshot: { totalAssigned: sampleCount },
           name: cleanBatchName,
           aiAssistEnabled: aiAllowed.has(String(assigneeId)),
@@ -425,7 +425,7 @@ export class AssignmentController {
         projectId,
         datasetVersionId: versionId,
         assigneeId: toAssigneeId,
-        status: 'pending',
+        status: 'pending' as const,
         name: src?.name || `Task - Batch ${fromSamples[0].sampleIndex}`,
         batchStart: src?.batchStart || fromSamples[0].sampleIndex,
         batchCount: src?.batchCount || fromSamples.length,
@@ -533,7 +533,7 @@ export class AssignmentController {
           projectId,
           datasetVersionId: versionId,
           assigneeId,
-          status: 'pending',
+          status: 'pending' as const,
           name: (taskName && String(taskName).trim()) ? `${String(taskName).trim()} - Batch ${startIndex}` : `${version.projectName} Labeling - Batch ${startIndex}`,
           batchStart: startIndex,
           batchCount: sourceSamples.length,
@@ -798,6 +798,7 @@ export class AssignmentController {
             submittedAt: sub.submittedAt || null,
             submissionId: String(sub._id), // Trả submissionId cho Approve/Reject
             submissionIds: [String(sub._id)],
+            aiAssistEnabled: !!(sub as any).aiAssistEnabled,
           };
         } else {
           staffMap[assigneeIdStr].submissionIds.push(String(sub._id));
@@ -807,6 +808,9 @@ export class AssignmentController {
             staffMap[assigneeIdStr].status = sub.status;
             staffMap[assigneeIdStr].submissionId = String(sub._id);
           }
+          // OR aiAssistEnabled: nếu bất kỳ submission nào được phép thì coi là bật
+          staffMap[assigneeIdStr].aiAssistEnabled =
+            staffMap[assigneeIdStr].aiAssistEnabled || !!(sub as any).aiAssistEnabled;
         }
         staffMap[assigneeIdStr].total += sub.totalSamples;
         const subLabeled = sub.status === 'submitted' || sub.status === 'approved' ? sub.totalSamples : (sub.labeledCount || 0);
@@ -925,7 +929,7 @@ export class AssignmentController {
               key: samplesMap[sIndex].key,
               annotators: sLabels.length,
               iaa: 0.45,
-              status: 'pending',
+              status: 'pending' as const,
               labelA: { subject: staffMap[String(sLabels[0].createdBy)]?.name || String(sLabels[0].createdBy), quality: sLabels[0].name },
               labelB: { subject: staffMap[String(sLabels[1].createdBy)]?.name || String(sLabels[1].createdBy), quality: sLabels[1].name }
             });
@@ -1596,6 +1600,36 @@ export class AssignmentController {
       return res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  /**
+   * API: Bật / Tắt AI Assist cho một nhân viên trong một version
+   * PATCH /api/dataprep/versions/:versionId/assignments/toggle-ai
+   * Body: { assigneeId: string, enabled: boolean }
+   */
+  async toggleAiAssist(req: Request, res: Response) {
+    try {
+      const { versionId } = req.params;
+      const { assigneeId, enabled } = req.body;
+
+      if (!assigneeId || typeof enabled !== 'boolean') {
+        return res.status(400).json({ success: false, error: 'Thiếu assigneeId hoặc enabled' });
+      }
+
+      const result = await DatasetAssignmentSubmission.updateMany(
+        { datasetVersionId: versionId, assigneeId },
+        { $set: { aiAssistEnabled: enabled } }
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: `Đã ${enabled ? 'bật' : 'tắt'} AI cho nhân viên`,
+        modifiedCount: result.modifiedCount,
+      });
+    } catch (error: any) {
+      console.error('[AssignmentController] toggleAiAssist error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
 }
 // --- AUTO SCORE LOGIC ---
 function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
@@ -1907,7 +1941,9 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
             });
-          } else if (matchingMsg?.role === 'assistant' && msgLabel.action) {
+          }
+
+          if (matchingMsg?.role === 'assistant' && msgLabel.action) {
             const mappedAction = mapToStandardAction(msgLabel.action);
             hardLabelsToInsert.push({
               sampleId: softLabel.sampleId,
@@ -1924,26 +1960,9 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
       }
     }
 
-    // Delete old hard labels first
-    await LabelAssignment.deleteMany({
-      sampleId: { $in: sampleIds },
-      createdBy: submission.assigneeId,
-      type: 'hard'
-    });
-
-    // Bulk insert new hard labels
-    if (hardLabelsToInsert.length > 0) {
-      try {
-        await LabelAssignment.insertMany(hardLabelsToInsert, { ordered: false });
-      } catch (error: any) {
-        if (error?.code !== 11000) {
-          console.error('[Promotion] Error inserting hard labels:', error);
-        }
-      }
-    }
     return { hardLabels: hardLabelsToInsert, messagesBySample };
-  } catch (error) {
-    console.error('[Promotion] Error promoting soft labels to hard:', error);
+  } catch (e) {
+    console.error('[promoteSubmissionLabels]', e);
     return { hardLabels: [], messagesBySample };
   }
 }
