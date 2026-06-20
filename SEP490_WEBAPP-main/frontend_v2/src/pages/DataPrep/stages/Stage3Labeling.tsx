@@ -9,6 +9,170 @@ import { apiService } from '../../../services/api';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 import './Stage3Labeling.css';
 
+// =====================================================
+// Label Mapping: UI short name <-> Backend HARD_LABELS
+// =====================================================
+/** Map UI tag name → backend DB name cho role 'user' */
+const USER_LABEL_MAP: Record<string, string> = {
+  OK:   'CORRECT',
+  NO:   'INCORRECT',
+  HINT: 'REQUEST_HINT',
+  THEO: 'ASK_THEORY',
+  WHY:  'REQUEST_EXPLANATION',
+  EASY: 'REQUEST_SIMPLER',
+  SKIP: 'SKIP_EXERCISE',
+  ENC:  'ENCOURAGE',
+  OFF:  'OFF_TOPIC',
+  NEXT: 'NEXT_SECTION',
+  WAIT: 'WAIT_READY',
+};
+
+/** Map UI tag name → backend DB name cho role 'assistant' */
+const ASSISTANT_LABEL_MAP: Record<string, string> = {
+  SCAF:  'SCAFFOLDING',
+  HINT:  'HINTING',
+  CLR:   'CONCEPT_CLARIFY',
+  LOG:   'LOGIC_BREAKDOWN',
+  SIMP:  'SIMPLIFYING',
+  PR:    'PRAISING',
+  NAV:   'NAVIGATING',
+  MOT:   'MOTIVATING',
+  REDIR: 'REDIRECTING',
+  TRAN:  'TRANSITIONING',
+  WAIT:  'WAITING',
+};
+
+/** Reverse map: DB name → UI tag name cho user */
+const DB_TO_UI_USER: Record<string, string> = Object.fromEntries(
+  Object.entries(USER_LABEL_MAP).map(([ui, db]) => [db, ui])
+);
+
+/** Reverse map: DB name → UI tag name cho assistant */
+const DB_TO_UI_ASSISTANT: Record<string, string> = Object.fromEntries(
+  Object.entries(ASSISTANT_LABEL_MAP).map(([ui, db]) => [db, ui])
+);
+
+/** ISSUES labels không có trong HARD_LABELS → lưu dưới dạng 'soft' */
+const ISSUES_SOFT_LABELS = new Set(['FACT_ERR', 'LANG_ISSUE', 'DIR_ANS']);
+
+/** Lấy DB name từ UI tag name và role. Trả về null nếu không map được (ISSUES labels). */
+function getDbLabelName(uiName: string, role: 'user' | 'assistant'): string | null {
+  if (ISSUES_SOFT_LABELS.has(uiName)) return uiName; // lưu nguyên dưới dạng soft
+  return role === 'user' ? (USER_LABEL_MAP[uiName] ?? null) : (ASSISTANT_LABEL_MAP[uiName] ?? null);
+}
+
+/** Lấy UI tag name từ DB label và role. Trả về null nếu không tìm thấy. */
+function getUiTagName(dbName: string, role: 'user' | 'assistant'): string | null {
+  if (ISSUES_SOFT_LABELS.has(dbName)) return dbName;
+  return role === 'user' ? (DB_TO_UI_USER[dbName] ?? null) : (DB_TO_UI_ASSISTANT[dbName] ?? null);
+}
+
+/** Tạo cấu trúc iaMessages trống từ mảng messages của conv (stage3Convs item). */
+function buildBaseIaMessages(messages: Array<{ user: string; assistant: string }>): any[] {
+  const result: any[] = [];
+  let uiId = 1;
+  messages.forEach((turn, turnIdx) => {
+    // User message — messageIndex = turnIdx * 2
+    result.push({
+      id: uiId++,
+      role: 'user',
+      turn: turnIdx + 1,
+      text: turn.user || '',
+      messageIndex: turnIdx * 2,
+      selectedLabel: null,
+      labels: {
+        KNOWLEDGE: [
+          { name: 'OK',   count: 0, icon: '✓', colorClass: 'green' },
+          { name: 'NO',   count: 0, icon: '✕', colorClass: 'red' },
+        ],
+        REQUEST: [
+          { name: 'HINT', count: 0, icon: '💡' },
+          { name: 'THEO', count: 0, icon: '📖' },
+          { name: 'WHY',  count: 0, icon: 'ⓘ' },
+          { name: 'EASY', count: 0, icon: '⤢' },
+        ],
+        ACTION: [
+          { name: 'SKIP', count: 0, icon: '⏸' },
+          { name: 'NEXT', count: 0, icon: '→' },
+          { name: 'WAIT', count: 0, icon: '🕒' },
+        ],
+        OTHER: [
+          { name: 'ENC', count: 0, icon: '♡' },
+          { name: 'OFF', count: 0, icon: '◯' },
+        ],
+        ISSUES: [
+          { name: 'FACT_ERR',   count: 0, icon: 'ⓘ' },
+          { name: 'LANG_ISSUE', count: 0, icon: '💬' },
+        ],
+      },
+    });
+    // Assistant message — messageIndex = turnIdx * 2 + 1
+    result.push({
+      id: uiId++,
+      role: 'assistant',
+      turn: turnIdx + 1,
+      text: turn.assistant || '',
+      messageIndex: turnIdx * 2 + 1,
+      selectedLabel: null,
+      labels: {
+        PEDAGOGY: [
+          { name: 'SCAF',  count: 0, icon: '≡',  colorClass: 'blue' },
+          { name: 'HINT',  count: 0, icon: '💡' },
+          { name: 'CLR',   count: 0, icon: '📖' },
+          { name: 'LOG',   count: 0, icon: '≡' },
+          { name: 'SIMP',  count: 0, icon: '⤢' },
+        ],
+        NAVIGATION: [
+          { name: 'PR',    count: 0, icon: '✧' },
+          { name: 'NAV',   count: 0, icon: '⌲' },
+          { name: 'MOT',   count: 0, icon: '♡' },
+          { name: 'REDIR', count: 0, icon: '⟲' },
+          { name: 'TRAN',  count: 0, icon: '→' },
+          { name: 'WAIT',  count: 0, icon: '⏸' },
+        ],
+        ISSUES: [
+          { name: 'DIR_ANS',   count: 0, icon: '→' },
+          { name: 'FACT_ERR',  count: 0, icon: 'ⓘ' },
+          { name: 'LANG_ISSUE',count: 0, icon: '💬' },
+        ],
+      },
+    });
+  });
+  return result;
+}
+
+/**
+ * Kích hoạt (active) các tag trong iaMessages dựa trên danh sách AggregatedLabel từ DB.
+ * Trả về iaMessages mới với count và active được cập nhật.
+ */
+function activateLabelsInMessages(baseMessages: any[], dbLabels: any[]): any[] {
+  // Build lookup: messageIndex → array of { uiName }
+  const activationMap: Record<number, Set<string>> = {};
+  dbLabels.forEach((lbl) => {
+    if (lbl.targetScope !== 'message' || lbl.messageIndex == null) return;
+    const idx = lbl.messageIndex;
+    if (!activationMap[idx]) activationMap[idx] = new Set();
+    const uiName = getUiTagName(lbl.name, lbl.messageRole);
+    if (uiName) activationMap[idx].add(uiName);
+  });
+
+  return baseMessages.map((msg) => {
+    const active = activationMap[msg.messageIndex];
+    if (!active || active.size === 0) return msg;
+
+    const newLabels: Record<string, any[]> = {};
+    Object.entries(msg.labels).forEach(([groupName, tags]: [string, any]) => {
+      newLabels[groupName] = tags.map((tag: any) => {
+        if (active.has(tag.name)) {
+          return { ...tag, active: true, count: 1 };
+        }
+        return tag;
+      });
+    });
+    return { ...msg, labels: newLabels };
+  });
+}
+
 export const Stage3Labeling: React.FC = () => {
   const dataPrep = useDataPrep();
   const {
@@ -86,6 +250,26 @@ export const Stage3Labeling: React.FC = () => {
   const [assignDone, setAssignDone] = React.useState(false);
   const [assignedStaffCount, setAssignedStaffCount] = React.useState(0);
 
+  // --- Step 7: Real data states (Phase 2 & 3) ---
+  /** Danh sách sample lấy từ DB (có sampleId thật) */
+  const [step7Samples, setStep7Samples] = React.useState<any[]>([]);
+  /** Index sample đang xem hiện tại trong step 7 (0-based) */
+  const [step7SampleIndex, setStep7SampleIndex] = React.useState(0);
+  /** Tổng số sample của dataset version */
+  const [step7TotalSamples, setStep7TotalSamples] = React.useState(0);
+  /** Đang tải nhãn từ API không */
+  const [isFetchingLabels, setIsFetchingLabels] = React.useState(false);
+  /** Số sample đã có nhãn message-level (coverage count) */
+  const [step7CoverageCount, setStep7CoverageCount] = React.useState(0);
+  /** Đang chạy AI auto-label batch không */
+  const [isAutoLabelingBatch, setIsAutoLabelingBatch] = React.useState(false);
+  /** AI đã gán nhãn xong (dùng để isStepCompleted(6) trả true) */
+  const [aiLabelingDone, setAiLabelingDone] = React.useState(false);
+  /** Số batch count cho auto-label (controlled input) */
+  const [batchCount, setBatchCount] = React.useState(1);
+  /** Provider cho auto-label batch */
+  const [batchProvider, setBatchProvider] = React.useState<'gemini' | 'openai' | 'deepseek'>('gemini');
+
   const resetAssignModal = () => {
     setShowCreateTaskModal(false);
     setAssignDone(false);
@@ -98,7 +282,10 @@ export const Stage3Labeling: React.FC = () => {
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep3) return true;
     if (num === 5 && Object.keys(aiGroupLabels).length > 0) return true;
-    if (num === 6 && assignmentSamples.some((s: any) => s.assignees && s.assignees.length > 0)) return true;
+    if (num === 6 && (
+      assignmentSamples.some((s: any) => s.assignees && s.assignees.length > 0) ||
+      aiLabelingDone
+    )) return true;
     return false;
   };
 
@@ -207,6 +394,274 @@ export const Stage3Labeling: React.FC = () => {
     };
   }, [currentSubStep3]);
   // --------------------------------------
+
+  // =====================================================
+  // Step 7: Load samples & labels từ API thật (Phase 2)
+  // =====================================================
+
+  /**
+   * Tải nhãn từ DB cho sample tại convIdx, rồi merge vào iaMessages.
+   * cancelled là ref để tránh setState sau khi component unmount/navigate đi.
+   */
+  const loadLabelsForSample = React.useCallback(
+    async (sampleId: string, convIdx: number, cancelled = false) => {
+      const conv = stage3Convs[convIdx];
+      if (!conv) return;
+      const baseMessages = buildBaseIaMessages(conv.messages || []);
+
+      setIsFetchingLabels(true);
+      try {
+        const { labels } = await apiService.getSampleLabels(sampleId, { scope: 'all' });
+        if (!cancelled) {
+          setIaMessages(activateLabelsInMessages(baseMessages, labels));
+        }
+      } catch (err) {
+        console.error('[Step7] loadLabelsForSample error:', err);
+        if (!cancelled) {
+          setIaMessages(baseMessages);
+        }
+      } finally {
+        if (!cancelled) setIsFetchingLabels(false);
+      }
+    },
+    [stage3Convs, setIaMessages]
+  );
+
+  /** Di chuyển đến sample thứ idx (0-based) trong step 7. */
+  const goToStep7Sample = React.useCallback(
+    async (idx: number) => {
+      if (idx < 0 || idx >= step7Samples.length) return;
+      setStep7SampleIndex(idx);
+      setSelectedIaMsgId(null);
+      const sample = step7Samples[idx];
+      const convIdx = (sample.sampleIndex ?? idx + 1) - 1; // sampleIndex 1-based → 0-based
+      await loadLabelsForSample(sample.sampleId, convIdx);
+    },
+    [step7Samples, loadLabelsForSample, setSelectedIaMsgId]
+  );
+
+  React.useEffect(() => {
+    if (currentSubStep3 !== 7) return;
+    let cancelled = false;
+
+    const initStep7 = async () => {
+      try {
+        const versionId = await ensureDatasetVersionId();
+        const assignRes = await apiService.getDatasetVersionAssignments(versionId);
+        if (cancelled) return;
+
+        const samples = assignRes.samples || [];
+        setStep7Samples(samples);
+        const total = samples.length || stage3Convs.length;
+        setStep7TotalSamples(total);
+        setStep7SampleIndex(0);
+
+        if (samples.length > 0 && stage3Convs.length > 0) {
+          const first = samples[0];
+          const convIdx = (first.sampleIndex ?? 1) - 1;
+          await loadLabelsForSample(first.sampleId, convIdx, cancelled);
+        } else if (stage3Convs.length > 0) {
+          if (!cancelled) setIaMessages(buildBaseIaMessages(stage3Convs[0]?.messages || []));
+        }
+      } catch (err) {
+        console.error('[Step7] initStep7 error:', err);
+        if (!cancelled && stage3Convs.length > 0) {
+          setIaMessages(buildBaseIaMessages(stage3Convs[0]?.messages || []));
+          setStep7TotalSamples(stage3Convs.length);
+        }
+      }
+    };
+
+    initStep7();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSubStep3]);
+  // --------------------------------------
+
+  // =====================================================
+  // Step 7: Wrapper gán nhãn thủ công với API (Phase 2)
+  // =====================================================
+
+  /**
+   * Wrapper cho handleToggleLabel: cập nhật UI + gọi API lưu xuống DB.
+   */
+  const handleToggleLabelWithApi = React.useCallback(
+    (msg: any, groupName: string, tagName: string) => {
+      // Xác định trạng thái active hiện tại để biết add/remove
+      const currentTag = (msg.labels[groupName] || []).find((t: any) => t.name === tagName);
+      const wasActive = currentTag?.active ?? false;
+
+      // Cập nhật UI qua context handler
+      handleToggleLabel(msg.id, groupName, tagName);
+
+      // Gọi API (fire-and-forget)
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      if (!sampleId) return;
+
+      const dbName = getDbLabelName(tagName, msg.role);
+      if (!dbName) return;
+      const isHard = !ISSUES_SOFT_LABELS.has(tagName);
+      const labelType: 'hard' | 'soft' = isHard ? 'hard' : 'soft';
+
+      if (!wasActive) {
+        // Toggle ON → add label
+        apiService.addSampleLabel(sampleId, {
+          name: dbName,
+          type: labelType,
+          targetScope: 'message',
+          messageIndex: msg.messageIndex,
+          messageRole: msg.role,
+          targetTextSnapshot: msg.text?.slice(0, 200),
+        }).catch((err: any) =>
+          console.error('[handleToggleLabelWithApi] addSampleLabel failed:', err)
+        );
+      } else {
+        // Toggle OFF → remove label
+        apiService.removeSampleLabel(sampleId, {
+          name: dbName,
+          type: labelType,
+          targetScope: 'message',
+          messageIndex: msg.messageIndex,
+          messageRole: msg.role,
+        }).catch((err: any) =>
+          console.error('[handleToggleLabelWithApi] removeSampleLabel failed:', err)
+        );
+      }
+    },
+    [handleToggleLabel, step7Samples, step7SampleIndex]
+  );
+
+  /**
+   * Wrapper cho handleRemoveMessageSingleLabel: cập nhật UI + gọi API.
+   * msg là object message đầy đủ (có role và messageIndex).
+   */
+  const handleRemoveLabelWithApi = React.useCallback(
+    (msg: any, uiTagName: string) => {
+      // Cập nhật UI
+      handleRemoveMessageSingleLabel(msg.id, uiTagName);
+
+      // Gọi API
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      if (!sampleId) return;
+
+      const dbName = getDbLabelName(uiTagName, msg.role);
+      if (!dbName) return;
+      const isHard = !ISSUES_SOFT_LABELS.has(uiTagName);
+
+      apiService.removeSampleLabel(sampleId, {
+        name: dbName,
+        type: isHard ? 'hard' : 'soft',
+        targetScope: 'message',
+        messageIndex: msg.messageIndex,
+        messageRole: msg.role,
+      }).catch((err: any) =>
+        console.error('[handleRemoveLabelWithApi] removeSampleLabel failed:', err)
+      );
+    },
+    [handleRemoveMessageSingleLabel, step7Samples, step7SampleIndex]
+  );
+
+  // =====================================================
+  // Step 7: AI Auto-Label Batch (Phase 3)
+  // =====================================================
+
+  /** Chạy AI auto-label cho `batchCount` samples kể từ sample đang xem. */
+  const handleAutoLabelBatch = React.useCallback(async () => {
+    if (step7Samples.length === 0) {
+      alert('Chưa có dataset. Vui lòng hoàn thành Step 5 trước.');
+      return;
+    }
+    setIsAutoLabelingBatch(true);
+    try {
+      const samplesToLabel = step7Samples.slice(step7SampleIndex, step7SampleIndex + batchCount);
+      const payload = samplesToLabel.map((sample: any) => {
+        const convIdx = (sample.sampleIndex ?? 1) - 1;
+        const conv = stage3Convs[convIdx];
+        const messages = (conv?.messages || []).flatMap((turn: any, tIdx: number) => [
+          { messageIndex: tIdx * 2, role: 'user' as const, content: turn.user || '' },
+          { messageIndex: tIdx * 2 + 1, role: 'assistant' as const, content: turn.assistant || '' },
+        ]).filter((m: any) => m.content.trim() !== '');
+        return { sampleId: sample.sampleId, messages };
+      });
+
+      const result = await apiService.previewAndSaveMessageAutoLabelsBatch({
+        provider: batchProvider,
+        samples: payload,
+        concurrency: 3,
+      });
+
+      setStep7CoverageCount((prev) => prev + result.successCount);
+
+      // Reload nhãn cho sample hiện tại
+      const current = step7Samples[step7SampleIndex];
+      if (current) {
+        const convIdx = (current.sampleIndex ?? 1) - 1;
+        await loadLabelsForSample(current.sampleId, convIdx);
+      }
+
+      alert(`AI gán nhãn xong: ${result.successCount}/${result.processedCount} samples thành công.`);
+    } catch (err: any) {
+      console.error('[handleAutoLabelBatch] error:', err);
+      alert(err?.response?.data?.error || err?.message || 'Gán nhãn tự động thất bại.');
+    } finally {
+      setIsAutoLabelingBatch(false);
+    }
+  }, [step7Samples, step7SampleIndex, batchCount, batchProvider, stage3Convs, loadLabelsForSample]);
+
+  /**
+   * Step 6 Quick AI: gán nhãn toàn bộ dataset bằng AI, rồi chuyển thẳng sang Step 7.
+   */
+  const handleAiQuickLabelAll = React.useCallback(async () => {
+    setIsAutoLabelingBatch(true);
+    try {
+      let vId: string;
+      try {
+        vId = await ensureDatasetVersionId();
+      } catch (e: any) {
+        alert('Chưa có dữ liệu: ' + (e?.message || 'lỗi không xác định'));
+        return;
+      }
+
+      let samples = assignmentSamples;
+      if (!samples || samples.length === 0) {
+        const res = await apiService.getDatasetVersionAssignments(vId);
+        samples = res.samples || [];
+        setAssignmentSamples(samples);
+        setAssignmentTotals(res.totals);
+      }
+
+      if (samples.length === 0) {
+        alert('Không có samples để gán nhãn. Vui lòng hoàn thành Step 5 trước.');
+        return;
+      }
+
+      const payload = samples.map((sample: any) => {
+        const convIdx = (sample.sampleIndex ?? 1) - 1;
+        const conv = stage3Convs[convIdx];
+        const messages = (conv?.messages || []).flatMap((turn: any, tIdx: number) => [
+          { messageIndex: tIdx * 2, role: 'user' as const, content: turn.user || '' },
+          { messageIndex: tIdx * 2 + 1, role: 'assistant' as const, content: turn.assistant || '' },
+        ]).filter((m: any) => m.content.trim() !== '');
+        return { sampleId: sample.sampleId, messages };
+      });
+
+      const result = await apiService.previewAndSaveMessageAutoLabelsBatch({
+        provider: 'gemini',
+        samples: payload,
+        concurrency: 3,
+      });
+
+      setStep7CoverageCount(result.successCount);
+      setAiLabelingDone(true);
+      alert(`AI đã gán nhãn ${result.successCount}/${result.processedCount} samples. Đang chuyển sang Step 7...`);
+      setCurrentSubStep3(7);
+    } catch (err: any) {
+      console.error('[handleAiQuickLabelAll] error:', err);
+      alert(err?.response?.data?.error || err?.message || 'Gán nhãn tự động thất bại.');
+    } finally {
+      setIsAutoLabelingBatch(false);
+    }
+  }, [assignmentSamples, stage3Convs, setCurrentSubStep3, setAssignmentSamples, setAssignmentTotals]);
 
   // Fetch staff when modal opens
   React.useEffect(() => {
@@ -1453,6 +1908,52 @@ export const Stage3Labeling: React.FC = () => {
             </div>
 
           </div>
+
+          {/* AI Quick Label — bỏ qua giao việc thủ công, gán nhãn toàn bộ bằng AI */}
+          <div style={{
+            margin: '20px 0 0 0',
+            padding: '16px 20px',
+            background: '#f0f9ff',
+            border: '1px solid #bae6fd',
+            borderRadius: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '16px',
+          }}>
+            <div>
+              <strong style={{ color: '#0369a1', fontSize: '14px' }}>
+                🤖 Gán nhãn nhanh bằng AI (bỏ qua giao việc thủ công)
+              </strong>
+              <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                AI sẽ tự động gán nhãn Intent/Action cho toàn bộ {stage3Convs.length} sample. Sau đó bạn có thể vào Step 7 để kiểm tra và chỉnh sửa.
+              </p>
+            </div>
+            <button
+              style={{
+                padding: '10px 20px',
+                background: isAutoLabelingBatch ? '#94a3b8' : '#0ea5e9',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: isAutoLabelingBatch ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+              onClick={handleAiQuickLabelAll}
+              disabled={isAutoLabelingBatch}
+            >
+              {isAutoLabelingBatch
+                ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Đang xử lý...</>
+                : <><Sparkles size={14} /> Gán nhãn tự động</>
+              }
+            </button>
+          </div>
         </div>
       )}
 
@@ -1462,11 +1963,15 @@ export const Stage3Labeling: React.FC = () => {
           <div className="ia-coverage-bar">
             <div>
               <h4>Intent-Action Coverage</h4>
-              <p>0 / 90 samples have complete Intent-Action labels.</p>
+              <p>
+                {step7CoverageCount} / {step7TotalSamples || stage3Convs.length} samples have complete Intent-Action labels.
+              </p>
             </div>
             <div className="ia-coverage-stats">
-              <span className="ia-stat-green">Complete: 0</span>
-              <span className="ia-stat-red">Missing: 90</span>
+              <span className="ia-stat-green">Complete: {step7CoverageCount}</span>
+              <span className="ia-stat-red">
+                Missing: {Math.max(0, (step7TotalSamples || stage3Convs.length) - step7CoverageCount)}
+              </span>
             </div>
           </div>
 
@@ -1475,8 +1980,22 @@ export const Stage3Labeling: React.FC = () => {
             <div className="ia-left">
               <div className="ia-section-card">
                 <div className="ia-chat-header">
-                  <h4><FileText size={14} /> Chat History</h4>
-                  <div className="ia-chat-meta">Conversation 1 &nbsp; <strong>1 / 90</strong></div>
+                  <h4><FileText size={14} /> Chat History{isFetchingLabels && <Loader2 size={13} style={{ marginLeft: 6, animation: 'spin 1s linear infinite' }} />}</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      className="ia-page-btn"
+                      disabled={step7SampleIndex <= 0 || isFetchingLabels}
+                      onClick={() => goToStep7Sample(step7SampleIndex - 1)}
+                    >← Prev</button>
+                    <div className="ia-chat-meta">
+                      <strong>{step7SampleIndex + 1} / {step7TotalSamples || stage3Convs.length}</strong>
+                    </div>
+                    <button
+                      className="ia-page-btn"
+                      disabled={step7SampleIndex >= (step7TotalSamples || stage3Convs.length) - 1 || isFetchingLabels}
+                      onClick={() => goToStep7Sample(step7SampleIndex + 1)}
+                    >Next →</button>
+                  </div>
                 </div>
 
                 <div className="ia-chat-tabs">
@@ -1541,7 +2060,7 @@ export const Stage3Labeling: React.FC = () => {
                                         }}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleRemoveMessageSingleLabel(msg.id, lbl);
+                                          handleRemoveLabelWithApi(msg, lbl);
                                         }}
                                       >
                                         {lbl === 'OK' && <Check size={10} style={{ marginRight: '2px' }} />}
@@ -1578,7 +2097,7 @@ export const Stage3Labeling: React.FC = () => {
                                         }}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleRemoveMessageSingleLabel(msg.id, lbl);
+                                          handleRemoveLabelWithApi(msg, lbl);
                                         }}
                                       >
                                         {lbl} <X size={10} style={{ marginLeft: '4px' }} />
@@ -1593,12 +2112,7 @@ export const Stage3Labeling: React.FC = () => {
                       })}
                     </div>
 
-                    {/* Pagination */}
-                    <div className="ia-chat-pagination">
-                      <button className="ia-page-btn">← Previous</button>
-                      <span className="ia-page-info">1 / 90</span>
-                      <button className="ia-page-btn">Next →</button>
-                    </div>
+
                   </>
                 )}
 
@@ -1656,14 +2170,36 @@ export const Stage3Labeling: React.FC = () => {
                 </div>
                 <div className="ia-label-actions-row">
                   <button className="ia-add-label-btn">Thêm Nhãn</button>
-                  <input type="number" defaultValue={1} className="ia-label-num-input" />
-                  <select className="ia-label-select">
-                    <option>Gemini</option>
-                    <option>Deepseek</option>
+                  <input
+                    type="number"
+                    min={1}
+                    max={step7TotalSamples || 99}
+                    value={batchCount}
+                    onChange={(e) => setBatchCount(Math.max(1, Number(e.target.value)))}
+                    className="ia-label-num-input"
+                  />
+                  <select
+                    className="ia-label-select"
+                    value={batchProvider}
+                    onChange={(e) => setBatchProvider(e.target.value as 'gemini' | 'openai' | 'deepseek')}
+                  >
+                    <option value="gemini">Gemini</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">Deepseek</option>
                   </select>
                 </div>
                 <div className="ia-label-btn-row">
-                  <button className="ia-auto-labeling-btn">Auto Labeling</button>
+                  <button
+                    className="ia-auto-labeling-btn"
+                    onClick={handleAutoLabelBatch}
+                    disabled={isAutoLabelingBatch}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    {isAutoLabelingBatch
+                      ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Đang gán nhãn...</>
+                      : 'Auto Labeling'
+                    }
+                  </button>
                   <button className="ia-user-guide-btn" onClick={() => setShowUserGuide(true)}>📋 User Guide</button>
                 </div>
               </div>
@@ -1763,7 +2299,7 @@ export const Stage3Labeling: React.FC = () => {
                                   <div
                                     key={tag.name}
                                     style={tagStyle}
-                                    onClick={() => handleToggleLabel(selectedMsg.id, groupName, tag.name)}
+                                    onClick={() => handleToggleLabelWithApi(selectedMsg, groupName, tag.name)}
                                     className="ia-hl-tag-interactive"
                                   >
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>

@@ -825,13 +825,17 @@ export class AssignmentController {
             totalSamples: sub.totalSamples,
             labeledCount: sub.labeledCount || 0,
             status: sub.status,
-            assignees: []
+            batchStart: sub.batchStart,
+            batchEnd: sub.batchStart + (sub.batchCount || sub.totalSamples) - 1,
+            assignees: [],
+            staffIds: [] as string[],
           };
           batchesMap[sub.name] = batch;
           totalSamples += sub.totalSamples;
           totalLabeled += subLabeled;
         }
         batch.assignees.push(staffMap[assigneeIdStr].name);
+        if (!batch.staffIds.includes(assigneeIdStr)) batch.staffIds.push(assigneeIdStr);
       });
 
       // === FIX: Dùng versionId (không phải taskId composite) để query samples ===

@@ -154,23 +154,34 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
   }
 
   const batches = taskDetail.batches || [];
-  const staffList = taskDetail.staffList || [];
+  const allStaffList = taskDetail.staffList || [];
+  // When a batch is selected, only show staff belonging to that batch
+  const staffList = selectedBatchId
+    ? (() => {
+        const sel = batches.find((b: any) => b.id === selectedBatchId);
+        if (!sel?.staffIds?.length) return allStaffList;
+        return allStaffList.filter((s: any) => sel.staffIds.includes(s.id));
+      })()
+    : allStaffList;
   const samples = taskDetail.samples || [];
   
-  // Filter and Pagination logic for samples tab
-  const filteredSamples = samples.filter((s: any) => {
+  const selectedBatch = selectedBatchId ? batches.find((b: any) => b.id === selectedBatchId) : null;
+
+  // Filter and Pagination logic for samples tab — scope to selected batch range
+  const batchSamples = selectedBatch?.batchStart != null
+    ? samples.filter((s: any) => s.id >= selectedBatch.batchStart && s.id <= (selectedBatch.batchEnd ?? Infinity))
+    : samples;
+  const filteredSamples = batchSamples.filter((s: any) => {
     if (sampleFilter === 'all') return true;
     const doneCount = staffList.filter((staff: any) => s.staffStatus?.[staff.id] === 'done').length;
     if (sampleFilter === 'completed') return doneCount === staffList.length;
     if (sampleFilter === 'pending') return doneCount < staffList.length;
     return true;
   });
-  
+
   const totalPages = Math.ceil(filteredSamples.length / itemsPerPage);
   const paginatedSamples = filteredSamples.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const conflicts = taskDetail.conflicts || [];
-
-  const selectedBatch = selectedBatchId ? batches.find(b => b.id === selectedBatchId) : null;
   const pendingConflicts = conflicts.filter(c => !resolvedConflicts.includes(c.key)).length;
 
   const overallProgress = taskDetail.totalSamples > 0
@@ -268,7 +279,11 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                 <Layers size={16} />
                 <div className="td-batch-item-info">
                   <span className="td-batch-name">{b.name}</span>
-                  <span className="td-batch-desc">Samples: {b.totalSamples}</span>
+                  <span className="td-batch-desc">
+                    {b.batchStart != null
+                      ? `#${b.batchStart + 1} – #${(b.batchEnd != null ? b.batchEnd : b.batchStart + b.totalSamples - 1) + 1}`
+                      : `${b.totalSamples} samples`}
+                  </span>
                 </div>
               </div>
             ))}
