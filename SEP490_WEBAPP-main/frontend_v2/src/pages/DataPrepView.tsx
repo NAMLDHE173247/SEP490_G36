@@ -13,7 +13,7 @@ const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
   { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-12' },
+  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
   { num: 5, label: 'Finish', sub: 'Step 13-15' },
 ];
 
@@ -704,8 +704,8 @@ function DataPrepInner() {
   const SUB_STEPS_STAGE4 = [
     { num: 8, label: 'Classification' },
     { num: 9, label: 'Quality Management' },
-    { num: 10, label: 'Distribution' },
-    { num: 11, label: 'Rewrite' },
+    { num: 10, label: 'Rewrite Assignment' },
+    { num: 11, label: 'Assignment Review' },
   ];
   const [currentSubStep4, setCurrentSubStep4] = useState(7);
   const [classPage, setClassPage] = useState(1);

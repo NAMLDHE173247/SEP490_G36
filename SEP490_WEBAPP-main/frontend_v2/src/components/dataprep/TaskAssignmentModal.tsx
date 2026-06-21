@@ -14,6 +14,8 @@ interface StaffItem {
   totalAssigned: number;
 }
 
+interface SupervisorItem { id: string; name: string; email: string; }
+
 interface VersionItem {
   _id: string;
   projectName: string;
@@ -31,8 +33,10 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [step, setStep] = useState(1);
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const [supervisors, setSupervisors] = useState<SupervisorItem[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<VersionItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [selectedSupervisor, setSelectedSupervisor] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [taskName, setTaskName] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -47,12 +51,14 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setStep(1);
       setSelectedVersion(null);
       setSelectedStaff([]);
+      setSelectedSupervisor('');
       setTaskName('');
       setPriority('medium');
       setDeadline('');
       setOverlapCount(1);
       setError('');
       fetchVersions();
+      fetchSupervisors();
     }
   }, [isOpen]);
 
@@ -83,6 +89,14 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       if (res.data.success) setStaffList(res.data.data);
     } catch { /* ignore */ }
     setLoading(false);
+  };
+
+  const fetchSupervisors = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      const list = (res.data.users || []).filter((u: any) => u.role === 'supervisor' && (!u.status || u.status === 'active'));
+      setSupervisors(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
+    } catch { setSupervisors([]); }
   };
 
   const toggleStaff = (id: string) => {
@@ -142,6 +156,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         priority,
         deadline: deadline || undefined,
         overlapCount,
+        supervisorId: selectedSupervisor || undefined,
       });
       if (res.data.success) {
         onSuccess();
@@ -336,13 +351,21 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                     <option value="low">Thấp</option>
                     <option value="medium">Trung bình</option>
                     <option value="high">Cao</option>
-                    <option value="urgent">Khẩn cấp</option>
                   </select>
                 </div>
                 <div className="ta-config-group">
                   <label><Calendar size={14} /> Deadline</label>
                   <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
                 </div>
+              </div>
+
+              <div className="ta-config-group ta-supervisor-field">
+                <label><Users size={14} /> Supervisor phụ trách</label>
+                <select value={selectedSupervisor} onChange={e => setSelectedSupervisor(e.target.value)} className="ta-select">
+                  <option value="">Admin tự phân giải (mặc định)</option>
+                  {supervisors.map(s => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}
+                </select>
+                <small>Conflict của task sẽ xuất hiện trong workspace của Supervisor được chọn.</small>
               </div>
 
               <div className="ta-summary-card">

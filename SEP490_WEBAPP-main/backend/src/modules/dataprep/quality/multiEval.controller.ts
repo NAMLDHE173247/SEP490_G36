@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/auth';
 import { MultiEvalService } from './multiEval.service';
+import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 
 const multiEvalService = new MultiEvalService();
 
@@ -111,7 +112,20 @@ export class MultiEvalController {
         return;
       }
 
+      const role = String((req as any).user?.role || '').toLowerCase();
+      if (!['admin', 'supervisor'].includes(role)) {
+        res.status(403).json({ error: 'Admin hoặc Supervisor role required.' });
+        return;
+      }
+
       const { versionId, resultId } = req.params;
+      if (role === 'supervisor') {
+        const assigned = await DatasetAssignmentSubmission.exists({ datasetVersionId: versionId, supervisor: supervisorId });
+        if (!assigned) {
+          res.status(403).json({ error: 'Conflict này chưa được giao cho Supervisor hiện tại.' });
+          return;
+        }
+      }
       const { action, note } = req.body;
 
       if (!['approve', 'rewrite', 'reevaluate', 'reject'].includes(action)) {

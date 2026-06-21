@@ -53,6 +53,7 @@ export const Stage3Labeling: React.FC = () => {
   const [assignmentSamples, setAssignmentSamples] = React.useState<any[]>([]);
   const [assignmentDashboard, setAssignmentDashboard] = React.useState<any>(null);
   const [shareUsers, setShareUsers] = React.useState<any[]>([]);
+  const [supervisors, setSupervisors] = React.useState<any[]>([]);
   const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
   const [isAssigning, setIsAssigning] = React.useState(false);
 
@@ -71,12 +72,14 @@ export const Stage3Labeling: React.FC = () => {
   const [autoSplitValue, setAutoSplitValue] = React.useState(3);
   const [autoSplitPrefix, setAutoSplitPrefix] = React.useState('Batch');
   const [autoSplitPreview, setAutoSplitPreview] = React.useState<{ id: string, name: string, samples: any[] }[]>([]);
+  const [conflictThreshold, setConflictThreshold] = React.useState(0.6);
 
   // Wizard Step 2 States
   const [drawerStep, setDrawerStep] = React.useState<1 | 2>(1);
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
+  const [assignedSupervisorId, setAssignedSupervisorId] = React.useState('');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
   const [overlapCount, setOverlapCount] = React.useState(1);
 
@@ -151,7 +154,11 @@ export const Stage3Labeling: React.FC = () => {
             const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
             let users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
 
+            const activeSupervisors = usersRes.users.filter((u: any) => u.role === 'supervisor' && u.status === 'active');
+            let sups = activeSupervisors.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+
             setShareUsers(users);
+            setSupervisors(sups);
             if (users.length > 0) {
               setTaskAssigneeId(users[0]._id);
             }
@@ -165,7 +172,7 @@ export const Stage3Labeling: React.FC = () => {
       fetchAssignmentData();
 
       // Listen for Real-Time Updates using SSE
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
       const sseUrl = `${apiBase}/dataprep/labeling/assignments/stream`;
       eventSource = new EventSource(sseUrl);
       eventSource.onmessage = (event) => {
@@ -202,6 +209,10 @@ export const Stage3Labeling: React.FC = () => {
         const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
         const users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
         setShareUsers(users);
+
+        const activeSupervisors = usersRes.users.filter((u: any) => u.role === 'supervisor' && u.status === 'active');
+        const sups = activeSupervisors.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+        setSupervisors(sups);
 
         // Also try to load samples if versionId exists
         const versionId = localStorage.getItem('current_version_id');
@@ -243,7 +254,9 @@ export const Stage3Labeling: React.FC = () => {
       await apiService.assignDatasetVersionRange(versionId, {
         assigneeId: taskAssigneeId,
         startIndex: startIndex,
-        count: Number(taskBatchSize)
+        count: Number(taskBatchSize),
+        similarityThreshold: conflictThreshold,
+        supervisorId: assignedSupervisorId || undefined
       });
       // Refresh dashboard
       const [dash, assign] = await Promise.all([
@@ -377,7 +390,9 @@ export const Stage3Labeling: React.FC = () => {
               startIndex,
               count,
               batchName: finalBatchName,
-              priority: taskPriority
+              priority: taskPriority,
+              similarityThreshold: conflictThreshold,
+              supervisorId: assignedSupervisorId || undefined
             });
           }
         }
@@ -2382,8 +2397,8 @@ export const Stage3Labeling: React.FC = () => {
             ) : (
               /* Step 2: Config & Confirm */
               <>
-                <div className="ct-wizard-step2" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-                  <div className="ct-wizard-config">
+                <div className="ct-wizard-step2" style={{ padding: '24px', overflowY: 'auto', flex: 1, gap: '24px' }}>
+                  <div className="ct-wizard-config" style={{ flex: '0 0 320px', background: 'transparent', border: 'none', padding: 0 }}>
                     <div className="ct-form-group">
                       <label>Tên Task (Tùy chọn)</label>
                       <input
@@ -2406,13 +2421,43 @@ export const Stage3Labeling: React.FC = () => {
                           <option value="low">Low</option>
                           <option value="medium">Medium</option>
                           <option value="high">High</option>
-                          <option value="urgent">Urgent</option>
                         </select>
                       </div>
                       <div className="ct-form-group">
-                        <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót (Deadline)</label>
+                        <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
                         <input type="date" className="ct-input" />
                       </div>
+                    </div>
+
+                    <div className="ct-form-group">
+                      <label>Supervisor phụ trách</label>
+                      <select 
+                        className="ct-select"
+                        value={assignedSupervisorId}
+                        onChange={e => setAssignedSupervisorId(e.target.value)}
+                      >
+                        <option value="">Admin tự phân giải (mặc định)</option>
+                        {supervisors.map(u => (
+                          <option key={u._id} value={u._id}>{u.name || u.email || 'Supervisor'}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="ct-form-group" style={{ marginTop: '14px' }}>
+                      <label style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Ngưỡng cảnh báo Conflict (Similarity)</span>
+                        <span style={{ fontWeight: 600 }}>{Math.round(conflictThreshold * 100)}%</span>
+                      </label>
+                      <input 
+                        type="range" 
+                        min="0" max="1" step="0.05"
+                        value={conflictThreshold}
+                        onChange={(e) => setConflictThreshold(Number(e.target.value))}
+                        style={{ width: '100%', marginTop: '8px', cursor: 'pointer' }}
+                      />
+                      <small style={{ color: '#64748b', fontSize: '11px', marginTop: '4px', display: 'block' }}>
+                        Nếu độ tương đồng nhãn của 2 nhân viên thấp hơn mức này, hệ thống sẽ báo Xung đột.
+                      </small>
                     </div>
                   </div>
 
@@ -2553,6 +2598,7 @@ export const Stage3Labeling: React.FC = () => {
                           taskName: taskNameInput.trim() || 'Labeling Task',
                           priority: taskPriority,
                           overlapCount,
+                          supervisorId: assignedSupervisorId || undefined
                         });
 
                         alert('Đã Giao Việc thành công!');

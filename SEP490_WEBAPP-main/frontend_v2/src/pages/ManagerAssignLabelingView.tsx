@@ -22,7 +22,6 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
-  'urgent': { label: 'Khẩn cấp', className: 'al-priority-urgent' },
   'high':   { label: 'Cao',      className: 'al-priority-high' },
   'medium': { label: 'Trung bình', className: 'al-priority-medium' },
   'low':    { label: 'Thấp',     className: 'al-priority-low' },
@@ -39,12 +38,18 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [supervisors, setSupervisors] = useState<any[]>([]);
+  const [updatingSupervisor, setUpdatingSupervisor] = useState<string | null>(null);
 
   const fetchTasks = async () => {
     setIsRefreshing(true);
     setFetchError(null);
     try {
-      const res = await api.get('/dataprep/assignments/manager/overview');
+      const [res, usersRes] = await Promise.all([
+        api.get('/dataprep/assignments/manager/overview'),
+        api.get('/auth/users').catch(() => ({ data: { users: [] } })),
+      ]);
+      setSupervisors((usersRes.data.users || []).filter((u: any) => u.role === 'supervisor' && u.status === 'active'));
       if (res.data.success) {
         setTasks(res.data.data);
       } else {
@@ -61,6 +66,25 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   React.useEffect(() => {
     fetchTasks();
   }, []);
+
+  const handleSupervisorChange = async (e: React.ChangeEvent<HTMLSelectElement>, task: any) => {
+    e.stopPropagation();
+    setUpdatingSupervisor(task.id);
+    try {
+      await api.patch('/dataprep/assignments/manager/task-supervisor', {
+        versionId: task.datasetVersionId,
+        taskName: task.name,
+        supervisorId: e.target.value || null,
+      });
+      setShowToast(e.target.value ? 'Đã cập nhật Supervisor phụ trách.' : 'Đã chuyển task về Admin xử lý.');
+      await fetchTasks();
+    } catch (error: any) {
+      setFetchError(error.response?.data?.error || 'Không thể cập nhật Supervisor.');
+    } finally {
+      setUpdatingSupervisor(null);
+      setTimeout(() => setShowToast(null), 3000);
+    }
+  };
 
   const handleDeleteTask = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -94,7 +118,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
       case 'date-asc': return new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime();
       case 'date-desc': return new Date(b.dueDate || 0).getTime() - new Date(a.dueDate || 0).getTime();
       case 'priority': {
-        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
+        const order = { high: 0, medium: 1, low: 2 };
         return (order[a.priority] || 2) - (order[b.priority] || 2);
       }
       case 'progress': {
@@ -288,6 +312,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                   <span className="al-task-desc">
                     {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
                   </span>
+                  <label onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
+                    <UserCheck size={14} />
+                    <select
+                      value={task.supervisorId || ''}
+                      onChange={(e) => handleSupervisorChange(e, task)}
+                      disabled={updatingSupervisor === task.id}
+                      aria-label={`Supervisor của ${task.name}`}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px', background: '#fff', color: '#334155', maxWidth: 220 }}
+                    >
+                      <option value="">Admin xử lý conflict</option>
+                      {supervisors.map((supervisor: any) => (
+                        <option key={supervisor.id || supervisor._id} value={supervisor.id || supervisor._id}>
+                          {supervisor.name} ({supervisor.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>

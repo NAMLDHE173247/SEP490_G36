@@ -1,7 +1,8 @@
 ﻿import React, { useState } from 'react';
 import {
   ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
-  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
+  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown,
+  Download, Upload, FileJson
 } from 'lucide-react';
 import '../styles/stafftasks.css';
 
@@ -98,7 +99,7 @@ function useStaffTasks() {
       await loadStage4ForVersions(versionIds);
     };
     refresh();
-    const intervalId = window.setInterval(refresh, 5000);
+    const intervalId = window.setInterval(refresh, 20000);
     return () => window.clearInterval(intervalId);
   }, [staffId, refreshTick]);
 
@@ -112,7 +113,6 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
-  urgent: { label: 'Urgent', className: 'st-pri-urgent' },
   high: { label: 'High', className: 'st-pri-high' },
   medium: { label: 'Medium', className: 'st-pri-medium' },
   low: { label: 'Low', className: 'st-pri-low' },
@@ -128,6 +128,9 @@ function StaffTasksView({ onOpenTask }) {
   const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+2');
   const [isSubmittingRewrite, setIsSubmittingRewrite] = useState(false);
   const [isSuggestingRewrite, setIsSuggestingRewrite] = useState(false);
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const [isImportingRewrite, setIsImportingRewrite] = useState(false);
+  const rewriteFileRef = React.useRef<HTMLInputElement>(null);
   const rewriteContextOptions = [
     { value: 'n-2:n+2', label: 'n-2 to n+2' },
     { value: 'n-1:n+1', label: 'n-1 to n+1' },
@@ -153,6 +156,32 @@ function StaffTasksView({ onOpenTask }) {
     supervisor: 'Admin',
     rewriteTask: task,
   }));
+
+  const downloadRewriteBatch = () => {
+    const editable = rewriteTasks.filter((task: any) => !['approved', 'rejected'].includes(task.status));
+    const payload = { schema: 'sep490-rewrite-offline/v1', exportedAt: new Date().toISOString(), instructions: 'Only edit rewrittenText. Keep IDs and revision unchanged.', tasks: editable.map((task: any) => ({ taskId: String(task.id), datasetVersionId: String(task.datasetVersionId), revision: task.updatedAt, conversationId: task.convId, targetMessageIndex: task.targetMessageIndex, reason: task.reason || '', originalText: task.originalText || '', context: task.conversationMessages || [], rewrittenText: task.submittedText || '' })) };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `rewrite-tasks-${new Date().toISOString().slice(0,10)}.json`; anchor.click(); URL.revokeObjectURL(url);
+    setOfflineMessage(`Đã tải ${editable.length} task rewrite.`);
+  };
+
+  const importRewriteBatch = async (file: File) => {
+    setOfflineMessage(''); setIsImportingRewrite(true);
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (parsed.schema !== 'sep490-rewrite-offline/v1' || !Array.isArray(parsed.tasks)) throw new Error('File không đúng mẫu Rewrite Offline v1.');
+      const ownTasks = new Map(rewriteTasks.map((task: any) => [String(task.id), task]));
+      const valid = parsed.tasks.filter((row: any) => ownTasks.has(String(row.taskId)) && String(row.rewrittenText || '').trim());
+      const invalidCount = parsed.tasks.length - valid.length;
+      if (!valid.length) throw new Error('Không có dòng hợp lệ có rewrittenText để nộp.');
+      if (!window.confirm(`Tìm thấy ${valid.length} bản hợp lệ${invalidCount ? `, bỏ qua ${invalidCount} dòng lỗi/trống` : ''}. Nộp ngay?`)) return;
+      const results = await Promise.allSettled(valid.map((row: any) => { const task: any = ownTasks.get(String(row.taskId)); const versionId = String(task.datasetVersionId || row.datasetVersionId || ''); return versionId ? stage4Api.submitRewrite(versionId, String(row.taskId), String(row.rewrittenText).trim(), row.revision) : Promise.reject(new Error('Missing version')); }));
+      const succeeded = results.filter(r => r.status === 'fulfilled').length;
+      setOfflineMessage(`Đã nộp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
+    } catch (error: any) { setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); }
+    finally { setIsImportingRewrite(false); if (rewriteFileRef.current) rewriteFileRef.current.value = ''; }
+  };
   const tasksByType = taskType === 'labeling' ? MY_TASKS : taskType === 'rewrite' ? rewriteTaskCards : [];
   const stats = {
     total: tasksByType.length,
@@ -170,8 +199,8 @@ function StaffTasksView({ onOpenTask }) {
     switch (sortBy) {
       case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
       case 'priority': {
-        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
-        return order[a.priority] - order[b.priority];
+        const order = { high: 0, medium: 1, low: 2 };
+        return (order[a.priority] ?? order.medium) - (order[b.priority] ?? order.medium);
       }
       case 'newest': return getDateTime(b.createdAt) - getDateTime(a.createdAt);
       default: return 0;
@@ -290,6 +319,18 @@ function StaffTasksView({ onOpenTask }) {
         </div>
       </div>
 
+      {taskType === 'rewrite' && (
+        <section className="st-offline-rewrite">
+          <div className="st-offline-copy"><span className="st-offline-icon"><FileJson size={20}/></span><div><strong>Làm Rewrite offline</strong><p>Tải batch về, chỉ sửa trường <code>rewrittenText</code>, rồi upload để nộp hàng loạt.</p></div></div>
+          <div className="st-offline-actions">
+            <button type="button" onClick={downloadRewriteBatch} disabled={!rewriteTasks.length}><Download size={16}/> Tải file JSON</button>
+            <button type="button" className="primary" onClick={()=>rewriteFileRef.current?.click()} disabled={isImportingRewrite}><Upload size={16}/> {isImportingRewrite?'Đang kiểm tra…':'Upload & Nộp'}</button>
+            <input ref={rewriteFileRef} type="file" accept="application/json,.json" hidden onChange={e=>e.target.files?.[0]&&importRewriteBatch(e.target.files[0])}/>
+          </div>
+          {offlineMessage&&<div className="st-offline-message" role="status">{offlineMessage}</div>}
+        </section>
+      )}
+
       {/* Toolbar */}
       <div className="st-toolbar">
         <div className="st-filter-group">
@@ -324,9 +365,11 @@ function StaffTasksView({ onOpenTask }) {
         )}
 
         {filtered.map(task => {
-          const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
-          const statusInfo = STATUS_CONFIG[task.status];
-          const priInfo = PRIORITY_CONFIG[task.priority];
+          const totalSamples = Number(task.totalSamples) || 0;
+          const labeledCount = Number(task.labeledCount) || 0;
+          const progress = totalSamples > 0 ? Math.min(100, Math.round((labeledCount / totalSamples) * 100)) : 0;
+          const statusInfo = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
+          const priInfo = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
           const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
           const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
 

@@ -1228,27 +1228,37 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   const sampleOid = new mongoose.Types.ObjectId(sampleId);
   const versionOid = new mongoose.Types.ObjectId(datasetVersionId);
   await ensureLabelAssignmentsForSamples([sampleId]);
-  const version = await DatasetVersion.findById(versionOid).select('ownerId').lean();
+  const version = await DatasetVersion.findById(versionOid).select('ownerId similarityThreshold').lean();
   const ownerId = String((version as any)?.ownerId || '');
+  const similarityThreshold = Number.isFinite(Number((version as any)?.similarityThreshold)) ? Number((version as any).similarityThreshold) : 0.6;
 
   const assignments = await DatasetSampleAssignment.find({
-    datasetVersionId: versionOid,
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
     sampleId: sampleOid,
   }).lean();
 
-  const assigneeIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
+  const assignedIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
+  const sampleIndexByAssignee = new Map(assignments.map((item: any) => [String(item.assigneeId), Number(item.sampleIndex)]));
+  const submittedRows = assignedIds.length ? await DatasetAssignmentSubmission.find({
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
+    assigneeId: { $in: assignedIds.flatMap((id) => mongoose.Types.ObjectId.isValid(id) ? [id, new mongoose.Types.ObjectId(id)] : [id]) },
+    status: { $in: ['submitted', 'approved'] },
+  }).select('assigneeId batchStart batchCount').lean() : [];
+  const assigneeIds = assignedIds.filter((assigneeId) => submittedRows.some((row: any) => {
+    if (String(row.assigneeId) !== assigneeId) return false;
+    const sampleIndex = Number(sampleIndexByAssignee.get(assigneeId));
+    const start = Number(row.batchStart || 1);
+    return sampleIndex >= start && sampleIndex < start + Number(row.batchCount || 0);
+  }));
   const allSampleAssignments = await LabelAssignment.find({
     sampleId: sampleOid,
     type: { $in: ['hard', 'soft'] },
   }).lean();
-  const labelAuthorIds = allSampleAssignments
-    .map((item: any) => String(item.createdBy || ''))
-    .filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const comparisonAnnotatorIds = Array.from(new Set(
-    [...assigneeIds, ...labelAuthorIds, ownerId].filter(Boolean)
-  )).filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard');
-  const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample');
+  // Staff–Staff conflict is only meaningful after at least two assigned Staff
+  // have submitted this same sample. Owner/canonical labels are not annotators.
+  const comparisonAnnotatorIds = assigneeIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard' && comparisonAnnotatorIds.includes(String(item.createdBy)));
+  const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample' && comparisonAnnotatorIds.includes(String(item.createdBy)));
   const sampleMessages = Array.isArray((sample as any).data?.messages) ? (sample as any).data.messages : [];
   const softDerivedAssignments: any[] = [];
   softAssignments.forEach((doc: any) => {
@@ -1276,15 +1286,11 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         const messageIndex = Number(idx);
         if (!Number.isInteger(messageIndex) || !value) return;
         const role = sampleMessages[messageIndex]?.role === 'assistant' ? 'assistant' : 'user';
-        const labelName = role === 'assistant' ? value.action : value.intent;
-        if (!labelName) return;
-        softDerivedAssignments.push({
-          ...doc,
-          targetScope: 'message',
-          messageIndex,
-          messageRole: role,
-          name: String(labelName),
-        });
+        const labelValue = role === 'assistant' ? value.action : value.intent;
+        const labelNames = Array.isArray(labelValue) ? labelValue : labelValue ? [labelValue] : [];
+        labelNames.filter(Boolean).forEach((labelName: any) => softDerivedAssignments.push({
+          ...doc, targetScope: 'message', messageIndex, messageRole: role, name: String(labelName),
+        }));
       });
     }
   });
@@ -1347,6 +1353,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         agreementScore,
         majorityLabels,
         labelCounts,
+        threshold: similarityThreshold,
       });
 
       return {
@@ -1356,7 +1363,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         messageRole: target.messageRole,
         targetTextSnapshot: target.targetTextSnapshot,
         agreementScore,
-        hasConflict: agreementScore !== null && agreementScore < 0.6,
+        hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
         labelCounts,
         majorityLabels,
         annotators: annotatorSets.map((item) => ({
@@ -1599,13 +1606,18 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
   minAgreement?: number;
 }) {
   const versionOid = new mongoose.Types.ObjectId(datasetVersionId);
-  const assignmentRows = await DatasetSampleAssignment.find({ datasetVersionId: versionOid })
+  const assignmentRows = await DatasetSampleAssignment.find({ datasetVersionId: { $in: [versionOid, String(versionOid)] } })
     .sort({ sampleIndex: 1 })
     .lean();
 
   const sampleIds = Array.from(new Set(assignmentRows.map((row: any) => String(row.sampleId))));
   const samples = await ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).select('_id sampleId data').lean();
   const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
+
+  const submittedRows = await DatasetAssignmentSubmission.find({
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
+    status: { $in: ['submitted', 'approved'] },
+  }).select('assigneeId batchStart batchCount').lean();
 
   const results: any[] = [];
   for (const sampleId of sampleIds) {
@@ -1615,6 +1627,22 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
     }
     const sampleIndex = Number(assignmentsForSample[0]?.sampleIndex || 0);
     if (filters?.sampleIndex && sampleIndex !== filters.sampleIndex) {
+      continue;
+    }
+
+    let submittedCount = 0;
+    for (const assignee of assignmentsForSample) {
+      const isSubmitted = submittedRows.some((row: any) => 
+        String(row.assigneeId) === String(assignee.assigneeId) &&
+        sampleIndex >= Number(row.batchStart || 1) &&
+        sampleIndex < Number(row.batchStart || 1) + Number(row.batchCount || 0)
+      );
+      if (isSubmitted) {
+        submittedCount++;
+      }
+    }
+
+    if (submittedCount < 2) {
       continue;
     }
     const comparison = await buildAssignmentSampleComparison(datasetVersionId, sampleId);

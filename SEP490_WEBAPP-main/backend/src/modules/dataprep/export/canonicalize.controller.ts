@@ -6,8 +6,88 @@ import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 import { LabelSnapshot } from '../../../models/LabelSnapshot';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
+import { getAuthUserId } from '../../../utils/auth';
 
 export class CanonicalizeController {
+  async getTrainingData(req: Request, res: Response): Promise<void> {
+    try {
+      const { versionId } = req.params;
+      const version = await DatasetVersion.findById(versionId).lean();
+      if (!version) {
+        res.status(404).json({ error: 'Version not found' });
+        return;
+      }
+      const viewerId = getAuthUserId(req);
+      const role = String((req as any).user?.role || '').toLowerCase();
+      if (String(version.ownerId) !== String(viewerId) && !['admin', 'supervisor'].includes(role)) {
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+
+      const items = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).sort({ createdAt: 1 }).lean();
+      const itemIds = items.map((item: any) => item._id);
+      const [hardLabels, rewrites] = await Promise.all([
+        LabelAssignment.find({ sampleId: { $in: itemIds }, type: 'hard' }).sort({ createdAt: 1 }).lean(),
+        ConversationRewriteHistory.find({ datasetVersionId: versionId, approvedText: { $nin: ['', null] } }).lean(),
+      ]);
+
+      const labelsBySample = new Map<string, any[]>();
+      for (const label of hardLabels) {
+        const key = String(label.sampleId);
+        const rows = labelsBySample.get(key) || [];
+        rows.push(label);
+        labelsBySample.set(key, rows);
+      }
+      const rewritesBySample = new Map<string, Map<number, string>>();
+      for (const rewrite of rewrites) {
+        const key = String(rewrite.sampleId);
+        const rows = rewritesBySample.get(key) || new Map<number, string>();
+        rows.set(rewrite.messageIndex, String(rewrite.approvedText));
+        rewritesBySample.set(key, rows);
+      }
+
+      const data = items.map((item: any) => {
+        let messages: Array<any> = [];
+        if (Array.isArray(item.data?.messages)) messages = item.data.messages.map((message: any) => ({ ...message }));
+        else {
+          if (item.data?.prompt) messages.push({ role: 'user', content: String(item.data.prompt) });
+          if (item.data?.response) messages.push({ role: 'assistant', content: String(item.data.response) });
+        }
+        for (const [index, approvedText] of rewritesBySample.get(String(item._id)) || []) {
+          if (messages[index]) messages[index].content = approvedText;
+        }
+
+        const sampleLabels = new Set<string>();
+        const messageLabelMap = new Map<string, { messageIndex: number; role: string; labels: Set<string> }>();
+        for (const label of labelsBySample.get(String(item._id)) || []) {
+          if (label.targetScope === 'message' && Number.isInteger(label.messageIndex)) {
+            const mapKey = `${label.messageIndex}:${label.messageRole || ''}`;
+            const entry = messageLabelMap.get(mapKey) || { messageIndex: label.messageIndex, role: label.messageRole || '', labels: new Set<string>() };
+            entry.labels.add(String(label.name));
+            messageLabelMap.set(mapKey, entry);
+          } else sampleLabels.add(String(label.name));
+        }
+        const messageLabels = Array.from(messageLabelMap.values()).map(entry => ({
+          messageIndex: entry.messageIndex,
+          role: entry.role,
+          labels: Array.from(entry.labels),
+        }));
+        messageLabels.forEach(entry => {
+          if (messages[entry.messageIndex]) messages[entry.messageIndex].labels = entry.labels;
+        });
+
+        return {
+          id: String(item.sampleId || item._id),
+          conversation_id: String(item.sampleId || item._id),
+          messages,
+          labels: { sample: Array.from(sampleLabels), messages: messageLabels },
+        };
+      });
+      res.json({ versionId, total: data.length, labeledSamples: data.filter(item => item.labels.sample.length || item.labels.messages.length).length, data });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || 'Failed to build training data' });
+    }
+  }
   /**
    * API: Chốt nhãn (Canonicalization) — gom hard labels → DatasetCanonicalLabel
    * POST /api/dataprep/export/:versionId/canonicalize

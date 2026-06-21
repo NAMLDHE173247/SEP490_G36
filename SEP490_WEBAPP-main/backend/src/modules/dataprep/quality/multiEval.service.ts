@@ -242,6 +242,7 @@ export class MultiEvalService {
               }
 
               const scorecard: ILlmScorecard = {
+                status: 'success',
                 socratic: parsed.socratic !== undefined ? Number(parsed.socratic) : null,
                 encouragement: parsed.encouragement !== undefined ? Number(parsed.encouragement) : null,
                 factuality: parsed.factuality !== undefined ? Number(parsed.factuality) : null,
@@ -270,15 +271,22 @@ export class MultiEvalService {
 
                 scorecard.overall = scores.length > 0
                   ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
-                  : 5;
+                  : 0;
               }
+
+              if (!scorecard.overall) throw new Error('Model trả về kết quả không hợp lệ hoặc thiếu điểm đánh giá.');
 
               return { modelName, scorecard };
             } catch (err: any) {
               console.error(`[MultiEval] Model ${modelName} call failed:`, err.message);
+              const detail = String(err?.message || 'Unknown API error');
+              const quotaExceeded = detail.includes('429') || detail.toLowerCase().includes('quota');
               return {
                 modelName,
                 scorecard: {
+                  status: 'unavailable' as const,
+                  errorCode: quotaExceeded ? 'QUOTA_EXCEEDED' : 'MODEL_UNAVAILABLE',
+                  errorDetail: detail.slice(0, 4000),
                   socratic: null,
                   encouragement: null,
                   factuality: null,
@@ -286,8 +294,8 @@ export class MultiEvalService {
                   consistency: null,
                   completeness: null,
                   readiness: null,
-                  overall: 5,
-                  reason: `Lỗi API khi gọi model ${modelName}: ${err.message}`,
+                  overall: 0,
+                  reason: quotaExceeded ? 'Model tạm không khả dụng do hết quota API.' : 'Không thể nhận kết quả từ model.',
                   recommendation: 'Need Rewrite' as const,
                 }
               };
@@ -301,7 +309,7 @@ export class MultiEvalService {
           });
 
           // 4. Calculate overall statistics, conflict status & auto-select the best model
-          const scores = Object.values(modelScores);
+          const scores = Object.values(modelScores).filter(score => score.status !== 'unavailable');
           const averageOverall = scores.length > 0
             ? Math.round((scores.reduce((sum, s) => sum + s.overall, 0) / scores.length) * 10) / 10
             : 0;
@@ -312,6 +320,7 @@ export class MultiEvalService {
           let maxReliability = -Infinity;
 
           for (const [modelName, scorecard] of Object.entries(modelScores)) {
+            if (scorecard.status === 'unavailable') continue;
             const metricsCount = [
               scorecard.socratic,
               scorecard.encouragement,
@@ -343,7 +352,7 @@ export class MultiEvalService {
           }
 
           // Resolve Final Recommendation proposal
-          let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = 'Pass';
+          let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = scores.length ? 'Pass' : 'Need Rewrite';
           const recs = scores.map((s) => s.recommendation);
           if (recs.includes('Reject')) {
             finalRecommendation = 'Reject';
@@ -447,7 +456,7 @@ export class MultiEvalService {
   }
 
   private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null): boolean {
-    const models = Object.keys(scorecards);
+    const models = Object.keys(scorecards).filter(model => scorecards[model].status !== 'unavailable');
     if (models.length <= 1 && humanScore === null) return false;
 
     let hasPass = false;

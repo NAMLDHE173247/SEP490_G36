@@ -1,6 +1,9 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface ILlmScorecard {
+  status?: 'success' | 'unavailable';
+  errorCode?: string;
+  errorDetail?: string;
   socratic?: number | null;
   encouragement?: number | null;
   factuality?: number | null;
@@ -37,6 +40,9 @@ export interface IMultiModelEvaluationResult extends Document {
 
 const LlmScorecardSchema = new Schema<ILlmScorecard>(
   {
+    status: { type: String, enum: ['success', 'unavailable'], default: 'success' },
+    errorCode: { type: String, default: '' },
+    errorDetail: { type: String, default: '' },
     socratic: { type: Number, min: 0, max: 10, default: null },
     encouragement: { type: Number, min: 0, max: 10, default: null },
     factuality: { type: Number, min: 0, max: 10, default: null },

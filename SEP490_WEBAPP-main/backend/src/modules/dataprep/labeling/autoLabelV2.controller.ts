@@ -46,14 +46,16 @@ export class AutoLabelV2Controller {
       const selectedProvider = createProvider(providerName);
       const service = new AutoLabelV2Service(selectedProvider);
       let suggestions;
+      let usedFallback = false;
       try {
         suggestions = await service.preview(normalizedMessages);
       } catch (error: any) {
         console.error('AutoLabel V2 provider failed, using fallback:', error?.message || error);
         suggestions = buildFallbackSuggestion(normalizedMessages);
+        usedFallback = true;
       }
 
-      res.json({ success: true, data: suggestions });
+      res.json({ success: true, data: suggestions, providerStatus: usedFallback ? 'fallback' : 'live', provider: providerName || 'gemini' });
     } catch (error: any) {
       console.error('AutoLabel V2 preview error:', error);
       res.status(error.statusCode || 500).json({

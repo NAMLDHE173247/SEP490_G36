@@ -7,7 +7,7 @@ export interface IDatasetSampleAssignment extends Document {
   assignedBy: Types.ObjectId | string;
   sampleIndex: number;
   taskType?: 'labeling' | 'cross-check';
-  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  priority?: 'low' | 'medium' | 'high';
   createdAt: Date;
   updatedAt?: Date;
 }
@@ -45,7 +45,7 @@ const DatasetSampleAssignmentSchema = new Schema<IDatasetSampleAssignment>(
     },
     priority: {
       type: String,
-      enum: ['low', 'medium', 'high', 'urgent'],
+      enum: ['low', 'medium', 'high'],
       default: 'medium',
     },
   },

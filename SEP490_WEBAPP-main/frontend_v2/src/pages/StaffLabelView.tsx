@@ -62,10 +62,13 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   }, [task]);
 
   const getLabel = (sampleId: string, field: string) => labels[sampleId]?.[field] || '';
-  const getMsgLabel = (sampleId: string, msgIdx: number, field: string) => labels[sampleId]?.messages?.[msgIdx]?.[field] || '';
+  const getMsgLabels = (sampleId: string, msgIdx: number, field: string): string[] => {
+    const value = labels[sampleId]?.messages?.[msgIdx]?.[field];
+    return Array.isArray(value) ? value.filter(Boolean) : value ? [String(value)] : [];
+  };
   const getFlags = (sampleId: string) => labels[sampleId]?.flags || [];
 
-  const setMsgLabel = (sampleId: string, msgIdx: number, field: string, value: string) => {
+  const setMsgLabel = (sampleId: string, msgIdx: number, field: string, value: string | string[]) => {
     setLabels(prev => {
       const current = prev[sampleId] || { subject: '', status: 'draft', messages: {} };
       return {
@@ -83,6 +86,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       };
     });
     setSavedDraft(false);
+  };
+
+  const toggleMsgLabel = (sampleId: string, msgIdx: number, field: string, value: string) => {
+    const current = getMsgLabels(sampleId, msgIdx, field);
+    setMsgLabel(sampleId, msgIdx, field, current.includes(value) ? current.filter(label => label !== value) : [...current, value]);
   };
 
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -110,6 +118,9 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       });
 
       if (res.data.success && res.data.data) {
+        if (res.data.providerStatus === 'fallback') {
+          alert('Gemini không phản hồi. Hệ thống đang hiển thị gợi ý dự phòng theo quy tắc, không phải kết quả trực tiếp từ Gemini.');
+        }
         const suggestion = res.data.data;
         const aiLabels: any = {
           subject: suggestion.subject || '',
@@ -129,12 +140,14 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
         if (Array.isArray(suggestion.messages)) {
           suggestion.messages.forEach((msg: any) => {
-            if (msg.intent && !intentOptions.includes(msg.intent) && !newIntents.includes(msg.intent)) {
-              newIntents.push(msg.intent);
-            }
-            if (msg.action && !actionOptions.includes(msg.action) && !newActions.includes(msg.action)) {
-              newActions.push(msg.action);
-            }
+            const suggestedIntents = Array.isArray(msg.intent) ? msg.intent : msg.intent ? [msg.intent] : [];
+            suggestedIntents.forEach((intent: string) => {
+              if (!intentOptions.includes(intent) && !newIntents.includes(intent)) newIntents.push(intent);
+            });
+            const suggestedActions = Array.isArray(msg.action) ? msg.action : msg.action ? [msg.action] : [];
+            suggestedActions.forEach((action: string) => {
+              if (!actionOptions.includes(action) && !newActions.includes(action)) newActions.push(action);
+            });
           });
         }
 
@@ -159,10 +172,10 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
             if (msg.intent) {
-              aiLabels.messages[messageIndex].intent = msg.intent;
+              aiLabels.messages[messageIndex].intent = Array.isArray(msg.intent) ? msg.intent : [msg.intent];
             }
             if (msg.action) {
-              aiLabels.messages[messageIndex].action = msg.action;
+              aiLabels.messages[messageIndex].action = Array.isArray(msg.action) ? msg.action : [msg.action];
             }
           });
         }
@@ -171,9 +184,13 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
         setLabels(prev => {
           const existingFlags = prev[sampleId]?.flags || [];
           const existingNote = prev[sampleId]?.note || '';
+          const mergedMessages = { ...(prev[sampleId]?.messages || {}) };
+          Object.entries(aiLabels.messages || {}).forEach(([messageIndex, messageLabels]: [string, any]) => {
+            mergedMessages[messageIndex] = { ...(mergedMessages[messageIndex] || {}), ...messageLabels };
+          });
           return {
             ...prev,
-            [sampleId]: { ...prev[sampleId], ...aiLabels, flags: existingFlags, note: existingNote }
+            [sampleId]: { ...prev[sampleId], ...aiLabels, messages: mergedMessages, flags: existingFlags, note: existingNote }
           };
         });
         setSavedDraft(false);
@@ -270,10 +287,19 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   const handleSubmit = async () => {
     if (!task) return;
+    const batchLabels = samples.reduce((payload: Record<string, any>, sample: any) => {
+      const label = labels[String(sample.id)] ?? labels[sample.id];
+      if (label) payload[String(sample.id)] = label;
+      return payload;
+    }, {});
+    if (Object.keys(batchLabels).length !== samples.length) {
+      alert('Chưa thể submit: dữ liệu nhãn của một số sample chưa có trong bản nháp hiện tại.');
+      return;
+    }
     try {
       const res = await api.post(`/dataprep/versions/${task.datasetVersionId || 'default'}/assignments/submit`, {
         submissionId: task.id,
-        labels: labels,
+        labels: batchLabels,
       });
       if (res.data.success) {
         setSubmitted(true);
@@ -427,52 +453,18 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                             {msg.role === 'user' ? (
                               <div className="sl-inline-label">
                                 <span className="sl-label-tag">Intent:</span>
-                                <select
-                                  value={getMsgLabel(sample.id, mIdx, 'intent')}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '__add_new__') {
-                                      const newIntent = window.prompt('Nhập Intent mới:');
-                                      if (newIntent && newIntent.trim() !== '') {
-                                        const trimmed = newIntent.trim();
-                                        if (!intentOptions.includes(trimmed)) setIntentOptions([...intentOptions, trimmed]);
-                                        setMsgLabel(sample.id, mIdx, 'intent', trimmed);
-                                      }
-                                    } else {
-                                      setMsgLabel(sample.id, mIdx, 'intent', val);
-                                    }
-                                  }}
-                                  className="sl-inline-select"
-                                >
-                                  <option value="">— Chọn —</option>
-                                  {intentOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                                  <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Intent mới...</option>
-                                </select>
+                                <div className="sl-multi-labels">
+                                  {intentOptions.map(o => <button type="button" key={o} className={getMsgLabels(sample.id,mIdx,'intent').includes(o)?'active':''} onClick={()=>toggleMsgLabel(sample.id,mIdx,'intent',o)}><Check size={12}/>{o}</button>)}
+                                  <button type="button" className="add" onClick={()=>{const value=window.prompt('Nhập Intent mới:')?.trim();if(value){if(!intentOptions.includes(value))setIntentOptions([...intentOptions,value]);toggleMsgLabel(sample.id,mIdx,'intent',value)}}}>+ Thêm Intent</button>
+                                </div>
                               </div>
                             ) : (
                               <div className="sl-inline-label">
                                 <span className="sl-label-tag">Action:</span>
-                                <select
-                                  value={getMsgLabel(sample.id, mIdx, 'action')}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '__add_new__') {
-                                      const newAction = window.prompt('Nhập Action mới:');
-                                      if (newAction && newAction.trim() !== '') {
-                                        const trimmed = newAction.trim();
-                                        if (!actionOptions.includes(trimmed)) setActionOptions([...actionOptions, trimmed]);
-                                        setMsgLabel(sample.id, mIdx, 'action', trimmed);
-                                      }
-                                    } else {
-                                      setMsgLabel(sample.id, mIdx, 'action', val);
-                                    }
-                                  }}
-                                  className="sl-inline-select"
-                                >
-                                  <option value="">— Chọn —</option>
-                                  {actionOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                                  <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm Action mới...</option>
-                                </select>
+                                <div className="sl-multi-labels">
+                                  {actionOptions.map(o => <button type="button" key={o} className={getMsgLabels(sample.id,mIdx,'action').includes(o)?'active':''} onClick={()=>toggleMsgLabel(sample.id,mIdx,'action',o)}><Check size={12}/>{o}</button>)}
+                                  <button type="button" className="add" onClick={()=>{const value=window.prompt('Nhập Action mới:')?.trim();if(value){if(!actionOptions.includes(value))setActionOptions([...actionOptions,value]);toggleMsgLabel(sample.id,mIdx,'action',value)}}}>+ Thêm Action</button>
+                                </div>
                               </div>
                             )}
                           </div>

@@ -24,6 +24,7 @@ router.get('/:id/assignments/samples/:sampleId/comparison', (req, res) => contro
 router.post('/:id/assignments/samples/:sampleId/adjudications', (req, res) => controller.resolveAssignmentAdjudication(req, res));
 router.post('/:id/assignments/samples/:sampleId/adjudications/publish', (req, res) => controller.publishAssignmentAdjudication(req, res));
 router.post('/:id/assignments/samples/:sampleId/adjudications/auto-publish', (req, res) => controller.autoPublishAssignmentAdjudications(req, res));
+router.post('/:id/assignments/samples/:sampleId/adjudications/ai-advice', (req, res) => controller.getAiAdjudicationAdvice(req, res));
 router.get('/:id/assignments/me/status', (req, res) => controller.getMyAssignmentStatus(req, res));
 router.post('/:id/assignments/me/submit', (req, res) => controller.submitMyAssignment(req, res));
 router.post('/:id/assignments/range', (req, res) => controller.assignRange(req, res));

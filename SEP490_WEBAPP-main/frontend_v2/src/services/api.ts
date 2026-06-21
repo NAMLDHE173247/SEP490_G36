@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAuthToken } from './authSession';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -144,6 +144,10 @@ export interface User {
 }
 
 export const apiService = {
+  getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
+    const response = await api.get(`/dataprep/export/${versionId}/training-data`);
+    return response.data;
+  },
   listUsers: async (): Promise<{ users: User[] }> => {
     const response = await api.get('/auth/users');
     return response.data;
@@ -332,7 +336,7 @@ export const apiService = {
 
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
     const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
       assigneeIds: [payload.assigneeId],
@@ -340,7 +344,9 @@ export const apiService = {
       sampleCount: payload.count,
       taskType: 'labeling',
       priority: payload.priority || 'medium',
-      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`
+      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`,
+      similarityThreshold: payload.similarityThreshold,
+      supervisorId: payload.supervisorId
     });
     return response.data;
   },
@@ -379,12 +385,12 @@ export const apiService = {
   // ==========================================
   // Chat & Inference Endpoints
   // ==========================================
-  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat-sessions'); return response.data; },
-  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat-sessions/${args[0]}`); return response.data; },
-  createChatSession: async (...args: any[]) => { const response = await api.post('/chat-sessions', args[0]); return response.data; },
-  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat-sessions/${args[0]}`, { title: args[1] }); return response.data; },
-  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat-sessions/${args[0]}`); return response.data; },
-  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat-sessions/${args[0]}/messages`, args[1]); return response.data; },
+  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat/sessions'); return response.data; },
+  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat/sessions/${args[0]}`); return response.data; },
+  createChatSession: async (...args: any[]) => { const response = await api.post('/chat/sessions', args[0]); return response.data; },
+  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, { title: args[1] }); return response.data; },
+  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat/sessions/${args[0]}`); return response.data; },
+  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat/sessions/${args[0]}/messages`, args[1]); return response.data; },
 
   infer: async (...args: any[]) => {
     const response = await api.post('/infer', args[0]);
@@ -403,7 +409,7 @@ export const apiService = {
       data = args[0];
       onChunkCallback = args[2] || args[1];
     }
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     const response = await fetch(`${apiUrl}/infer/stream`, {
       method: 'POST',
       headers: {
@@ -500,4 +506,3 @@ export const apiService = {
     return response.data;
   }
 };
-
