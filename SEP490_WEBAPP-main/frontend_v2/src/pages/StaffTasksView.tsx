@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
   Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
@@ -8,6 +8,7 @@ import '../styles/stafftasks.css';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { stage4Api } from '../services/stage4Api';
+import * as XLSX from 'xlsx';
 
 function useStaffTasks() {
   const { user } = useAuth();
@@ -160,28 +161,56 @@ function StaffTasksView({ onOpenTask }) {
 
   const downloadRewriteBatch = () => {
     const editable = rewriteTasks.filter((task: any) => !['approved', 'rejected'].includes(task.status));
-    const payload = { schema: 'sep490-rewrite-offline/v1', exportedAt: new Date().toISOString(), instructions: 'Only edit rewrittenText. Keep IDs and revision unchanged.', tasks: editable.map((task: any) => ({ taskId: String(task.id), datasetVersionId: String(task.datasetVersionId), revision: task.updatedAt, conversationId: task.convId, targetMessageIndex: task.targetMessageIndex, reason: task.reason || '', originalText: task.originalText || '', context: task.conversationMessages || [], rewrittenText: task.submittedText || '' })) };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `rewrite-tasks-${new Date().toISOString().slice(0,10)}.json`; anchor.click(); URL.revokeObjectURL(url);
-    setOfflineMessage(`Đã tải ${editable.length} task rewrite.`);
+    const data = editable.map((task: any) => {
+      const ctxStr = task.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
+      return {
+        'Task ID': String(task.id),
+        'Dataset Version ID': String(task.datasetVersionId),
+        'Revision': task.updatedAt,
+        'Original Text': task.originalText || '',
+        'Reason': task.reason || '',
+        'Context': ctxStr,
+        'Rewritten Text': task.submittedText || ''
+      };
+    });
+    
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rewrite Tasks');
+    XLSX.writeFile(wb, `rewrite-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setOfflineMessage(`Đã tải ${editable.length} task rewrite (Excel).`);
   };
 
   const importRewriteBatch = async (file: File) => {
     setOfflineMessage(''); setIsImportingRewrite(true);
     try {
-      const parsed = JSON.parse(await file.text());
-      if (parsed.schema !== 'sep490-rewrite-offline/v1' || !Array.isArray(parsed.tasks)) throw new Error('File không đúng mẫu Rewrite Offline v1.');
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const parsedRows: any[] = XLSX.utils.sheet_to_json(ws);
+      
       const ownTasks = new Map(rewriteTasks.map((task: any) => [String(task.id), task]));
-      const valid = parsed.tasks.filter((row: any) => ownTasks.has(String(row.taskId)) && String(row.rewrittenText || '').trim());
-      const invalidCount = parsed.tasks.length - valid.length;
-      if (!valid.length) throw new Error('Không có dòng hợp lệ có rewrittenText để nộp.');
-      if (!window.confirm(`Tìm thấy ${valid.length} bản hợp lệ${invalidCount ? `, bỏ qua ${invalidCount} dòng lỗi/trống` : ''}. Nộp ngay?`)) return;
-      const results = await Promise.allSettled(valid.map((row: any) => { const task: any = ownTasks.get(String(row.taskId)); const versionId = String(task.datasetVersionId || row.datasetVersionId || ''); return versionId ? stage4Api.submitRewrite(versionId, String(row.taskId), String(row.rewrittenText).trim(), row.revision) : Promise.reject(new Error('Missing version')); }));
-      const succeeded = results.filter(r => r.status === 'fulfilled').length;
-      setOfflineMessage(`Đã nộp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
-    } catch (error: any) { setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); }
-    finally { setIsImportingRewrite(false); if (rewriteFileRef.current) rewriteFileRef.current.value = ''; }
+      const valid = parsedRows.filter((row: any) => ownTasks.has(String(row['Task ID'])) && String(row['Rewritten Text'] || '').trim());
+      const invalidCount = parsedRows.length - valid.length;
+      
+      if (!valid.length) throw new Error('Không có dòng hợp lệ có Rewritten Text để nạp.');
+      if (!window.confirm(`Tìm thấy ${valid.length} bản hợp lệ${invalidCount ? `, bỏ qua ${invalidCount} dòng lỗi/trống` : ''}. Nạp ngay?`)) return;
+      
+      const results = await Promise.allSettled(valid.map((row: any) => { 
+        const task: any = ownTasks.get(String(row['Task ID'])); 
+        const versionId = String(task.datasetVersionId || row['Dataset Version ID'] || ''); 
+        return versionId ? stage4Api.submitRewrite(versionId, String(row['Task ID']), String(row['Rewritten Text']).trim(), row['Revision']) : Promise.reject(new Error('Missing version')); 
+      }));
+      
+      const succeeded = results.filter((r: any) => r.status === 'fulfilled').length;
+      setOfflineMessage(`Đã nạp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
+    } catch (error: any) { 
+      setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); 
+    } finally { 
+      setIsImportingRewrite(false); 
+      if (rewriteFileRef.current) rewriteFileRef.current.value = ''; 
+    }
   };
   const tasksByType = taskType === 'labeling' ? MY_TASKS : taskType === 'rewrite' ? rewriteTaskCards : [];
   const stats = {
@@ -334,6 +363,18 @@ function StaffTasksView({ onOpenTask }) {
             </button>
           ))}
         </div>
+        {taskType === 'rewrite' && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
+            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={downloadRewriteBatch}>⬇ Tải Excel</button>
+            <input type="file" ref={rewriteFileRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={(e) => {
+              if (e.target.files && e.target.files[0]) void importRewriteBatch(e.target.files[0]);
+            }} />
+            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => rewriteFileRef.current?.click()} disabled={isImportingRewrite}>
+              {isImportingRewrite ? '⏳ Đang nạp...' : '⬆ Nạp Excel'}
+            </button>
+            {offlineMessage && <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 500 }}>{offlineMessage}</span>}
+          </div>
+        )}
         <div className="st-sort-wrapper">
           <ArrowUpDown size={14} />
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="st-sort-select">
