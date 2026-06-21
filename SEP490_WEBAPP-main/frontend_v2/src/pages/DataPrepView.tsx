@@ -944,7 +944,7 @@ function DataPrepInner() {
     try {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
-        enableCleaning: cleaningEnabled,
+        enableCleaning: false,
         removeThinkTags: removeThinkTags
       });
 

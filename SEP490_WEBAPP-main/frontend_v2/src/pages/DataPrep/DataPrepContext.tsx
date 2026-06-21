@@ -933,7 +933,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
-        enableCleaning: cleaningEnabled,
+        enableCleaning: false,
         removeThinkTags: removeThinkTags
       });
 
