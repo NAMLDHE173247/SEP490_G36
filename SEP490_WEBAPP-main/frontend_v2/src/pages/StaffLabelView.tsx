@@ -232,7 +232,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       return;
     }
     try {
-      const res = await api.post(\/dataprep/versions/\/assignments/submit\, {
+      const res = await api.post(`/dataprep/versions/${task.datasetVersionId || task.versionId || task.version || task.id.split('_')[0]}/assignments/submit`, {
         submissionId: task.id,
         labels: batchLabels,
       });
