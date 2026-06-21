@@ -1139,7 +1139,7 @@ function computeAgreement(annotatorSets: Array<{ annotatorId: string; labels: st
   return Number((scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(4));
 }
 
-async function syncAdjudicationForTarget(params: {
+export async function syncAdjudicationForTarget(params: {
   datasetVersionId: mongoose.Types.ObjectId;
   sampleId: mongoose.Types.ObjectId;
   targetScope: LabelScope;
