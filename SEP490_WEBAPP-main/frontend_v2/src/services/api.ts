@@ -209,9 +209,10 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
+  uploadFile: async (file: File, projectId: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('projectId', projectId);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -301,7 +302,7 @@ export const apiService = {
     versionId: string,
     provider: 'gemini' | 'openai' | 'deepseek'
   ): Promise<{
-    suggestions: Array<{ clusterId: number; label: string; sampleCount: number }>;
+    suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
     const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider });
     return response.data;

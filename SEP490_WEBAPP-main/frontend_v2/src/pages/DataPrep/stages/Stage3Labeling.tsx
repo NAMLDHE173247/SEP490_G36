@@ -206,6 +206,7 @@ export const Stage3Labeling: React.FC = () => {
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
+  const [groupLabelMeta, setGroupLabelMeta] = React.useState<Record<number, { source: 'ai' | 'human' | 'system'; topic: string; reason: string }>>({});
   const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
   const [bulkSubject, setBulkSubject] = React.useState('');
   const [newSubjectInput, setNewSubjectInput] = React.useState('');
@@ -1149,7 +1150,7 @@ export const Stage3Labeling: React.FC = () => {
                       </td>
                       <td className="col-conv-id-cell">
                         <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
-                        <span className="conv-msg-count">{conv.messages.length} msgs</span>
+                        <span className="conv-msg-count">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length} msgs</span>
                       </td>
                       <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
                         <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1400,6 +1401,7 @@ export const Stage3Labeling: React.FC = () => {
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
                           const labelMap: Record<number, string> = {};
+                          const metaMap: Record<number, { source: 'ai'; topic: string; reason: string }> = {};
                           const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
                           const newLabels = new Set<string>();
 
@@ -1408,6 +1410,7 @@ export const Stage3Labeling: React.FC = () => {
                             const groupId = (s.clusterId ?? s.groupId);
                             if (groupId !== undefined) {
                               labelMap[groupId] = s.label;
+                              metaMap[groupId] = { source: 'ai', topic: s.topic || 'Chưa có tóm tắt', reason: s.reason || 'Chưa có giải thích từ AI.' };
                               if (s.label && !predefinedLabels.includes(s.label) && !customSubjectLabels.includes(s.label)) {
                                 newLabels.add(s.label);
                               }
@@ -1419,6 +1422,7 @@ export const Stage3Labeling: React.FC = () => {
                             setPendingAiLabels(Array.from(newLabels));
                           }
                           setAiGroupLabels(prev => ({ ...prev, ...labelMap }));
+                          setGroupLabelMeta(prev => ({ ...prev, ...metaMap }));
                           setStage3Convs(prev => prev.map(c =>
                             labelMap[c.groupId] ? { ...c, groupLabel: labelMap[c.groupId] } : c
                           ));
@@ -1564,6 +1568,7 @@ export const Stage3Labeling: React.FC = () => {
                             onChange={e => {
                               const newLabel = e.target.value;
                               setAiGroupLabels(prev => ({ ...prev, [g.id]: newLabel }));
+                              setGroupLabelMeta(prev => ({ ...prev, [g.id]: { source: 'human', topic: prev[g.id]?.topic || 'Chưa được tóm tắt', reason: 'Nhãn đã được người dùng chỉnh sửa thủ công.' } }));
                               setStage3Convs(prev => prev.map(c =>
                                 c.groupId === g.id ? { ...c, groupLabel: newLabel } : c
                               ));
@@ -1596,6 +1601,19 @@ export const Stage3Labeling: React.FC = () => {
                   </>
                 )}
               </div>
+
+              {selectedGroup3 !== null && (
+                <div style={{ marginTop: 12, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                    <strong style={{ fontSize: 13, color: '#1e293b' }}>Thông tin Group {selectedGroup3}</strong>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 999, background: groupLabelMeta[selectedGroup3]?.source === 'ai' ? '#eef2ff' : '#ecfdf5', color: groupLabelMeta[selectedGroup3]?.source === 'ai' ? '#4f46e5' : '#047857' }}>
+                      {groupLabelMeta[selectedGroup3]?.source === 'ai' ? 'AI' : groupLabelMeta[selectedGroup3]?.source === 'human' ? 'Con người' : 'Hệ thống'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5 }}><strong>Topic:</strong> {groupLabelMeta[selectedGroup3]?.topic || 'Chưa được tóm tắt'}</div>
+                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginTop: 6 }}><strong>Lý do gom cụm:</strong> {groupLabelMeta[selectedGroup3]?.reason || 'Chưa có giải thích độ tương đồng. Hãy chạy Label with AI.'}</div>
+                </div>
+              )}
 
               <div className="label-bottom-actions" style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                 {/* Clear button — luôn hiển thị khi đã chạy cluster */}
@@ -1690,7 +1708,7 @@ export const Stage3Labeling: React.FC = () => {
                 <MessageSquare size={20} />
                 <div>
                   <h2>Conversation Detail</h2>
-                  <p>{selectedConv3.id} · {selectedConv3.messages.length} messages · <span style={{ color: selectedConv3.groupColor, fontWeight: 700 }}>Group {selectedConv3.groupId} — {aiGroupLabels[selectedConv3.groupId] || selectedConv3.groupLabel}</span></p>
+                  <p>{selectedConv3.id} · {selectedConv3.roleMessages?.length ?? selectedConv3.messageCount ?? selectedConv3.messages.length} messages · <span style={{ color: selectedConv3.groupColor, fontWeight: 700 }}>Group {selectedConv3.groupId} — {aiGroupLabels[selectedConv3.groupId] || selectedConv3.groupLabel}</span></p>
                 </div>
               </div>
               <button className="cluster-popup-close-btn" onClick={() => setSelectedConv3(null)}>

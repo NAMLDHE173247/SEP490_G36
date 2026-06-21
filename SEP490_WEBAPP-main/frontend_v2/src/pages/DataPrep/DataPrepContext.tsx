@@ -786,6 +786,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
+      if (!selectedProjectId) {
+        alert('Bạn phải chọn hoặc tạo một Project trước khi tải file.');
+        e.target.value = '';
+        return;
+      }
       localStorage.removeItem('current_version_id');
       setActiveWorkflowVersion(null);
       try {
@@ -800,7 +805,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, selectedProjectId);
 
         setFile({
           fileId: res.fileId,
@@ -890,11 +895,13 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         const raw = record.messages;
         for (let i = 0; i < raw.length; i++) {
           if (raw[i].role === 'user') {
-            const nextAssistant = raw.slice(i + 1).find((m: any) => m.role === 'assistant');
+            const nextAssistant = raw[i + 1]?.role === 'assistant' ? raw[i + 1] : undefined;
             messages.push({
               user: raw[i].content || '',
               assistant: nextAssistant ? nextAssistant.content || '' : ''
             });
+          } else if (raw[i].role === 'assistant' && raw[i - 1]?.role !== 'user') {
+            messages.push({ user: '', assistant: raw[i].content || '' });
           }
         }
       } else if (record.conversations && Array.isArray(record.conversations)) {
@@ -931,7 +938,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       return {
         id,
-        messages
+        messages,
+        roleMessages: Array.isArray(record.messages)
+          ? record.messages.map((m: any) => ({ role: m.role, content: m.content || '' }))
+          : undefined,
+        messageCount: Array.isArray(record.messages) ? record.messages.length : messages.length * 2
       };
     });
   };
@@ -1143,9 +1154,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       const safeClusterMinSamples = Math.min(parseInt(clusterMinSamples, 10), Math.max(2, conversationsList.length));
       if (parseInt(clusterMinSamples, 10) !== safeClusterMinSamples) { setClusterMinSamples(safeClusterMinSamples.toString()); }
+      const requestedK = parseInt(targetK, 10) || 2;
+      // Keep the value selected by Find K. Only cap it at the number of samples,
+      // which is the actual mathematical constraint for K-means.
+      const safeK = Math.max(1, Math.min(requestedK, conversationsList.length));
+      if (requestedK !== safeK) setTargetK(String(safeK));
       const res = await apiService.clusterData(
         formattedData,
-        parseInt(targetK, 10),
+        safeK,
         parseFloat(clusterEps),
         safeClusterMinSamples
       );
@@ -1185,7 +1201,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
             groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
             subGroup: c.subGroup || 'A',
-            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+            confidence: typeof groupStat?.avgSimilarity === 'number' ? Math.round(groupStat.avgSimilarity * 100) : null,
+            similarity: groupStat?.avgSimilarity ?? null
           };
         });
         setStage3Convs(updatedConvs);
