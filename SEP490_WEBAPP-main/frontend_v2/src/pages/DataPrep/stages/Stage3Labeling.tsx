@@ -8,6 +8,8 @@ import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 import './Stage3Labeling.css';
+import { useToast } from '../../../hooks/useToast';
+import ToastContainer from '../../../components/ToastContainer';
 
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
@@ -174,6 +176,7 @@ function activateLabelsInMessages(baseMessages: any[], dbLabels: any[]): any[] {
 }
 
 export const Stage3Labeling: React.FC = () => {
+  const { toasts, toast } = useToast();
   const dataPrep = useDataPrep();
   const {
     currentSubStep3, setCurrentSubStep3,
@@ -244,6 +247,7 @@ export const Stage3Labeling: React.FC = () => {
   const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
+  const [taskDeadline, setTaskDeadline] = React.useState('');
   const [assignedSupervisorId, setAssignedSupervisorId] = React.useState('');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
   const [overlapCount, setOverlapCount] = React.useState(1);
@@ -922,12 +926,22 @@ export const Stage3Labeling: React.FC = () => {
     .map(([groupId, count]) => {
       const colorIdx = groupId === -1 ? 4 : (groupId - 1) % GROUP_COLORS.length;
       const palette = GROUP_COLORS[colorIdx >= 0 ? colorIdx : 0];
+      const groupConversations = stage3Convs.filter(c => c.groupId === groupId);
+      const similarityValues = groupConversations.map(c => Number(c.similarity)).filter(Number.isFinite);
+      const avgSimilarity = similarityValues.length
+        ? similarityValues.reduce((sum, value) => sum + value, 0) / similarityValues.length
+        : null;
+      // Do not pretend the first utterance represents the whole cluster.
+      // A real cluster-wide topic is populated by the AI labeling response.
+      const fallbackTopic = 'Chưa có tóm tắt toàn cụm — chạy Label with AI';
       return {
         id: groupId,
         label: groupId === -1 ? 'NOISE' : (aiGroupLabels[groupId] || ''),
         color: groupId === -1 ? '#dc2626' : palette.color,
         bg: groupId === -1 ? '#fef2f2' : palette.bg,
         count,
+        avgSimilarity,
+        fallbackTopic,
       };
     });
 
@@ -1554,7 +1568,10 @@ export const Stage3Labeling: React.FC = () => {
                         style={{ '--group-accent': g.color } as React.CSSProperties}
                         onClick={() => { setSelectedGroup3(g.id); setStage3Page(1); }}
                       >
-                        <div className="group-card-name" style={{ color: selectedGroup3 === g.id ? g.color : '#64748b', fontWeight: 700 }}>Group {g.id}</div>
+                        <div className="group-card-name" style={{ color: selectedGroup3 === g.id ? g.color : '#64748b', fontWeight: 700 }}>
+                          <div>Group {g.id}</div>
+                          <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1.35, fontWeight: 500, color: '#64748b' }}>Topic: {groupLabelMeta[g.id]?.topic || g.fallbackTopic}</div>
+                        </div>
                         <div className="group-card-count">{g.count}</div>
                         <div className="group-card-label">
                           <select
@@ -1602,7 +1619,7 @@ export const Stage3Labeling: React.FC = () => {
                 )}
               </div>
 
-              {selectedGroup3 !== null && (
+              {false && selectedGroup3 !== null && (
                 <div style={{ marginTop: 12, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                     <strong style={{ fontSize: 13, color: '#1e293b' }}>Thông tin Group {selectedGroup3}</strong>
@@ -1610,8 +1627,9 @@ export const Stage3Labeling: React.FC = () => {
                       {groupLabelMeta[selectedGroup3]?.source === 'ai' ? 'AI' : groupLabelMeta[selectedGroup3]?.source === 'human' ? 'Con người' : 'Hệ thống'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5 }}><strong>Topic:</strong> {groupLabelMeta[selectedGroup3]?.topic || 'Chưa được tóm tắt'}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginTop: 6 }}><strong>Lý do gom cụm:</strong> {groupLabelMeta[selectedGroup3]?.reason || 'Chưa có giải thích độ tương đồng. Hãy chạy Label with AI.'}</div>
+                  <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5 }}><strong>Topic:</strong> {groupLabelMeta[selectedGroup3]?.topic || GROUP_DATA.find(g => g.id === selectedGroup3)?.fallbackTopic || 'Chưa được tóm tắt'}</div>
+                  <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5, marginTop: 6 }}><strong>Độ tương đồng trung bình:</strong> {(() => { const value = GROUP_DATA.find(g => g.id === selectedGroup3)?.avgSimilarity; return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : 'Chưa có dữ liệu'; })()}</div>
+                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5, marginTop: 6 }}><strong>Tại sao chúng giống nhau?</strong> {groupLabelMeta[selectedGroup3]?.reason || `Các hội thoại được mô hình embedding xếp gần cùng tâm cụm dựa trên nội dung ngữ nghĩa chung về “${GROUP_DATA.find(g => g.id === selectedGroup3)?.fallbackTopic || 'chủ đề này'}”. Hãy chạy Label with AI để có giải thích chi tiết theo nội dung.`}</div>
                 </div>
               )}
 
@@ -1680,7 +1698,7 @@ export const Stage3Labeling: React.FC = () => {
                         ...c,
                         groupLabel: aiGroupLabels[c.groupId] || c.groupLabel
                       })));
-                      alert('Đã lưu nhãn thành công vào Database!');
+                      toast.success('Đã lưu nhãn thành công vào Database!');
                     } catch (err: any) {
                       console.error('Save labels error:', err);
                       const detail = err?.response?.data?.details || err?.response?.data?.error || err.message || 'Unknown error';
@@ -1944,6 +1962,8 @@ export const Stage3Labeling: React.FC = () => {
 
           {/* AI Quick Label — bỏ qua giao việc thủ công, gán nhãn toàn bộ bằng AI */}
           <div style={{
+            position: 'absolute',
+            left: '-10000px',
             margin: '20px 0 0 0',
             padding: '16px 20px',
             background: '#f0f9ff',
@@ -1992,6 +2012,15 @@ export const Stage3Labeling: React.FC = () => {
 
       {currentSubStep3 === 7 && (
         <div className="ia-dashboard">
+          <div style={{ marginBottom: 16, padding: '14px 18px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <div>
+              <strong style={{ color: '#0369a1', fontSize: 14 }}>🤖 Gán nhãn nhanh bằng AI</strong>
+              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>AI tự động gán nhãn Intent/Action cho toàn bộ {stage3Convs.length} sample để bạn kiểm tra và chỉnh sửa ngay tại Step 7.</p>
+            </div>
+            <button type="button" onClick={handleAiQuickLabelAll} disabled={isAutoLabelingBatch} style={{ padding: '9px 16px', background: isAutoLabelingBatch ? '#94a3b8' : '#0ea5e9', color: '#fff', border: 0, borderRadius: 8, fontWeight: 700, cursor: isAutoLabelingBatch ? 'not-allowed' : 'pointer' }}>
+              {isAutoLabelingBatch ? 'Đang xử lý...' : 'Gán nhãn tự động'}
+            </button>
+          </div>
           {/* Coverage Bar */}
           <div className="ia-coverage-bar">
             <div>
@@ -2655,6 +2684,7 @@ export const Stage3Labeling: React.FC = () => {
 
   return (
     <>
+      <ToastContainer toasts={toasts} />
       {renderedContent}
 
 
@@ -3014,7 +3044,28 @@ export const Stage3Labeling: React.FC = () => {
                       </div>
                       <div className="ct-form-group">
                         <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
-                        <input type="date" className="ct-input" />
+                        <input type="date" className="ct-input" required min={new Date().toISOString().slice(0, 10)} value={taskDeadline} onChange={(e) => setTaskDeadline(e.target.value)} style={!taskDeadline ? { borderColor: '#ef4444' } : undefined} />
+                        {!taskDeadline && <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Bắt buộc chọn hạn chót.</span>}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16, padding: 14, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc' }}>
+                      <div className="ct-form-group" style={{ marginBottom: 14 }}>
+                        <label>Người xử lý Conflict</label>
+                        <select className="ct-select" value={assignedSupervisorId} onChange={(e) => setAssignedSupervisorId(e.target.value)}>
+                          <option value="">Admin tự review và xử lý</option>
+                          {supervisors.map((supervisor: any) => (
+                            <option key={supervisor._id} value={supervisor._id}>{supervisor.name || supervisor.email} (Supervisor)</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="ct-form-group" style={{ marginBottom: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <label>Ngưỡng xác định xung đột giữa Staff</label>
+                          <strong style={{ color: '#4f46e5' }}>{Math.round(conflictThreshold * 100)}%</strong>
+                        </div>
+                        <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={(e) => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
                       </div>
                     </div>
 
@@ -3213,11 +3264,14 @@ export const Stage3Labeling: React.FC = () => {
                   <button
                     className="ct-btn-create"
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
-                    disabled={isAssigning}
+                    disabled={isAssigning || !taskNameInput.trim() || !taskDeadline}
                     onClick={async () => {
                       const selectedIds = staffAssignments['__selected__'] || [];
                       if (selectedIds.length === 0) return;
                       if (!taskNameInput.trim()) { alert('Vui lòng nhập Tên Task.'); return; }
+                      if (!taskDeadline) { toast.warning('Vui lòng chọn hạn chót cho Task.'); return; }
+                      const deadlineDate = new Date(`${taskDeadline}T23:59:59`);
+                      if (deadlineDate.getTime() < Date.now()) { toast.warning('Hạn chót không được nằm trong quá khứ.'); return; }
                       let versionId: string;
                       try { versionId = await ensureDatasetVersionId(); } catch (e: any) { alert('Missing dataset version: ' + (e.message || '')); return; }
 
@@ -3228,6 +3282,7 @@ export const Stage3Labeling: React.FC = () => {
                           aiAssigneeIds: aiSelected.filter(id => selectedIds.includes(id)),
                           taskName: taskNameInput.trim(),
                           priority: taskPriority,
+                          deadline: deadlineDate.toISOString(),
                           overlapCount,
                           supervisorId: assignedSupervisorId || undefined
                         });

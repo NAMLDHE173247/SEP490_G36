@@ -5,6 +5,54 @@ import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Tr
 
 export const Stage2Preprocessing = () => {
   const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
+  const [selectedClusterStat, setSelectedClusterStat] = React.useState<any>(null);
+
+  const summarizeCluster = React.useCallback((conversations: any[]) => {
+    const stopWords = new Set(['và','là','của','có','cho','trong','một','những','các','được','với','không','thì','này','đó','em','anh','chị','tôi','ta','hãy','sao','gì','như','về','khi','để','ở','từ','đến','theo','đúng','phải','bao','nhiêu','rồi','vậy','lắm','tốt','nhé','nha','ạ','à','ơi','ừ','ừm','dạ','vâng','cảm','ơn','thầy','cô','bạn','mình','hiểu','thử','xem','biết','nói','giúp','giải','thích','câu','hỏi','cần','tập','the','and','for','that','this','with','from','what','how','are','is']);
+    const documentFrequency = new Map<string, number>();
+    const phraseFrequency = new Map<string, number>();
+    const domainPhrases: Array<[RegExp, string]> = [
+      [/phương\s+trình/iu, 'phương trình'], [/bất\s+phương\s+trình/iu, 'bất phương trình'],
+      [/\\?frac|phân\s+số/iu, 'phân số'], [/trung\s+bình\s+cộng/iu, 'trung bình cộng'],
+      [/hàm\s+số/iu, 'hàm số'], [/đạo\s+hàm/iu, 'đạo hàm'], [/tích\s+phân/iu, 'tích phân'],
+      [/hình\s+học/iu, 'hình học'], [/xác\s+suất/iu, 'xác suất'],
+      [/phản\s+ứng|hóa\s+học/iu, 'phản ứng hóa học'], [/nguyên\s+tử/iu, 'nguyên tử'],
+      [/lực|gia\s+tốc|vận\s+tốc/iu, 'cơ học'],
+    ];
+    conversations.forEach((conversation: any) => {
+      const allMessages = conversation.roleMessages || conversation.messages.flatMap((pair: any) => [
+        { role: 'user', content: pair.user }, { role: 'assistant', content: pair.assistant },
+      ]);
+      // User utterances carry the problem/topic; assistant replies often contain
+      // generic encouragement that must not dominate cluster summaries.
+      const userMessages = allMessages.filter((message: any) => message.role === 'user' && String(message.content || '').trim());
+      const sourceMessages = userMessages.length ? userMessages : allMessages;
+      const texts = sourceMessages.map((message: any) => String(message.content || '')).join(' ');
+      domainPhrases.forEach(([pattern, label]) => {
+        if (pattern.test(texts)) phraseFrequency.set(label, (phraseFrequency.get(label) || 0) + 1);
+      });
+      const words = new Set((texts.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+        .filter((word: string) => word.length >= 3 && !stopWords.has(word) && !/^\d+$/.test(word)));
+      words.forEach((word: string) => documentFrequency.set(word, (documentFrequency.get(word) || 0) + 1));
+    });
+    const ranked = [...documentFrequency.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+      .filter(([, count]) => conversations.length === 1 || count >= 2)
+      .slice(0, 5);
+    const phrases = [...phraseFrequency.entries()].sort((a, b) => b[1] - a[1]).filter(([, count]) => conversations.length === 1 || count >= 2).slice(0, 3);
+    const keywords = ranked.map(([word]) => word).filter(word => !phrases.some(([phrase]) => phrase.includes(word)));
+    const sharedEntries = ranked.filter(([, count]) => count > 1);
+    const shared = sharedEntries.map(([word]) => word);
+    return {
+      topic: phrases.length
+        ? `Các bài học/bài toán về ${phrases.map(([phrase]) => phrase).join(' và ')}`
+        : keywords.length ? `Các hội thoại cùng tập trung vào ${keywords.slice(0, 3).join(', ')}` : 'Chưa đủ dữ liệu để xác định chủ đề chung',
+      reason: phrases.length
+        ? phrases.map(([phrase, count]) => `${count}/${conversations.length} hội thoại cùng đề cập ${phrase}`).join('; ') + '.'
+        : shared.length ? `Nhiều hội thoại cùng đề cập ${sharedEntries.map(([word, count]) => `“${word}” (${count}/${conversations.length} hội thoại)`).join(', ')}.`
+        : 'Chưa tìm thấy khái niệm lặp lại đủ mạnh; người duyệt nên kiểm tra trực tiếp các hội thoại trong cụm.',
+    };
+  }, []);
 
   {
     const totalConvs = conversationsList.length;
@@ -992,6 +1040,8 @@ export const Stage2Preprocessing = () => {
                   <div className="toolbar-stats">
                     <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                     <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#047857' }}>{userMessages} User</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#4f46e5' }}>{assistantMessages} AI</span>
                   </div>
                 </div>
 
@@ -1244,7 +1294,7 @@ export const Stage2Preprocessing = () => {
                               </thead>
                               <tbody>
                                 {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
-                                  <tr key={i}>
+                                  <tr key={i} onClick={() => setSelectedClusterStat(g)} style={{ cursor: 'pointer', background: selectedClusterStat?.clusterId === g.clusterId ? '#eef2ff' : undefined }}>
                                     <td style={{ textAlign: 'left' }}><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
                                     <td className="count-cell" style={{ textAlign: 'center' }}>{g.count}</td>
                                     <td className="sim-cell" style={{ textAlign: 'right' }}>{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
@@ -1258,6 +1308,19 @@ export const Stage2Preprocessing = () => {
                                 ))}
                               </tbody>
                             </table>
+                            {selectedClusterStat && (() => {
+                              const groupConversations = conversationsList.filter((conversation: any) => conversation.groupId === selectedClusterStat.clusterId);
+                              const summary = summarizeCluster(groupConversations);
+                              const similarity = Number(selectedClusterStat.avgSimilarity);
+                              return (
+                                <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #c7d2fe', background: '#f8fafc' }}>
+                                  <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>Review Group {selectedClusterStat.clusterId}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5 }}><strong>Topic (tổng hợp toàn cụm):</strong> {summary.topic}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4 }}><strong>Độ tương đồng trung bình:</strong> {Number.isFinite(similarity) ? `${(similarity * 100).toFixed(1)}%` : 'N/A'}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4, color: '#64748b' }}><strong>Tại sao chúng giống nhau?</strong> {summary.reason} {Number.isFinite(similarity) ? `Mức ${(similarity * 100).toFixed(1)}% cho thấy nội dung các hội thoại bám khá gần chủ đề trung tâm của nhóm.` : ''} Người duyệt vẫn nên kiểm tra các hội thoại không chứa chủ đề chung nêu trên.</div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </>
                       )}

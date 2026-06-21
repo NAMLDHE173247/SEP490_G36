@@ -1122,6 +1122,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       setFindKResults({ ...res, recommendedK });
       setTargetK(recommendedK.toString());
+      // The clustering step must use the exact DBSCAN parameters evaluated here.
+      setClusterEps(eps);
+      setClusterMinSamples(safeMinSamples.toString());
     } catch (err: any) {
       console.error('Visualize K failed:', err);
       alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');

@@ -126,6 +126,13 @@ export class AssignmentController {
       if (!cleanTaskName) {
         return res.status(400).json({ success: false, error: 'Tên Task là bắt buộc' });
       }
+      if (!deadline) {
+        return res.status(400).json({ success: false, error: 'Hạn chót của Task là bắt buộc' });
+      }
+      const parsedDeadline = new Date(deadline);
+      if (Number.isNaN(parsedDeadline.getTime()) || parsedDeadline.getTime() < Date.now()) {
+        return res.status(400).json({ success: false, error: 'Hạn chót không hợp lệ hoặc đã nằm trong quá khứ' });
+      }
 
       const overlapCount = Math.max(1, parseInt(rawOverlap) || 1);
       const M = assigneeIds.length;
@@ -197,7 +204,7 @@ export class AssignmentController {
             batchCount: group.sampleIds.length,
             taskType: 'labeling',
             priority: priority || 'medium',
-            deadline: deadline ? new Date(deadline) : undefined,
+            deadline: parsedDeadline,
             supervisor: supervisorId || assignedBy,
             labeledCount: 0,
             totalSamples: group.sampleIds.length,
