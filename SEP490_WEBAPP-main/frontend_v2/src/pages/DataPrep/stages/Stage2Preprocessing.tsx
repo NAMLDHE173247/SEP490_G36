@@ -1,7 +1,7 @@
 import React from 'react';
 import { useDataPrep, SAMPLE_RAW_DATA, SAMPLE_OUTPUT, SUB_STEPS_STAGE2 } from '../DataPrepContext';
 import { Tooltip } from '../utils';
-import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Trash2, GitCompare, ArrowUpDown, ChevronRight, CheckCircle, RefreshCw, MessageSquare, HelpCircle, Scissors, Filter, Calendar, BarChart2, XCircle, Tag, ClipboardList, Send, Play, Eye, RotateCcw, Plus, Sparkles, ChevronLeft, Settings, X } from 'lucide-react';
+import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Trash2, GitCompare, ArrowUpDown, ChevronRight, CheckCircle, RefreshCw, MessageSquare, HelpCircle, Scissors, Filter, Calendar, BarChart2, XCircle, Tag, ClipboardList, Send, Play, Eye, RotateCcw, Plus, Sparkles, ChevronLeft, Settings, X, Users } from 'lucide-react';
 
 export const Stage2Preprocessing = () => {
   const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
@@ -83,77 +83,96 @@ export const Stage2Preprocessing = () => {
         {currentSubStep === 1 && (
           <>
             {/* Post-conversion Statistics — shown above table after cleaning is applied */}
-            {cleaningApplied && (
-              <div className="post-stats-card">
-                <div className="post-stats-header">
-                  <Check size={16} className="post-stats-icon" />
-                  <span>Post-conversion Statistics</span>
-                </div>
-                <div className="post-stats-grid">
-                  <div className="post-stat-item">
-                    <div className="post-stat-label">Converted Records</div>
-                    <div className="post-stat-value">{conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs}</div>
-                  </div>
-                  <div className="post-stat-item">
-                    <div className="post-stat-label">Source Messages</div>
-                    <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
-                  </div>
-                </div>
+            {cleaningApplied && (() => {
+              const converted = conversionStats?.stats?.totalConversations ?? conversionStats?.totalConversations ?? totalConvs;
+              const sourceMessages = conversionStats?.stats?.totalMessages ?? (totalMessages + 47);
+              const removedKeyword = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
+              const removedLength = (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0);
+              const removedThink = conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0;
+              const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
+              const removed = (removedKeyword + removedLength + removedThink + (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0)) || 47;
+              const removedRecordPct = converted > 0 ? Math.round(((converted - final) / converted) * 100) : 0;
+              const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
+              const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
+              const ringR = 24;
+              const ringCirc = 2 * Math.PI * ringR;
+              const ringDash = (ringCirc * finalPct) / 100;
 
-                <div className="cleaning-report-title">CLEANING REPORT & DATA LOSS CHART</div>
-                <div className="post-stats-grid" style={{ marginBottom: '16px' }}>
-                  <div className="post-stat-item">
-                    <div className="post-stat-label">Lọc do vi phạm từ khóa</div>
-                    <div className="post-stat-value cleaning-red">
-                      {conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0}
+              return (
+                <div className="post-stats-card">
+                  <div className="post-stats-bar">
+                    <div className="post-stats-title">
+                      <Check size={16} className="post-stats-icon" />
+                      <span>Thống kê Sau Chuyển đổi</span>
                     </div>
-                  </div>
-                  <div className="post-stat-item">
-                    <div className="post-stat-label">Lọc do vi phạm độ dài</div>
-                    <div className="post-stat-value cleaning-red">
-                      {((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) ?? 0}
-                    </div>
-                  </div>
-                  <div className="post-stat-item">
-                    <div className="post-stat-label">Lọc do thẻ &lt;think&gt; hỏng</div>
-                    <div className="post-stat-value cleaning-red">
-                      {conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0}
-                    </div>
-                  </div>
-                  <div className="post-stat-item highlight">
-                    <div className="post-stat-label">Hội thoại hợp lệ</div>
-                    <div className="post-stat-value cleaning-green">{totalConvs}</div>
-                  </div>
-                </div>
 
-                {/* Dynamic Data Loss Chart */}
-                {(() => {
-                  const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
-                  const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
-                    (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
-                    (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
-                    (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
-                    (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
-                  const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
-                  const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
-                  const removedPct = source > 0 ? 100 - finalPct : 0;
-
-                  return (
-                    <div style={{ padding: '0 16px 16px', fontSize: '12px', color: '#64748b' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span>Source: {source} (100%)</span>
-                        <span>Filtered: {removed} ({removedPct}%)</span>
-                        <span>Final: {final} ({finalPct}%)</span>
+                    <div className="post-stats-sections">
+                      <div className="post-stats-group">
+                        <div className="post-stats-group-title">Tổng quan Nguồn</div>
+                        <div className="post-stats-group-body">
+                          <div className="stat-card">
+                            <Users size={22} className="stat-card-icon icon-muted" />
+                            <div className="stat-card-text">
+                              <span className="stat-card-label">Tổng số Hồ sơ</span>
+                              <span className="stat-card-value text-green">{converted}</span>
+                            </div>
+                          </div>
+                          <div className="stat-card">
+                            <MessageSquare size={22} className="stat-card-icon icon-muted" />
+                            <div className="stat-card-text">
+                              <span className="stat-card-label">Tổng số Tin nhắn</span>
+                              <span className="stat-card-value text-green">{sourceMessages}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', height: '12px', borderRadius: '6px', overflow: 'hidden', backgroundColor: '#e2e8f0' }}>
-                        <div style={{ width: `${finalPct}%`, backgroundColor: '#22c55e', transition: 'width 0.5s' }} title={`Clean Data (${finalPct}%)`}></div>
-                        <div style={{ width: `${removedPct}%`, backgroundColor: '#ef4444', transition: 'width 0.5s' }} title={`Removed (${removedPct}%)`}></div>
+
+                      <div className="post-stats-vline" />
+
+                      <div className="post-stats-group">
+                        <div className="post-stats-group-title">Lọc &amp; Chuyển đổi</div>
+                        <div className="post-stats-group-body">
+                          <div className="stat-card">
+                            <Filter size={20} className="stat-card-icon icon-red" />
+                            <div className="stat-card-text">
+                              <span className="stat-card-label">
+                                Đã loại bỏ: <strong className="text-strong">{removed} Tin nhắn</strong>{' '}
+                                <span className="stat-card-sub">({removedRecordPct}% Hồ sơ)</span>
+                              </span>
+                              <div className="removed-pills">
+                                <span>Từ khóa: {removedKeyword}</span>
+                                <span className="dot">·</span>
+                                <span>Độ dài: {removedLength}</span>
+                                <span className="dot">·</span>
+                                <span>Thẻ &lt;think&gt;: {removedThink}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="stat-card">
+                            <CheckCircle size={22} className="stat-card-icon icon-green" />
+                            <div className="stat-card-text">
+                              <span className="stat-card-label">Hội thoại Hợp lệ</span>
+                              <span className="stat-card-value text-green">{final}</span>
+                            </div>
+                          </div>
+                          <div className="conversion-ring">
+                            <svg width="56" height="56" viewBox="0 0 56 56">
+                              <circle cx="28" cy="28" r={ringR} fill="none" stroke="#e2e8f0" strokeWidth="6" />
+                              <circle cx="28" cy="28" r={ringR} fill="none" stroke="#22c55e" strokeWidth="6" strokeLinecap="round" strokeDasharray={`${ringDash} ${ringCirc}`} transform="rotate(-90 28 28)" />
+                              <text x="28" y="32" textAnchor="middle" style={{ fontSize: '14px', fontWeight: 800, fill: '#16a34a' }}>{finalPct}%</text>
+                            </svg>
+                            <div className="stat-card-text">
+                              <span className="stat-card-label">Hoàn tất Chuyển đổi</span>
+                              <span className="stat-card-value-sm">{final} / {converted}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  );
-                })()}
-              </div>
-            )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Full-width content (no sidebar) */}
             <div className="cluster-fullwidth">
@@ -255,14 +274,13 @@ export const Stage2Preprocessing = () => {
                               {conv.messages.length === 1 ? (
                                 /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
                                   {highlightSearch(conv.messages[0].user, searchQuery)}
                                 </div>
                               ) : (
                                 /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                    <span style={{ fontSize: '13px' }}>Chủ đề:</span>
                                     <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
                                       {getConversationTopic(conv.messages)}
                                     </span>
@@ -291,14 +309,13 @@ export const Stage2Preprocessing = () => {
                               {conv.messages.length === 1 ? (
                                 /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                  <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
                                   {highlightSearch(conv.messages[0].assistant, searchQuery)}
                                 </div>
                               ) : (
                                 /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
+                                    <span style={{ fontSize: '13px' }}>Phản hồi:</span>
                                     <span style={{ fontSize: '13.5px', color: '#0891b2' }}>
                                       {getAssistantSummary(conv.messages)}
                                     </span>
@@ -1005,13 +1022,12 @@ export const Stage2Preprocessing = () => {
                               <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {conv.messages.length === 1 ? (
                                   <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
                                     {highlightSearch(conv.messages[0].user, searchQuery)}
                                   </div>
                                 ) : (
                                   <>
                                     <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
+                                      <span style={{ fontSize: '13px' }}>Chủ đề:</span>
                                       <span style={{ fontSize: '13.5px', color: '#4f46e5' }}>
                                         {getConversationTopic(conv.messages)}
                                       </span>
@@ -1039,13 +1055,11 @@ export const Stage2Preprocessing = () => {
                               <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {conv.messages.length === 1 ? (
                                   <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
                                     {highlightSearch(conv.messages[0].assistant, searchQuery)}
                                   </div>
                                 ) : (
                                   <>
                                     <div className="conv-topic-title" style={{ fontWeight: '600', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ fontSize: '13px', visibility: 'hidden' }}>📌</span>
                                       <span style={{ fontSize: '13.5px', fontStyle: 'italic' }}>Phản hồi nổi bật</span>
                                     </div>
                                     <div className="conv-turns-list" style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '4px' }}>

@@ -206,9 +206,6 @@ export const Stage3Labeling: React.FC = () => {
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
-  const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
-  const [bulkSubject, setBulkSubject] = React.useState('');
-  const [newSubjectInput, setNewSubjectInput] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
   const [useCustomApi, setUseCustomApi] = React.useState(false);
 
@@ -957,110 +954,17 @@ export const Stage3Labeling: React.FC = () => {
               </span>
             </div>
 
-            {/* Bulk Label & Split Toolbar */}
-            <div className="preview-toolbar" style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '12px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span className="toolbar-label" style={{ fontWeight: 600 }}>Bulk Actions:</span>
-              <select
-                className="toolbar-select"
-                style={{ minWidth: '150px' }}
-                value={bulkSubject}
-                onChange={e => setBulkSubject(e.target.value)}
-              >
-                <option value="">-- Select Subject --</option>
-                <option value="MATH">MATH</option>
-                <option value="CODING">CODING</option>
-                <option value="PHYSICS">PHYSICS</option>
-                <option value="PHYSICAL">PHYSICAL</option>
-                <option value="CHEMISTRY">CHEMISTRY</option>
-                <option value="BIOLOGY">BIOLOGY</option>
-                <option value="HISTORY">HISTORY</option>
-                <option value="LITERATURE">LITERATURE</option>
-                <option value="GEOGRAPHY">GEOGRAPHY</option>
-                <option value="OTHER">OTHER</option>
-                <option value="NOISE">NOISE</option>
-                {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
-                {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
-              </select>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <input
-                  type="text"
-                  placeholder="Tên môn mới..."
-                  value={newSubjectInput}
-                  onChange={e => setNewSubjectInput(e.target.value)}
-                  style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', width: '130px', outline: 'none' }}
-                />
-                <button
-                  onClick={() => {
-                    if (newSubjectInput.trim() && !customSubjectLabels.includes(newSubjectInput.trim())) {
-                      setCustomSubjectLabels(prev => [...prev, newSubjectInput.trim()]);
-                      setBulkSubject(newSubjectInput.trim());
-                      setNewSubjectInput('');
-                    }
-                  }}
-                  style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: '#f1f5f9', border: '1px solid #cbd5e1', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center' }}
-                  title="Thêm môn học mới vào danh sách"
-                >
-                  <Plus size={14} /> Add
-                </button>
-              </div>
-              <button
-                onClick={() => {
-                  if (!bulkSubject || checkedConvIds.length === 0) return;
-                  const selectedGroups = new Set<number>();
-                  stage3Convs.forEach(c => {
-                    if (checkedConvIds.includes(c.id)) {
-                      selectedGroups.add(c.groupId);
-                    }
-                  });
-                  if (selectedGroups.size === 0) return;
-
-                  const newGroupLabels = { ...aiGroupLabels };
-                  selectedGroups.forEach(gId => {
-                    newGroupLabels[gId] = bulkSubject;
-                  });
-                  setAiGroupLabels(newGroupLabels);
-
-                  setStage3Convs(prev => prev.map(c =>
-                    selectedGroups.has(c.groupId) ? { ...c, groupLabel: bulkSubject } : c
-                  ));
-
-                  setCheckedConvIds([]);
-                  setBulkSubject('');
-                }}
-                disabled={!bulkSubject || checkedConvIds.length === 0}
-                style={{ padding: '6px 16px', borderRadius: '6px', backgroundColor: (!bulkSubject || checkedConvIds.length === 0) ? '#94a3b8' : '#0f172a', color: '#fff', border: 'none', cursor: (!bulkSubject || checkedConvIds.length === 0) ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.18)', transition: 'background 0.15s' }}
-              >
-                Apply Bulk Label
-              </button>
-              <div style={{ flex: 1 }}></div>
-              <button
-                style={{ backgroundColor: stage3SubGroup === 'A' ? '#ef4444' : '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: checkedConvIds.length === 0 ? 0.5 : 1 }}
-                title={`Di chuyển các dòng đã chọn sang Group ${stage3SubGroup === 'A' ? 'B (Nhiễu)' : 'A (Chuẩn)'}`}
-                disabled={checkedConvIds.length === 0}
-                onClick={() => {
-                  setStage3Convs(prev => prev.map(c =>
-                    checkedConvIds.includes(c.id)
-                      ? { ...c, subGroup: stage3SubGroup === 'A' ? 'B' : 'A' }
-                      : c
-                  ));
-                  setCheckedConvIds([]);
-                }}
-              >
-                Move to Group {stage3SubGroup === 'A' ? 'B (Noise)' : 'A (Standard)'} {checkedConvIds.length > 0 ? `(${checkedConvIds.length})` : ''}
-              </button>
-            </div>
-
             {/* Toolbar */}
             <div className="preview-toolbar" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
                 <button
-                  onClick={() => { setStage3SubGroup('A'); setStage3Page(1); setCheckedConvIds([]); }}
+                  onClick={() => { setStage3SubGroup('A'); setStage3Page(1); }}
                   style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'A' ? '#e0f2fe' : '#fff', color: stage3SubGroup === 'A' ? '#0284c7' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
                 >
                   Group A (Chuẩn bộ môn)
                 </button>
                 <button
-                  onClick={() => { setStage3SubGroup('B'); setStage3Page(1); setCheckedConvIds([]); }}
+                  onClick={() => { setStage3SubGroup('B'); setStage3Page(1); }}
                   style={{ padding: '6px 12px', border: 'none', background: stage3SubGroup === 'B' ? '#fef2f2' : '#fff', color: stage3SubGroup === 'B' ? '#dc2626' : '#64748b', fontWeight: 600, cursor: 'pointer', fontSize: '13px', borderLeft: '1px solid #e2e8f0' }}
                 >
                   Group B (Nhiễu bộ môn)
@@ -1084,27 +988,9 @@ export const Stage3Labeling: React.FC = () => {
               <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', minWidth: '1100px', width: '100%' }}>
                 <thead>
                   <tr>
-                    <th style={{ width: '4%', textAlign: 'center' }} title="Select to move to noise group">
-                      <input
-                        type="checkbox"
-                        checked={stage3PageRows.length > 0 && stage3PageRows.every(r => checkedConvIds.includes(r.id))}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            const newIds = [...checkedConvIds];
-                            stage3PageRows.forEach(r => {
-                              if (!newIds.includes(r.id)) newIds.push(r.id);
-                            });
-                            setCheckedConvIds(newIds);
-                          } else {
-                            const pageIds = stage3PageRows.map(r => r.id);
-                            setCheckedConvIds(prev => prev.filter(id => !pageIds.includes(id)));
-                          }
-                        }}
-                      />
-                    </th>
-                    <th style={{ width: '15%', textAlign: 'center' }}>Conv ID</th>
-                    <th style={{ width: '25%' }}>User</th>
-                    <th style={{ width: '36%' }}>Assistant</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>Conv ID</th>
+                    <th style={{ width: '26%' }}>User</th>
+                    <th style={{ width: '38%' }}>Assistant</th>
                     <th style={{ width: '12%', textAlign: 'center' }}>Subject Label</th>
                     <th style={{ width: '8%', textAlign: 'center' }}></th>
                   </tr>
@@ -1112,26 +998,13 @@ export const Stage3Labeling: React.FC = () => {
                 <tbody>
                   {stage3PageRows.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
+                      <td colSpan={5} style={{ textAlign: 'center', padding: '32px', color: '#94a3b8' }}>
                         No conversations in this group.
                       </td>
                     </tr>
                   )}
                   {stage3PageRows.map((conv, idx) => (
                     <tr key={conv.id} className="conv-row conv-first conv-last">
-                      <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                        <input
-                          type="checkbox"
-                          checked={checkedConvIds.includes(conv.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setCheckedConvIds(prev => [...prev, conv.id]);
-                            } else {
-                              setCheckedConvIds(prev => prev.filter(id => id !== conv.id));
-                            }
-                          }}
-                        />
-                      </td>
                       <td className="col-conv-id-cell">
                         <span className="conv-id-badge" title={conv.id}>{conv.id}</span>
                         <span className="conv-msg-count">{conv.messages.length} msgs</span>
