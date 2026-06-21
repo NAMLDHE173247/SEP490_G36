@@ -1139,7 +1139,7 @@ function computeAgreement(annotatorSets: Array<{ annotatorId: string; labels: st
   return Number((scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(4));
 }
 
-async function syncAdjudicationForTarget(params: {
+export async function syncAdjudicationForTarget(params: {
   datasetVersionId: mongoose.Types.ObjectId;
   sampleId: mongoose.Types.ObjectId;
   targetScope: LabelScope;
@@ -1328,53 +1328,96 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   });
 
   const requiredTargets = buildRequiredTargets(sample);
-  const targetSummaries = await Promise.all(
-    requiredTargets.map(async (target) => {
-      const targetKey = target.key;
-      const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Map<string, string>>();
-      const annotatorSets = comparisonAnnotatorIds
-        .map((annotatorId) => {
-          const labelMap = perUserMap.get(annotatorId) || new Map<string, string>();
-          const labels = Array.from(labelMap.keys()).sort();
-          const displayLabels = labels.map((code) => labelMap.get(code) || code);
-          return { annotatorId, labels, displayLabels };
-        })
-        .filter((item) => item.labels.length > 0);
+  const existingAdjs = await DatasetAssignmentAdjudication.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).select('status targetScope messageIndex messageRole').lean();
 
-      const { labelCounts, majorityLabels } = computeMajorityLabels(annotatorSets);
-      const agreementScore = computeAgreement(annotatorSets);
-      await syncAdjudicationForTarget({
-        datasetVersionId: versionOid,
-        sampleId: sampleOid,
-        targetScope: target.targetScope,
-        messageIndex: target.messageIndex ?? null,
-        messageRole: target.messageRole ?? null,
-        annotatorSets,
-        agreementScore,
-        majorityLabels,
-        labelCounts,
-        threshold: similarityThreshold,
+  const bulkOps: any[] = [];
+  const targetSummaries = requiredTargets.map((target) => {
+    const targetKey = target.key;
+    const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Map<string, string>>();
+    const annotatorSets = comparisonAnnotatorIds
+      .map((annotatorId) => {
+        const labelMap = perUserMap.get(annotatorId) || new Map<string, string>();
+        const labels = Array.from(labelMap.keys()).sort();
+        const displayLabels = labels.map((code) => labelMap.get(code) || code);
+        return { annotatorId, labels, displayLabels };
+      })
+      .filter((item) => item.labels.length > 0);
+
+    const { labelCounts, majorityLabels } = computeMajorityLabels(annotatorSets);
+    const agreementScore = computeAgreement(annotatorSets);
+    
+    // Compute bulk operations
+    const threshold = similarityThreshold;
+    const msgIdx = target.messageIndex ?? null;
+    const msgRole = target.messageRole ?? null;
+    const existing = existingAdjs.find((a: any) => a.targetScope === target.targetScope && a.messageIndex === msgIdx && a.messageRole === msgRole);
+    
+    if (agreementScore === null || agreementScore >= threshold) {
+      if (existing && existing.status !== 'published') {
+        bulkOps.push({
+          deleteOne: {
+            filter: { _id: existing._id }
+          }
+        });
+      }
+    } else {
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            datasetVersionId: versionOid,
+            sampleId: sampleOid,
+            targetScope: target.targetScope,
+            messageIndex: msgIdx,
+            messageRole: msgRole,
+          },
+          update: {
+            $set: {
+              status: existing?.status === 'published' ? 'published' : existing?.status === 'resolved_unpublished' ? 'resolved_unpublished' : 'pending',
+              threshold,
+              agreementScore,
+              majorityLabels,
+              labelCounts,
+              annotatorSets,
+            },
+            $setOnInsert: {
+              finalLabels: [],
+              note: '',
+            },
+            ...(existing?.status === 'published' || existing?.status === 'resolved_unpublished' ? {} : {
+              $unset: { resolvedBy: 1, resolvedAt: 1, publishedBy: 1, publishedAt: 1 }
+            })
+          },
+          upsert: true
+        }
       });
+    }
 
-      return {
-        targetKey,
-        targetScope: target.targetScope,
-        messageIndex: target.messageIndex,
-        messageRole: target.messageRole,
-        targetTextSnapshot: target.targetTextSnapshot,
-        agreementScore,
-        hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
-        labelCounts,
-        majorityLabels,
-        annotators: annotatorSets.map((item) => ({
-          annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
-          labels: item.labels,
-          displayLabels: item.displayLabels,
-          isOwner: item.annotatorId === ownerId,
-        })),
-      };
-    })
-  );
+    return {
+      targetKey,
+      targetScope: target.targetScope,
+      messageIndex: target.messageIndex,
+      messageRole: target.messageRole,
+      targetTextSnapshot: target.targetTextSnapshot,
+      agreementScore,
+      hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
+      labelCounts,
+      majorityLabels,
+      annotators: annotatorSets.map((item) => ({
+        annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
+        labels: item.labels,
+        displayLabels: item.displayLabels,
+        isOwner: item.annotatorId === ownerId,
+      })),
+    };
+  });
+
+  if (bulkOps.length > 0) {
+    await DatasetAssignmentAdjudication.bulkWrite(bulkOps);
+  }
+
 
   const adjudications = await DatasetAssignmentAdjudication.find({
     datasetVersionId: versionOid,
