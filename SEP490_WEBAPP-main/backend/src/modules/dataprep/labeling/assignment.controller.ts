@@ -111,7 +111,7 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length) {
@@ -272,7 +272,7 @@ export class AssignmentController {
   async createBatchAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds } = req.body;
+      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
@@ -1516,7 +1516,7 @@ export class AssignmentController {
 
       // 2. NỬA PHẢI: Labels overlay
       // Query with $or for both ObjectId and string representations to be robust
-      const sampleObjectId = mongoose.Types.ObjectId.isValid(sampleId) ? new mongoose.Types.ObjectId(sampleId) : sampleId;
+
       const sampleQuery = mongoose.Types.ObjectId.isValid(sampleId)
         ? { $or: [{ sampleId: new mongoose.Types.ObjectId(sampleId) }, { sampleId: sampleId }] }
         : { sampleId: sampleId };
