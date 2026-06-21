@@ -6,8 +6,8 @@ export const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
   { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 7-10' },
-  { num: 5, label: 'Finish', sub: 'Step 11-13' },
+  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
+  { num: 5, label: 'Finish', sub: 'Step 12-14' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
@@ -174,16 +174,16 @@ export const SUB_STEPS_STAGE3 = [
 ];
 
 export const SUB_STEPS_STAGE4 = [
-  { num: 7, label: 'Classification & Assignment Review' },
-  { num: 8, label: 'AI Scoring' },
+  { num: 8, label: 'Classification' },
+  { num: 9, label: 'Quality Review' },
   { num: 10, label: 'Rewrite Assignment' },
   { num: 11, label: 'Assignment Review' },
 ];
 
 export const SUB_STEPS_STAGE6 = [
-  { num: 13, label: 'System Prompt' },
-  { num: 14, label: 'Split Guard' },
-  { num: 15, label: 'Export' },
+  { num: 12, label: 'System Prompt' },
+  { num: 13, label: 'Split Guard' },
+  { num: 14, label: 'Export' },
 ];
 
 export const PROMPT_VERSIONS = [
@@ -628,7 +628,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 4 state */
   const [currentSubStep4, setCurrentSubStep4] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep4');
-    return saved ? parseInt(saved, 10) : 7;
+    const value = saved ? parseInt(saved, 10) : 8;
+    return value < 8 ? 8 : value;
   });
 
   React.useEffect(() => {
@@ -663,7 +664,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 6 state */
   const [currentSubStep6, setCurrentSubStep6] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep6');
-    return saved ? parseInt(saved, 10) : 13;
+    const value = saved ? parseInt(saved, 10) : 12;
+    return Math.max(12, Math.min(14, value));
   });
 
   React.useEffect(() => {
@@ -717,9 +719,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const stage = resolveStageFromResumeStep(resumeStep);
       setCurrentStage(stage);
       if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
-      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(6, resumeStep)));
-      if (stage === 4) setCurrentSubStep4(Math.max(7, Math.min(12, resumeStep)));
-      if (stage === 5) setCurrentSubStep6(Math.max(13, Math.min(14, resumeStep)));
+      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(7, resumeStep)));
+      if (stage === 4) setCurrentSubStep4(Math.max(8, Math.min(11, resumeStep)));
+      if (stage === 5) setCurrentSubStep6(Math.max(12, Math.min(14, resumeStep)));
     } catch (error) {
       console.error('Failed to open workflow version', error);
     } finally {
@@ -738,8 +740,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     setCurrentStage(1);
     setCurrentSubStep(1);
     setCurrentSubStep3(5);
-    setCurrentSubStep4(7);
-    setCurrentSubStep6(13);
+    setCurrentSubStep4(8);
+    setCurrentSubStep6(12);
     setFile(null);
     setConversationsList([]);
     setStage3Convs([]);
@@ -757,8 +759,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       setCurrentStage(1);
       setCurrentSubStep(1);
       setCurrentSubStep3(5);
-      setCurrentSubStep4(7);
-      setCurrentSubStep6(13);
+      setCurrentSubStep4(8);
+      setCurrentSubStep6(12);
     });
   }, [loadWorkflowVersions, openWorkflowVersion]);
 

@@ -194,6 +194,8 @@ export const Stage4TrainEval: React.FC = () => {
     const errorOk = !sepSelectedError || item.issueKey === sepSelectedError;
     return bucketOk && errorOk;
   });
+  const qualityReviewedCount = Math.min(qualitySamples.length, Object.keys(sepQualityLabels).length);
+  const qualityProgressPercent = qualitySamples.length ? Math.round((qualityReviewedCount / qualitySamples.length) * 100) : 0;
 
   // subjectTotal computed earlier
   const qualityTotal = qualityDistribution.reduce((sum, item) => sum + item.count, 0);
@@ -336,7 +338,7 @@ export const Stage4TrainEval: React.FC = () => {
 
           <div className="sep490-alert">
             <Check size={15} />
-            Assignment labeling check: reviewed <strong>18</strong> / <strong>24</strong> conversations.
+            Tiến độ kiểm duyệt: <strong>{qualityReviewedCount}</strong> / <strong>{qualitySamples.length}</strong> hội thoại.
           </div>
 
           <div className="sep490-grid sep490-grid-3-1">
@@ -385,10 +387,10 @@ export const Stage4TrainEval: React.FC = () => {
               <div className="sep490-panel">
                 <div className="sep490-panel-head compact">
                   <h3>Review Progress</h3>
-                  <span>18 / 24</span>
+                  <span>{qualityReviewedCount} / {qualitySamples.length}</span>
                 </div>
-                <div className="sep490-progress"><span style={{ width: '75%' }} /></div>
-                <p className="sep490-muted">75% of conversations have supervisor-ready quality labels.</p>
+                <div className="sep490-progress"><span style={{ width: `${qualityProgressPercent}%` }} /></div>
+                <p className="sep490-muted">{qualityProgressPercent}% hội thoại đã được kiểm duyệt chất lượng.</p>
               </div>
               <div className="sep490-panel danger">
                 <h3>Error Pattern</h3>

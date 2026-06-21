@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -46,14 +46,14 @@ function Dashboard() {
 
   const allMenuItems = [
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },

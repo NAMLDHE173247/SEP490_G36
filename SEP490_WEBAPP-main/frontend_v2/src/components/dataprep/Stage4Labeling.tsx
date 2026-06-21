@@ -231,7 +231,6 @@ export const Stage4Labeling: React.FC = () => {
 
   const SUB_STEPS_STAGE4 = [
     { num: 7, label: 'Quality Review' },
-    { num: 8, label: 'AI Scoring' },
     { num: 9, label: 'Quality Review' },
     { num: 10, label: 'Rewrite Assignment' },
     { num: 11, label: 'Assignment Review' },
@@ -1306,6 +1305,9 @@ export const Stage4Labeling: React.FC = () => {
             const allItems = displayQualityItems;
             const conflictItems = allItems.filter(i => getScoresForSample(i.sampleObjectId || i.id, i.convId).conflict);
             const displayItems = qualityTab === 'rewrite' ? rewriteItems : qualityTab === 'bad' ? badItems : qualityTab === 'gold' ? goldItems : qualityTab === 'conflict' ? conflictItems : allItems;
+            const scoringTotal = latestJob?.progress?.total || allItems.length;
+            const scoringDone = latestJob?.progress?.evaluated ?? results.length;
+            const scoringPercent = scoringTotal > 0 ? Math.min(100, Math.round((scoringDone / scoringTotal) * 100)) : 0;
 
             // Client-side pagination for large tables (400+ rows)
             const totalPages = Math.max(1, Math.ceil(displayItems.length / itemsPerPage));
@@ -1336,6 +1338,24 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ fontSize: '20px', fontWeight: '900', color: clr }}>{cnt}</div>
                       </div>
                     ))}
+                  </div>
+                </div>
+
+                {/* AI scoring progress for the actual Quality Review screen */}
+                <div style={{ background: '#fff', border: '1px solid #ddd6fe', borderRadius: '12px', padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '9px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4338ca', fontWeight: '800', fontSize: '13px' }}>
+                      {latestJob?.status === 'running' || latestJob?.status === 'pending' ? <Loader2 size={15} className="animate-spin" /> : <Bot size={15} />}
+                      Tiến độ AI Scoring
+                    </div>
+                    <strong style={{ color: '#312e81', fontSize: '13px' }}>{scoringDone} / {scoringTotal} ({scoringPercent}%)</strong>
+                  </div>
+                  <div style={{ height: '10px', background: '#e2e8f0', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{ width: `${scoringPercent}%`, height: '100%', background: 'linear-gradient(90deg, #4f46e5, #22c55e)', borderRadius: '999px', transition: 'width .3s ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '7px', color: '#64748b', fontSize: '11px' }}>
+                    <span>{latestJob?.status === 'failed' ? 'Chấm điểm thất bại' : latestJob?.status === 'completed' ? 'Đã chấm xong' : latestJob?.status === 'running' ? 'Đang chấm điểm...' : 'Chưa chạy AI Scoring'}</span>
+                    <span>{conflictItems.length} conflict cần review</span>
                   </div>
                 </div>
 

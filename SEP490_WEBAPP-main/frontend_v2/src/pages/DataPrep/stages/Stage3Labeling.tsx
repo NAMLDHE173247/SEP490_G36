@@ -10,6 +10,7 @@ import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssist
 import './Stage3Labeling.css';
 import { useToast } from '../../../hooks/useToast';
 import ToastContainer from '../../../components/ToastContainer';
+import { Stage3AiReview } from '../../../components/dataprep/Stage3AiReview';
 
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
@@ -56,6 +57,12 @@ const DB_TO_UI_ASSISTANT: Record<string, string> = Object.fromEntries(
 
 /** ISSUES labels không có trong HARD_LABELS → lưu dưới dạng 'soft' */
 const ISSUES_SOFT_LABELS = new Set(['FACT_ERR', 'LANG_ISSUE', 'DIR_ANS']);
+const LABEL_HELP: Record<string, string> = {
+  OK: 'Trả lời đúng', NO: 'Trả lời sai', HINT: 'Yêu cầu hoặc đưa gợi ý', THEO: 'Hỏi lý thuyết',
+  WHY: 'Yêu cầu giải thích', EASY: 'Cần giải thích đơn giản', SKIP: 'Bỏ qua bài', NEXT: 'Sang phần tiếp theo',
+  WAIT: 'Chờ phản hồi', SCAF: 'Dẫn dắt từng bước', CLR: 'Làm rõ khái niệm', LOG: 'Phân tích logic',
+  SIMP: 'Đơn giản hóa', PR: 'Khen ngợi', NAV: 'Điều hướng', MOT: 'Khuyến khích', REDIR: 'Đưa về đúng chủ đề',
+};
 
 /** Lấy DB name từ UI tag name và role. Trả về null nếu không map được (ISSUES labels). */
 function getDbLabelName(uiName: string, role: 'user' | 'assistant'): string | null {
@@ -176,7 +183,39 @@ function activateLabelsInMessages(baseMessages: any[], dbLabels: any[]): any[] {
 }
 
 export const Stage3Labeling: React.FC = () => {
-  const { toasts, toast } = useToast();
+  const { toasts, toast: toastMethods } = useToast();
+  const toast = Object.assign(
+    (message: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => toastMethods[type](message),
+    toastMethods,
+  );
+  const [conversationLabels, setConversationLabels] = React.useState<Record<string, string[]>>({
+    DECISION: [], SUBJECT: [], STATUS: [], QUALITY: [], ISSUES: [],
+  });
+  const [isSavingCanonical, setIsSavingCanonical] = React.useState(false);
+
+  const toggleConversationLabel = (group: string, label: string) => {
+    setConversationLabels(prev => ({
+      ...prev,
+      [group]: group === 'ISSUES'
+        ? (prev[group]?.includes(label) ? prev[group].filter(item => item !== label) : [...(prev[group] || []), label])
+        : (prev[group]?.includes(label) ? [] : [label]),
+    }));
+  };
+
+  const saveCanonicalConversationLabels = async () => {
+    const versionId = localStorage.getItem('current_version_id');
+    const sample = step7Samples[step7SampleIndex];
+    if (!versionId || !sample?.sampleId) return toast('Không tìm thấy hội thoại hiện tại.', 'error');
+    const labels = Object.entries(conversationLabels).flatMap(([group, values]) => values.map(value => `${group}:${value}`));
+    if (!labels.length) return toast('Hãy chọn ít nhất một nhãn hội thoại.', 'warning');
+    setIsSavingCanonical(true);
+    try {
+      await apiService.setDatasetSampleCanonicalLabels({ versionId, sampleId: sample.sampleId, labels, targetTextSnapshot: JSON.stringify(conversationLabels) });
+      toast('Đã chốt nhãn hội thoại của Admin.', 'success');
+    } catch (error: any) {
+      toast(error?.response?.data?.error || 'Không thể lưu nhãn hội thoại.', 'error');
+    } finally { setIsSavingCanonical(false); }
+  };
   const dataPrep = useDataPrep();
   const {
     currentSubStep3, setCurrentSubStep3,
@@ -459,10 +498,16 @@ export const Stage3Labeling: React.FC = () => {
     const initStep7 = async () => {
       try {
         const versionId = await ensureDatasetVersionId();
-        const assignRes = await apiService.getDatasetVersionAssignments(versionId);
+        const [assignRes, dashboardRes] = await Promise.all([
+          apiService.getDatasetVersionAssignments(versionId),
+          apiService.getDatasetVersionAssignmentDashboard(versionId),
+        ]);
         if (cancelled) return;
 
         const samples = assignRes.samples || [];
+        setAssignmentSamples(samples);
+        setAssignmentTotals(assignRes.totals || null);
+        setAssignmentDashboard(dashboardRes || null);
         setStep7Samples(samples);
         const total = samples.length || stage3Convs.length;
         setStep7TotalSamples(total);
@@ -2012,6 +2057,30 @@ export const Stage3Labeling: React.FC = () => {
 
       {currentSubStep3 === 7 && (
         <div className="ia-dashboard">
+          <details style={{ marginBottom: 16, border: '1px solid #c7d2fe', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+            <summary style={{ cursor: 'pointer', listStyle: 'none', padding: '14px 18px', background: '#eef2ff', color: '#3730a3', fontWeight: 750, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={16}/> AI chấm điểm & đối chiếu kết quả Staff</span>
+              <span style={{ fontSize: 12, color: '#6366f1', fontWeight: 600 }}>Mở khi cần kiểm tra chéo</span>
+            </summary>
+            <div style={{ padding: 16 }}>
+              <Stage3AiReview
+                versionId={localStorage.getItem('current_version_id')}
+                samples={assignmentSamples}
+                dashboard={assignmentDashboard}
+                onRefresh={async () => {
+                  const versionId = localStorage.getItem('current_version_id');
+                  if (!versionId) return;
+                  const [assignments, dashboard] = await Promise.all([
+                    apiService.getDatasetVersionAssignments(versionId),
+                    apiService.getDatasetVersionAssignmentDashboard(versionId),
+                  ]);
+                  setAssignmentSamples(assignments.samples || []);
+                  setAssignmentTotals(assignments.totals || null);
+                  setAssignmentDashboard(dashboard || null);
+                }}
+              />
+            </div>
+          </details>
           <div style={{ marginBottom: 16, padding: '14px 18px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
             <div>
               <strong style={{ color: '#0369a1', fontSize: 14 }}>🤖 Gán nhãn nhanh bằng AI</strong>
@@ -2061,8 +2130,8 @@ export const Stage3Labeling: React.FC = () => {
                 </div>
 
                 <div className="ia-chat-tabs">
-                  <button className={`ia-tab ${iaActiveTab === 'assignment' ? 'active' : ''}`} onClick={() => setIaActiveTab('assignment')}>Assignment</button>
-                  <button className={`ia-tab ${iaActiveTab === 'unassigned' ? 'active' : ''}`} onClick={() => setIaActiveTab('unassigned')}>Unassigned</button>
+                  <button className={`ia-tab ${iaActiveTab === 'assignment' ? 'active' : ''}`} onClick={() => setIaActiveTab('assignment')}>Đã giao ({assignmentSamples.filter(s => s.assignees?.length > 0).length})</button>
+                  <button className={`ia-tab ${iaActiveTab === 'unassigned' ? 'active' : ''}`} onClick={() => setIaActiveTab('unassigned')}>Chưa giao ({assignmentSamples.filter(s => !s.assignees?.length).length})</button>
                 </div>
 
                 {iaActiveTab === 'assignment' && (
@@ -2181,24 +2250,23 @@ export const Stage3Labeling: React.FC = () => {
                 {iaActiveTab === 'unassigned' && (
                   <>
                     <div className="ia-unassigned-list">
-                      {[
+                      {(assignmentSamples || []).filter((s: any) => !s.assignees?.length).map((s: any) => ({ id: s.sampleId, preview: s.preview, turns: null, subject: 'CHƯA GIAO' })).concat([
                         { id: 'conv-4', preview: 'Thầy ơi, lực ma sát là gì ạ? Em nghe nói có 2 loại...', turns: 6, subject: 'PHYSICAL' },
                         { id: 'conv-5', preview: 'Cho em hỏi cách tính diện tích hình thang ạ?', turns: 4, subject: 'MATH' },
                         { id: 'conv-7', preview: 'Em không hiểu phản ứng oxi hóa khử, giải thích giúp em...', turns: 8, subject: 'CHEM' },
                         { id: 'conv-9', preview: 'Anh ơi giải giúp em bài toán xác suất này...', turns: 5, subject: 'MATH' },
                         { id: 'conv-12', preview: 'Quang hợp là gì ạ? Cây xanh hấp thụ ánh sáng như nào?', turns: 7, subject: 'BIO' },
                         { id: 'conv-15', preview: 'Cho em hỏi về thuyết tương đối của Einstein...', turns: 10, subject: 'PHYSICAL' },
-                      ].map((conv) => (
+                      ].slice(0, 0)).map((conv) => (
                         <div key={conv.id} className="ia-unassigned-item">
                           <div className="ia-unassigned-info">
                             <div className="ia-unassigned-top">
                               <span className="ia-unassigned-id">{conv.id}</span>
-                              <span className={`ia-unassigned-subject ia-subj-${conv.subject.toLowerCase()}`}>{conv.subject}</span>
-                              <span className="ia-unassigned-turns">{conv.turns} turns</span>
+                              <span className="ia-unassigned-subject" style={{ background: '#fff7ed', color: '#c2410c' }}>{conv.subject}</span>
                             </div>
                             <p className="ia-unassigned-preview">{conv.preview}</p>
                           </div>
-                          <button className="ia-assign-btn">Assign to me</button>
+                          <button className="ia-assign-btn" onClick={() => { setCurrentSubStep3(6); setShowCreateTaskModal(true); }}>Giao cho Staff</button>
                         </div>
                       ))}
                     </div>
@@ -2366,7 +2434,10 @@ export const Stage3Labeling: React.FC = () => {
                                   >
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                                       <span style={{ fontSize: '11px' }}>{tag.icon}</span>
-                                      <span>{tag.name}</span>
+                                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                                        <strong>{tag.name}</strong>
+                                        <small style={{ fontSize: 10, opacity: .72, fontWeight: 500 }}>{LABEL_HELP[tag.name] || 'Nhãn phân loại'}</small>
+                                      </span>
                                     </span>
                                     <span style={{ opacity: 0.8, fontSize: '11px', fontWeight: 'bold', marginLeft: '4px' }}>{tag.count}</span>
                                   </div>
@@ -2387,6 +2458,21 @@ export const Stage3Labeling: React.FC = () => {
               </div>
 
               {/* Conversation Hard Labels */}
+              <div className="ia-section-card conversation-label-editor">
+                <div className="ia-labels-header"><h4>Conversation Hard Labels</h4><span className="ia-label-count">{Object.values(conversationLabels).flat().length}</span></div>
+                {([
+                  ['DECISION', ['REJ']],
+                  ['SUBJECT', ['MATH', 'PHYS', 'CHEM', 'LIT', 'BIO', 'MULTI', 'UNCLEAR', 'OOS']],
+                  ['STATUS', ['COMPLETED', 'INCOMPLETE', 'DROPPED']],
+                  ['QUALITY', ['GOOD', 'MEDIUM', 'POOR']],
+                  ['ISSUES', ['FACT_ERR', 'DIR_ANS', 'LANG_ISSUE']],
+                ] as Array<[string, string[]]>).map(([group, labels]) => <div className="ia-hl-group" key={group}><span className="ia-hl-group-label">{group}</span><div className="conversation-label-grid">{labels.map(label => {
+                  const active = conversationLabels[group]?.includes(label);
+                  return <button type="button" key={label} className={`conversation-label-btn ${active ? 'active' : ''}`} onClick={() => toggleConversationLabel(group, label)}><span>{active ? '✓' : '+'}</span>{label}</button>;
+                })}</div></div>)}
+                <button type="button" className="save-canonical-btn" disabled={isSavingCanonical} onClick={saveCanonicalConversationLabels}>{isSavingCanonical ? 'Đang lưu...' : 'Chốt nhãn của Admin'}</button>
+                <p className="ia-empty-hint" style={{marginTop:8}}>Mỗi nhóm chọn một nhãn; ISSUES có thể chọn nhiều. Nhãn được lưu làm Canonical.</p>
+              </div>
               <div className="ia-section-card">
                 <h5 className="ia-section-subtitle">CONVERSATION HARD LABELS</h5>
 
@@ -2481,7 +2567,7 @@ export const Stage3Labeling: React.FC = () => {
                     onClick={() => {
                       if (window.confirm('Bạn có chắc chắn muốn đẩy batch dữ liệu này sang Stage 4 (Training/Evaluation)?')) {
                         alert('Đã đẩy dữ liệu thành công!');
-                        setCurrentSubStep4(7);
+                        setCurrentSubStep4(8);
                         setCurrentStage(4);
                       }
                     }}
@@ -2672,7 +2758,7 @@ export const Stage3Labeling: React.FC = () => {
             setCurrentSubStep3(currentSubStep3 + 1);
           } else {
             setConversationsList(stage3Convs);
-            setCurrentSubStep4(7);
+            setCurrentSubStep4(8);
             setCurrentStage(4);
           }
         }}>

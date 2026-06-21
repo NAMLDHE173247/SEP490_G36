@@ -15,7 +15,7 @@ export class MultiEvalController {
       }
 
       const { versionId } = req.params;
-      const { models, contextWindow } = req.body;
+      const { models, contextWindow, conflictThreshold } = req.body;
 
       if (!Array.isArray(models) || models.length === 0) {
         res.status(400).json({ error: 'Danh sách model không hợp lệ.' });
@@ -28,7 +28,8 @@ export class MultiEvalController {
         return;
       }
 
-      const job = await multiEvalService.runJob(versionId, supervisorId, models, contextWindow);
+      const threshold = Math.min(5, Math.max(0.5, Number(conflictThreshold) || 2));
+      const job = await multiEvalService.runJob(versionId, supervisorId, models, contextWindow, threshold);
       res.status(201).json({ message: 'Bắt đầu tiến trình chấm điểm bằng AI Judge.', job });
     } catch (error: any) {
       console.error('Run multi-model evaluation job error:', error);

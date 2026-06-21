@@ -252,8 +252,8 @@ export const stage4Api = {
   },
 
   // 9. Run Multi-Model Eval Job
-  runMultiEval: async (versionId: string, models: string[], contextWindow: string): Promise<{ message: string; job: MultiEvalJob }> => {
-    const res = await api.post(`/dataprep/versions/${versionId}/multi-eval/run`, { models, contextWindow });
+  runMultiEval: async (versionId: string, models: string[], contextWindow: string, conflictThreshold?: number): Promise<{ message: string; job: MultiEvalJob }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/multi-eval/run`, { models, contextWindow, conflictThreshold });
     return res.data;
   },
 

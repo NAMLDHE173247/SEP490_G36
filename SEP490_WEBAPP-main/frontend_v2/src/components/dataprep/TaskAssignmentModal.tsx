@@ -45,6 +45,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [overlapCount, setOverlapCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedSupervisor, setSelectedSupervisor] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {

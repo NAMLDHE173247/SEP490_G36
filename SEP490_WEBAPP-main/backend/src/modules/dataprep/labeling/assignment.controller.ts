@@ -2017,8 +2017,10 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
           const contentSnapshot = matchingMsg ? matchingMsg.content.slice(0, 2000) : '';
 
           if (matchingMsg?.role === 'user' && msgLabel.intent) {
-            const mappedIntent = mapToStandardIntent(msgLabel.intent);
-            hardLabelsToInsert.push({
+            const intents = Array.isArray(msgLabel.intent) ? msgLabel.intent : [msgLabel.intent];
+            for (const intent of intents.filter(Boolean)) {
+              const mappedIntent = mapToStandardIntent(intent);
+              hardLabelsToInsert.push({
               sampleId: softLabel.sampleId,
               name: mappedIntent,
               type: 'hard',
@@ -2027,12 +2029,15 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               messageRole: 'user',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
-            });
+              });
+            }
           }
 
           if (matchingMsg?.role === 'assistant' && msgLabel.action) {
-            const mappedAction = mapToStandardAction(msgLabel.action);
-            hardLabelsToInsert.push({
+            const actions = Array.isArray(msgLabel.action) ? msgLabel.action : [msgLabel.action];
+            for (const action of actions.filter(Boolean)) {
+              const mappedAction = mapToStandardAction(action);
+              hardLabelsToInsert.push({
               sampleId: softLabel.sampleId,
               name: mappedAction,
               type: 'hard',
@@ -2041,7 +2046,8 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               messageRole: 'assistant',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
-            });
+              });
+            }
           }
         }
       }

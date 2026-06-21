@@ -103,6 +103,10 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   const getLabel = (sampleId: string, field: string) => labels[sampleId]?.[field] || '';
   const getMsgLabel = (sampleId: string, msgIdx: number, field: string) => labels[sampleId]?.messages?.[msgIdx]?.[field] || '';
+  const getMsgLabels = (sampleId: string, msgIdx: number, field: string): string[] => {
+    const value = labels[sampleId]?.messages?.[msgIdx]?.[field];
+    return Array.isArray(value) ? value : value ? [value] : [];
+  };
   const getFlags = (sampleId: string) => labels[sampleId]?.flags || [];
 
   const setMsgLabel = (sampleId: string, msgIdx: number, field: string, value: string) => {
@@ -168,8 +172,8 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
           suggestion.messages.forEach((msg: any, idx: number) => {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
-            if (msg.intent) aiLabels.messages[messageIndex].intent = msg.intent;
-            if (msg.action) aiLabels.messages[messageIndex].action = msg.action;
+            if (msg.intent) aiLabels.messages[messageIndex].intent = Array.isArray(msg.intent) ? msg.intent : [msg.intent];
+            if (msg.action) aiLabels.messages[messageIndex].action = Array.isArray(msg.action) ? msg.action : [msg.action];
             metaByMsg[messageIndex] = {
               confidence: typeof msg.confidence === 'number' ? msg.confidence : 0.5,
               is_correct_pedagogy: msg.is_correct_pedagogy !== false,
@@ -212,6 +216,20 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       return { ...prev, [sampleId]: { ...sampleLabels, messages: { ...msgs, [msgIdx]: { ...msgs[msgIdx], [field]: value } } } };
     });
     setSavedDraft(false);
+  };
+
+  const toggleMessageLabel = (sampleId: string, msgIdx: number, field: 'intent' | 'action', value: string) => {
+    if (submitted || isSampleLocked(sampleId)) return;
+    setLabels(prev => {
+      const sampleLabels = prev[sampleId] || {};
+      const msgs = sampleLabels.messages || {};
+      const raw = msgs[msgIdx]?.[field];
+      const current = Array.isArray(raw) ? raw : raw ? [raw] : [];
+      const next = current.includes(value) ? current.filter((item: string) => item !== value) : [...current, value];
+      return { ...prev, [sampleId]: { ...sampleLabels, messages: { ...msgs, [msgIdx]: { ...msgs[msgIdx], [field]: next } } } };
+    });
+    setSavedDraft(false);
+    setRecentlyEdited(prev => [sampleId, ...prev.filter(id => id !== sampleId)].slice(0, 20));
   };
 
   const toggleFlag = (sampleId: string, flag: string) => {
@@ -695,10 +713,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                           {msg.role === 'user' ? (
                             <div className="sl-inline-label">
                               <span className="sl-label-tag">Intent:</span>
-                              <select
-                                value={getMsgLabel(drawerSample.id, mIdx,                                 'intent')}
-                                onChange={e => { handleMessageLabelChange(drawerSample.id, mIdx, 'intent', e.target.value); setRecentlyEdited(prev => [drawerSample.id, ...prev.filter(id => id !== drawerSample.id)].slice(0, 20)); }}
-                                className="sl-select sl-select-sm"
+                              <div className="sl-multi-labels">{intentOptions.map((opt: string) => { const active=getMsgLabels(drawerSample.id,mIdx,'intent').includes(opt); return <button type="button" key={opt} className={active?'active':''} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'intent',opt)} disabled={isSampleLocked(drawerSample.id)}><Check size={12}/>{opt}</button>; })}</div>
+                              <select multiple
+                                value={getMsgLabels(drawerSample.id, mIdx, 'intent')}
+                                onChange={e => toggleMessageLabel(drawerSample.id, mIdx, 'intent', e.target.value)}
+                                className="sl-select sl-select-sm" hidden
                                 style={borderColor ? { borderColor } : undefined}
                                 disabled={isSampleLocked(drawerSample.id)}
                               >
@@ -714,10 +733,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                           ) : (
                             <div className="sl-inline-label">
                               <span className="sl-label-tag">Action:</span>
-                              <select
-                                value={getMsgLabel(drawerSample.id, mIdx, 'action')}
-                                onChange={e => { handleMessageLabelChange(drawerSample.id, mIdx, 'action', e.target.value); setRecentlyEdited(prev => [drawerSample.id, ...prev.filter(id => id !== drawerSample.id)].slice(0, 20)); }}
-                                className="sl-select sl-select-sm"
+                              <div className="sl-multi-labels">{actionOptions.map((opt: string) => { const active=getMsgLabels(drawerSample.id,mIdx,'action').includes(opt); return <button type="button" key={opt} className={active?'active':''} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'action',opt)} disabled={isSampleLocked(drawerSample.id)}><Check size={12}/>{opt}</button>; })}</div>
+                              <select multiple
+                                value={getMsgLabels(drawerSample.id, mIdx, 'action')}
+                                onChange={e => toggleMessageLabel(drawerSample.id, mIdx, 'action', e.target.value)}
+                                className="sl-select sl-select-sm" hidden
                                 style={borderColor ? { borderColor } : undefined}
                                 disabled={isSampleLocked(drawerSample.id)}
                               >

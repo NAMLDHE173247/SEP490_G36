@@ -381,6 +381,11 @@ export const apiService = {
     return response.data;
   },
 
+  setDatasetSampleCanonicalLabels: async (payload: { versionId: string; sampleId: string; labels: string[]; targetTextSnapshot?: string; sourceAnnotatorIds?: string[] }): Promise<any> => {
+    const response = await api.post('/dataprep/assignments/samples/canonical', payload);
+    return response.data;
+  },
+
   assignDatasetVersionRange: async (
     id: string,
     payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string }

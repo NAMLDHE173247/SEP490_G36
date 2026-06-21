@@ -40,7 +40,8 @@ export class MultiEvalService {
     versionId: string,
     startedBy: string,
     models: ('gemini' | 'openai' | 'deepseek')[],
-    contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2'
+    contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2',
+    conflictThreshold = 2
   ) {
     if (!mongoose.Types.ObjectId.isValid(versionId)) {
       throw Object.assign(new Error('Dataset version ID không hợp lệ.'), { statusCode: 400 });
@@ -74,7 +75,7 @@ export class MultiEvalService {
     });
 
     // Start background execution
-    this.executeJobInBackground(job.id, versionId, models, contextWindow);
+    this.executeJobInBackground(job.id, versionId, models, contextWindow, conflictThreshold);
 
     return job;
   }
@@ -83,7 +84,8 @@ export class MultiEvalService {
     jobId: string,
     versionId: string,
     models: string[],
-    contextWindowSetting: string
+    contextWindowSetting: string,
+    conflictThreshold: number
   ) {
     try {
       const job = await MultiModelEvaluationJob.findById(jobId);
@@ -346,7 +348,7 @@ export class MultiEvalService {
 
           // Detect Conflict
           const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
-          const hasConflict = this.detectConflict(modelScores, humanScore);
+          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold);
           if (hasConflict) {
             conflictCount += 1;
           }
@@ -455,7 +457,7 @@ export class MultiEvalService {
     }
   }
 
-  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null): boolean {
+  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2): boolean {
     const models = Object.keys(scorecards).filter(model => scorecards[model].status !== 'unavailable');
     if (models.length <= 1 && humanScore === null) return false;
 
@@ -481,7 +483,7 @@ export class MultiEvalService {
     if (overallScores.length > 1) {
       const maxScore = Math.max(...overallScores);
       const minScore = Math.min(...overallScores);
-      if (maxScore - minScore > 1.5) {
+      if (maxScore - minScore >= conflictThreshold) {
         return true;
       }
     }
@@ -489,7 +491,7 @@ export class MultiEvalService {
     // Conflict 3: Difference between Avg AI and Human score >= 2.0
     if (overallScores.length > 0 && humanScore !== null && humanScore >= 0) {
       const avgAI = overallScores.reduce((a, b) => a + b, 0) / overallScores.length;
-      if (Math.abs(avgAI - humanScore) >= 2.0) {
+      if (Math.abs(avgAI - humanScore) >= conflictThreshold) {
         return true;
       }
     }
