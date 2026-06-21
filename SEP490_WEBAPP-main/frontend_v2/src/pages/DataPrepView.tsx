@@ -2985,6 +2985,7 @@ function DataPrepInner() {
                           if (!versionId) {
                             const payload = {
                               projectName: 'Auto-Label Dataset',
+                              projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,
                               format: 'openai' as const,

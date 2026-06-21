@@ -1,8 +1,7 @@
 ﻿import React, { useState } from 'react';
 import {
   ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
-  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown,
-  Download, Upload, FileJson
+  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
 } from 'lucide-react';
 import '../styles/stafftasks.css';
 
@@ -40,7 +39,8 @@ function useStaffTasks() {
             deadline: t.deadline?.split('T')[0] || '',
             totalSamples: t.totalSamples || t.batchCount,
             labeledCount: t.labeledCount || 0,
-            reviewedCount: 0
+            reviewedCount: 0,
+            aiAssistEnabled: !!t.aiAssistEnabled,
           }));
           setTasks(fetchedTasks);
           return fetchedTasks;
@@ -113,6 +113,7 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
+  urgent: { label: 'Urgent', className: 'st-pri-urgent' },
   high: { label: 'High', className: 'st-pri-high' },
   medium: { label: 'Medium', className: 'st-pri-medium' },
   low: { label: 'Low', className: 'st-pri-low' },
@@ -199,8 +200,8 @@ function StaffTasksView({ onOpenTask }) {
     switch (sortBy) {
       case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
       case 'priority': {
-        const order = { high: 0, medium: 1, low: 2 };
-        return (order[a.priority] ?? order.medium) - (order[b.priority] ?? order.medium);
+        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
+        return order[a.priority] - order[b.priority];
       }
       case 'newest': return getDateTime(b.createdAt) - getDateTime(a.createdAt);
       default: return 0;
@@ -319,18 +320,6 @@ function StaffTasksView({ onOpenTask }) {
         </div>
       </div>
 
-      {taskType === 'rewrite' && (
-        <section className="st-offline-rewrite">
-          <div className="st-offline-copy"><span className="st-offline-icon"><FileJson size={20}/></span><div><strong>Làm Rewrite offline</strong><p>Tải batch về, chỉ sửa trường <code>rewrittenText</code>, rồi upload để nộp hàng loạt.</p></div></div>
-          <div className="st-offline-actions">
-            <button type="button" onClick={downloadRewriteBatch} disabled={!rewriteTasks.length}><Download size={16}/> Tải file JSON</button>
-            <button type="button" className="primary" onClick={()=>rewriteFileRef.current?.click()} disabled={isImportingRewrite}><Upload size={16}/> {isImportingRewrite?'Đang kiểm tra…':'Upload & Nộp'}</button>
-            <input ref={rewriteFileRef} type="file" accept="application/json,.json" hidden onChange={e=>e.target.files?.[0]&&importRewriteBatch(e.target.files[0])}/>
-          </div>
-          {offlineMessage&&<div className="st-offline-message" role="status">{offlineMessage}</div>}
-        </section>
-      )}
-
       {/* Toolbar */}
       <div className="st-toolbar">
         <div className="st-filter-group">
@@ -365,11 +354,9 @@ function StaffTasksView({ onOpenTask }) {
         )}
 
         {filtered.map(task => {
-          const totalSamples = Number(task.totalSamples) || 0;
-          const labeledCount = Number(task.labeledCount) || 0;
-          const progress = totalSamples > 0 ? Math.min(100, Math.round((labeledCount / totalSamples) * 100)) : 0;
-          const statusInfo = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
-          const priInfo = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
+          const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
+          const statusInfo = STATUS_CONFIG[task.status];
+          const priInfo = PRIORITY_CONFIG[task.priority];
           const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
           const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
 

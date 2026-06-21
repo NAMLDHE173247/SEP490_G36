@@ -302,3 +302,61 @@
   color: #d97706;
   border: 1px solid #fcd34d;
 }
+
+.sv-label-tag.sv-label-warn {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+}
+
+.sv-pedagogy-note {
+  font-weight: 400;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* ── Table Split-View ── */
+.sv-modal-wide {
+  width: 92vw;
+  max-width: 1200px;
+  max-height: 88vh;
+}
+
+.sv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.sv-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  border-bottom: 2px solid #e5e7eb;
+  z-index: 1;
+}
+
+.sv-table tbody tr {
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s;
+}
+
+.sv-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+.sv-table td {
+  padding: 10px 12px;
+  vertical-align: top;
+}
+
+.sv-cell-content {
+  max-width: 420px;
+}

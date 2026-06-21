@@ -71,45 +71,15 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [autoSplitValue, setAutoSplitValue] = React.useState(3);
   const [autoSplitPrefix, setAutoSplitPrefix] = React.useState('Batch');
   const [autoSplitPreview, setAutoSplitPreview] = React.useState<{id: string, name: string, samples: any[]}[]>([]);
-      // Find the first unassigned index
-      let startIndex = 1;
-      const unassignedSample = assignmentSamples.find(s => !s.assignees || s.assignees.length === 0);
-      if (unassignedSample) {
-        startIndex = unassignedSample.sampleIndex;
-      }
 
-      await apiService.assignDatasetVersionRange(versionId, {
-        assigneeId: taskAssigneeId,
-        startIndex: startIndex,
-        count: Number(taskBatchSize)
-      });
-      // Refresh dashboard
-      const [dash, assign] = await Promise.all([
-        apiService.getDatasetVersionAssignmentDashboard(versionId),
-        apiService.getDatasetVersionAssignments(versionId)
-      ]);
-      setAssignmentDashboard(dash);
-      setAssignmentTotals(assign.totals);
-      setAssignmentSamples(assign.samples || []);
-      const refreshedVersionId = localStorage.getItem('current_version_id');
-      if (refreshedVersionId) {
-        const [dash, assign] = await Promise.all([
-          apiService.getDatasetVersionAssignmentDashboard(refreshedVersionId),
-          apiService.getDatasetVersionAssignments(refreshedVersionId)
-        ]);
-        setAssignmentDashboard(dash);
-        setAssignmentTotals(assign.totals);
-        setAssignmentSamples(assign.samples || []);
-      }
+  // Multi-step assignment drawer states
+  const [drawerStep, setDrawerStep] = React.useState<number>(1);
+  const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
+  const [taskNameInput, setTaskNameInput] = React.useState('');
 
-      setShowCreateTaskModal(false);
-      alert('Task created successfully!');
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.response?.data?.error || err.message || 'Failed to create task');
-    } finally {
-      setIsAssigning(false);
-    }
+  const isStepCompleted = (stepNum: number): boolean => {
+    if (stepNum === 1) return drawerStep > 1;
+    return false;
   };
 
   const handleGenerateAutoSplit = () => {
@@ -714,6 +684,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                             if (!versionId) {
                               const payload = {
                                 projectName: 'Auto-Label Dataset',
+                                projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                                 operationType: 'labeling_base' as const,
                                 similarityThreshold: 0.85,
                                 format: 'openai' as const,
@@ -2230,7 +2201,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
                     onClick={handleBulkAssign}
                   >
-                    <Check size={16} /> Ho├án tß║Ñt & Giao viß╗çc
+                    <Check size={16} /> Hoàn tất & Giao việc
                   </button>
                 </div>
               </>

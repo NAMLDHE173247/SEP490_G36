@@ -29,6 +29,8 @@ const PRIORITY_CONFIG = {
 
 function ManagerAssignLabelingView({ onViewDetail }) {
   const [TASKS, setTasks] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date-desc');
@@ -41,15 +43,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [supervisors, setSupervisors] = useState<any[]>([]);
   const [updatingSupervisor, setUpdatingSupervisor] = useState<string | null>(null);
 
+  const fetchProjects = async () => {
+    try {
+      const res = await api.get('/dataprep/projects');
+      setProjects(Array.isArray(res.data?.projects) ? res.data.projects : []);
+    } catch (e) {
+      console.error('Failed to fetch projects', e);
+    }
+  };
+
   const fetchTasks = async () => {
     setIsRefreshing(true);
     setFetchError(null);
     try {
-      const [res, usersRes] = await Promise.all([
+      const [res] = await Promise.all([
         api.get('/dataprep/assignments/manager/overview'),
-        api.get('/auth/users').catch(() => ({ data: { users: [] } })),
+        fetchProjects(),
       ]);
-      setSupervisors((usersRes.data.users || []).filter((u: any) => u.role === 'supervisor' && u.status === 'active'));
       if (res.data.success) {
         setTasks(res.data.data);
       } else {
@@ -67,23 +77,85 @@ function ManagerAssignLabelingView({ onViewDetail }) {
     fetchTasks();
   }, []);
 
-  const handleSupervisorChange = async (e: React.ChangeEvent<HTMLSelectElement>, task: any) => {
+  const toggleProject = (projectId: string) => {
+    setExpandedProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
+  };
+
+  const handleDeleteProject = async (e: React.MouseEvent, projectId: string, projectName: string) => {
     e.stopPropagation();
-    setUpdatingSupervisor(task.id);
+    if (!projectId) return;
+    if (!window.confirm(`Bạn có chắc muốn XÓA Project "${projectName}"?\n\nProject này không còn task nào. Toàn bộ dataset/version trống thuộc Project sẽ bị xóa.`)) return;
     try {
-      await api.patch('/dataprep/assignments/manager/task-supervisor', {
-        versionId: task.datasetVersionId,
-        taskName: task.name,
-        supervisorId: e.target.value || null,
-      });
-      setShowToast(e.target.value ? 'Đã cập nhật Supervisor phụ trách.' : 'Đã chuyển task về Admin xử lý.');
-      await fetchTasks();
+      await api.delete(`/dataprep/projects/${projectId}`);
+      setShowToast('Đã xóa Project!');
+      fetchTasks();
     } catch (error: any) {
-      setFetchError(error.response?.data?.error || 'Không thể cập nhật Supervisor.');
-    } finally {
-      setUpdatingSupervisor(null);
-      setTimeout(() => setShowToast(null), 3000);
+      alert(error.response?.data?.error || 'Xóa Project thất bại');
     }
+    setTimeout(() => setShowToast(null), 3000);
+  };
+
+  // ── Quản lý nhân sự (thay thế / thêm / gỡ) ──
+  const [staffModal, setStaffModal] = useState<null | { mode: 'replace' | 'add'; versionId: string; fromAssigneeId?: string; fromName?: string }>(null);
+  const [availStaff, setAvailStaff] = useState<any[]>([]);
+  const [pickStaffId, setPickStaffId] = useState('');
+  const [pickAi, setPickAi] = useState(false);
+  const [staffBusy, setStaffBusy] = useState(false);
+
+  const versionIdOf = (taskId: string) => String(taskId || '').split('_')[0];
+
+  const openStaffModal = (e: React.MouseEvent, mode: 'replace' | 'add', versionId: string, fromAssigneeId?: string, fromName?: string) => {
+    e.stopPropagation();
+    setStaffModal({ mode, versionId, fromAssigneeId, fromName });
+    setPickStaffId('');
+    setPickAi(false);
+    (async () => {
+      try {
+        const res = await api.get('/dataprep/assignments/available-staff');
+        if (res.data.success) setAvailStaff(res.data.data || []);
+      } catch { /* ignore */ }
+    })();
+  };
+
+  const submitStaffModal = async () => {
+    if (!staffModal || !pickStaffId) return;
+    setStaffBusy(true);
+    try {
+      if (staffModal.mode === 'replace') {
+        await api.post(`/dataprep/versions/${staffModal.versionId}/assignments/replace`, {
+          fromAssigneeId: staffModal.fromAssigneeId,
+          toAssigneeId: pickStaffId,
+          aiAssistEnabled: pickAi,
+        });
+        setShowToast('Đã thay thế nhân sự!');
+      } else {
+        await api.post(`/dataprep/versions/${staffModal.versionId}/assignments/add-staff`, {
+          assigneeIds: [pickStaffId],
+          aiAssigneeIds: pickAi ? [pickStaffId] : [],
+          fromAssigneeId: staffModal.fromAssigneeId,
+        });
+        setShowToast('Đã thêm nhân viên!');
+      }
+      setStaffModal(null);
+      fetchTasks();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Thao tác thất bại');
+    }
+    setStaffBusy(false);
+    setTimeout(() => setShowToast(null), 3000);
+  };
+
+  const handleRevokeAssignee = async (e: React.MouseEvent, versionId: string, assigneeId: string, name: string) => {
+    e.stopPropagation();
+    if (!window.confirm(`Gỡ "${name}" khỏi task?\n\nLịch sử & nhãn đã làm vẫn được giữ để tính công, nhưng người này sẽ không sửa tiếp được.`)) return;
+    try {
+      await api.post(`/dataprep/versions/${versionId}/assignments/revoke`, { assigneeId });
+      setShowToast('Đã gỡ nhân viên!');
+      fetchTasks();
+    } catch (error: any) {
+      alert(error.response?.data?.error || 'Gỡ nhân viên thất bại');
+    }
+    setTimeout(() => setShowToast(null), 3000);
   };
 
   const handleDeleteTask = async (e: React.MouseEvent, id: string) => {
@@ -153,6 +225,241 @@ function ManagerAssignLabelingView({ onViewDetail }) {
     t.batches?.some((b: any) => b.assignees?.length > 1)
   ).length;
 
+  /* ── Group tasks by Project ── */
+  const ORPHAN_KEY = '__no_project__';
+  // total (unfiltered) task count per project — quyết định project có xóa được không
+  const totalTaskCountByProject: Record<string, number> = {};
+  TASKS.forEach(t => {
+    const pid = t.projectId || ORPHAN_KEY;
+    totalTaskCountByProject[pid] = (totalTaskCountByProject[pid] || 0) + 1;
+  });
+
+  const groupsMap: Record<string, { projectId: string; projectName: string; tasks: any[]; deletable: boolean }> = {};
+  // Seed từ danh sách Project (kể cả project chưa có task nào)
+  projects.forEach((p: any) => {
+    const pid = String(p._id);
+    groupsMap[pid] = {
+      projectId: pid,
+      projectName: p.name,
+      tasks: [],
+      deletable: (p.taskCount ?? totalTaskCountByProject[pid] ?? 0) === 0,
+    };
+  });
+  // Gán task (đã filter) vào project tương ứng
+  filtered.forEach(t => {
+    const pid = t.projectId || ORPHAN_KEY;
+    if (!groupsMap[pid]) {
+      groupsMap[pid] = {
+        projectId: pid === ORPHAN_KEY ? '' : pid,
+        projectName: pid === ORPHAN_KEY ? 'Chưa thuộc Project' : (t.projectName || t.dataset || 'Project'),
+        tasks: [],
+        deletable: false, // nhóm orphan không xóa được
+      };
+    }
+    groupsMap[pid].tasks.push(t);
+  });
+
+  const projectGroups = Object.values(groupsMap).sort((a, b) => {
+    // Project có task lên trước, rồi theo tên
+    if ((b.tasks.length > 0 ? 1 : 0) !== (a.tasks.length > 0 ? 1 : 0)) {
+      return (b.tasks.length > 0 ? 1 : 0) - (a.tasks.length > 0 ? 1 : 0);
+    }
+    return a.projectName.localeCompare(b.projectName);
+  });
+
+  /* ── Render 1 task card ── */
+  const renderTaskCard = (task: any) => {
+    const statusInfo = STATUS_CONFIG[task.status] || STATUS_CONFIG['pending'];
+    const priorityInfo = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG['medium'];
+    const progress = task.totalSamples > 0
+      ? Math.round((task.labeledCount / task.totalSamples) * 100) : 0;
+    const isExpanded = expandedTask === task.id;
+    const hasOverlap = task.batches?.some((b: any) => b.assignees?.length > 1);
+    const totalBatches = task.batches?.length || 0;
+    const uniqueAssignees = new Set<string>();
+    task.batches?.forEach((b: any) => b.assignees?.forEach((a: any) => uniqueAssignees.add(a.name)));
+
+    return (
+      <div key={task.id} className={`al-task-card ${isExpanded ? 'expanded' : ''}`}>
+        {/* Main Row */}
+        <div className="al-task-row" onClick={() => onViewDetail(task, null)}>
+          <div className="al-task-title-col">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="al-task-title">{task.dataset} — {task.name}</span>
+              {hasOverlap && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  background: 'linear-gradient(135deg, #ede9fe, #e0e7ff)', color: '#6d28d9',
+                  padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600
+                }}>
+                  <Layers size={12} /> Overlap
+                </span>
+              )}
+            </div>
+            <span className="al-task-desc">
+              {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
+            </span>
+          </div>
+
+          <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>
+          <div className="al-task-type" style={{
+            fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px',
+            backgroundColor: task.taskType === 'cross-check' ? '#e0e7ff' : '#f3f4f6',
+            color: task.taskType === 'cross-check' ? '#4f46e5' : '#4b5563',
+            fontWeight: 500, whiteSpace: 'nowrap'
+          }}>
+            {task.taskType === 'cross-check' ? '🔍 Cross-check' : '🏷 Labeling'}
+          </div>
+          <div className={`al-task-status ${statusInfo.className}`}>
+            {statusInfo.icon}<span>{statusInfo.label}</span>
+          </div>
+          <div className="al-task-progress-col">
+            <div className="al-progress-bar">
+              <div className="al-progress-fill" style={{
+                width: `${progress}%`,
+                background: progress === 100
+                  ? 'linear-gradient(135deg, #10b981, #059669)'
+                  : progress > 50
+                    ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                    : 'linear-gradient(135deg, #f59e0b, #d97706)'
+              }}></div>
+            </div>
+            <span className="al-progress-text" style={{
+              color: progress === 100 ? '#059669' : progress > 50 ? '#4f46e5' : '#d97706'
+            }}>{progress}%</span>
+          </div>
+          <div className="al-task-actions" style={{ display: 'flex', gap: '4px' }}>
+            <button
+              className="al-action-btn"
+              onClick={(e) => toggleExpand(e, task.id)}
+              style={{ background: 'none', border: 'none', color: '#6366f1', cursor: 'pointer', padding: '4px' }}
+              title="Xem chi tiết batch"
+            >
+              {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </button>
+            <button
+              className="al-action-btn delete"
+              onClick={(e) => handleDeleteTask(e, task.id)}
+              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+              title="Xóa task"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Expanded: Batch & Staff Detail */}
+        {isExpanded && (
+          <div className="al-task-expanded" onClick={e => e.stopPropagation()}>
+            <div className="al-batch-grid">
+              {task.batches?.map((batch: any, bIdx: number) => {
+                const batchHasOverlap = batch.assignees?.length > 1;
+                return (
+                  <div key={bIdx} className="al-batch-card">
+                    <div className="al-batch-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <FileText size={14} />
+                        <span className="al-batch-name">{batch.name}</span>
+                        {batchHasOverlap && (
+                          <span style={{
+                            background: '#ede9fe', color: '#7c3aed', padding: '1px 6px',
+                            borderRadius: '4px', fontSize: '10px', fontWeight: 600
+                          }}>
+                            {batch.assignees.length} người
+                          </span>
+                        )}
+                      </div>
+                      <span className="al-batch-count">{batch.totalSamples} samples</span>
+                    </div>
+                    <div className="al-batch-assignees">
+                      {batch.assignees?.map((a: any, aIdx: number) => {
+                        const aProgress = Math.round(a.progress || 0);
+                        const aStatusInfo = STATUS_CONFIG[a.status] || STATUS_CONFIG['pending'];
+                        const isRevoked = a.active === false;
+                        return (
+                          <div key={aIdx} className="al-assignee-row" style={isRevoked ? { opacity: 0.6 } : undefined}>
+                            <div className="al-assignee-avatar">
+                              {(a.name || 'U').split(' ').pop()?.[0] || 'U'}
+                            </div>
+                            <span className="al-assignee-name">
+                              {a.name}
+                              {a.aiAssistEnabled && (
+                                <span title="Được phép dùng AI key" style={{ marginLeft: 6, display: 'inline-flex', alignItems: 'center', gap: 2, color: '#6d28d9', background: '#ede9fe', padding: '0 5px', borderRadius: 5, fontSize: 10, fontWeight: 700 }}>
+                                  <Sparkles size={10} /> AI
+                                </span>
+                              )}
+                              {isRevoked && (
+                                <span title="Đã bị thu hồi/thay thế — giữ lịch sử để tính công" style={{ marginLeft: 6, color: '#92400e', background: '#fef3c7', padding: '0 5px', borderRadius: 5, fontSize: 10, fontWeight: 700 }}>
+                                  🔒 Đã thu hồi
+                                </span>
+                              )}
+                            </span>
+                            <div className="al-assignee-progress">
+                              <div className="al-mini-progress-bar">
+                                <div className="al-mini-progress-fill" style={{
+                                  width: `${aProgress}%`,
+                                  background: aProgress === 100 ? '#10b981' : '#6366f1'
+                                }}></div>
+                              </div>
+                              <span style={{
+                                fontSize: '11px', fontWeight: 600, minWidth: '32px', textAlign: 'right',
+                                color: aProgress === 100 ? '#059669' : '#6366f1'
+                              }}>{aProgress}%</span>
+                            </div>
+                            <span className={`al-assignee-status ${aStatusInfo.className}`} style={{
+                              fontSize: '11px', padding: '2px 6px', borderRadius: '4px'
+                            }}>
+                              {aStatusInfo.label}
+                            </span>
+                            {!isRevoked && (
+                              <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6 }}>
+                                <button
+                                  onClick={(e) => openStaffModal(e, 'replace', versionIdOf(task.id), a.id, a.name)}
+                                  title="Thay thế nhân sự này"
+                                  style={{ border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', borderRadius: 6, padding: '2px 6px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Thay thế
+                                </button>
+                                <button
+                                  onClick={(e) => handleRevokeAssignee(e, versionIdOf(task.id), a.id, a.name)}
+                                  title="Gỡ khỏi task (giữ lịch sử)"
+                                  style={{ border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', borderRadius: 6, padding: '2px 6px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  Gỡ
+                                </button>
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 8, textAlign: 'right' }}>
+                      <button
+                        onClick={(e) => openStaffModal(e, 'add', versionIdOf(task.id), batch.assignees?.[0]?.id, undefined)}
+                        title="Thêm nhân viên vào lô này (overlap/cross-check)"
+                        style={{ border: '1px dashed #cbd5e1', background: '#f8fafc', color: '#475569', borderRadius: 6, padding: '4px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Plus size={12} /> Thêm nhân viên
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="al-batch-footer">
+              <button
+                className="al-btn-view-detail"
+                onClick={() => onViewDetail(task, null)}
+              >
+                <Eye size={14} /> Xem chi tiết đầy đủ <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="al-container">
       {/* Toast */}
@@ -178,18 +485,8 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           >
             <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} /> Làm mới
           </button>
-          <button className="al-btn-create" onClick={() => setShowAssignModal(true)}>
-            <Plus size={16} /> Tạo Task Mới
-          </button>
         </div>
       </div>
-
-      {/* Task Assignment Modal */}
-      <TaskAssignmentModal
-        isOpen={showAssignModal}
-        onClose={() => setShowAssignModal(false)}
-        onSuccess={() => { fetchTasks(); setShowToast('Giao việc thành công!'); setTimeout(() => setShowToast(null), 3000); }}
-      />
 
       {/* Stats */}
       <div className="al-stats">
@@ -277,11 +574,51 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <p style={{ fontSize: '13px', color: '#94a3b8' }}>Kết nối MongoDB Atlas có thể mất vài giây</p>
           </div>
         )}
-        {filtered.length === 0 && !fetchError && !isRefreshing && (
-          <div className="al-empty"><ClipboardList size={48} /><p>Không tìm thấy task nào.</p></div>
+        {projectGroups.length === 0 && !fetchError && !isRefreshing && (
+          <div className="al-empty"><ClipboardList size={48} /><p>Chưa có Project nào. Hãy tạo Project ở bước Data Prep.</p></div>
         )}
 
-        {filtered.map((task) => {
+        {projectGroups.map((group) => {
+          const groupKey = group.projectId || group.projectName;
+          const isOpen = expandedProjects[groupKey] ?? true;
+          const groupSamples = group.tasks.reduce((s: number, t: any) => s + (t.totalSamples || 0), 0);
+          const groupLabeled = group.tasks.reduce((s: number, t: any) => s + (t.labeledCount || 0), 0);
+          const groupProgress = groupSamples > 0 ? Math.round((groupLabeled / groupSamples) * 100) : 0;
+          return (
+            <div key={groupKey} className="al-project-group" style={{ marginBottom: 16, border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
+              <div onClick={() => toggleProject(groupKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#f8fafc', cursor: 'pointer', borderBottom: isOpen ? '1px solid #e2e8f0' : 'none' }}>
+                {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                <Layers size={18} style={{ color: '#6366f1' }} />
+                <span style={{ fontWeight: 700, fontSize: 15, color: '#1e293b' }}>{group.projectName}</span>
+                <span style={{ fontSize: 12, color: '#475569', background: '#eef2ff', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>{group.tasks.length} task</span>
+                {group.tasks.length > 0 && (
+                  <span style={{ fontSize: 12, color: '#64748b' }}>{groupSamples} samples · {groupProgress}%</span>
+                )}
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={(e) => handleDeleteProject(e, group.projectId, group.projectName)}
+                  disabled={!group.deletable}
+                  title={group.deletable ? 'Xóa Project' : 'Chỉ xóa được khi Project không còn task'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 10px', border: '1px solid', borderColor: group.deletable ? '#fecaca' : '#e2e8f0', background: group.deletable ? '#fef2f2' : '#f1f5f9', color: group.deletable ? '#dc2626' : '#94a3b8', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: group.deletable ? 'pointer' : 'not-allowed' }}
+                >
+                  <Trash2 size={14} /> Xóa Project
+                </button>
+              </div>
+              {isOpen && (
+                <div style={{ padding: 12 }}>
+                  {group.tasks.length === 0 && (
+                    <div style={{ textAlign: 'center', color: '#94a3b8', padding: '16px', fontSize: 13 }}>
+                      Project này chưa có task nào.
+                    </div>
+                  )}
+                  {group.tasks.map((task) => renderTaskCard(task))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {false && filtered.map((task) => {
           const statusInfo = STATUS_CONFIG[task.status] || STATUS_CONFIG['pending'];
           const priorityInfo = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG['medium'];
           const progress = task.totalSamples > 0
@@ -450,6 +787,52 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           );
         })}
       </div>
+
+      {/* Modal: Thay thế / Thêm nhân sự */}
+      {staffModal && (
+        <div onClick={() => setStaffModal(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: 440, maxWidth: '92vw', padding: 20, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <h3 style={{ margin: 0, fontSize: 17, color: '#1e293b' }}>
+                {staffModal.mode === 'replace' ? '🔄 Thay thế nhân sự' : '➕ Thêm nhân viên'}
+              </h3>
+              <button onClick={() => setStaffModal(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><X size={20} /></button>
+            </div>
+            {staffModal.mode === 'replace' && (
+              <p style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                Rút phần của <strong>{staffModal.fromName}</strong> và giao cho người mới tiếp tục. Nhãn & lịch sử của người cũ vẫn được giữ để tính công.
+              </p>
+            )}
+            {staffModal.mode === 'add' && (
+              <p style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                Thêm một nhân viên vào cùng lô dữ liệu đã giao (overlap/cross-check).
+              </p>
+            )}
+
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', margin: '12px 0 6px' }}>Chọn nhân viên</label>
+            <select value={pickStaffId} onChange={(e) => setPickStaffId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <option value="">— Chọn nhân viên —</option>
+              {availStaff
+                .filter((s: any) => s.id !== staffModal.fromAssigneeId)
+                .map((s: any) => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.email}) · {s.pendingTasks || 0} task</option>
+                ))}
+            </select>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 14, color: '#334155', cursor: 'pointer' }}>
+              <input type="checkbox" checked={pickAi} onChange={(e) => setPickAi(e.target.checked)} />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Sparkles size={14} style={{ color: '#6d28d9' }} /> Cho phép dùng AI key của hệ thống</span>
+            </label>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button onClick={() => setStaffModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 600, cursor: 'pointer' }}>Hủy</button>
+              <button onClick={submitStaffModal} disabled={!pickStaffId || staffBusy} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: !pickStaffId || staffBusy ? '#cbd5e1' : 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', fontWeight: 700, cursor: !pickStaffId || staffBusy ? 'not-allowed' : 'pointer' }}>
+                {staffBusy ? 'Đang xử lý...' : (staffModal.mode === 'replace' ? 'Thay thế' : 'Thêm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -1938,8 +1938,14 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         assignmentRows: existingAssignments,
       });
 
+      if (!(version as any).projectId) {
+        res.status(400).json({ error: 'DatasetVersion chưa thuộc Project nào. Vui lòng tạo/chọn Project trước.' });
+        return;
+      }
+
       await DatasetSampleAssignment.insertMany(
         selectedSamples.map((sample: any, offset) => ({
+          projectId: (version as any).projectId,
           datasetVersionId: version._id,
           sampleId: sample._id,
           assigneeId: new mongoose.Types.ObjectId(assigneeId),
@@ -2146,6 +2152,10 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
             status: 'submitted',
             submittedAt,
             progressSnapshot: progress,
+          },
+          $setOnInsert: {
+            projectId: (version as any).projectId,
+            name: `${(version as any).projectName || 'Dataset'} Labeling`,
           },
         },
         { returnDocument: 'after', upsert: true }

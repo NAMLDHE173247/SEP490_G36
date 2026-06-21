@@ -36,7 +36,8 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [supervisors, setSupervisors] = useState<SupervisorItem[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<VersionItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
-  const [selectedSupervisor, setSelectedSupervisor] = useState('');
+  const [aiStaff, setAiStaff] = useState<string[]>([]);
+  const [aiSearch, setAiSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [taskName, setTaskName] = useState('');
   const [priority, setPriority] = useState('medium');
@@ -51,7 +52,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setStep(1);
       setSelectedVersion(null);
       setSelectedStaff([]);
-      setSelectedSupervisor('');
+      setAiStaff([]);
       setTaskName('');
       setPriority('medium');
       setDeadline('');
@@ -100,7 +101,17 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   };
 
   const toggleStaff = (id: string) => {
-    setSelectedStaff(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+    setSelectedStaff(prev => {
+      const next = prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id];
+      if (!next.includes(id)) setAiStaff(a => a.filter(x => x !== id)); // bỏ chọn thì gỡ luôn quyền AI
+      return next;
+    });
+  };
+
+  const toggleAi = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    setSelectedStaff(prev => prev.includes(id) ? prev : [...prev, id]); // bật AI thì auto chọn nhân viên
+    setAiStaff(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
   // Valid overlap values: divisors of selectedStaff.length
@@ -147,12 +158,18 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
 
   const handleSubmit = async () => {
     if (!selectedVersion) return;
+    // Bắt buộc đặt tên Task
+    if (!taskName.trim()) {
+      setError('Tên Task là bắt buộc');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       const res = await api.post(`/dataprep/versions/${selectedVersion._id}/assignments/auto-assign`, {
         assigneeIds: selectedStaff,
-        taskName: taskName || `${selectedVersion.projectName} Labeling`,
+        aiAssigneeIds: aiStaff.filter(id => selectedStaff.includes(id)),
+        taskName: taskName.trim(),
         priority,
         deadline: deadline || undefined,
         overlapCount,
@@ -279,6 +296,15 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                         {s.pendingTasks === 0 ? 'Rảnh' : `${s.pendingTasks} task`}
                       </span>
                     </div>
+                    {aiStaff.includes(s.id) && (
+                      <span title="Được phép dùng AI key (cấu hình ở bước Xác nhận)" style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3, marginLeft: 8,
+                        padding: '2px 7px', borderRadius: 999, fontSize: 10, fontWeight: 700,
+                        background: 'linear-gradient(135deg, #ede9fe, #e0e7ff)', color: '#6d28d9'
+                      }}>
+                        <Sparkles size={11} /> AI
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -334,15 +360,88 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
               <h4><ClipboardList size={16} /> Xác nhận phân công</h4>
 
               <div className="ta-config-group">
-                <label>Tên Task</label>
+                <label>Tên Task <span style={{ color: '#ef4444' }}>*</span></label>
                 <input
                   type="text"
                   value={taskName}
                   onChange={e => setTaskName(e.target.value)}
-                  placeholder={`${selectedVersion?.projectName || 'Dataset'} Labeling`}
+                  placeholder={`VD: ${selectedVersion?.projectName || 'Dataset'} Labeling`}
                   className="ta-input"
+                  required
+                  style={!taskName.trim() ? { borderColor: '#ef4444' } : undefined}
                 />
+                {!taskName.trim() && (
+                  <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>
+                    Bắt buộc nhập tên Task để phân biệt Project/Dataset.
+                  </span>
+                )}
               </div>
+
+              {/* AI permission panel */}
+              {(() => {
+                const selUsers = selectedStaff.map(id => staffList.find(s => s.id === id)).filter(Boolean) as StaffItem[];
+                const q = aiSearch.trim().toLowerCase();
+                const shown = selUsers.filter(u => !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+                const aiCount = selectedStaff.filter(id => aiStaff.includes(id)).length;
+                const pillBtn: React.CSSProperties = { padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid #e2e8f0', background: '#fff', color: '#64748b' };
+                return (
+                  <div style={{ marginTop: 14, border: '1px solid #e0e7ff', borderRadius: 14, overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff, #eef2ff)', borderBottom: '1px solid #e0e7ff' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: '#6d28d9' }}>
+                        <Sparkles size={16} /> Quyền dùng AI key
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', background: '#fff', border: '1px solid #ddd6fe', borderRadius: 999, padding: '1px 8px' }}>{aiCount}/{selectedStaff.length}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button type="button" onClick={() => setAiStaff([...selectedStaff])} style={pillBtn}>Bật tất cả</button>
+                        <button type="button" onClick={() => setAiStaff([])} style={pillBtn}>Tắt tất cả</button>
+                      </div>
+                    </div>
+                    <div style={{ padding: '12px 14px' }}>
+                      <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
+                        Chỉ nhân viên được bật mới thấy nút <strong>“Gợi ý AI”</strong> khi gán nhãn.
+                      </p>
+                      {selectedStaff.length > 5 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', marginBottom: 10 }}>
+                          <Search size={15} style={{ color: '#94a3b8' }} />
+                          <input type="text" placeholder="Lọc nhân viên..." value={aiSearch} onChange={e => setAiSearch(e.target.value)}
+                            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#334155' }} />
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
+                        {selectedStaff.length === 0 && (
+                          <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '14px 0' }}>
+                            Chưa chọn nhân viên nào.
+                          </div>
+                        )}
+                        {shown.map(u => {
+                          const on = aiStaff.includes(u.id);
+                          return (
+                            <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${on ? '#ddd6fe' : '#eef2f7'}`, background: on ? '#faf5ff' : '#fff' }}>
+                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                                {u.name.split(' ').pop()?.[0] || 'U'}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
+                                <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
+                              </div>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={on}
+                                onClick={() => setAiStaff(prev => prev.includes(u.id) ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                                title={on ? 'Đang cho phép AI — bấm để tắt' : 'Bấm để cho phép dùng AI'}
+                                style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, background: on ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#cbd5e1' }}
+                              >
+                                <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="ta-config-row">
                 <div className="ta-config-group">
@@ -443,7 +542,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
             </button>
           )}
           {step === 3 && (
-            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting}>
+            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting || !taskName.trim()}>
               {submitting ? 'Đang giao việc...' : '🚀 Giao việc'}
             </button>
           )}

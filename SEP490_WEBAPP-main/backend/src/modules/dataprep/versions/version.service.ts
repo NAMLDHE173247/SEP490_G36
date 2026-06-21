@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
-import { DataPrepProject } from '../../../models/DataPrepProject';
+import { Project } from '../../../models/Project';
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetAssignmentActivity } from '../../../models/DatasetAssignmentActivity';
 import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
@@ -100,15 +100,15 @@ export class VersionService {
   private async resolveProject(ownerId: string, projectId: string | undefined, projectName: string, sourceType: 'chat' | 'lesson') {
     let project;
     if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
-      project = await DataPrepProject.findOne({ _id: projectId, ownerId }).lean();
+      project = await Project.findOne({ _id: projectId, ownerId }).lean();
     } else {
-      project = await DataPrepProject.findOne({ ownerId, name: projectName, isArchived: { $ne: true } })
+      project = await Project.findOne({ ownerId, name: projectName, isArchived: { $ne: true } })
         .sort({ createdAt: -1 })
         .lean();
     }
 
     if (!project) {
-      project = await DataPrepProject.create({
+      project = await Project.create({
         ownerId: new mongoose.Types.ObjectId(ownerId),
         name: projectName,
         sourceType,
@@ -143,7 +143,7 @@ export class VersionService {
       promptContentSnapshot: params.promptContentSnapshot,
     });
 
-    await DataPrepProject.updateOne(
+    await Project.updateOne(
       { _id: project._id },
       {
         $set: { latestVersionId: datasetVersion._id },
@@ -152,7 +152,7 @@ export class VersionService {
     );
 
     if (!(project as any).rootVersionId) {
-      await DataPrepProject.updateOne(
+      await Project.updateOne(
         { _id: project._id, rootVersionId: { $exists: false } },
         { $set: { rootVersionId: datasetVersion._id } }
       );
@@ -411,7 +411,7 @@ export class VersionService {
     return this.createVersion({
       ownerId: params.ownerId,
       projectId: baseVersion.projectId ? String(baseVersion.projectId) : undefined,
-      projectName: baseVersion.projectName,
+      projectName: baseVersion.projectName || 'Legacy Project',
       parentVersionId: String(baseVersion._id),
       createdFromVersionId: String(baseVersion._id),
       operationType: params.operationType,
@@ -532,7 +532,7 @@ export class VersionService {
 
       if (!remainingVersions.length) {
         projectArchived = true;
-        await DataPrepProject.updateOne(
+        await Project.updateOne(
           { _id: targetVersion.projectId, ownerId: ownerObjectId },
           {
             $set: { isArchived: true },
@@ -562,7 +562,7 @@ export class VersionService {
         latestVersionId = nextLatest ? String(nextLatest._id) : null;
         rootVersionId = nextRoot ? String(nextRoot._id) : null;
 
-        await DataPrepProject.updateOne(
+        await Project.updateOne(
           { _id: targetVersion.projectId, ownerId: ownerObjectId },
           {
             $set: {
@@ -597,3 +597,5 @@ export class VersionService {
 }
 
 export const versionService = new VersionService();
+
+

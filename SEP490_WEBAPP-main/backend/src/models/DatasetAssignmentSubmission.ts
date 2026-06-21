@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 export type AssignmentSubmissionStatus = 'pending' | 'in_progress' | 'draft' | 'submitted' | 'approved' | 'completed' | 'rejected';
 
 export interface IDatasetAssignmentSubmission extends Document {
+  projectId: Types.ObjectId | string;
   datasetVersionId: Types.ObjectId | string;
   assigneeId: Types.ObjectId | string;
   status: AssignmentSubmissionStatus;
@@ -19,6 +20,16 @@ export interface IDatasetAssignmentSubmission extends Document {
   version?: string;
   totalSamples: number;
   labeledCount: number;
+  submittedCount: number;
+  approvedCount: number;
+
+  // Quyền dùng AI key của hệ thống cho task này
+  aiAssistEnabled: boolean;
+  // active=false => bị rút/thay thế: giữ lịch sử để tính công nhưng KHÔNG được sửa tiếp
+  active: boolean;
+  revokedAt?: Date;
+  revokedReason?: string;
+  replacedByAssigneeId?: Types.ObjectId | string;
 
   progressSnapshot?: Record<string, unknown>;
   submittedAt?: Date;
@@ -32,6 +43,11 @@ export interface IDatasetAssignmentSubmission extends Document {
 
 const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmission>(
   {
+    projectId: {
+      type: Schema.Types.Mixed, // allow string or ObjectId for mock
+      required: true,
+      index: true,
+    },
     datasetVersionId: {
       type: Schema.Types.Mixed, // allow string or ObjectId for mock
       required: true,
@@ -59,6 +75,14 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
     version: { type: String },
     totalSamples: { type: Number, default: 0 },
     labeledCount: { type: Number, default: 0 },
+    submittedCount: { type: Number, default: 0 },
+    approvedCount: { type: Number, default: 0 },
+
+    aiAssistEnabled: { type: Boolean, default: false },
+    active: { type: Boolean, default: true, index: true },
+    revokedAt: { type: Date },
+    revokedReason: { type: String },
+    replacedByAssigneeId: { type: Schema.Types.Mixed },
 
     progressSnapshot: { type: Schema.Types.Mixed },
     submittedAt: { type: Date },
@@ -73,6 +97,7 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
 );
 
 // DatasetAssignmentSubmissionSchema.index({ datasetVersionId: 1, assigneeId: 1 }, { unique: true });
+DatasetAssignmentSubmissionSchema.index({ projectId: 1, assigneeId: 1, status: 1 });
 
 export const DatasetAssignmentSubmission = mongoose.model<IDatasetAssignmentSubmission>(
   'DatasetAssignmentSubmission',

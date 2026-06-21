@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IDatasetVersion extends Document {
-  projectId?: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
   ownerId: mongoose.Types.ObjectId;
   projectName: string;
   isPublic?: boolean;
@@ -32,7 +32,7 @@ export interface IDatasetVersion extends Document {
 
 const DatasetVersionSchema = new Schema<IDatasetVersion>(
   {
-    projectId: { type: Schema.Types.ObjectId, ref: 'DataPrepProject', index: true },
+    projectId: { type: Schema.Types.ObjectId, ref: 'DataPrepProject', required: true, index: true },
     ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     projectName: { type: String, required: true, index: true, trim: true },
     isPublic: { type: Boolean, default: false, index: true },
