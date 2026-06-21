@@ -21,7 +21,9 @@ type ClusterPayload = {
 export type AutoLabelSuggestion = {
   clusterId: number;
   label: string;
-  // reason: string;
+  source: 'ai';
+  topic: string;
+  reason: string;
   sampleCount: number;
 };
 
@@ -104,13 +106,15 @@ ${JSON.stringify(payload)}
 
 Yêu cầu output:
 - CHỈ trả về JSON array hợp lệ.
-- Mỗi object bắt buộc có: clusterId, label.
+- Mỗi object bắt buộc có: clusterId, label, topic, reason.
 - label là tên môn học in hoa.
+- topic tóm tắt nội dung chính của cụm trong một câu ngắn.
+- reason nêu các đặc trưng nội dung chung khiến những hội thoại được gom vào cùng cụm.
 - Không thêm markdown, không giải thích ngoài JSON.
 
 Định dạng:
 [
-  { "clusterId": 0, "label": "MATH" }
+  { "clusterId": 0, "label": "MATH", "topic": "Phương trình bậc hai", "reason": "Các mẫu đều hỏi về nghiệm và cách giải phương trình bậc hai." }
 ]`;
 }
 
@@ -141,7 +145,9 @@ function parseSuggestions(rawText: string, clusters: ClusterPayload[]): AutoLabe
     return {
       clusterId: cluster.clusterId,
       label: normalizeSubjectLabel(item?.label),
-      // reason: String(item?.reason || 'Fallback label because AI response was missing or invalid.'),
+      source: 'ai' as const,
+      topic: String(item?.topic || 'Chưa đủ dữ liệu để tóm tắt'),
+      reason: String(item?.reason || 'AI không cung cấp giải thích đủ tin cậy cho cụm này.'),
       sampleCount: cluster.sampleCount,
     };
   });

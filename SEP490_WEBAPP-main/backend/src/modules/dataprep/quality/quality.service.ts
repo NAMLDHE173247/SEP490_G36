@@ -43,7 +43,6 @@ const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
-const HARMFUL_ACTION_PENALTY = -2;
 const USER_INTENT_SET = new Set<string>(INTENTS);
 const ASSISTANT_ACTION_SET = new Set<string>(
   Array.from(new Set(Object.values(VALID_ACTIONS).flatMap((actions) => Array.from(actions))))
@@ -138,12 +137,14 @@ function isQualityBucket(value: string): value is QualityBucket {
 function serializeMessages(data: Record<string, any>): SerializedMessage[] {
   if (Array.isArray(data?.messages)) {
     return data.messages
-      .filter((message: any) => message?.role === 'user' || message?.role === 'assistant')
       .map((message: any, index: number) => ({
         messageIndex: index,
         role: message.role,
         content: String(message?.content || ''),
-      }));
+      }))
+      .filter((message: any) =>
+        (message.role === 'user' || message.role === 'assistant') && message.content.trim().length > 0
+      );
   }
 
   const instruction = String(data?.instruction || data?.userText || '').trim();
@@ -460,7 +461,9 @@ export class QualityService {
           const harmfulActions = assistantLabels.filter((action) => HARMFUL_ACTIONS[userLabel]?.has(action));
           const isCorrect = matchedActions.length > 0;
           const isCriticalFailure = !isCorrect && CRITICAL_INTENTS.has(userLabel as any);
-          const value = (isCorrect ? 1 : -1) + (harmfulActions.length * HARMFUL_ACTION_PENALTY);
+          // A missing rule match is neutral, not automatically a total failure.
+          // Only an explicitly harmful pairing receives the low endpoint.
+          const value = harmfulActions.length > 0 ? -1 : isCorrect ? 1 : -0.5;
 
           if (!isCorrect) {
             incrementWrongPair(wrongPairMap, userLabel, assistantLabels, isCriticalFailure);
@@ -487,7 +490,11 @@ export class QualityService {
           continue;
         }
 
-        const turnScore = intentScores.reduce((sum, current) => sum + current.value, 0) / intentScores.length;
+        // Treat multiple selected intents as alternatives for one turn. Preserve
+        // the best valid pairing instead of penalising every extra label.
+        const turnScore = intentScores.some((current) => current.harmfulActions.length > 0)
+          ? -1
+          : Math.max(...intentScores.map((current) => current.value));
         totalTurnScore += turnScore;
         scorableTurns += 1;
 
@@ -499,7 +506,7 @@ export class QualityService {
           userLabels: [...userLabels],
           assistantLabels: [...assistantLabels],
           expectedActions: Array.from(expectedActions),
-          matched: intentScores.every((entry) => entry.matched),
+          matched: intentScores.some((entry) => entry.matched),
           turnScore,
           intentScores,
         });

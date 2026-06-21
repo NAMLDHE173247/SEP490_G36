@@ -4,9 +4,12 @@ import { getAuthUserId, isManager } from '../../../utils/auth';
 import { QualityService } from './quality.service';
 import { Stage4RewriteAssignment } from '../../../models/Stage4RewriteAssignment';
 import { Stage4Notification } from '../../../models/Stage4Notification';
+import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { User } from '../../../models/User';
 import { GeminiProvider } from '../../../services/providers/GeminiProvider';
+import { sendTransactionalEmail } from '../../../services/emailService';
+import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 
 const qualityService = new QualityService();
 const REWRITE_CONTEXT_MODES = ['n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'] as const;
@@ -99,6 +102,14 @@ export class QualityController {
     type?: 'info' | 'success' | 'warning';
     message: string;
   }) {
+    const recipientFilter: any = {
+      datasetVersionId: new mongoose.Types.ObjectId(params.versionId),
+      message: params.message,
+      createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) },
+    };
+    if (params.recipientId && mongoose.Types.ObjectId.isValid(params.recipientId)) recipientFilter.recipientId = new mongoose.Types.ObjectId(params.recipientId);
+    if (params.recipientRole) recipientFilter.recipientRole = params.recipientRole;
+    if (await Stage4Notification.exists(recipientFilter)) return;
     await Stage4Notification.create({
       datasetVersionId: new mongoose.Types.ObjectId(params.versionId),
       actorId: params.actorId && mongoose.Types.ObjectId.isValid(params.actorId) ? new mongoose.Types.ObjectId(params.actorId) : undefined,
@@ -107,6 +118,20 @@ export class QualityController {
       type: params.type || 'info',
       message: params.message,
     });
+    const recipientQuery: any = params.recipientId
+      ? { _id: params.recipientId }
+      : params.recipientRole ? { role: params.recipientRole, status: 'active' } : null;
+    if (recipientQuery) {
+      const recipients = await User.find(recipientQuery).select('email').lean();
+      const emails = recipients.map((user: any) => String(user.email || '')).filter((email) => email.includes('@'));
+      if (emails.length) void sendTransactionalEmail({
+        to: emails,
+        subject: '[SEP490] Cập nhật Rewrite Task',
+        text: `${params.message}\n\nVui lòng đăng nhập hệ thống để xem chi tiết.`,
+      }).then((result) => {
+        if (!result.sent && result.reason !== 'email_not_configured') console.warn('[Email] Delivery skipped:', result.reason);
+      });
+    }
   }
 
   private async ensureRewriteAssignmentIndexes() {
@@ -202,6 +227,21 @@ export class QualityController {
       const { versionId } = req.params;
       const group = req.query.group ? String(req.query.group) : undefined;
       const result = await qualityService.classify(versionId, ownerId, group);
+      const requestedPage = Number.parseInt(String(req.query.page || ''), 10);
+      const requestedLimit = Number.parseInt(String(req.query.limit || ''), 10);
+      if (Number.isFinite(requestedPage) || Number.isFinite(requestedLimit)) {
+        const page = Math.max(1, Number.isFinite(requestedPage) ? requestedPage : 1);
+        const limit = Math.min(200, Math.max(1, Number.isFinite(requestedLimit) ? requestedLimit : 25));
+        const totalItems = result.items.length;
+        const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+        const safePage = Math.min(page, totalPages);
+        res.json({
+          ...result,
+          items: result.items.slice((safePage - 1) * limit, safePage * limit),
+          pagination: { page: safePage, limit, totalItems, totalPages },
+        });
+        return;
+      }
       res.json(result);
     } catch (error: any) {
       console.error('Get quality samples error:', error);
@@ -319,12 +359,16 @@ export class QualityController {
       if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
-      const tasks = await Stage4RewriteAssignment.find(query)
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
+      const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
         .populate('assigneeId', 'name email')
         .populate('sampleId')
         .sort({ updatedAt: -1 })
-        .lean();
-      res.json({ tasks: tasks.map((task) => this.serializeRewriteTask(task)) });
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(), Stage4RewriteAssignment.countDocuments(query)]);
+      res.json({ tasks: tasks.map((task) => this.serializeRewriteTask(task)), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
     } catch (error: any) {
       console.error('List rewrite assignments error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list rewrite assignments' });
@@ -402,6 +446,61 @@ export class QualityController {
     }
   }
 
+  async bulkAssignRewrite(req: Request, res: Response): Promise<void> {
+    try {
+      const actorId = getAuthUserId(req);
+      if (!actorId || !isManager(req)) {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Manager role required' : 'Unauthorized' });
+        return;
+      }
+      const { versionId } = req.params;
+      const assignments = Array.isArray(req.body?.assignments) ? req.body.assignments : [];
+      if (!mongoose.Types.ObjectId.isValid(versionId) || assignments.length === 0 || assignments.length > 1000) {
+        res.status(400).json({ error: 'Bulk assignment requires 1-1000 valid items.' });
+        return;
+      }
+      const invalidRow = assignments.find((row: any) =>
+        !mongoose.Types.ObjectId.isValid(row?.sampleId) || !mongoose.Types.ObjectId.isValid(row?.assigneeId)
+      );
+      if (invalidRow) {
+        res.status(400).json({ error: 'Every item requires valid sampleId and assigneeId.' });
+        return;
+      }
+      const keys = assignments.map((row: any) => `${row.sampleId}:${Number.isInteger(Number(row.targetMessageIndex)) ? Number(row.targetMessageIndex) : 'null'}`);
+      if (new Set(keys).size !== keys.length) {
+        res.status(400).json({ error: 'A rewrite target may only be assigned to one Staff.' });
+        return;
+      }
+      const staffIds: string[] = [...new Set<string>(assignments.map((row: any) => String(row.assigneeId)))];
+      const sampleIds: string[] = [...new Set<string>(assignments.map((row: any) => String(row.sampleId)))];
+      const [staff, samples] = await Promise.all([
+        User.find({ _id: { $in: staffIds }, role: 'staff', status: 'active' }).select('_id').lean(),
+        ProcessedDatasetItem.find({ _id: { $in: sampleIds }, datasetVersionId: versionId }).lean(),
+      ]);
+      if (staff.length !== staffIds.length || samples.length !== sampleIds.length) {
+        res.status(400).json({ error: 'Batch contains inactive Staff or samples outside this dataset version.' });
+        return;
+      }
+      await this.ensureRewriteAssignmentIndexes();
+      const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
+      const operations = assignments.map((row: any) => {
+        const sample: any = sampleMap.get(String(row.sampleId));
+        const messages = Array.isArray(sample?.data?.messages) ? sample.data.messages : [];
+        const parsedIndex = Number(row.targetMessageIndex);
+        const targetIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : null;
+        const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(row.contextMode) ? row.contextMode : 'n-2:n+2';
+        const originalText = String(row.originalText || (targetIndex !== null ? messages[targetIndex]?.content : '') || '');
+        return { updateOne: { filter: { datasetVersionId: new mongoose.Types.ObjectId(versionId), sampleId: new mongoose.Types.ObjectId(row.sampleId), targetMessageIndex: targetIndex }, update: { $set: { assigneeId: new mongoose.Types.ObjectId(row.assigneeId), assignedBy: new mongoose.Types.ObjectId(actorId), convId: String(row.convId || sample.sampleId || row.sampleId), subject: String(row.subject || sample?.data?.subject || ''), reason: String(row.reason || 'None'), originalText, targetMessageIndex: targetIndex, contextMode, conversationMessages: this.buildRewriteContextMessages(messages, targetIndex ?? -1, contextMode), submittedText: '', status: 'assigned', reviewNote: '' }, $unset: { reviewedBy: '', submittedAt: '', reviewedAt: '' }, $setOnInsert: { datasetVersionId: new mongoose.Types.ObjectId(versionId), sampleId: new mongoose.Types.ObjectId(row.sampleId) } }, upsert: true } };
+      });
+      await Stage4RewriteAssignment.bulkWrite(operations, { ordered: true });
+      await Promise.all(staffIds.map((recipientId) => this.notify({ versionId, actorId, recipientId, type: 'info', message: `You received rewrite tasks in a batch of ${assignments.length} items.` })));
+      res.json({ success: true, assignedCount: assignments.length, requestedCount: assignments.length });
+    } catch (error: any) {
+      console.error('Bulk assign rewrite error:', error);
+      res.status(500).json({ error: error.message || 'Failed to bulk assign rewrite tasks' });
+    }
+  }
+
   async listMyRewriteAssignments(req: Request, res: Response): Promise<void> {
     try {
       const userId = getAuthUserId(req);
@@ -413,13 +512,16 @@ export class QualityController {
       if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
-      const tasks = await Stage4RewriteAssignment.find(query)
+      const page = Math.max(1, Number(req.query.page) || 1);
+      const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
+      const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
         .populate('assigneeId', 'name email')
         .populate('sampleId')
         .sort({ updatedAt: -1 })
-        .limit(100)
-        .lean();
-      res.json({ tasks: tasks.map((task) => ({ ...this.serializeRewriteTask(task), datasetVersionId: String(task.datasetVersionId) })) });
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(), Stage4RewriteAssignment.countDocuments(query)]);
+      res.json({ tasks: tasks.map((task) => ({ ...this.serializeRewriteTask(task), datasetVersionId: String(task.datasetVersionId) })), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
     } catch (error: any) {
       console.error('List my rewrite assignments error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list rewrite assignments' });
@@ -434,11 +536,36 @@ export class QualityController {
         return;
       }
       const role = (req as any).user?.role;
+      // Backfill assignment notices created before auto-assign started emitting
+      // per-user notifications. This also repairs the user's current test task.
+      if (role === 'staff') {
+        const assignedTasks = await DatasetAssignmentSubmission.find({ assigneeId: userId })
+          .select('_id datasetVersionId name totalSamples createdAt')
+          .sort({ createdAt: -1 })
+          .limit(30)
+          .lean();
+        for (const task of assignedTasks) {
+          const message = `Bạn được giao task "${task.name}" (${Number(task.totalSamples || 0)} mẫu).`;
+          await Stage4Notification.updateOne(
+            { datasetVersionId: task.datasetVersionId, recipientId: new mongoose.Types.ObjectId(userId), assignmentRef: task._id } as any,
+            { $setOnInsert: { datasetVersionId: task.datasetVersionId, recipientId: new mongoose.Types.ObjectId(userId), type: 'info', message, assignmentRef: task._id, createdAt: (task as any).createdAt || new Date() } } as any,
+            { upsert: true }
+          );
+        }
+        // Old auto-assign code created a second role-less message without an
+        // assignment reference. Backfilled records above supersede it.
+        await Stage4Notification.deleteMany({
+          recipientId: new mongoose.Types.ObjectId(userId),
+          assignmentRef: { $exists: false },
+          message: { $regex: '^Bạn được giao task ' },
+        });
+      }
+      const recipientClauses: any[] = [{ recipientId: userId }];
+      // Supervisor notifications are task-scoped and must target a concrete user.
+      // Do not expose legacy role-wide notices to unrelated supervisors.
+      if (role !== 'supervisor') recipientClauses.push({ recipientRole: role });
       const notes = await Stage4Notification.find({
-        $or: [
-          { recipientId: userId },
-          { recipientRole: role },
-        ],
+        $or: recipientClauses,
       }).sort({ createdAt: -1 }).limit(50).lean();
       res.json({ notifications: notes });
     } catch (error: any) {
@@ -455,7 +582,7 @@ export class QualityController {
         return;
       }
       const { versionId, taskId } = req.params;
-      const { submittedText } = req.body;
+      const { submittedText, expectedUpdatedAt } = req.body;
       if (!submittedText || !String(submittedText).trim()) {
         res.status(400).json({ error: 'submittedText is required' });
         return;
@@ -469,6 +596,14 @@ export class QualityController {
         res.status(404).json({ error: 'Rewrite task not found' });
         return;
       }
+      if (expectedUpdatedAt) {
+        const expectedTime = new Date(expectedUpdatedAt).getTime();
+        const currentTime = new Date(task.updatedAt).getTime();
+        if (!Number.isFinite(expectedTime) || expectedTime !== currentTime) {
+          res.status(409).json({ error: 'Rewrite task đã thay đổi sau khi file được tải xuống. Hãy tải file mới trước khi nộp.' });
+          return;
+        }
+      }
       const wasSubmitted = task.status === 'submitted';
       task.submittedText = String(submittedText).trim();
       task.status = 'submitted';
@@ -480,14 +615,14 @@ export class QualityController {
           actorId: userId,
           recipientRole: 'admin',
           type: 'success',
-          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite for ${task.convId}.`,
+          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
         });
         await this.notify({
           versionId,
           actorId: userId,
           recipientRole: 'supervisor',
           type: 'success',
-          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite for ${task.convId}.`,
+          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
         });
       }
       res.json({ task: this.serializeRewriteTask(task) });
@@ -577,11 +712,26 @@ export class QualityController {
         res.status(404).json({ error: 'Rewrite task not found' });
         return;
       }
+      if (action === 'approved' && !String(task.submittedText || '').trim()) {
+        res.status(409).json({ error: 'Staff has not submitted rewritten text.' });
+        return;
+      }
+      if ((action === 'redo' || action === 'rejected') && !String(note || '').trim()) {
+        res.status(400).json({ error: 'A review note is required for redo or rejection.' });
+        return;
+      }
       task.status = action;
       task.reviewedBy = new mongoose.Types.ObjectId(actorId);
       task.reviewNote = note || '';
       task.reviewedAt = new Date();
       await task.save();
+      if (action === 'approved') {
+        await ConversationRewriteHistory.findOneAndUpdate(
+          { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0 },
+          { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0, originalText: task.originalText, proposedText: task.submittedText, approvedText: task.submittedText, editorId: (task.assigneeId as any)?._id || task.assigneeId, editReason: task.reason || note || 'Approved rewrite', editType: 'manual' },
+          { upsert: true, new: true }
+        );
+      }
       await this.notify({
         versionId,
         actorId,
@@ -593,6 +743,64 @@ export class QualityController {
     } catch (error: any) {
       console.error('Review rewrite error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to review rewrite' });
+    }
+  }
+
+  async autoBypassRewrite(req: Request, res: Response): Promise<void> {
+    try {
+      const actorId = getAuthUserId(req);
+      if (!actorId || String((req as any).user?.role || '').toLowerCase() !== 'admin') {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Admin role required' : 'Unauthorized' });
+        return;
+      }
+      const { versionId } = req.params;
+      const limit = Math.min(50, Math.max(1, Number(req.body?.limit) || 20));
+      const requestedIds = Array.isArray(req.body?.taskIds) ? req.body.taskIds.filter((id: any) => mongoose.Types.ObjectId.isValid(String(id))) : [];
+      const query: any = { datasetVersionId: versionId, status: { $in: ['assigned', 'redo', 'rejected'] } };
+      if (requestedIds.length) query._id = { $in: requestedIds };
+      const tasks = await Stage4RewriteAssignment.find(query).sort({ createdAt: 1 }).limit(limit);
+      if (!tasks.length) {
+        res.json({ processedCount: 0, failedCount: 0, failures: [] });
+        return;
+      }
+      const provider = new GeminiProvider();
+      const failures: Array<{ taskId: string; error: string }> = [];
+      let processedCount = 0;
+      for (const task of tasks) {
+        try {
+          const context = Array.isArray(task.conversationMessages) && task.conversationMessages.length
+            ? task.conversationMessages
+            : [{ role: 'assistant', content: task.originalText, isTarget: true }];
+          const prompt = {
+            task: 'Rewrite only the target AI tutor response.', reason: task.reason,
+            originalTargetResponse: task.originalText, conversationContext: context,
+            requirements: ['Use the conversation language.', 'Prefer Socratic guidance.', 'Be concise and factual.', 'Return JSON only: {"suggestedText":"..."}'],
+          };
+          const raw = await provider.generateContent(JSON.stringify(prompt), undefined, 'Return valid JSON only.');
+          const first = raw.indexOf('{'); const last = raw.lastIndexOf('}');
+          const parsed = JSON.parse(first >= 0 && last > first ? raw.slice(first, last + 1) : raw);
+          const suggestedText = String(parsed?.suggestedText || '').trim();
+          if (!suggestedText) throw new Error('AI returned empty rewrite');
+          task.submittedText = suggestedText;
+          task.status = 'approved';
+          task.submittedAt = new Date();
+          task.reviewedAt = new Date();
+          task.reviewedBy = new mongoose.Types.ObjectId(actorId);
+          task.reviewNote = 'Auto-Bypass: generated and approved by Admin configuration';
+          await task.save();
+          await ConversationRewriteHistory.findOneAndUpdate(
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0 },
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0, originalText: task.originalText, proposedText: suggestedText, approvedText: suggestedText, editorId: new mongoose.Types.ObjectId(actorId), editReason: task.reason || 'Auto-Bypass rewrite', editType: 'ai' },
+            { upsert: true, new: true }
+          );
+          processedCount += 1;
+        } catch (error: any) {
+          failures.push({ taskId: String(task._id), error: error.message || 'Unknown AI error' });
+        }
+      }
+      res.json({ processedCount, failedCount: failures.length, failures });
+    } catch (error: any) {
+      res.status(error.statusCode || 500).json({ error: error.message || 'Auto-Bypass failed' });
     }
   }
 
@@ -632,12 +840,11 @@ export class QualityController {
       }
       const { versionId } = req.params;
       const role = (req as any).user?.role;
+      const recipientClauses: any[] = [{ recipientId: userId }];
+      if (role !== 'supervisor') recipientClauses.push({ recipientRole: role });
       const notes = await Stage4Notification.find({
         datasetVersionId: versionId,
-        $or: [
-          { recipientId: userId },
-          { recipientRole: role },
-        ],
+        $or: recipientClauses,
       }).sort({ createdAt: -1 }).limit(20).lean();
       res.json({ notifications: notes });
     } catch (error: any) {
@@ -683,14 +890,13 @@ export class QualityController {
       }
       const { versionId } = req.params;
       const role = (req as any).user?.role;
+      const recipientClauses: any[] = [{ recipientId: userId }];
+      if (role !== 'supervisor') recipientClauses.push({ recipientRole: role });
       const result = await Stage4Notification.updateMany(
         {
           datasetVersionId: versionId,
           readAt: { $exists: false },
-          $or: [
-            { recipientId: userId },
-            { recipientRole: role },
-          ],
+          $or: recipientClauses,
         },
         { $set: { readAt: new Date() } }
       );

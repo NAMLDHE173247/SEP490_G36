@@ -358,20 +358,41 @@ export const Stage6Finish: React.FC = () => {
         }
       }
 
-      return { messages };
+      return {
+        messages,
+        labels: conv.labels || { sample: [], messages: [] },
+        conversation_id: conv.conversation_id || conv.id,
+      };
     }).filter(item => item.messages.length > 1); // Keep only items with actual conversation
   };
 
+  const loadLabeledExportSource = async () => {
+    const versionId = localStorage.getItem('current_version_id');
+    if (!versionId) throw new Error('Không tìm thấy Dataset Version đang làm việc.');
+    const result = await apiService.getTrainingExportData(versionId);
+    if (result.total > 0 && result.labeledSamples === 0) {
+      throw new Error('Dataset chưa có hard label nào. Hãy kiểm tra Staff đã Submit và Supervisor đã hoàn tất review.');
+    }
+    return result.data || [];
+  };
+
   const handleDownloadSplit = async () => {
-    let trainData = conversationsList;
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn từ server.');
+      return;
+    }
+    let trainData = sourceData;
     let testData: any[] = [];
 
     if (splitResult) {
       const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
       const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
 
-      trainData = conversationsList.filter((c: any) => trainIds.has(c.conversation_id || c.id));
-      testData = conversationsList.filter((c: any) => testIds.has(c.conversation_id || c.id));
+      trainData = sourceData.filter((c: any) => trainIds.has(c.conversation_id || c.id));
+      testData = sourceData.filter((c: any) => testIds.has(c.conversation_id || c.id));
     }
 
     // Filter out excluded samples
@@ -391,15 +412,22 @@ export const Stage6Finish: React.FC = () => {
   const [exportMinScore, setExportMinScore] = useState(6.0);
 
   const handleDownloadFiltered = async () => {
-    let trainData = conversationsList;
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn từ server.');
+      return;
+    }
+    let trainData = sourceData;
     let testData: any[] = [];
 
     if (splitResult) {
       const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
       const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
 
-      trainData = conversationsList.filter((c: any) => trainIds.has(c.conversation_id || c.id));
-      testData = conversationsList.filter((c: any) => testIds.has(c.conversation_id || c.id));
+      trainData = sourceData.filter((c: any) => trainIds.has(c.conversation_id || c.id));
+      testData = sourceData.filter((c: any) => testIds.has(c.conversation_id || c.id));
     }
 
     // Filter out excluded samples first

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -20,6 +20,7 @@ import LabelingTaskDetailView from './LabelingTaskDetailView';
 import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
+import SupervisorReviewView from './SupervisorReviewView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -37,7 +38,7 @@ function Dashboard() {
     if (!user) return 'Dashboard';
     switch (user.role) {
       case 'admin': return 'Dashboard';
-      case 'supervisor': return 'Chat';
+      case 'supervisor': return 'Supervisor Review';
       case 'staff': return 'My Tasks';
       default: return 'Dashboard';
     }
@@ -45,30 +46,31 @@ function Dashboard() {
 
   const allMenuItems = [
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
   ];
 
   const [activeTab, setActiveTabState] = useState(() => {
     // Restore the last active tab from localStorage on reload
-    const saved = localStorage.getItem('dashboard_active_tab');
+    const saved = localStorage.getItem(`dashboard_active_tab_${user?.role || 'guest'}`);
     if (saved) return saved;
     return getDefaultTab();
   });
 
   // Wrapper: update state AND persist to localStorage
   const setActiveTab = (tab: string) => {
-    localStorage.setItem('dashboard_active_tab', tab);
+    localStorage.setItem(`dashboard_active_tab_${user?.role || 'guest'}`, tab);
     setActiveTabState(tab);
   };
 
@@ -86,7 +88,7 @@ function Dashboard() {
     if (user) {
       const isValid = 
         (activeTab === 'Staff Label' && user.role === 'staff') ||
-        (activeTab === 'Task Detail' && ['admin', 'supervisor'].includes(user.role)) ||
+        (activeTab === 'Task Detail' && user.role === 'admin') ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
       
       if (!isValid) {
@@ -144,7 +146,7 @@ function Dashboard() {
       case 'Data Prep':
         return <DataPrepView />;
       case 'AutoTrain':
-        return <AutoTrainView />;
+        return <AutoTrainView setActiveTab={setActiveTab} />;
       case 'Model Registry':
         return <ModelRegistryView />;
       case 'Model Eval':
@@ -165,11 +167,13 @@ function Dashboard() {
         return <StaffLabelView task={selectedTask} onBack={handleBackFromLabel} />;
       case 'Staff Stats':
         return <StaffStatsView />;
+      case 'Supervisor Review':
+        return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
       case 'My Stats':
         return <MyStatsView />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
-        if (user.role === 'supervisor') return <ChatView />;
+        if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;
     }
   };

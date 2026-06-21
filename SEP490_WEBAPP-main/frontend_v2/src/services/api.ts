@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAuthToken } from './authSession';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -34,6 +34,31 @@ export type ShareUser = {
   _id: string;
   username: string;
   name: string;
+};
+
+// --- Added for Message-level Labeling (Phase 1) ---
+export type AggregatedLabel = {
+  _id: string;
+  sampleId: string;
+  name: string;
+  type: 'hard' | 'soft';
+  targetScope: 'sample' | 'message';
+  messageIndex?: number;
+  messageRole?: 'user' | 'assistant';
+  targetTextSnapshot?: string;
+  assignedUserCount: number;
+  assignedByCurrentUser: boolean;
+  assignedUsers?: ShareUser[];
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type MessageAutoLabelSuggestion = {
+  messageIndex: number;
+  role: 'user' | 'assistant';
+  label: string[];
+  confidence?: number;
+  is_correct_logic?: boolean;
 };
 
 export type DatasetAssignmentSample = {
@@ -144,6 +169,10 @@ export interface User {
 }
 
 export const apiService = {
+  getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
+    const response = await api.get(`/dataprep/export/${versionId}/training-data`);
+    return response.data;
+  },
   listUsers: async (): Promise<{ users: User[] }> => {
     const response = await api.get('/auth/users');
     return response.data;
@@ -180,9 +209,10 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
+  uploadFile: async (file: File, projectId: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('projectId', projectId);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -272,7 +302,7 @@ export const apiService = {
     versionId: string,
     provider: 'gemini' | 'openai' | 'deepseek'
   ): Promise<{
-    suggestions: Array<{ clusterId: number; label: string; sampleCount: number }>;
+    suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
     const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider });
     return response.data;
@@ -351,9 +381,14 @@ export const apiService = {
     return response.data;
   },
 
+  setDatasetSampleCanonicalLabels: async (payload: { versionId: string; sampleId: string; labels: string[]; targetTextSnapshot?: string; sourceAnnotatorIds?: string[] }): Promise<any> => {
+    const response = await api.post('/dataprep/assignments/samples/canonical', payload);
+    return response.data;
+  },
+
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
     const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
       assigneeIds: [payload.assigneeId],
@@ -361,7 +396,9 @@ export const apiService = {
       sampleCount: payload.count,
       taskType: 'labeling',
       priority: payload.priority || 'medium',
-      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`
+      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`,
+      similarityThreshold: payload.similarityThreshold,
+      supervisorId: payload.supervisorId
     });
     return response.data;
   },
@@ -400,12 +437,12 @@ export const apiService = {
   // ==========================================
   // Chat & Inference Endpoints
   // ==========================================
-  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat-sessions'); return response.data; },
-  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat-sessions/${args[0]}`); return response.data; },
-  createChatSession: async (...args: any[]) => { const response = await api.post('/chat-sessions', args[0]); return response.data; },
-  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat-sessions/${args[0]}`, { title: args[1] }); return response.data; },
-  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat-sessions/${args[0]}`); return response.data; },
-  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat-sessions/${args[0]}/messages`, args[1]); return response.data; },
+  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat/sessions'); return response.data; },
+  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat/sessions/${args[0]}`); return response.data; },
+  createChatSession: async (...args: any[]) => { const response = await api.post('/chat/sessions', args[0]); return response.data; },
+  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, { title: args[1] }); return response.data; },
+  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat/sessions/${args[0]}`); return response.data; },
+  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat/sessions/${args[0]}/messages`, args[1]); return response.data; },
 
   infer: async (...args: any[]) => {
     const response = await api.post('/infer', args[0]);
@@ -424,7 +461,7 @@ export const apiService = {
       data = args[0];
       onChunkCallback = args[2] || args[1];
     }
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     const response = await fetch(`${apiUrl}/infer/stream`, {
       method: 'POST',
       headers: {
@@ -519,6 +556,162 @@ export const apiService = {
   }): Promise<{ url: string; message: string }> => {
     const response = await api.post('/cloud-storage/sync', payload);
     return response.data;
-  }
-};
+  },
 
+  // ==========================================
+  // Message-level Labeling API (Phase 1)
+  // ==========================================
+
+  /**
+   * GET /api/dataprep/samples/:sampleId/labels
+   * Lấy tất cả nhãn đã gán cho một sample (cả sample-scope và message-scope).
+   */
+  getSampleLabels: async (
+    sampleId: string,
+    params?: {
+      scope?: 'sample' | 'message' | 'all';
+      messageIndex?: number;
+      visibilityMode?: 'default' | 'review';
+    }
+  ): Promise<{ labels: AggregatedLabel[] }> => {
+    try {
+      const response = await api.get(`/dataprep/samples/${sampleId}/labels`, { params });
+      return response.data;
+    } catch (err) {
+      console.error('[getSampleLabels] error:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * POST /api/dataprep/samples/:sampleId/labels
+   * Gán một nhãn vào sample hoặc một message cụ thể.
+   */
+  addSampleLabel: async (
+    sampleId: string,
+    payload: {
+      name: string;
+      type: 'hard' | 'soft';
+      targetScope?: 'sample' | 'message';
+      messageIndex?: number;
+      messageRole?: 'user' | 'assistant';
+      targetTextSnapshot?: string;
+    }
+  ): Promise<{ label: AggregatedLabel | undefined }> => {
+    try {
+      const response = await api.post(`/dataprep/samples/${sampleId}/labels`, payload);
+      return response.data;
+    } catch (err) {
+      console.error('[addSampleLabel] error:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * DELETE /api/dataprep/samples/:sampleId/labels
+   * Hủy một nhãn đã gán vào sample hoặc message.
+   */
+  removeSampleLabel: async (
+    sampleId: string,
+    payload: {
+      name: string;
+      type: 'hard' | 'soft';
+      targetScope?: 'sample' | 'message';
+      messageIndex?: number;
+      messageRole?: 'user' | 'assistant';
+    }
+  ): Promise<{ removed: boolean; name: string }> => {
+    try {
+      const response = await api.delete(`/dataprep/samples/${sampleId}/labels`, { data: payload });
+      return response.data;
+    } catch (err) {
+      console.error('[removeSampleLabel] error:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * POST /api/dataprep/samples/:sampleId/message-auto-label/preview
+   * Gọi AI preview nhãn cho từng message của một sample.
+   */
+  previewMessageAutoLabels: async (
+    sampleId: string,
+    payload: {
+      provider?: 'gemini' | 'openai' | 'deepseek';
+      messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
+    }
+  ): Promise<{ suggestions: MessageAutoLabelSuggestion[] }> => {
+    try {
+      const response = await api.post(
+        `/dataprep/samples/${sampleId}/message-auto-label/preview`,
+        payload
+      );
+      return response.data;
+    } catch (err) {
+      console.error('[previewMessageAutoLabels] error:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * POST /api/dataprep/samples/:sampleId/message-auto-label/save
+   * Lưu kết quả AI gán nhãn cho từng message vào DB.
+   */
+  saveMessageAutoLabels: async (
+    sampleId: string,
+    payload: {
+      suggestions: Array<{
+        messageIndex: number;
+        role: 'user' | 'assistant';
+        label: string[] | string;
+        confidence?: number;
+        is_correct_logic?: boolean;
+      }>;
+      messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
+    }
+  ): Promise<{ message: string; insertedCount: number }> => {
+    try {
+      const response = await api.post(
+        `/dataprep/samples/${sampleId}/message-auto-label/save`,
+        payload
+      );
+      return response.data;
+    } catch (err) {
+      console.error('[saveMessageAutoLabels] error:', err);
+      throw err;
+    }
+  },
+
+  /**
+   * POST /api/dataprep/message-auto-label/batch
+   * Chạy AI gán nhãn hàng loạt cho nhiều sample cùng lúc (preview + save trong một lần).
+   */
+  previewAndSaveMessageAutoLabelsBatch: async (payload: {
+    provider?: 'gemini' | 'openai' | 'deepseek';
+    samples: Array<{
+      sampleId: string;
+      messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
+    }>;
+    concurrency?: number;
+  }): Promise<{
+    processedCount: number;
+    successCount: number;
+    failureCount: number;
+    insertedCount: number;
+    results: Array<{
+      sampleId: string;
+      status: 'success' | 'failed' | 'skipped';
+      insertedCount: number;
+      suggestionCount: number;
+      error?: string;
+    }>;
+  }> => {
+    try {
+      const response = await api.post('/dataprep/message-auto-label/batch', payload);
+      return response.data;
+    } catch (err) {
+      console.error('[previewAndSaveMessageAutoLabelsBatch] error:', err);
+      throw err;
+    }
+  },
+};

@@ -110,7 +110,7 @@ function Auth() {
 
   const handleSocialRedirect = (provider: 'google' | 'outlook') => {
     // Redirect browser to the backend OAuth initialization URL
-    const baseUrl = api.defaults.baseURL || 'http://localhost:3000/api';
+    const baseUrl = api.defaults.baseURL || '/api';
     window.location.href = `${baseUrl}/auth/${provider}/redirect`;
   };
 

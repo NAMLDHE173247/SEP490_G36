@@ -6,8 +6,8 @@ export const STAGES = [
   { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
   { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
   { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-12' },
-  { num: 5, label: 'Finish', sub: 'Step 13-15' },
+  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
+  { num: 5, label: 'Finish', sub: 'Step 12-14' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
@@ -175,15 +175,15 @@ export const SUB_STEPS_STAGE3 = [
 
 export const SUB_STEPS_STAGE4 = [
   { num: 8, label: 'Classification' },
-  { num: 9, label: 'Quality Management' },
-  { num: 10, label: 'Distribution' },
-  { num: 11, label: 'Rewrite' },
+  { num: 9, label: 'Quality Review' },
+  { num: 10, label: 'Rewrite Assignment' },
+  { num: 11, label: 'Assignment Review' },
 ];
 
 export const SUB_STEPS_STAGE6 = [
-  { num: 13, label: 'System Prompt' },
-  { num: 14, label: 'Split Guard' },
-  { num: 15, label: 'Export' },
+  { num: 12, label: 'System Prompt' },
+  { num: 13, label: 'Split Guard' },
+  { num: 14, label: 'Export' },
 ];
 
 export const PROMPT_VERSIONS = [
@@ -628,7 +628,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 4 state */
   const [currentSubStep4, setCurrentSubStep4] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep4');
-    return saved ? parseInt(saved, 10) : 7;
+    const value = saved ? parseInt(saved, 10) : 8;
+    return value < 8 ? 8 : value;
   });
 
   React.useEffect(() => {
@@ -663,7 +664,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 6 state */
   const [currentSubStep6, setCurrentSubStep6] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep6');
-    return saved ? parseInt(saved, 10) : 13;
+    const value = saved ? parseInt(saved, 10) : 12;
+    return Math.max(12, Math.min(14, value));
   });
 
   React.useEffect(() => {
@@ -717,9 +719,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const stage = resolveStageFromResumeStep(resumeStep);
       setCurrentStage(stage);
       if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
-      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(6, resumeStep)));
-      if (stage === 4) setCurrentSubStep4(Math.max(7, Math.min(12, resumeStep)));
-      if (stage === 5) setCurrentSubStep6(Math.max(13, Math.min(14, resumeStep)));
+      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(7, resumeStep)));
+      if (stage === 4) setCurrentSubStep4(Math.max(8, Math.min(11, resumeStep)));
+      if (stage === 5) setCurrentSubStep6(Math.max(12, Math.min(14, resumeStep)));
     } catch (error) {
       console.error('Failed to open workflow version', error);
     } finally {
@@ -738,8 +740,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     setCurrentStage(1);
     setCurrentSubStep(1);
     setCurrentSubStep3(5);
-    setCurrentSubStep4(7);
-    setCurrentSubStep6(13);
+    setCurrentSubStep4(8);
+    setCurrentSubStep6(12);
     setFile(null);
     setConversationsList([]);
     setStage3Convs([]);
@@ -757,8 +759,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       setCurrentStage(1);
       setCurrentSubStep(1);
       setCurrentSubStep3(5);
-      setCurrentSubStep4(7);
-      setCurrentSubStep6(13);
+      setCurrentSubStep4(8);
+      setCurrentSubStep6(12);
     });
   }, [loadWorkflowVersions, openWorkflowVersion]);
 
@@ -786,6 +788,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
+      if (!selectedProjectId) {
+        alert('Bạn phải chọn hoặc tạo một Project trước khi tải file.');
+        e.target.value = '';
+        return;
+      }
       localStorage.removeItem('current_version_id');
       setActiveWorkflowVersion(null);
       try {
@@ -800,7 +807,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, selectedProjectId);
 
         setFile({
           fileId: res.fileId,
@@ -890,11 +897,13 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         const raw = record.messages;
         for (let i = 0; i < raw.length; i++) {
           if (raw[i].role === 'user') {
-            const nextAssistant = raw.slice(i + 1).find((m: any) => m.role === 'assistant');
+            const nextAssistant = raw[i + 1]?.role === 'assistant' ? raw[i + 1] : undefined;
             messages.push({
               user: raw[i].content || '',
               assistant: nextAssistant ? nextAssistant.content || '' : ''
             });
+          } else if (raw[i].role === 'assistant' && raw[i - 1]?.role !== 'user') {
+            messages.push({ user: '', assistant: raw[i].content || '' });
           }
         }
       } else if (record.conversations && Array.isArray(record.conversations)) {
@@ -931,7 +940,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       return {
         id,
-        messages
+        messages,
+        roleMessages: Array.isArray(record.messages)
+          ? record.messages.map((m: any) => ({ role: m.role, content: m.content || '' }))
+          : undefined,
+        messageCount: Array.isArray(record.messages) ? record.messages.length : messages.length * 2
       };
     });
   };
@@ -945,7 +958,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
-        enableCleaning: cleaningEnabled,
+        enableCleaning: false,
         removeThinkTags: removeThinkTags
       });
 
@@ -1111,6 +1124,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       setFindKResults({ ...res, recommendedK });
       setTargetK(recommendedK.toString());
+      // The clustering step must use the exact DBSCAN parameters evaluated here.
+      setClusterEps(eps);
+      setClusterMinSamples(safeMinSamples.toString());
     } catch (err: any) {
       console.error('Visualize K failed:', err);
       alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');
@@ -1143,9 +1159,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       const safeClusterMinSamples = Math.min(parseInt(clusterMinSamples, 10), Math.max(2, conversationsList.length));
       if (parseInt(clusterMinSamples, 10) !== safeClusterMinSamples) { setClusterMinSamples(safeClusterMinSamples.toString()); }
+      const requestedK = parseInt(targetK, 10) || 2;
+      // Keep the value selected by Find K. Only cap it at the number of samples,
+      // which is the actual mathematical constraint for K-means.
+      const safeK = Math.max(1, Math.min(requestedK, conversationsList.length));
+      if (requestedK !== safeK) setTargetK(String(safeK));
       const res = await apiService.clusterData(
         formattedData,
-        parseInt(targetK, 10),
+        safeK,
         parseFloat(clusterEps),
         safeClusterMinSamples
       );
@@ -1185,7 +1206,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
             groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
             subGroup: c.subGroup || 'A',
-            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+            confidence: typeof groupStat?.avgSimilarity === 'number' ? Math.round(groupStat.avgSimilarity * 100) : null,
+            similarity: groupStat?.avgSimilarity ?? null
           };
         });
         setStage3Convs(updatedConvs);

@@ -4,6 +4,9 @@ import { MongoDBMessage, ConversionOptions } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import * as xlsx from 'xlsx';
+import mongoose from 'mongoose';
+import { getAuthUserId } from '../utils/auth';
+import { Project } from '../models/Project';
 
 const conversionService = new ConversionService();
 
@@ -30,6 +33,21 @@ export class ConversionController {
    */
   async uploadFile(req: Request, res: Response): Promise<void> {
     try {
+      const ownerId = getAuthUserId(req);
+      const projectId = String(req.body?.projectId || '').trim();
+      if (!ownerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        res.status(400).json({ error: 'Bạn phải chọn hoặc tạo Project trước khi tải file.' });
+        return;
+      }
+      const project = await Project.findOne({ _id: projectId, ownerId, isArchived: { $ne: true } }).lean();
+      if (!project) {
+        res.status(404).json({ error: 'Project không tồn tại hoặc bạn không có quyền truy cập.' });
+        return;
+      }
       if (!req.file) {
         res.status(400).json({ error: 'No file uploaded' });
         return;
@@ -57,6 +75,8 @@ export class ConversionController {
 
       let fileType: string = 'chat';
       let metadata: any = {
+        projectId,
+        projectName: project.name,
         filename: req.file.originalname,
         size: req.file.size,
         uploadedAt: new Date(),
@@ -231,6 +251,21 @@ export class ConversionController {
           );
         }
       }
+
+      // Counts must describe this exact run, not the upload or a previous set of
+      // cleaning parameters. This also prevents the UI from displaying stale totals.
+      result.stats.totalConversations = result.data.length;
+      result.stats.totalMessages = result.data.reduce((sum: number, item: any) => {
+        if (Array.isArray(item?.messages)) return sum + item.messages.length;
+        if (Array.isArray(item?.conversations)) return sum + item.conversations.length;
+        return sum + 1;
+      }, 0);
+      result.stats.removedConversations = Math.max(
+        0,
+        Number(stored.metadata.conversationCount || result.stats.totalConversations) - result.stats.totalConversations
+      );
+      result.projectId = stored.metadata.projectId;
+      result.projectName = stored.metadata.projectName;
 
 
       // Format output dựa vào format type

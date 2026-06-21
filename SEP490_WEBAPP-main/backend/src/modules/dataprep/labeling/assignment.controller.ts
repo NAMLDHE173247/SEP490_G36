@@ -111,7 +111,7 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length) {
@@ -125,6 +125,13 @@ export class AssignmentController {
       const cleanTaskName = String(taskName ?? '').trim();
       if (!cleanTaskName) {
         return res.status(400).json({ success: false, error: 'Tên Task là bắt buộc' });
+      }
+      if (!deadline) {
+        return res.status(400).json({ success: false, error: 'Hạn chót của Task là bắt buộc' });
+      }
+      const parsedDeadline = new Date(deadline);
+      if (Number.isNaN(parsedDeadline.getTime()) || parsedDeadline.getTime() < Date.now()) {
+        return res.status(400).json({ success: false, error: 'Hạn chót không hợp lệ hoặc đã nằm trong quá khứ' });
       }
 
       const overlapCount = Math.max(1, parseInt(rawOverlap) || 1);
@@ -197,8 +204,8 @@ export class AssignmentController {
             batchCount: group.sampleIds.length,
             taskType: 'labeling',
             priority: priority || 'medium',
-            deadline: deadline ? new Date(deadline) : undefined,
-            supervisor: assignedBy,
+            deadline: parsedDeadline,
+            supervisor: supervisorId || assignedBy,
             labeledCount: 0,
             totalSamples: group.sampleIds.length,
             dataset: datasetName,
@@ -272,7 +279,7 @@ export class AssignmentController {
   async createBatchAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds } = req.body;
+      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
@@ -317,7 +324,8 @@ export class AssignmentController {
           labeledCount: 0,
           totalSamples: sampleCount,
           dataset: datasetName,
-          version: version?.versionName || 'v1'
+          version: version?.versionName || 'v1',
+          supervisor: supervisorId || assignedBy
         });
 
         await submission.save();
@@ -646,9 +654,18 @@ export class AssignmentController {
    * API: Lấy Manager Overview (Grouped by Dataset Version / Task)
    * GET /api/dataprep/assignments/manager/overview
    */
-  async getManagerOverview(_req: Request, res: Response) {
+  async getManagerOverview(req: Request, res: Response) {
     try {
-      const submissions = await DatasetAssignmentSubmission.find();
+      const authUser = (req as any).user;
+      const role = String(authUser?.role || '').toLowerCase();
+      const viewerId = String(authUser?._id || authUser?.userId || authUser?.id || '');
+      if (role === 'supervisor' && !viewerId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+      // Supervisors may only see submissions explicitly assigned to them.
+      // Admin keeps the system-wide overview.
+      const submissionFilter = role === 'supervisor' ? { supervisor: viewerId } : {};
+      const submissions = await DatasetAssignmentSubmission.find(submissionFilter);
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];
       const versions = await DatasetVersion.find({ _id: { $in: versionIds } });
       const versionMap = new Map(versions.map(v => [String(v._id), v]));
@@ -723,6 +740,12 @@ export class AssignmentController {
           active: (sub as any).active !== false,
           aiAssistEnabled: !!(sub as any).aiAssistEnabled,
         });
+        // A grouped batch is reviewable as soon as any assignee submits. Do not
+        // leave its status stuck on whichever submission was iterated first.
+        const statusRank: Record<string, number> = { rejected: 0, pending: 1, in_progress: 2, draft: 2, submitted: 3, approved: 4, completed: 4 };
+        if ((statusRank[String(sub.status)] || 0) > (statusRank[String(batch.status)] || 0)) {
+          batch.status = sub.status;
+        }
       });
 
       return res.status(200).json({ success: true, data: Object.values(grouped) });
@@ -825,13 +848,17 @@ export class AssignmentController {
             totalSamples: sub.totalSamples,
             labeledCount: sub.labeledCount || 0,
             status: sub.status,
-            assignees: []
+            batchStart: sub.batchStart,
+            batchEnd: sub.batchStart + (sub.batchCount || sub.totalSamples) - 1,
+            assignees: [],
+            staffIds: [] as string[],
           };
           batchesMap[sub.name] = batch;
           totalSamples += sub.totalSamples;
           totalLabeled += subLabeled;
         }
         batch.assignees.push(staffMap[assigneeIdStr].name);
+        if (!batch.staffIds.includes(assigneeIdStr)) batch.staffIds.push(assigneeIdStr);
       });
 
       // === FIX: Dùng versionId (không phải taskId composite) để query samples ===
@@ -890,7 +917,8 @@ export class AssignmentController {
       }
 
       const sampleIdArray = Object.keys(sampleIdMap);
-      const labels = await LabelAssignment.find({ sampleId: { $in: sampleIdArray } });
+      const sampleObjectIdArray = sampleIdArray.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
+      const labels = await LabelAssignment.find({ sampleId: { $in: sampleObjectIdArray } });
 
       const conflictMap: { [key: number]: any } = {};
 
@@ -1020,7 +1048,9 @@ export class AssignmentController {
       // Fetch saved labels for this assignee
       const labels = await LabelAssignment.find({
         createdBy: submission.assigneeId,
-        sampleId: { $in: sampleAssigns.map(sa => sa.sampleId) }
+        sampleId: { $in: sampleAssigns.map(sa => sa.sampleId) },
+        type: 'soft',
+        targetScope: 'sample'
       });
 
       // Map labels to samples
@@ -1084,7 +1114,9 @@ export class AssignmentController {
       // Upsert label
       const existingLabel = await LabelAssignment.findOne({
         createdBy: submission.assigneeId,
-        sampleId: sa.sampleId
+        sampleId: sa.sampleId,
+        type: 'soft',
+        targetScope: 'sample'
       });
 
       if (existingLabel) {
@@ -1388,23 +1420,30 @@ export class AssignmentController {
           sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount }
         }).lean();
 
-        const upsertOps = sampleAssigns.map(async (sa: any) => {
+        const upsertOps = sampleAssigns.flatMap((sa: any) => {
           const labelData = labelsPayload[sa.sampleIndex] ?? labelsPayload[String(sa.sampleIndex)];
-          if (!labelData || (typeof labelData === 'object' && Object.keys(labelData).length === 0)) return;
-          await LabelAssignment.findOneAndUpdate(
-            { createdBy: submission.assigneeId, sampleId: sa.sampleId },
-            {
-              $set: {
+          if (!labelData || (typeof labelData === 'object' && Object.keys(labelData).length === 0)) return [];
+          return [{
+            updateOne: {
+              filter: {
+                createdBy: submission.assigneeId,
+                sampleId: sa.sampleId,
+                type: 'soft',
+                targetScope: 'sample',
+              },
+              update: { $set: {
                 name: 'Label',
                 type: 'soft',
                 targetScope: 'sample',
                 targetTextSnapshot: JSON.stringify(labelData),
-              }
-            },
-            { upsert: true }
-          );
+              } },
+              upsert: true,
+            }
+          }];
         });
-        await Promise.all(upsertOps);
+        if (upsertOps.length > 0) {
+          await LabelAssignment.bulkWrite(upsertOps as any, { ordered: false });
+        }
       }
 
       // ── Step 2: Mark submitted & promote to hard labels ──
@@ -1427,7 +1466,9 @@ export class AssignmentController {
         const actorId = mongoose.Types.ObjectId.isValid(String(submission.assigneeId))
           ? new mongoose.Types.ObjectId(String(submission.assigneeId))
           : undefined;
-        const submitMessage = `Staff submitted ${submission.name || 'labeling task'}.`;
+        const actor = actorId ? await User.findById(actorId).select('name email').lean() : null;
+        const actorName = String((actor as any)?.name || (actor as any)?.email || submission.assigneeId || 'Staff');
+        const submitMessage = `${actorName} submitted ${submission.name || 'labeling task'}.`;
         await Stage4Notification.insertMany([
           {
             datasetVersionId: submission.datasetVersionId,
@@ -1481,9 +1522,22 @@ export class AssignmentController {
       }
 
       // 2. NỬA PHẢI: Labels overlay
-      const labelQuery: any = { sampleId };
-      if (staffId) labelQuery.createdBy = staffId;
-      const labels = await LabelAssignment.find(labelQuery).lean();
+      // Query with $or for both ObjectId and string representations to be robust
+
+      const sampleQuery = mongoose.Types.ObjectId.isValid(sampleId)
+        ? { $or: [{ sampleId: new mongoose.Types.ObjectId(sampleId) }, { sampleId: sampleId }] }
+        : { sampleId: sampleId };
+      let labelQuery: any = { ...sampleQuery };
+      if (staffId) {
+        const createdByVariants: any[] = [staffId]; // always include string form
+        if (mongoose.Types.ObjectId.isValid(staffId)) createdByVariants.push(new mongoose.Types.ObjectId(staffId));
+        labelQuery.createdBy = { $in: createdByVariants };
+      }
+      let labels = await LabelAssignment.find(labelQuery).lean();
+      // Fallback: if no labels found with staffId filter, try without (show any label for sample)
+      if (labels.length === 0 && staffId) {
+        labels = await LabelAssignment.find(sampleQuery).lean();
+      }
 
       // 3. NỬA PHẢI: Rewrites overlay
       const { ConversationRewriteHistory } = require('../../../models/ConversationRewriteHistory');
@@ -1503,7 +1557,37 @@ export class AssignmentController {
             role: label.messageRole,
           });
         } else if (label.targetScope === 'sample') {
-          sampleLabels.push({ name: label.name, type: label.type });
+          // Parse soft label blob for Socratic taxonomy (subject/completion/quality + per-message intent/action)
+          const parsed = parseSavedLabel((label as any).targetTextSnapshot);
+          if (parsed) {
+            // Conversation-level summary
+            const parts: string[] = [];
+            if (parsed.subject) parts.push(parsed.subject);
+            if (parsed.quality) parts.push('Chất lượng: ' + parsed.quality);
+            if (parsed.completion) parts.push('Hoàn thành: ' + parsed.completion);
+            if (parts.length) sampleLabels.push({ name: parts.join(' · '), type: label.type });
+            // Message-level intent/action extracted from blob
+            if (parsed.messages && typeof parsed.messages === 'object') {
+              for (const [msgIdxStr, msgData] of Object.entries(parsed.messages as Record<string, any>)) {
+                const msgIdx = parseInt(msgIdxStr);
+                if (isNaN(msgIdx)) continue;
+                if (!labelsByMsg[msgIdx]) labelsByMsg[msgIdx] = [];
+                const labelName = msgData.intent || msgData.action || '';
+                if (labelName) {
+                  const conf = msgData.confidence != null ? Math.round(msgData.confidence * 100) + '%' : '';
+                  const pedFlag = msgData.is_correct_pedagogy === false ? ' ⚠️' : '';
+                  labelsByMsg[msgIdx].push({
+                    name: labelName + (conf ? ' (' + conf + ')' : '') + pedFlag,
+                    type: 'soft',
+                    role: msgData.intent ? 'user' : 'assistant',
+                    pedagogy_note: msgData.pedagogy_note || '',
+                  });
+                }
+              }
+            }
+          } else {
+            sampleLabels.push({ name: label.name, type: label.type });
+          }
         }
       }
 
@@ -1690,7 +1774,6 @@ const RULE_HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
-const RULE_HARMFUL_ACTION_PENALTY = -2;
 const RULE_USER_INTENT_SET = new Set<string>(RULE_INTENTS);
 const RULE_ASSISTANT_ACTION_SET = new Set<string>(
   Array.from(new Set(Object.values(RULE_VALID_ACTIONS).flatMap((actions) => Array.from(actions))))
@@ -1747,12 +1830,14 @@ function computeRuleBasedHumanScore(
         if (!validActions) continue;
         const matched = assistantLabels.some((action) => validActions.has(action));
         const harmfulCount = assistantLabels.filter((action) => RULE_HARMFUL_ACTIONS[userLabel]?.has(action)).length;
-        const value = (matched ? 1 : -1) + (harmfulCount * RULE_HARMFUL_ACTION_PENALTY);
+        const value = harmfulCount > 0 ? -1 : matched ? 1 : -0.5;
         intentValues.push(value);
       }
       if (!intentValues.length) continue;
 
-      totalTurnScore += intentValues.reduce((sum, v) => sum + v, 0) / intentValues.length;
+      // Multiple labels are alternative descriptions of the same turn. A valid
+      // intent/action pair should not be cancelled by an additional label.
+      totalTurnScore += intentValues.includes(-1) ? -1 : Math.max(...intentValues);
       scorableTurns += 1;
     }
 
@@ -1834,12 +1919,14 @@ function mapToStandardSubject(rawSubject: string): string {
 function serializeMessages(data: Record<string, any>): Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }> {
   if (Array.isArray(data?.messages)) {
     return data.messages
-      .filter((message: any) => message?.role === 'user' || message?.role === 'assistant')
       .map((message: any, index: number) => ({
         messageIndex: index,
         role: message.role,
         content: String(message?.content || ''),
-      }));
+      }))
+      .filter((message: any) =>
+        (message.role === 'user' || message.role === 'assistant') && message.content.trim().length > 0
+      );
   }
 
   const instruction = String(data?.instruction || data?.userText || '').trim();
@@ -1930,8 +2017,10 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
           const contentSnapshot = matchingMsg ? matchingMsg.content.slice(0, 2000) : '';
 
           if (matchingMsg?.role === 'user' && msgLabel.intent) {
-            const mappedIntent = mapToStandardIntent(msgLabel.intent);
-            hardLabelsToInsert.push({
+            const intents = Array.isArray(msgLabel.intent) ? msgLabel.intent : [msgLabel.intent];
+            for (const intent of intents.filter(Boolean)) {
+              const mappedIntent = mapToStandardIntent(intent);
+              hardLabelsToInsert.push({
               sampleId: softLabel.sampleId,
               name: mappedIntent,
               type: 'hard',
@@ -1940,12 +2029,15 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               messageRole: 'user',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
-            });
+              });
+            }
           }
 
           if (matchingMsg?.role === 'assistant' && msgLabel.action) {
-            const mappedAction = mapToStandardAction(msgLabel.action);
-            hardLabelsToInsert.push({
+            const actions = Array.isArray(msgLabel.action) ? msgLabel.action : [msgLabel.action];
+            for (const action of actions.filter(Boolean)) {
+              const mappedAction = mapToStandardAction(action);
+              hardLabelsToInsert.push({
               sampleId: softLabel.sampleId,
               name: mappedAction,
               type: 'hard',
@@ -1954,7 +2046,8 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               messageRole: 'assistant',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
-            });
+              });
+            }
           }
         }
       }

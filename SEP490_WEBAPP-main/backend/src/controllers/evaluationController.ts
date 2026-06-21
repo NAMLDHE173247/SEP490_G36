@@ -407,6 +407,41 @@ export class EvaluationController {
     }
   }
 
+  async getAiAdjudicationAdvice(req: Request, res: Response): Promise<void> {
+    try {
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const { messageContent, conflictingLabels } = req.body;
+      if (!messageContent || !Array.isArray(conflictingLabels)) {
+        res.status(400).json({ error: 'Missing messageContent or conflictingLabels' });
+        return;
+      }
+
+      const prompt = `Bạn là một chuyên gia quản lý chất lượng dữ liệu (Data Annotator Supervisor).
+Một tin nhắn đang có sự bất đồng về việc gán nhãn giữa các nhân viên (Staff).
+Hãy đọc nội dung tin nhắn và các nhãn được gán, sau đó phân tích xem nhãn nào hợp lý hơn và đưa ra lời khuyên ngắn gọn (dưới 100 chữ) bằng tiếng Việt.
+
+Nội dung tin nhắn:
+"${messageContent}"
+
+Các nhãn đang bị xung đột:
+${conflictingLabels.map((c: any) => `- ${c.annotator}: [${c.labels.join(', ')}]`).join('\n')}
+
+Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên giữ nhãn nào):`;
+
+      const provider = new GeminiProvider(false);
+      const advice = await provider.generateContent(prompt, 'gemini-2.5-flash');
+
+      res.json({ advice });
+    } catch (error: any) {
+      console.error('getAiAdjudicationAdvice error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
   async createDatasetVersion(req: Request, res: Response): Promise<void> {
     try {
       const ownerId = getAuthUserId(req);
@@ -1414,7 +1449,9 @@ export class EvaluationController {
         };
       });
 
-      const sampleRows = await Promise.all(samples.map(async (sample: any, index) => {
+      const sampleRows: any[] = [];
+      for (let index = 0; index < samples.length; index++) {
+        const sample = samples[index];
         const itemAssignments = assignmentsBySampleId.get(String(sample._id)) || [];
         const assignees = itemAssignments
           .map((a) => {
@@ -1426,10 +1463,19 @@ export class EvaluationController {
         const rawPreview = Array.isArray(sample.data?.messages)
           ? sample.data.messages.map((msg: any) => String(msg?.content || '')).join(' ')
           : [sample.data?.instruction, sample.data?.input, sample.data?.output].map((part) => String(part || '')).join(' ');
-        const comparison = itemAssignments.length > 1
-          ? await buildAssignmentSampleComparison(String(version._id), String(sample._id))
-          : null;
-        return {
+
+        let comparison = null;
+        if (itemAssignments.length > 1) {
+          const submittedAssignees = itemAssignments.filter((a: any) => {
+            const sub = submissionMap.get(String(a.assigneeId));
+            return sub && ['submitted', 'approved'].includes(String(sub.status || ''));
+          });
+          if (submittedAssignees.length > 1) {
+            comparison = await buildAssignmentSampleComparison(String(version._id), String(sample._id));
+          }
+        }
+
+        sampleRows.push({
           sampleId: String(sample._id),
           sampleKey: String(sample.sampleId),
           sampleIndex: index + 1,
@@ -1440,8 +1486,8 @@ export class EvaluationController {
           pendingAdjudicationCount: comparison?.pendingAdjudicationCount ?? 0,
           // Legacy field for back-compat if needed, taking the first one
           assignee: assignees[0] || null,
-        };
-      }));
+        });
+      }
 
       const pendingConflicts = sampleRows.filter((sample: any) => sample.pendingAdjudicationCount > 0).length;
 
@@ -1832,9 +1878,10 @@ export class EvaluationController {
       const assigneeId = String(req.body?.assigneeId || '');
       const startIndex = Number(req.body?.startIndex);
       const count = Number(req.body?.count);
+      const similarityThreshold = req.body?.similarityThreshold;
 
       const taskType = req.body?.taskType === 'cross-check' ? 'cross-check' : 'labeling';
-      const priority = ['low', 'medium', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'medium';
+      const priority = ['low', 'medium', 'high'].includes(req.body?.priority) ? req.body.priority : 'medium';
 
       if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(assigneeId)) {
         res.status(400).json({ error: 'Dataset version id hoặc assigneeId không hợp lệ.' });
@@ -1847,6 +1894,13 @@ export class EvaluationController {
       if (assigneeId === String(ownerId)) {
         res.status(400).json({ error: 'Owner không cần được gán mẫu.' });
         return;
+      }
+
+      if (similarityThreshold !== undefined) {
+        const threshold = Math.min(1, Math.max(0, Number(similarityThreshold)));
+        if (!isNaN(threshold)) {
+          await DatasetVersion.updateOne({ _id: id }, { $set: { similarityThreshold: threshold } });
+        }
       }
 
       const [version, assignee] = await Promise.all([

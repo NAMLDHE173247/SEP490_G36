@@ -5,19 +5,80 @@ import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Tr
 
 export const Stage2Preprocessing = () => {
   const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
+  const [selectedClusterStat, setSelectedClusterStat] = React.useState<any>(null);
+
+  const summarizeCluster = React.useCallback((conversations: any[]) => {
+    const stopWords = new Set(['và','là','của','có','cho','trong','một','những','các','được','với','không','thì','này','đó','em','anh','chị','tôi','ta','hãy','sao','gì','như','về','khi','để','ở','từ','đến','theo','đúng','phải','bao','nhiêu','rồi','vậy','lắm','tốt','nhé','nha','ạ','à','ơi','ừ','ừm','dạ','vâng','cảm','ơn','thầy','cô','bạn','mình','hiểu','thử','xem','biết','nói','giúp','giải','thích','câu','hỏi','cần','tập','the','and','for','that','this','with','from','what','how','are','is']);
+    const documentFrequency = new Map<string, number>();
+    const phraseFrequency = new Map<string, number>();
+    const domainPhrases: Array<[RegExp, string]> = [
+      [/phương\s+trình/iu, 'phương trình'], [/bất\s+phương\s+trình/iu, 'bất phương trình'],
+      [/\\?frac|phân\s+số/iu, 'phân số'], [/trung\s+bình\s+cộng/iu, 'trung bình cộng'],
+      [/hàm\s+số/iu, 'hàm số'], [/đạo\s+hàm/iu, 'đạo hàm'], [/tích\s+phân/iu, 'tích phân'],
+      [/hình\s+học/iu, 'hình học'], [/xác\s+suất/iu, 'xác suất'],
+      [/phản\s+ứng|hóa\s+học/iu, 'phản ứng hóa học'], [/nguyên\s+tử/iu, 'nguyên tử'],
+      [/lực|gia\s+tốc|vận\s+tốc/iu, 'cơ học'],
+    ];
+    conversations.forEach((conversation: any) => {
+      const allMessages = conversation.roleMessages || conversation.messages.flatMap((pair: any) => [
+        { role: 'user', content: pair.user }, { role: 'assistant', content: pair.assistant },
+      ]);
+      // User utterances carry the problem/topic; assistant replies often contain
+      // generic encouragement that must not dominate cluster summaries.
+      const userMessages = allMessages.filter((message: any) => message.role === 'user' && String(message.content || '').trim());
+      const sourceMessages = userMessages.length ? userMessages : allMessages;
+      const texts = sourceMessages.map((message: any) => String(message.content || '')).join(' ');
+      domainPhrases.forEach(([pattern, label]) => {
+        if (pattern.test(texts)) phraseFrequency.set(label, (phraseFrequency.get(label) || 0) + 1);
+      });
+      const words = new Set((texts.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+        .filter((word: string) => word.length >= 3 && !stopWords.has(word) && !/^\d+$/.test(word)));
+      words.forEach((word: string) => documentFrequency.set(word, (documentFrequency.get(word) || 0) + 1));
+    });
+    const ranked = [...documentFrequency.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+      .filter(([, count]) => conversations.length === 1 || count >= 2)
+      .slice(0, 5);
+    const phrases = [...phraseFrequency.entries()].sort((a, b) => b[1] - a[1]).filter(([, count]) => conversations.length === 1 || count >= 2).slice(0, 3);
+    const keywords = ranked.map(([word]) => word).filter(word => !phrases.some(([phrase]) => phrase.includes(word)));
+    const sharedEntries = ranked.filter(([, count]) => count > 1);
+    const shared = sharedEntries.map(([word]) => word);
+    return {
+      topic: phrases.length
+        ? `Các bài học/bài toán về ${phrases.map(([phrase]) => phrase).join(' và ')}`
+        : keywords.length ? `Các hội thoại cùng tập trung vào ${keywords.slice(0, 3).join(', ')}` : 'Chưa đủ dữ liệu để xác định chủ đề chung',
+      reason: phrases.length
+        ? phrases.map(([phrase, count]) => `${count}/${conversations.length} hội thoại cùng đề cập ${phrase}`).join('; ') + '.'
+        : shared.length ? `Nhiều hội thoại cùng đề cập ${sharedEntries.map(([word, count]) => `“${word}” (${count}/${conversations.length} hội thoại)`).join(', ')}.`
+        : 'Chưa tìm thấy khái niệm lặp lại đủ mạnh; người duyệt nên kiểm tra trực tiếp các hội thoại trong cụm.',
+    };
+  }, []);
 
   {
     const totalConvs = conversationsList.length;
-    const totalMessages = conversationsList.reduce((sum, c) => sum + c.messages.length, 0);
+    const messageRows = conversationsList.flatMap((conv: any) => {
+      const atomicMessages = conv.roleMessages || conv.messages.flatMap((pair: any) => [
+        { role: 'user', content: pair.user },
+        { role: 'assistant', content: pair.assistant },
+      ]).filter((message: any) => message.content);
+      return atomicMessages.map((message: any, index: number) => ({
+        id: `${conv.id}-${index}`,
+        conversationId: conv.id,
+        messageIndex: index + 1,
+        role: message.role || 'user',
+        content: message.content || '',
+      }));
+    });
+    const totalMessages = messageRows.length;
+    const userMessages = messageRows.filter((message: any) => message.role === 'user').length;
+    const assistantMessages = messageRows.filter((message: any) => message.role === 'assistant').length;
 
     /* Filter conversations by search */
     const filtered = searchQuery.trim()
-      ? conversationsList.filter(conv =>
+      ? conversationsList.filter((conv: any) =>
         conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        conv.messages.some(m =>
-          m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+        (conv.roleMessages || []).some((message: any) => String(message.content || '').toLowerCase().includes(searchQuery.toLowerCase())) ||
+        conv.messages.some((message: any) => String(message.user || '').toLowerCase().includes(searchQuery.toLowerCase()) || String(message.assistant || '').toLowerCase().includes(searchQuery.toLowerCase()))
       )
       : conversationsList;
 
@@ -27,7 +88,7 @@ export const Stage2Preprocessing = () => {
     /* Slice conversations for this page */
     const startConvIdx = (currentPage - 1) * convsPerPage;
     const pageConvs = filtered.slice(startConvIdx, startConvIdx + convsPerPage);
-    const pageMsgCount = pageConvs.reduce((sum, c) => sum + c.messages.length, 0);
+    const pageMsgCount = pageConvs.reduce((sum: number, conv: any) => sum + (conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length), 0);
 
     const handleConvsPerPageChange = (val) => {
       setConvsPerPage(parseInt(val, 10));
@@ -96,7 +157,12 @@ export const Stage2Preprocessing = () => {
                   </div>
                   <div className="post-stat-item">
                     <div className="post-stat-label">Source Messages</div>
-                    <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? (totalMessages + 47)}</div>
+                    <div className="post-stat-value">{conversionStats?.stats?.totalMessages ?? totalMessages}</div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
+                      <span style={{ color: '#047857', fontWeight: 700 }}>{userMessages} User</span>
+                      <span style={{ margin: '0 8px' }}>·</span>
+                      <span style={{ color: '#4f46e5', fontWeight: 700 }}>{assistantMessages} AI</span>
+                    </div>
                   </div>
                 </div>
 
@@ -206,11 +272,27 @@ export const Stage2Preprocessing = () => {
                 <div className="toolbar-stats">
                   <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                   <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                  <span className="toolbar-stat-tag" style={{ color: '#047857' }}>{userMessages} User</span>
+                  <span className="toolbar-stat-tag" style={{ color: '#4f46e5' }}>{assistantMessages} AI</span>
                 </div>
               </div>
 
               <div className="preview-table-wrapper cluster-table-full">
-                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+                {false && <table className="preview-table" style={{ display: 'none', tableLayout: 'fixed', width: '100%' }}>
+                  <thead><tr><th style={{ width: '5%' }}>STT</th><th style={{ width: '18%' }}>Conversation ID</th><th style={{ width: '9%' }}>Message #</th><th style={{ width: '12%' }}>Role</th><th>Content</th></tr></thead>
+                  <tbody>
+                    {pageConvs.map((message: any, rowIndex: number) => (
+                      <tr key={message.id}>
+                        <td style={{ textAlign: 'center' }}>{startConvIdx + rowIndex + 1}</td>
+                        <td><span className="conv-id-badge">{message.conversationId}</span></td>
+                        <td style={{ textAlign: 'center' }}>#{message.messageIndex}</td>
+                        <td><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: message.role === 'assistant' ? '#eef2ff' : message.role === 'system' ? '#fef3c7' : '#ecfdf5', color: message.role === 'assistant' ? '#4f46e5' : message.role === 'system' ? '#b45309' : '#047857' }}>{message.role}</span></td>
+                        <td style={{ padding: 12, whiteSpace: 'normal', wordBreak: 'break-word' }}>{highlightSearch(message.content, searchQuery)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>}
+                {true && <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
                       <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
@@ -242,14 +324,14 @@ export const Stage2Preprocessing = () => {
                           <td className="col-conv-num-cell">{convGlobalIdx}</td>
                           <td className="col-conv-id-cell">
                             <span className="conv-id-badge">{conv.id}</span>
-                            <span className="conv-msg-count">{conv.messages.length} messages</span>
+                            <span className="conv-msg-count">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length} messages</span>
                             {cleaningApplied && (
                               <span className={`conv-status-badge badge-${status}`}>
                                 {status === 'clean' ? '✓ Clean' : status === 'fixed' ? '🔧 Fixed' : '✗ Removed'}
                               </span>
                             )}
                           </td>
-                          <td className="col-msg-num-cell">{conv.messages.length}</td>
+                          <td className="col-msg-num-cell">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length}</td>
                           <td className="cell-text-col" style={{ padding: '12px' }}>
                             <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {conv.messages.length === 1 ? (
@@ -332,7 +414,7 @@ export const Stage2Preprocessing = () => {
                       );
                     })}
                   </tbody>
-                </table>
+                </table>}
               </div>
 
               {/* Pagination */}
@@ -376,7 +458,7 @@ export const Stage2Preprocessing = () => {
                       <MessageSquare size={20} />
                       <div>
                         <h2>Conversation Detail</h2>
-                        <p>{selectedConv.id} · {selectedConv.messages.length} messages</p>
+                        <p>{selectedConv.id} · {selectedConv.roleMessages?.length ?? selectedConv.messageCount ?? selectedConv.messages.length} messages</p>
                       </div>
                     </div>
                     <button className="cluster-popup-close-btn" onClick={() => setSelectedConv(null)}>
@@ -386,16 +468,15 @@ export const Stage2Preprocessing = () => {
                   </div>
 
                   <div className="conv-detail-body">
-                    {selectedConv.messages.map((msg, idx) => (
+                    {(selectedConv.roleMessages || selectedConv.messages.flatMap((pair: any) => [
+                      { role: 'user', content: pair.user },
+                      { role: 'assistant', content: pair.assistant }
+                    ]).filter((message: any) => message.content)).map((msg: any, idx: number) => (
                       <div key={idx} className="conv-detail-pair">
                         <div className="conv-detail-label">#{idx + 1}</div>
-                        <div className="conv-detail-msg conv-detail-user">
-                          <div className="conv-detail-role">👤 User</div>
-                          <div className="conv-detail-text">{msg.user}</div>
-                        </div>
-                        <div className="conv-detail-msg conv-detail-assistant">
-                          <div className="conv-detail-role">🤖 Assistant</div>
-                          <div className="conv-detail-text">{msg.assistant}</div>
+                        <div className={`conv-detail-msg ${msg.role === 'assistant' ? 'conv-detail-assistant' : 'conv-detail-user'}`}>
+                          <div className="conv-detail-role">{msg.role === 'assistant' ? '🤖 Assistant' : msg.role === 'system' ? '⚙️ System' : '👤 User'}</div>
+                          <div className="conv-detail-text">{msg.content}</div>
                         </div>
                       </div>
                     ))}
@@ -959,6 +1040,8 @@ export const Stage2Preprocessing = () => {
                   <div className="toolbar-stats">
                     <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                     <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#047857' }}>{userMessages} User</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#4f46e5' }}>{assistantMessages} AI</span>
                   </div>
                 </div>
 
@@ -993,14 +1076,14 @@ export const Stage2Preprocessing = () => {
                             <td className="col-conv-num-cell" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{convGlobalIdx}</td>
                             <td className="col-conv-id-cell">
                               <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              <span className="conv-msg-count">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length} messages</span>
                               {conv.groupLabel && (
                                 <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginTop: '4px' }}>
                                   {conv.groupLabel}
                                 </span>
                               )}
                             </td>
-                            <td className="col-msg-num-cell">{conv.messages.length}</td>
+                            <td className="col-msg-num-cell">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length}</td>
                             <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
                               <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {conv.messages.length === 1 ? (
@@ -1211,7 +1294,7 @@ export const Stage2Preprocessing = () => {
                               </thead>
                               <tbody>
                                 {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
-                                  <tr key={i}>
+                                  <tr key={i} onClick={() => setSelectedClusterStat(g)} style={{ cursor: 'pointer', background: selectedClusterStat?.clusterId === g.clusterId ? '#eef2ff' : undefined }}>
                                     <td style={{ textAlign: 'left' }}><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
                                     <td className="count-cell" style={{ textAlign: 'center' }}>{g.count}</td>
                                     <td className="sim-cell" style={{ textAlign: 'right' }}>{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
@@ -1225,6 +1308,19 @@ export const Stage2Preprocessing = () => {
                                 ))}
                               </tbody>
                             </table>
+                            {selectedClusterStat && (() => {
+                              const groupConversations = conversationsList.filter((conversation: any) => conversation.groupId === selectedClusterStat.clusterId);
+                              const summary = summarizeCluster(groupConversations);
+                              const similarity = Number(selectedClusterStat.avgSimilarity);
+                              return (
+                                <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #c7d2fe', background: '#f8fafc' }}>
+                                  <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>Review Group {selectedClusterStat.clusterId}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5 }}><strong>Topic (tổng hợp toàn cụm):</strong> {summary.topic}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4 }}><strong>Độ tương đồng trung bình:</strong> {Number.isFinite(similarity) ? `${(similarity * 100).toFixed(1)}%` : 'N/A'}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4, color: '#64748b' }}><strong>Tại sao chúng giống nhau?</strong> {summary.reason} {Number.isFinite(similarity) ? `Mức ${(similarity * 100).toFixed(1)}% cho thấy nội dung các hội thoại bám khá gần chủ đề trung tâm của nhóm.` : ''} Người duyệt vẫn nên kiểm tra các hội thoại không chứa chủ đề chung nêu trên.</div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </>
                       )}

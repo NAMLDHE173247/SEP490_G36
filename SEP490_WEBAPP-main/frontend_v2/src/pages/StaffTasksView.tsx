@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
   Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
@@ -8,6 +8,7 @@ import '../styles/stafftasks.css';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { stage4Api } from '../services/stage4Api';
+import * as XLSX from 'xlsx';
 
 function useStaffTasks() {
   const { user } = useAuth();
@@ -99,7 +100,7 @@ function useStaffTasks() {
       await loadStage4ForVersions(versionIds);
     };
     refresh();
-    const intervalId = window.setInterval(refresh, 5000);
+    const intervalId = window.setInterval(refresh, 20000);
     return () => window.clearInterval(intervalId);
   }, [staffId, refreshTick]);
 
@@ -129,6 +130,9 @@ function StaffTasksView({ onOpenTask }) {
   const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+2');
   const [isSubmittingRewrite, setIsSubmittingRewrite] = useState(false);
   const [isSuggestingRewrite, setIsSuggestingRewrite] = useState(false);
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const [isImportingRewrite, setIsImportingRewrite] = useState(false);
+  const rewriteFileRef = React.useRef<HTMLInputElement>(null);
   const rewriteContextOptions = [
     { value: 'n-2:n+2', label: 'n-2 to n+2' },
     { value: 'n-1:n+1', label: 'n-1 to n+1' },
@@ -154,6 +158,60 @@ function StaffTasksView({ onOpenTask }) {
     supervisor: 'Admin',
     rewriteTask: task,
   }));
+
+  const downloadRewriteBatch = () => {
+    const editable = rewriteTasks.filter((task: any) => !['approved', 'rejected'].includes(task.status));
+    const data = editable.map((task: any) => {
+      const ctxStr = task.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
+      return {
+        'Task ID': String(task.id),
+        'Dataset Version ID': String(task.datasetVersionId),
+        'Revision': task.updatedAt,
+        'Original Text': task.originalText || '',
+        'Reason': task.reason || '',
+        'Context': ctxStr,
+        'Rewritten Text': task.submittedText || ''
+      };
+    });
+    
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Rewrite Tasks');
+    XLSX.writeFile(wb, `rewrite-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setOfflineMessage(`Đã tải ${editable.length} task rewrite (Excel).`);
+  };
+
+  const importRewriteBatch = async (file: File) => {
+    setOfflineMessage(''); setIsImportingRewrite(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: 'array' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const parsedRows: any[] = XLSX.utils.sheet_to_json(ws);
+      
+      const ownTasks = new Map(rewriteTasks.map((task: any) => [String(task.id), task]));
+      const valid = parsedRows.filter((row: any) => ownTasks.has(String(row['Task ID'])) && String(row['Rewritten Text'] || '').trim());
+      const invalidCount = parsedRows.length - valid.length;
+      
+      if (!valid.length) throw new Error('Không có dòng hợp lệ có Rewritten Text để nạp.');
+      if (!window.confirm(`Tìm thấy ${valid.length} bản hợp lệ${invalidCount ? `, bỏ qua ${invalidCount} dòng lỗi/trống` : ''}. Nạp ngay?`)) return;
+      
+      const results = await Promise.allSettled(valid.map((row: any) => { 
+        const task: any = ownTasks.get(String(row['Task ID'])); 
+        const versionId = String(task.datasetVersionId || row['Dataset Version ID'] || ''); 
+        return versionId ? stage4Api.submitRewrite(versionId, String(row['Task ID']), String(row['Rewritten Text']).trim(), row['Revision']) : Promise.reject(new Error('Missing version')); 
+      }));
+      
+      const succeeded = results.filter((r: any) => r.status === 'fulfilled').length;
+      setOfflineMessage(`Đã nạp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
+    } catch (error: any) { 
+      setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); 
+    } finally { 
+      setIsImportingRewrite(false); 
+      if (rewriteFileRef.current) rewriteFileRef.current.value = ''; 
+    }
+  };
   const tasksByType = taskType === 'labeling' ? MY_TASKS : taskType === 'rewrite' ? rewriteTaskCards : [];
   const stats = {
     total: tasksByType.length,
@@ -305,6 +363,18 @@ function StaffTasksView({ onOpenTask }) {
             </button>
           ))}
         </div>
+        {taskType === 'rewrite' && (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
+            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={downloadRewriteBatch}>⬇ Tải Excel</button>
+            <input type="file" ref={rewriteFileRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={(e) => {
+              if (e.target.files && e.target.files[0]) void importRewriteBatch(e.target.files[0]);
+            }} />
+            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => rewriteFileRef.current?.click()} disabled={isImportingRewrite}>
+              {isImportingRewrite ? '⏳ Đang nạp...' : '⬆ Nạp Excel'}
+            </button>
+            {offlineMessage && <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 500 }}>{offlineMessage}</span>}
+          </div>
+        )}
         <div className="st-sort-wrapper">
           <ArrowUpDown size={14} />
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="st-sort-select">

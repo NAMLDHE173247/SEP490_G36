@@ -201,8 +201,13 @@ export const stage4Api = {
   },
 
   // 4. Get Quality Samples
-  getQualitySamples: async (versionId: string, group?: string): Promise<QualityResult> => {
-    const res = await api.get(`/dataprep/versions/${versionId}/quality`, { params: { group } });
+  getQualitySamples: async (versionId: string, group?: string, page?: number, limit?: number): Promise<QualityResult & { pagination?: { page: number; limit: number; totalItems: number; totalPages: number } }> => {
+    const res = await api.get(`/dataprep/versions/${versionId}/quality`, { params: { group, page, limit } });
+    return res.data;
+  },
+
+  autoBypassRewrite: async (versionId: string, limit = 20): Promise<{ processedCount: number; failedCount: number; failures: Array<{ taskId: string; error: string }> }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/auto-bypass`, { limit });
     return res.data;
   },
 
@@ -247,8 +252,8 @@ export const stage4Api = {
   },
 
   // 9. Run Multi-Model Eval Job
-  runMultiEval: async (versionId: string, models: string[], contextWindow: string): Promise<{ message: string; job: MultiEvalJob }> => {
-    const res = await api.post(`/dataprep/versions/${versionId}/multi-eval/run`, { models, contextWindow });
+  runMultiEval: async (versionId: string, models: string[], contextWindow: string, conflictThreshold?: number): Promise<{ message: string; job: MultiEvalJob }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/multi-eval/run`, { models, contextWindow, conflictThreshold });
     return res.data;
   },
 
@@ -314,8 +319,13 @@ export const stage4Api = {
     return res.data;
   },
 
-  submitRewrite: async (versionId: string, taskId: string, submittedText: string): Promise<{ task: any }> => {
-    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/submit`, { submittedText });
+  bulkAssignRewrite: async (versionId: string, assignments: Array<Record<string, any>>): Promise<{ success: boolean; assignedCount: number; requestedCount: number }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/bulk`, { assignments });
+    return res.data;
+  },
+
+  submitRewrite: async (versionId: string, taskId: string, submittedText: string, expectedUpdatedAt?: string): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/submit`, { submittedText, expectedUpdatedAt });
     return res.data;
   },
 

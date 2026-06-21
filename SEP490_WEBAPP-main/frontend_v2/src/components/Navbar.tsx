@@ -240,8 +240,8 @@ function Navbar() {
               </div>
             )}
 
-            {/* GPU Connection widget - Only for Admin / Supervisor */}
-            {(user.role === 'admin' || user.role === 'supervisor') ? (
+            {/* Infrastructure controls belong to Admin only. */}
+            {user.role === 'admin' ? (
               <div className="gpu-widget-container" style={{ maxWidth: '350px', marginLeft: '16px', position: 'relative' }}>
                 {connectionStatus === 'connected' ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', padding: '6px 12px' }}>

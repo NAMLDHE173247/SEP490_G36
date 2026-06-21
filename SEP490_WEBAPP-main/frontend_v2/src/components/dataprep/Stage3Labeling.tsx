@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 const SUB_STEPS_STAGE3 = [{ num: 1, label: 'Cluster Groups' }, { num: 2, label: 'Quality Assign' }];
 import { apiService } from '../../services/api';
+import { useStage4Data } from '../../hooks/useStage4Data';
+import { Stage3AiReview } from './Stage3AiReview';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../../pages/DataPrep/utils';
 import './Stage3Labeling.css';
 
@@ -47,6 +49,29 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [newSubjectInput, setNewSubjectInput] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
   const [useCustomApi, setUseCustomApi] = React.useState(false);
+  const [scoringVersionId] = React.useState<string | null>(() => localStorage.getItem('current_version_id'));
+  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ gemini: true, deepseek: true, openai: false });
+  const [isStartingCrossCheck, setIsStartingCrossCheck] = React.useState(false);
+  const {
+    results: crossCheckResults,
+    latestJob: crossCheckJob,
+    runMultiEval: runCrossCheck,
+    error: crossCheckError,
+  } = useStage4Data(scoringVersionId);
+
+  const handleRunCrossCheck = async () => {
+    const models = Object.entries(judgeModels).filter(([, enabled]) => enabled).map(([model]) => model);
+    if (!scoringVersionId) return alert('Không tìm thấy Dataset Version của Project hiện tại.');
+    if (models.length === 0) return alert('Vui lòng chọn ít nhất một mô hình AI.');
+    try {
+      setIsStartingCrossCheck(true);
+      await runCrossCheck(models, 'No Context');
+    } catch (err: any) {
+      alert(err.message || 'Không thể chạy AI đối soát.');
+    } finally {
+      setIsStartingCrossCheck(false);
+    }
+  };
 
   // --- Added for Assignment Dashboard ---
   const [assignmentTotals, setAssignmentTotals] = React.useState<any>(null);
@@ -55,6 +80,28 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [shareUsers, setShareUsers] = React.useState<any[]>([]);
   const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
   const [isAssigning, setIsAssigning] = React.useState(false);
+
+  const loadAssignmentReviewData = React.useCallback(async () => {
+    if (!scoringVersionId) return;
+    setIsFetchingDashboard(true);
+    try {
+      const [assignments, dashboard] = await Promise.all([
+        apiService.getDatasetVersionAssignments(scoringVersionId),
+        apiService.getDatasetVersionAssignmentDashboard(scoringVersionId),
+      ]);
+      setAssignmentSamples(assignments.samples || []);
+      setAssignmentTotals(assignments.totals || null);
+      setAssignmentDashboard(dashboard || null);
+    } catch (err) {
+      console.error('Failed to load assignment review data:', err);
+    } finally {
+      setIsFetchingDashboard(false);
+    }
+  }, [scoringVersionId]);
+
+  React.useEffect(() => {
+    if (currentSubStep3 === 6 || currentSubStep3 === 7) loadAssignmentReviewData();
+  }, [currentSubStep3, loadAssignmentReviewData]);
   
   // Create Task Modal States
   const [taskBatchSize, setTaskBatchSize] = React.useState(30);
@@ -71,45 +118,15 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [autoSplitValue, setAutoSplitValue] = React.useState(3);
   const [autoSplitPrefix, setAutoSplitPrefix] = React.useState('Batch');
   const [autoSplitPreview, setAutoSplitPreview] = React.useState<{id: string, name: string, samples: any[]}[]>([]);
-      // Find the first unassigned index
-      let startIndex = 1;
-      const unassignedSample = assignmentSamples.find(s => !s.assignees || s.assignees.length === 0);
-      if (unassignedSample) {
-        startIndex = unassignedSample.sampleIndex;
-      }
 
-      await apiService.assignDatasetVersionRange(versionId, {
-        assigneeId: taskAssigneeId,
-        startIndex: startIndex,
-        count: Number(taskBatchSize)
-      });
-      // Refresh dashboard
-      const [dash, assign] = await Promise.all([
-        apiService.getDatasetVersionAssignmentDashboard(versionId),
-        apiService.getDatasetVersionAssignments(versionId)
-      ]);
-      setAssignmentDashboard(dash);
-      setAssignmentTotals(assign.totals);
-      setAssignmentSamples(assign.samples || []);
-      const refreshedVersionId = localStorage.getItem('current_version_id');
-      if (refreshedVersionId) {
-        const [dash, assign] = await Promise.all([
-          apiService.getDatasetVersionAssignmentDashboard(refreshedVersionId),
-          apiService.getDatasetVersionAssignments(refreshedVersionId)
-        ]);
-        setAssignmentDashboard(dash);
-        setAssignmentTotals(assign.totals);
-        setAssignmentSamples(assign.samples || []);
-      }
+  // Multi-step assignment drawer states
+  const [drawerStep, setDrawerStep] = React.useState<number>(1);
+  const [staffAssignments, setStaffAssignments] = React.useState<Record<string, string[]>>({});
+  const [taskNameInput, setTaskNameInput] = React.useState('');
 
-      setShowCreateTaskModal(false);
-      alert('Task created successfully!');
-    } catch (err: any) {
-      console.error(err);
-      alert(err?.response?.data?.error || err.message || 'Failed to create task');
-    } finally {
-      setIsAssigning(false);
-    }
+  const isStepCompleted = (stepNum: number): boolean => {
+    if (stepNum === 1) return drawerStep > 1;
+    return false;
   };
 
   const handleGenerateAutoSplit = () => {
@@ -1275,7 +1292,11 @@ export const Stage3Labeling = (dataPrep: any) => {
           </div>
         )}
 
-        {currentSubStep3 === 7 && (
+        {currentSubStep3 === 7 && (isFetchingDashboard && assignmentSamples.length === 0
+          ? <div style={{ padding: 48, display: 'flex', justifyContent: 'center', gap: 10, color: '#64748b' }}><Loader2 className="animate-spin" size={18}/> Đang tải dữ liệu review...</div>
+          : <Stage3AiReview versionId={scoringVersionId} samples={assignmentSamples} dashboard={assignmentDashboard} onRefresh={loadAssignmentReviewData} />)}
+
+        {false && currentSubStep3 === 7 && (
           <div className="ia-dashboard">
             {/* Coverage Bar */}
             <div className="ia-coverage-bar">
@@ -1287,6 +1308,49 @@ export const Stage3Labeling = (dataPrep: any) => {
                 <span className="ia-stat-green">Complete: 0</span>
                 <span className="ia-stat-red">Missing: 90</span>
               </div>
+            </div>
+
+            <div className="ia-section-card" style={{ marginBottom: 16, border: '1px solid #c7d2fe' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div>
+                  <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={16} /> AI đối soát kết quả Staff</h4>
+                  <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
+                    AI chấm cùng hội thoại và so sánh chéo với điểm Staff. Chênh lệch lớn sẽ được đánh dấu để Admin review.
+                  </p>
+                </div>
+                <button className="ia-auto-labeling-btn" onClick={handleRunCrossCheck} disabled={isStartingCrossCheck || crossCheckJob?.status === 'running' || crossCheckJob?.status === 'pending'}>
+                  {(isStartingCrossCheck || crossCheckJob?.status === 'running' || crossCheckJob?.status === 'pending') ? <><Loader2 size={14} className="animate-spin" /> Đang chấm...</> : 'Chạy AI đối soát'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
+                {['gemini', 'deepseek', 'openai'].map(model => (
+                  <label key={model} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, textTransform: 'capitalize' }}>
+                    <input type="checkbox" checked={judgeModels[model]} onChange={() => setJudgeModels(prev => ({ ...prev, [model]: !prev[model] }))} /> {model}
+                  </label>
+                ))}
+              </div>
+              {crossCheckError && <p style={{ color: '#dc2626', fontSize: 13 }}>{crossCheckError}</p>}
+              {crossCheckResults.length > 0 && (
+                <div style={{ overflowX: 'auto', marginTop: 14 }}>
+                  <table className="sa-tasks-table" style={{ minWidth: 720 }}>
+                    <thead><tr><th>HỘI THOẠI</th><th>STAFF</th><th>AI TRUNG BÌNH</th><th>CHÊNH LỆCH</th><th>KẾT QUẢ ĐỐI SOÁT</th></tr></thead>
+                    <tbody>{crossCheckResults.map(result => {
+                      const staffScore = Number(result.scores?.human ?? result.scores?.Human);
+                      const aiScore = Number(result.averageOverall ?? result.averageScore);
+                      const hasStaff = Number.isFinite(staffScore);
+                      const diff = hasStaff && Number.isFinite(aiScore) ? Math.abs(aiScore - staffScore) : Number(result.diff || 0);
+                      const conflict = Boolean(result.hasConflict) || result.recommendation === 'Conflict' || (hasStaff && diff >= 2);
+                      return <tr key={result._id}>
+                        <td><strong>{result.sampleIdRef?.sampleId || result.sampleId}</strong><div style={{ color: '#64748b', fontSize: 12 }}>{truncateText(result.sampleIdRef?.data?.messages?.find(m => m.role === 'user')?.content || '', 90)}</div></td>
+                        <td>{hasStaff ? staffScore.toFixed(1) : <span style={{ color: '#94a3b8' }}>Chưa có điểm Staff</span>}</td>
+                        <td>{Number.isFinite(aiScore) ? aiScore.toFixed(1) : '—'}</td>
+                        <td>{hasStaff ? diff.toFixed(1) : '—'}</td>
+                        <td><span style={{ color: conflict ? '#dc2626' : '#15803d', fontWeight: 700 }}>{hasStaff ? (conflict ? 'Cần Admin review' : 'Khớp với Staff') : 'Chỉ có điểm AI'}</span></td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="ia-main-layout">
@@ -2231,7 +2295,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
                     onClick={handleBulkAssign}
                   >
-                    <Check size={16} /> Ho├án tß║Ñt & Giao viß╗çc
+                    <Check size={16} /> Hoàn tất & Giao việc
                   </button>
                 </div>
               </>
