@@ -34,7 +34,7 @@ export const Stage6Finish: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
 
-  const [promptVersions, setPromptVersions] = useState<any[]>(PROMPT_VERSIONS);
+  const [promptVersions, setPromptVersions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRunningTrial, setIsRunningTrial] = useState(false);
@@ -71,11 +71,11 @@ export const Stage6Finish: React.FC = () => {
         }));
         setPromptVersions(formatted);
       } else {
-        setPromptVersions(PROMPT_VERSIONS);
+        setPromptVersions([]);
       }
     } catch (error) {
       console.error('Failed to fetch system prompts:', error);
-      setPromptVersions(PROMPT_VERSIONS);
+      setPromptVersions([]);
     } finally {
       setIsLoadingVersions(false);
     }
