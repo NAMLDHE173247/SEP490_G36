@@ -137,6 +137,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [tableSort, setTableSort] = useState<'id_asc' | 'id_desc' | 'status'>('id_asc');
   const { toasts, toast } = useToast();
   const [drawerSampleId, setDrawerSampleId] = useState<string | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(13);
   const [labels, setLabels] = useState<Record<string, any>>({});
   const [showSubmitModal, setShowSubmitModal] = useState(false);
@@ -705,8 +706,17 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: map[rs].c, background: map[rs].b }}>{map[rs].t}</span>
                       ) : null;
                     })()}
+                    <span style={{ marginLeft: 12, display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#64748b', fontWeight: 500 }}>
+                      <MessageSquare size={13} />
+                      Hội thoại · {drawerSample.messages?.length || 0} tin nhắn
+                    </span>
                   </div>
                   <div className="sl-drawer-actions">
+                    <div className="sl-zoom-controls">
+                      <button onClick={() => setChatFontSize(f => Math.max(10, f - 1))}>A-</button>
+                      <span>{chatFontSize}px</span>
+                      <button onClick={() => setChatFontSize(f => Math.min(24, f + 1))}>A+</button>
+                    </div>
                     {!isSampleLocked(drawerSample.id) && (
                       <button
                         className="sl-drawer-next-btn"
@@ -748,21 +758,29 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                 <div className="sl-drawer-body">
                   {/* LEFT: Label Panel */}
                   <div className="sl-label-panel">
-                    <div className="sl-label-guide compact">
-                      <div className="sl-label-guide-title"><FileText size={14} /> Hướng dẫn nhãn</div>
-                      <ul>
-                        <li><strong>Intent học sinh:</strong> mục đích của học sinh, không dùng đúng/sai tại đây.</li>
-                        <li><strong>Action của AI:</strong> hành vi phản hồi của AI, chọn sau khi phân loại Gold/Bad.</li>
-                        <li><strong>Chất lượng hội thoại:</strong> nhãn cấp mẫu, đồng bộ với luồng admin.</li>
-                      </ul>
-                      <div className="sl-label-guide-examples">
-                        <strong>Giải thích nhanh:</strong>
-                        <span><b>Học sinh trả lời/thử làm bài</b>: học sinh đưa đề, đáp án, phép tính, hoặc đang cố gắng làm.</span>
-                        <span><b>Xin gợi ý</b>: học sinh bị bí và muốn gợi ý ngắn.</span>
-                        <span><b>Hỏi lý thuyết</b>: hỏi công thức, định nghĩa, quy tắc.</span>
-                        <span><b>Yêu cầu giải thích</b>: hỏi vì sao, muốn giải thích lại lời giải.</span>
-                        <span><b>Muốn học tiếp/chuyển câu</b>: chỉ dùng khi học sinh đã xong ý hiện tại và muốn sang phần tiếp theo.</span>
-                      </div>
+                    <div className="sl-label-guide-collapsible">
+                      <button className="sl-label-guide-toggle" onClick={() => setGuideOpen(o => !o)}>
+                        <FileText size={13} />
+                        Hướng dẫn nhãn
+                        <ChevronDown size={13} style={{ marginLeft: 'auto', transition: 'transform 0.2s', transform: guideOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
+                      </button>
+                      {guideOpen && (
+                        <div className="sl-label-guide compact">
+                          <ul>
+                            <li><strong>Intent học sinh:</strong> mục đích của học sinh, không dùng đúng/sai tại đây.</li>
+                            <li><strong>Action của AI:</strong> hành vi phản hồi của AI, chọn sau khi phân loại Gold/Bad.</li>
+                            <li><strong>Chất lượng hội thoại:</strong> nhãn cấp mẫu, đồng bộ với luồng admin.</li>
+                          </ul>
+                          <div className="sl-label-guide-examples">
+                            <strong>Giải thích nhanh:</strong>
+                            <span><b>Học sinh trả lời/thử làm bài</b>: học sinh đưa đề, đáp án, phép tính, hoặc đang cố gắng làm.</span>
+                            <span><b>Xin gợi ý</b>: học sinh bị bí và muốn gợi ý ngắn.</span>
+                            <span><b>Hỏi lý thuyết</b>: hỏi công thức, định nghĩa, quy tắc.</span>
+                            <span><b>Yêu cầu giải thích</b>: hỏi vì sao, muốn giải thích lại lời giải.</span>
+                            <span><b>Muốn học tiếp/chuyển câu</b>: chỉ dùng khi học sinh đã xong ý hiện tại và muốn sang phần tiếp theo.</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div className="sl-label-group">
                       <label>📚 Môn học</label>
@@ -846,14 +864,6 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
                   {/* RIGHT: Chat Messages */}
                   <div className="sl-chat-area">
-                    <div className="sl-chat-header-bar">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><MessageSquare size={14} /><span>Hội thoại · {drawerSample.messages?.length || 0} tin nhắn</span></div>
-                      <div className="sl-zoom-controls">
-                        <button onClick={() => setChatFontSize(f => Math.max(10, f - 1))}>A-</button>
-                        <span>{chatFontSize}px</span>
-                        <button onClick={() => setChatFontSize(f => Math.min(24, f + 1))}>A+</button>
-                      </div>
-                    </div>
                     <div className="sl-message-table-head">
                       <span>Lượt</span>
                       <span>Nội dung hội thoại</span>
