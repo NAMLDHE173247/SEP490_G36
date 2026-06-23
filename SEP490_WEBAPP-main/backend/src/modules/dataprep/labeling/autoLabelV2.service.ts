@@ -55,7 +55,7 @@ function normalizeMessageLabel(raw: any, fallbackIndex: number): AutoLabelV2Mess
   const result: AutoLabelV2MessageLabel = { messageIndex, confidence };
 
   if (raw?.intent) {
-    result.intent = normalizeEnum(raw.intent, STUDENT_INTENT_SET, 'WAIT_READY');
+    result.intent = normalizeEnum(raw.intent, STUDENT_INTENT_SET, 'ANSWER_ATTEMPT');
   }
 
   if (raw?.action) {
@@ -130,7 +130,7 @@ export class AutoLabelV2Service {
           return {
             ...label,
             messageIndex: source.messageIndex,
-            intent: normalizeEnum((label as any).intent, STUDENT_INTENT_SET, 'WAIT_READY'),
+            intent: normalizeEnum((label as any).intent, STUDENT_INTENT_SET, 'ANSWER_ATTEMPT'),
             action: undefined,
             response_quality: undefined,
             is_correct_pedagogy: undefined,

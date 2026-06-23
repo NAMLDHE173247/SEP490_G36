@@ -32,66 +32,71 @@ const ACTION_OPTIONS = [
   'TRANSITIONING', 'DIRECT_ANSWER', 'WAITING',
 ];
 const COMPLETION_OPTIONS = ['Completed', 'Incomplete', 'Abandoned'];
-const RESPONSE_QUALITY_OPTIONS = ['Gold', 'Bad', 'Rewrite'];
+const RESPONSE_QUALITY_OPTIONS = ['Gold', 'Bad'];
 const ACTION_GROUPS = [
-  { title: 'Đánh giá câu trả lời', values: ['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE'] },
-  { title: 'Gợi ý và dẫn dắt', values: ['SCAFFOLDING', 'HINTING', 'WAITING'] },
-  { title: 'Giải thích và làm rõ', values: ['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN', 'SIMPLIFYING'] },
-  { title: 'Khen ngợi và động viên', values: ['PRAISING', 'MOTIVATING'] },
-  { title: 'Điều hướng hội thoại', values: ['REDIRECTING', 'TRANSITIONING', 'DIRECT_ANSWER'] },
+  { title: 'Danh gia cau tra loi', values: ['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE'] },
+  { title: 'Goi y va dan dat', values: ['SCAFFOLDING', 'HINTING', 'WAITING'] },
+  { title: 'Giai thich va lam ro', values: ['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN', 'SIMPLIFYING'] },
+  { title: 'Khen ngoi va dong vien', values: ['PRAISING', 'MOTIVATING'] },
+  { title: 'Dieu huong hoi thoai', values: ['REDIRECTING', 'TRANSITIONING', 'DIRECT_ANSWER'] },
 ];
 const QUALITY_OPTIONS = ['Gold', 'Rewrite', 'Bad'];
 const FLAG_OPTIONS = ['Factual Error', 'Direct Answer', 'Language Issue'];
 const LABEL_TEXT: Record<string, string> = {
-  ANSWER_ATTEMPT: 'Học sinh trả lời/thử làm bài',
-  REQUEST_HINT: 'Xin gợi ý',
-  ASK_THEORY: 'Hỏi lý thuyết',
-  REQUEST_EXPLANATION: 'Yêu cầu giải thích',
-  REQUEST_SIMPLER: 'Muốn giải thích đơn giản hơn',
-  SKIP_EXERCISE: 'Bỏ qua bài',
-  DISCOURAGED: 'Chán nản',
-  OFF_TOPIC: 'Ngoài phạm vi',
-  READY_NEXT: 'Sẵn sàng tiếp tục',
-  CONFIRM_UNDERSTANDING: 'Xác nhận đã hiểu',
-  CONFIRM_CORRECT_ANSWER: 'Xác nhận câu trả lời đúng',
-  IDENTIFY_INCORRECT_ANSWER: 'Chỉ ra câu trả lời sai',
-  CORRECT_MISTAKE: 'Sửa lỗi sai',
-  PRAISING: 'Khen ngợi',
-  SCAFFOLDING: 'Dẫn dắt từng bước',
-  HINTING: 'Đưa gợi ý',
-  CONCEPT_CLARIFY: 'Làm rõ khái niệm',
-  LOGIC_BREAKDOWN: 'Phân tích lập luận',
-  SIMPLIFYING: 'Diễn giải đơn giản',
-  MOTIVATING: 'Động viên',
-  REDIRECTING: 'Kéo về đúng chủ đề',
-  TRANSITIONING: 'Chuyển bước/chủ đề',
-  DIRECT_ANSWER: 'Đưa đáp án trực tiếp',
-  WAITING: 'Chờ học sinh phản hồi',
-  Completed: 'Hoàn thành',
-  Incomplete: 'Chưa hoàn thành',
-  Abandoned: 'Bỏ dở',
+  ANSWER_ATTEMPT: 'Hoc sinh tra loi/thu lam bai',
+  REQUEST_HINT: 'Xin goi y',
+  ASK_THEORY: 'Hoi ly thuyet',
+  REQUEST_EXPLANATION: 'Yeu cau giai thich',
+  REQUEST_SIMPLER: 'Muon giai thich don gian hon',
+  SKIP_EXERCISE: 'Bo qua bai',
+  DISCOURAGED: 'Chan nan',
+  OFF_TOPIC: 'Ngoai pham vi',
+  READY_NEXT: 'Muon hoc tiep/chuyen cau',
+  CONFIRM_UNDERSTANDING: 'Xac nhan da hieu',
+  CONFIRM_CORRECT_ANSWER: 'Xac nhan cau tra loi dung',
+  IDENTIFY_INCORRECT_ANSWER: 'Chi ra cau tra loi sai',
+  CORRECT_MISTAKE: 'Sua loi sai',
+  PRAISING: 'Khen ngoi',
+  SCAFFOLDING: 'Dan dat tung buoc',
+  HINTING: 'Dua goi y',
+  CONCEPT_CLARIFY: 'Lam ro khai niem',
+  LOGIC_BREAKDOWN: 'Phan tich lap luan',
+  SIMPLIFYING: 'Dien giai don gian',
+  MOTIVATING: 'Dong vien',
+  REDIRECTING: 'Keo ve dung chu de',
+  TRANSITIONING: 'Chuyen buoc/chu de',
+  DIRECT_ANSWER: 'Dua dap an truc tiep',
+  WAITING: 'Cho hoc sinh phan hoi',
+  Completed: 'Hoan thanh',
+  Incomplete: 'Chua hoan thanh',
+  Abandoned: 'Bo do',
   Gold: 'Gold', Rewrite: 'Rewrite', Bad: 'Bad', Good: 'Gold', Medium: 'Rewrite', Poor: 'Bad',
-  'Needs Review': 'Cần xem lại',
-  'Factual Error': 'Sai kiến thức',
-  'Direct Answer': 'Lộ đáp án trực tiếp',
-  'Language Issue': 'Lỗi ngôn ngữ',
-  Math: 'Toán', Physics: 'Vật lý', Chemistry: 'Hóa học', Biology: 'Sinh học', English: 'Tiếng Anh', History: 'Lịch sử', Geography: 'Địa lý', Civics: 'GDCD', IT: 'Tin học', 'Multi-subject': 'Liên môn', Unclear: 'Chưa rõ',
+  'Needs Review': 'Can xem lai',
+  'Factual Error': 'Sai kien thuc',
+  'Direct Answer': 'Lo dap an truc tiep',
+  'Language Issue': 'Loi ngon ngu',
+  Math: 'Toan', Physics: 'Vat ly', Chemistry: 'Hoa hoc', Biology: 'Sinh hoc', English: 'Tieng Anh', History: 'Lich su', Geography: 'Dia ly', Civics: 'GDCD', IT: 'Tin hoc', 'Multi-subject': 'Lien mon', Unclear: 'Chua ro',
 };
 const LABEL_HELP: Record<string, string> = {
-  ANSWER_ATTEMPT: 'Dùng khi học sinh đang đưa ra lời giải, đáp án hoặc thử làm bài. Không đánh giá đúng/sai ở Intent.',
-  REQUEST_HINT: 'Học sinh xin gợi ý hoặc nói bị bí, chưa cần lời giải đầy đủ.',
-  ASK_THEORY: 'Học sinh hỏi khái niệm, công thức, định nghĩa hoặc quy tắc nền.',
-  REQUEST_EXPLANATION: 'Học sinh muốn giải thích vì sao đúng/sai hoặc vì sao dùng cách đó.',
-  REQUEST_SIMPLER: 'Học sinh muốn diễn giải dễ hiểu hơn, ngắn hơn hoặc có ví dụ.',
-  CONFIRM_CORRECT_ANSWER: 'AI xác nhận câu trả lời của học sinh là đúng.',
-  IDENTIFY_INCORRECT_ANSWER: 'AI chỉ ra câu trả lời/lập luận của học sinh đang sai hoặc chưa chính xác.',
-  CORRECT_MISTAKE: 'AI sửa lỗi sai hoặc chỉnh lại hiểu nhầm của học sinh.',
-  SCAFFOLDING: 'AI dẫn dắt từng bước bằng câu hỏi hoặc gợi mở.',
-  HINTING: 'AI đưa gợi ý ngắn, đúng trọng tâm, không giải hộ toàn bộ.',
-  DIRECT_ANSWER: 'AI đưa đáp án trực tiếp. Thường cần cờ lỗi nếu làm lộ đáp án quá sớm.',
-  Gold: 'Phản hồi đạt chuẩn, có thể giữ lại.',
-  Rewrite: 'Phản hồi có thể dùng nhưng cần viết lại/chỉnh sửa.',
-  Bad: 'Phản hồi sai, không phù hợp hoặc nên loại khỏi dữ liệu huấn luyện.',
+  ANSWER_ATTEMPT: 'Dung khi hoc sinh dang dua ra loi giai, dap an hoac thu lam bai. Khong danh gia dung/sai o Intent.',
+  REQUEST_HINT: 'Hoc sinh xin goi y hoac noi bi bi, chua can loi giai day du.',
+  ASK_THEORY: 'Hoc sinh hoi khai niem, cong thuc, dinh nghia hoac quy tac nen.',
+  REQUEST_EXPLANATION: 'Hoc sinh muon giai thich vi sao dung/sai hoac vi sao dung cach do.',
+  REQUEST_SIMPLER: 'Hoc sinh muon dien giai de hieu hon, ngan hon hoac co vi du.',
+  SKIP_EXERCISE: 'Hoc sinh bo qua bai hien tai hoac muon doi sang bai khac.',
+  DISCOURAGED: 'Hoc sinh the hien chan nan, bo cuoc, mat dong luc.',
+  OFF_TOPIC: 'Hoc sinh noi sang noi dung khong lien quan bai hoc.',
+  READY_NEXT: 'Hoc sinh da xong y hien tai va muon tiep tuc/chuyen cau. Khong dung cho cau hoi dau bai.',
+  CONFIRM_UNDERSTANDING: 'Hoc sinh xac nhan da hieu sau khi duoc giai thich.',
+  CONFIRM_CORRECT_ANSWER: 'AI xac nhan cau tra loi cua hoc sinh la dung.',
+  IDENTIFY_INCORRECT_ANSWER: 'AI chi ra cau tra loi/lap luan cua hoc sinh dang sai hoac chua chinh xac.',
+  CORRECT_MISTAKE: 'AI sua loi sai hoac chinh lai hieu nham cua hoc sinh.',
+  SCAFFOLDING: 'AI dan dat tung buoc bang cau hoi hoac goi mo.',
+  HINTING: 'AI dua goi y ngan, dung trong tam, khong giai ho toan bo.',
+  DIRECT_ANSWER: 'AI dua dap an truc tiep. Thuong can co loi neu lam lo dap an qua som.',
+  Gold: 'Phan hoi dat chuan, co the giu lai.',
+  Rewrite: 'Phan hoi co the dung nhung can viet lai/chinh sua.',
+  Bad: 'Phan hoi sai, khong phu hop hoac nen loai khoi du lieu huan luyen.',
 };
 
 const ITEMS_PER_PAGE = 20;
@@ -99,15 +104,27 @@ const getLabelText = (value: string) => LABEL_TEXT[value] || value;
 const getLabelHelp = (value: string) => LABEL_HELP[value] || '';
 const normalizeOption = (value: unknown, allowed: string[], fallback = '') => {
   const normalized = String(value || '').trim();
+  const aliasMap: Record<string, string> = {
+    WAIT_READY: 'READY_NEXT',
+    NEXT_SECTION: 'READY_NEXT',
+    ENCOURAGE: 'DISCOURAGED',
+  };
+  const aliased = aliasMap[normalized] || normalized;
   if (normalized === 'Good') return allowed.includes('Gold') ? 'Gold' : fallback;
   if (normalized === 'Poor') return allowed.includes('Bad') ? 'Bad' : fallback;
   if (normalized === 'Medium') return allowed.includes('Rewrite') ? 'Rewrite' : fallback;
-  return allowed.includes(normalized) ? normalized : fallback;
+  return allowed.includes(aliased) ? aliased : fallback;
 };
 const normalizeSubject = (value: unknown) => SUBJECT_LABEL_MAP[String(value || '').trim()] || normalizeOption(value, SUBJECT_OPTIONS, 'Chua ro');
 const normalizeOptionList = (value: unknown, allowed: string[]) => {
   const raw = Array.isArray(value) ? value : value ? [value] : [];
   return Array.from(new Set(raw.map((item) => normalizeOption(item, allowed)).filter(Boolean)));
+};
+const normalizeRole = (role: unknown) => {
+  const value = String(role || '').trim().toLowerCase();
+  if (['user', 'student', 'hoc_sinh', 'hoc sinh'].includes(value)) return 'user';
+  if (['assistant', 'bot', 'ai', 'tutor', 'tro_ly', 'tro ly'].includes(value)) return 'assistant';
+  return value;
 };
 
 function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
@@ -160,7 +177,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   React.useEffect(() => { reloadSamples(); }, [reloadSamples]);
 
-  // reviewStatus helpers (ná»p láº»)
+  // reviewStatus helpers
   const reviewOf = (sampleId: string): string => {
     const s = samples.find((x: any) => x.id === sampleId);
     return s?.reviewStatus || 'labeling';
@@ -187,7 +204,34 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const getMsgLabel = (sampleId: string, msgIdx: number, field: string) => labels[sampleId]?.messages?.[msgIdx]?.[field] || '';
   const getMsgLabels = (sampleId: string, msgIdx: number, field: string): string[] => {
     const value = labels[sampleId]?.messages?.[msgIdx]?.[field];
-    return Array.isArray(value) ? value : value ? [value] : [];
+    const raw = Array.isArray(value) ? value : value ? [value] : [];
+    if (field === 'intent') return normalizeOptionList(raw, INTENT_OPTIONS);
+    if (field === 'action') return normalizeOptionList(raw, ACTION_OPTIONS);
+    return raw;
+  };
+  const getEffectiveMsgLabels = (sampleId: string, msgIdx: number, field: string, role?: unknown): string[] => {
+    const current = getMsgLabels(sampleId, msgIdx, field);
+    if (current.length) return current;
+    const hasAiContext = labels[sampleId]?.status === 'reviewing';
+    if (!hasAiContext) return current;
+    const normalizedRole = normalizeRole(role);
+    if (normalizedRole === 'user' && field === 'intent') return ['ANSWER_ATTEMPT'];
+    if (normalizedRole === 'assistant' && field === 'action') return ['WAITING'];
+    return current;
+  };
+  const getEditedMessageContent = (sampleId: string, msgIdx: number, fallback: string) => {
+    const edited = labels[sampleId]?.editedMessages?.[msgIdx];
+    return typeof edited === 'string' ? edited : fallback;
+  };
+  const setEditedMessageContent = (sampleId: string, msgIdx: number, value: string) => {
+    if (submitted || isSampleLocked(sampleId)) return;
+    setLabels(prev => {
+      const sampleLabels = prev[sampleId] || {};
+      const editedMessages = sampleLabels.editedMessages || {};
+      return { ...prev, [sampleId]: { ...sampleLabels, editedMessages: { ...editedMessages, [msgIdx]: value } } };
+    });
+    setSavedDraft(false);
+    setRecentlyEdited(prev => [sampleId, ...prev.filter(id => id !== sampleId)].slice(0, 20));
   };
   const getFlags = (sampleId: string) => labels[sampleId]?.flags || [];
 
@@ -220,7 +264,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     setIsAiLoading(true);
     try {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
-      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages, provider: aiProvider });
+      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages.map((message: any, index: number) => ({ ...message, content: getEditedMessageContent(sampleId, index, message.content || '') })), provider: aiProvider });
       if (res.data.success && res.data.data) {
         const suggestion = res.data.data;
 
@@ -250,9 +294,9 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
           suggestion.messages.forEach((msg: any, idx: number) => {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
-            const sourceRole = sample.messages?.[messageIndex]?.role || sample.messages?.[idx]?.role || msg.role;
+            const sourceRole = normalizeRole(sample.messages?.[messageIndex]?.role || sample.messages?.[idx]?.role || msg.role);
             const normalizedIntents = normalizeOptionList(msg.intent, INTENT_OPTIONS);
-            const intents = sourceRole === 'user' ? (normalizedIntents.length ? normalizedIntents : ['WAIT_READY']) : [];
+            const intents = sourceRole === 'user' ? (normalizedIntents.length ? normalizedIntents : ['ANSWER_ATTEMPT']) : [];
             const normalizedActions = normalizeOptionList(msg.action, ACTION_OPTIONS);
             const actions = sourceRole === 'assistant' ? (normalizedActions.length ? normalizedActions : ['WAITING']) : [];
             const responseQuality = normalizeOption(msg.response_quality, RESPONSE_QUALITY_OPTIONS, msg.is_correct_pedagogy === false ? 'Bad' : 'Gold');
@@ -267,6 +311,15 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
             };
           });
         }
+        sample.messages?.forEach((message: any, index: number) => {
+          if (!aiLabels.messages[index]) aiLabels.messages[index] = {};
+          const role = normalizeRole(message.role);
+          if (role === 'user' && !aiLabels.messages[index].intent) aiLabels.messages[index].intent = ['ANSWER_ATTEMPT'];
+          if (role === 'assistant') {
+            if (!aiLabels.messages[index].action) aiLabels.messages[index].action = ['WAITING'];
+            if (!aiLabels.messages[index].responseQuality) aiLabels.messages[index].responseQuality = 'Gold';
+          }
+        });
         setAiMeta(prev => ({ ...prev, [sampleId]: metaByMsg }));
 
         setLabels(prev => {
@@ -665,7 +718,8 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                     )}
                     {(() => {
                       const recentComplete = recentlyEdited.filter(id => isSampleComplete(id) && ['labeling','rejected'].includes(reviewOf(id)));
-                      if (!recentComplete.length) return null;
+                      const isOnlyCurrentSample = recentComplete.length === 1 && String(recentComplete[0]) === String(drawerSample.id);
+                      if (recentComplete.length < 2 || isOnlyCurrentSample) return null;
                       return (
                         <button
                           className="sl-drawer-next-btn"
@@ -696,9 +750,17 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <div className="sl-label-guide-title"><FileText size={14} /> Hướng dẫn nhãn</div>
                       <ul>
                         <li><strong>Intent học sinh:</strong> mục đích của học sinh, không dùng đúng/sai tại đây.</li>
-                        <li><strong>Action của AI:</strong> hành vi phản hồi của AI, chọn sau khi phân loại Gold/Bad/Rewrite.</li>
+                        <li><strong>Action của AI:</strong> hành vi phản hồi của AI, chọn sau khi phân loại Gold/Bad.</li>
                         <li><strong>Chất lượng hội thoại:</strong> nhãn cấp mẫu, đồng bộ với luồng admin.</li>
                       </ul>
+                      <div className="sl-label-guide-examples">
+                        <strong>Giai thich nhanh:</strong>
+                        <span><b>Hoc sinh tra loi/thu lam bai</b>: hoc sinh dua de, dap an, phep tinh, hoac dang co gang lam.</span>
+                        <span><b>Xin goi y</b>: hoc sinh bi bi va muon goi y ngan.</span>
+                        <span><b>Hoi ly thuyet</b>: hoi cong thuc, dinh nghia, quy tac.</span>
+                        <span><b>Yeu cau giai thich</b>: hoi vi sao, muon giai thich lai loi giai.</span>
+                        <span><b>Muon hoc tiep/chuyen cau</b>: chi dung khi hoc sinh da xong y hien tai va muon sang phan tiep theo.</span>
+                      </div>
                     </div>
                     <div className="sl-label-group">
                       <label>📚 Môn học</label>
@@ -707,7 +769,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         if (val === '__add_new__') { const n = window.prompt('Nhập tên môn học mới:'); if (n?.trim()) { if (!subjectOptions.includes(n.trim())) setSubjectOptions([...subjectOptions, n.trim()]); setLabel(drawerSample.id, 'subject', n.trim()); } }
                         else setLabel(drawerSample.id, 'subject', val);
                       }} className="sl-select">
-                        <option value="">? Ch?n ?</option>
+                        <option value="">-- Chon --</option>
                         {subjectOptions.map(o => <option key={o} value={o}>{o}</option>)}
                         <option value="__add_new__" style={{ fontWeight: 'bold', color: '#2563eb' }}>+ Thêm môn học khác...</option>
                       </select>
@@ -716,14 +778,14 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <div className="sl-label-group">
                         <label>Trạng thái hoàn thành</label>
                         <select value={getLabel(drawerSample.id, 'completion')} onChange={(e) => setLabel(drawerSample.id, 'completion', e.target.value)} className="sl-select">
-                          <option value="">? Ch?n ?</option>
+                          <option value="">-- Chon --</option>
                           {COMPLETION_OPTIONS.map(o => <option key={o} value={o}>{getLabelText(o)}</option>)}
                         </select>
                       </div>
                       <div className="sl-label-group">
                         <label>Chất lượng hội thoại</label>
                         <select value={getLabel(drawerSample.id, 'quality')} onChange={(e) => setLabel(drawerSample.id, 'quality', e.target.value)} className="sl-select">
-                          <option value="">? Ch?n ?</option>
+                          <option value="">-- Chon --</option>
                           {QUALITY_OPTIONS.map(o => <option key={o} value={o}>{getLabelText(o)}</option>)}
                         </select>
                       </div>
@@ -753,7 +815,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         </select>
                         <button className="sl-ai-btn" onClick={() => handleAIAssist(drawerSample.id)} disabled={isAiLoading}>
                           {isAiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                          {isAiLoading ? '🤖 Đang phân tích...' : '🤖 Gợi ý AI'}
+                          {isAiLoading ? 'Dang phan tich...' : 'Goi y AI'}
                         </button>
                         {aiBackup[drawerSample.id] && (
                           <button className="sl-ai-btn" onClick={() => handleRollbackAI(drawerSample.id)} style={{ background: '#fef2f2', color: '#ef4444', border: '1px solid #fecaca' }}>Hoàn tác AI</button>
@@ -768,7 +830,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       const qColor = qualityColor[s.quality] || '#64748b';
                       return (
                         <div className="sl-ai-summary-card">
-                          <div className="sl-ai-summary-title"><Sparkles size={13} /> Ph?n t?ch AI</div>
+                          <div className="sl-ai-summary-title"><Sparkles size={13} /> Phan tich AI</div>
                           <div className="sl-ai-summary-tags">
                             {s.subject && <span>{getLabelText(s.subject)}</span>}
                             {s.completion && <span>{getLabelText(s.completion)}</span>}
@@ -792,22 +854,23 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                     </div>
                     <div className="sl-message-table-head">
                       <span>Lượt</span>
-                      <span>N?i dung h?i tho?i</span>
+                      <span>Noi dung hoi thoai</span>
                       <span>Nhãn gán</span>
                     </div>
                     {drawerSample.messages?.map((msg: any, mIdx: number) => {
                       const meta = aiMeta[drawerSample.id]?.[mIdx];
                       const conf = meta?.confidence ?? null;
                       const badOk = meta?.is_correct_pedagogy !== false;
+                      const msgRole = normalizeRole(msg.role);
                       const confColor = conf === null ? undefined
                         : conf >= 0.8 ? '#059669' : conf >= 0.6 ? '#d97706' : '#dc2626';
                       const confLabel = null;
                       const borderColor = undefined;
                       return (
-                      <div key={mIdx} className={`sl-msg ${msg.role}`} style={!badOk ? { outline: '2px solid #fca5a5', borderRadius: 8 } : undefined}>
+                      <div key={mIdx} className={`sl-msg ${msgRole}`} style={!badOk ? { outline: '2px solid #fca5a5', borderRadius: 8 } : undefined}>
                         <div className="sl-msg-header">
-                          <span className="sl-msg-icon">{msg.role === 'user' ? '🧑' : '🤖'}</span>
-                          <span className="sl-msg-role">{msg.role === 'user' ? 'Học sinh' : 'Trợ lý'}</span>
+                          <span className="sl-msg-icon">{msgRole === 'user' ? 'HS' : 'AI'}</span>
+                          <span className="sl-msg-role">{msgRole === 'user' ? 'Hoc sinh' : 'Tro ly'}</span>
                           <span className="sl-msg-turn">Turn {Math.floor(mIdx / 2) + 1}</span>
                           {!badOk && (
                             <span title={meta?.pedagogy_note || 'Có thể vi phạm Socratic'} style={{ marginLeft: 6, padding: '1px 7px', borderRadius: 99, background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'help' }}>
@@ -815,25 +878,25 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                             </span>
                           )}
                         </div>
-                        <div className={`sl-msg-bubble ${msg.role}`} style={{ fontSize: `${chatFontSize}px` }}><p>{msg.content}</p></div>
+                        <div className={`sl-msg-bubble ${msgRole}`} style={{ fontSize: `${chatFontSize}px` }}><textarea key={`${drawerSample.id}-${mIdx}`} className="sl-message-editor" defaultValue={getEditedMessageContent(drawerSample.id, mIdx, msg.content || '')} onBlur={(e) => setEditedMessageContent(drawerSample.id, mIdx, e.currentTarget.value)} disabled={isSampleLocked(drawerSample.id)} /></div>
                         {!badOk && meta?.pedagogy_note && (
                           <div style={{ margin: '2px 8px 4px', padding: '4px 10px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 11, fontStyle: 'italic' }}>
                             {meta.pedagogy_note}
                           </div>
                         )}
                         <div className="sl-msg-label-row">
-                          {msg.role === 'user' ? (
+                          {msgRole === 'user' ? (
                             <div className="sl-inline-label">
                               <span className="sl-label-tag">Ý định học sinh <small>Nhãn người gán</small></span>
-                              <div className="sl-multi-labels">{intentOptions.map((opt: string) => { const active=getMsgLabels(drawerSample.id,mIdx,'intent').includes(opt); return <button type="button" key={opt} className={active?'active':''} title={getLabelHelp(opt) || opt} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'intent',opt)} disabled={isSampleLocked(drawerSample.id)}><Check size={12}/>{getLabelText(opt)}</button>; })}</div>
+                              <div className="sl-multi-labels">{intentOptions.map((opt: string) => { const active=getEffectiveMsgLabels(drawerSample.id,mIdx,'intent',msgRole).includes(opt); return <button type="button" key={opt} className={active?'active':''} title={getLabelHelp(opt) || opt} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'intent',opt)} disabled={isSampleLocked(drawerSample.id)}><Check size={12}/>{getLabelText(opt)}</button>; })}</div>
                               <select multiple
-                                value={getMsgLabels(drawerSample.id, mIdx, 'intent')}
+                                value={getEffectiveMsgLabels(drawerSample.id, mIdx, 'intent', msgRole)}
                                 onChange={e => toggleMessageLabel(drawerSample.id, mIdx, 'intent', e.target.value)}
                                 className="sl-select sl-select-sm" hidden
                                 style={borderColor ? { borderColor } : undefined}
                                 disabled={isSampleLocked(drawerSample.id)}
                               >
-                                <option value="">-- Ch?n Intent --</option>
+                                <option value="">-- Chon y dinh --</option>
                                 {intentOptions.map((opt: string) => <option key={opt} value={opt}>{getLabelText(opt)}</option>)}
                               </select>
                               {confLabel && (
@@ -844,7 +907,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                             </div>
                           ) : (
                             <div className="sl-inline-label">
-                              <span className="sl-label-tag">Hành động của AI <small>Chọn Gold/Bad/Rewrite trước rồi mới chọn Action</small></span>
+                              <span className="sl-label-tag">Hành động của AI <small>Chọn Gold/Bad trước rồi mới chọn Action</small></span>
                               <div className="sl-response-quality">
                                 <div className="sl-action-group-title">Phân loại phản hồi AI</div>
                                 <div className="sl-quality-toggle">
@@ -854,7 +917,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                                       <button
                                         type="button"
                                         key={opt}
-                                        className={`${active ? 'active ' : ''}${opt === 'Bad' ? 'bad' : opt === 'Rewrite' ? 'rewrite' : 'good'}`}
+                                        className={`${active ? 'active ' : ''}${opt === 'Bad' ? 'bad' : 'good'}`}
                                         title={getLabelHelp(opt) || opt}
                                         onClick={() => setResponseQuality(drawerSample.id, mIdx, opt)}
                                         disabled={isSampleLocked(drawerSample.id)}
@@ -872,7 +935,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                                   return (
                                     <div className="sl-action-group" key={group.title}>
                                       <div className="sl-action-group-title">{group.title}</div>
-                                      <div className="sl-multi-labels">{values.map((opt: string) => { const active=getMsgLabels(drawerSample.id,mIdx,'action').includes(opt); const needQuality=!getMsgLabel(drawerSample.id,mIdx,'responseQuality'); return <button type="button" key={opt} className={active?'active':''} title={needQuality ? 'Cần phân loại Gold/Bad/Rewrite trước' : (getLabelHelp(opt) || opt)} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'action',opt)} disabled={isSampleLocked(drawerSample.id) || needQuality}><Check size={12}/>{getLabelText(opt)}</button>; })}</div>
+                                      <div className="sl-multi-labels">{values.map((opt: string) => { const active=getEffectiveMsgLabels(drawerSample.id,mIdx,'action',msgRole).includes(opt); const needQuality=!getMsgLabel(drawerSample.id,mIdx,'responseQuality'); return <button type="button" key={opt} className={active?'active':''} title={needQuality ? 'Cần phân loại Gold/Bad trước' : (getLabelHelp(opt) || opt)} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'action',opt)} disabled={isSampleLocked(drawerSample.id) || needQuality}><Check size={12}/>{getLabelText(opt)}</button>; })}</div>
                                     </div>
                                   );
                                 })}
@@ -880,19 +943,19 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                                   <div className="sl-action-group">
                                     <div className="sl-action-group-title">Nhãn khác</div>
                                     <div className="sl-multi-labels">
-                                      {actionOptions.filter((opt: string) => !ACTION_GROUPS.some(group => group.values.includes(opt))).map((opt: string) => { const active=getMsgLabels(drawerSample.id,mIdx,'action').includes(opt); const needQuality=!getMsgLabel(drawerSample.id,mIdx,'responseQuality'); return <button type="button" key={opt} className={active?'active':''} title={needQuality ? 'Cần phân loại Gold/Bad/Rewrite trước' : (getLabelHelp(opt) || opt)} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'action',opt)} disabled={isSampleLocked(drawerSample.id) || needQuality}><Check size={12}/>{getLabelText(opt)}</button>; })}
+                                      {actionOptions.filter((opt: string) => !ACTION_GROUPS.some(group => group.values.includes(opt))).map((opt: string) => { const active=getEffectiveMsgLabels(drawerSample.id,mIdx,'action',msgRole).includes(opt); const needQuality=!getMsgLabel(drawerSample.id,mIdx,'responseQuality'); return <button type="button" key={opt} className={active?'active':''} title={needQuality ? 'Cần phân loại Gold/Bad trước' : (getLabelHelp(opt) || opt)} onClick={()=>toggleMessageLabel(drawerSample.id,mIdx,'action',opt)} disabled={isSampleLocked(drawerSample.id) || needQuality}><Check size={12}/>{getLabelText(opt)}</button>; })}
                                     </div>
                                   </div>
                                 )}
                               </div>
                               <select multiple
-                                value={getMsgLabels(drawerSample.id, mIdx, 'action')}
+                                value={getEffectiveMsgLabels(drawerSample.id, mIdx, 'action', msgRole)}
                                 onChange={e => toggleMessageLabel(drawerSample.id, mIdx, 'action', e.target.value)}
                                 className="sl-select sl-select-sm" hidden
                                 style={borderColor ? { borderColor } : undefined}
                                 disabled={isSampleLocked(drawerSample.id)}
                               >
-                                <option value="">-- Ch?n Action --</option>
+                                <option value="">-- Chon hanh dong --</option>
                                 {actionOptions.map((opt: string) => <option key={opt} value={opt}>{getLabelText(opt)}</option>)}
                               </select>
                               {confLabel && (
@@ -909,7 +972,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                     {/* Tóm tắt AI Panel */}
                     {aiSummary[drawerSample.id] && (
                       <div style={{ margin: '12px 0 0', padding: '10px 14px', borderRadius: 10, background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 6 }}>🤖 Tóm tắt AI</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 6 }}>Tom tat AI</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {aiSummary[drawerSample.id].subject && <span style={{ padding: '2px 8px', borderRadius: 99, background: '#dbeafe', color: '#1d4ed8', fontSize: 12 }}>{aiSummary[drawerSample.id].subject}</span>}
                           {aiSummary[drawerSample.id].completion && <span style={{ padding: '2px 8px', borderRadius: 99, background: '#dcfce7', color: '#15803d', fontSize: 12 }}>â
