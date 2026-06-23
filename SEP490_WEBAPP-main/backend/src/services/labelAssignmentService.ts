@@ -19,6 +19,7 @@ export const HARD_LABELS = [
   'LITERATURE',
   'BIOLOGY',
   'OUT_OF_SCOPE',
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -30,6 +31,9 @@ export const HARD_LABELS = [
   'OFF_TOPIC',
   'NEXT_SECTION',
   'WAIT_READY',
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -41,6 +45,7 @@ export const HARD_LABELS = [
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ] as const;
 
 export type LabelScope = 'sample' | 'message';
@@ -883,7 +888,7 @@ function getLogicalMessagesForSample(sample: any): Array<{ messageIndex: number;
 
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -908,6 +913,7 @@ const DRAFT_ACTION_MAP: Record<string, string> = {
 };
 
 const USER_INTENT_SET = new Set([
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -922,6 +928,9 @@ const USER_INTENT_SET = new Set([
 ]);
 
 const ASSISTANT_ACTION_SET = new Set([
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -933,6 +942,7 @@ const ASSISTANT_ACTION_SET = new Set([
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ]);
 
 const SUBJECT_CODE_SET = new Set([

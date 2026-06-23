@@ -696,6 +696,7 @@ export class AssignmentController {
             : (versionDoc && (versionDoc as any).projectId ? String((versionDoc as any).projectId) : '');
           grouped[groupId] = {
             id: groupId,
+            datasetVersionId: vid,
             projectId: resolvedProjectId,
             projectName: versionDoc ? versionDoc.projectName : (sub.dataset || 'Project Dataset'),
             name: baseName !== 'Default Task' ? baseName : (versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0, 6)}...`),
@@ -1755,11 +1756,12 @@ function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
 // using the same valid/harmful action rules as the Quality stage, so the Staff Rule
 // Score is computed the moment a staff member submits.
 const RULE_INTENTS = [
-  'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
+  'ANSWER_ATTEMPT', 'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
   'REQUEST_SIMPLER', 'SKIP_EXERCISE', 'ENCOURAGE', 'OFF_TOPIC', 'NEXT_SECTION',
 ] as const;
 const RULE_VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
-  CORRECT: new Set(['PRAISING']),
+  ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
+  CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
   REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
   ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
@@ -1771,6 +1773,7 @@ const RULE_VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
 const RULE_HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
@@ -1868,7 +1871,7 @@ const SUBJECT_MAP: Record<string, string> = {
 
 const INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',

@@ -12,6 +12,7 @@ export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as co
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
 
 const INTENTS = [
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -28,7 +29,8 @@ const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
 const CRITICAL_INTENTS = new Set(['INCORRECT', 'REQUEST_HINT'] as const);
 
 const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
-  CORRECT: new Set(['PRAISING']),
+  ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
+  CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
   REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
   ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
@@ -40,6 +42,7 @@ const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
 const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
@@ -237,7 +240,7 @@ function toTenPointScore(raw: number): number {
 // Map human-readable draft labels to the standard codes used by the scoring rules.
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
