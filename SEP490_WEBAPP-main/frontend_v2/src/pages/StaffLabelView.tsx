@@ -10,7 +10,15 @@ import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../hooks/useToast';
 import ToastContainer from '../components/ToastContainer';
 
-const SUBJECT_OPTIONS = ['Toán', 'Vật lý', 'Hóa học', 'Sinh học', 'Tiếng Anh', 'Lịch sử', 'Địa lý', 'GDCD', 'Tin học', 'Liên môn', 'Chưa rõ', 'Math', 'Physics', 'Chemistry', 'Biology', 'English', 'History', 'Geography', 'Civics', 'IT', 'Multi-subject', 'Unclear'];
+const SUBJECT_OPTIONS = ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro'];
+const SUBJECT_LABEL_MAP: Record<string, string> = {
+  Math: 'Toan', Physics: 'Vat ly', Chemistry: 'Hoa hoc', Biology: 'Sinh hoc', English: 'Tieng Anh',
+  History: 'Lich su', Geography: 'Dia ly', Civics: 'GDCD', IT: 'Tin hoc',
+  'Multi-subject': 'Lien mon', Unclear: 'Chua ro',
+  'To?n': 'Toan', 'V?t l?': 'Vat ly', 'H?a h?c': 'Hoa hoc', 'Sinh h?c': 'Sinh hoc', 'Ti?ng Anh': 'Tieng Anh',
+  'L?ch s?': 'Lich su', '??a l?': 'Dia ly', 'Tin h?c': 'Tin hoc', 'Li?n m?n': 'Lien mon', 'Ch?a r?': 'Chua ro',
+};
+
 // Nhãn chuẩn Socratic, đồng bộ với autoLabelV2.service.ts
 const INTENT_OPTIONS = [
   'ANSWER_ATTEMPT', 'REQUEST_HINT', 'ASK_THEORY',
@@ -96,6 +104,7 @@ const normalizeOption = (value: unknown, allowed: string[], fallback = '') => {
   if (normalized === 'Medium') return allowed.includes('Rewrite') ? 'Rewrite' : fallback;
   return allowed.includes(normalized) ? normalized : fallback;
 };
+const normalizeSubject = (value: unknown) => SUBJECT_LABEL_MAP[String(value || '').trim()] || normalizeOption(value, SUBJECT_OPTIONS, 'Chua ro');
 const normalizeOptionList = (value: unknown, allowed: string[]) => {
   const raw = Array.isArray(value) ? value : value ? [value] : [];
   return Array.from(new Set(raw.map((item) => normalizeOption(item, allowed)).filter(Boolean)));
@@ -219,7 +228,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
         setAiSummary(prev => ({
           ...prev,
           [sampleId]: {
-            subject: suggestion.subject || '',
+            subject: normalizeSubject(suggestion.subject),
             completion: suggestion.completion || '',
             quality: suggestion.quality || '',
             quality_reason: suggestion.quality_reason || '',
@@ -227,7 +236,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
         }));
 
         const aiLabels: any = {
-          subject: normalizeOption(suggestion.subject, subjectOptions, ''),
+          subject: normalizeSubject(suggestion.subject),
           completion: normalizeOption(suggestion.completion, COMPLETION_OPTIONS, ''),
           quality: normalizeOption(suggestion.quality, QUALITY_OPTIONS, ''),
           status: 'reviewing',
@@ -241,8 +250,9 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
           suggestion.messages.forEach((msg: any, idx: number) => {
             const messageIndex = Number.isInteger(Number(msg.messageIndex)) ? Number(msg.messageIndex) : idx;
             aiLabels.messages[messageIndex] = {};
-            const sourceRole = sample.messages?.[messageIndex]?.role;
-            const intents = sourceRole === 'user' ? normalizeOptionList(msg.intent, INTENT_OPTIONS) : [];
+            const sourceRole = sample.messages?.[messageIndex]?.role || sample.messages?.[idx]?.role || msg.role;
+            const normalizedIntents = normalizeOptionList(msg.intent, INTENT_OPTIONS);
+            const intents = sourceRole === 'user' ? (normalizedIntents.length ? normalizedIntents : ['WAIT_READY']) : [];
             const normalizedActions = normalizeOptionList(msg.action, ACTION_OPTIONS);
             const actions = sourceRole === 'assistant' ? (normalizedActions.length ? normalizedActions : ['WAITING']) : [];
             const responseQuality = normalizeOption(msg.response_quality, RESPONSE_QUALITY_OPTIONS, msg.is_correct_pedagogy === false ? 'Bad' : 'Gold');
@@ -791,10 +801,8 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       const badOk = meta?.is_correct_pedagogy !== false;
                       const confColor = conf === null ? undefined
                         : conf >= 0.8 ? '#059669' : conf >= 0.6 ? '#d97706' : '#dc2626';
-                      const confLabel = conf === null ? null
-                        : conf >= 0.8 ? 'Cao' : conf >= 0.6 ? 'Trung bình' : 'Thấp';
-                      const borderColor = conf === null ? undefined
-                        : conf >= 0.8 ? '#a7f3d0' : conf >= 0.6 ? '#fde68a' : '#fecaca';
+                      const confLabel = null;
+                      const borderColor = undefined;
                       return (
                       <div key={mIdx} className={`sl-msg ${msg.role}`} style={!badOk ? { outline: '2px solid #fca5a5', borderRadius: 8 } : undefined}>
                         <div className="sl-msg-header">
