@@ -34,7 +34,7 @@ export const Stage6Finish: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
 
-  const [promptVersions, setPromptVersions] = useState<any[]>(PROMPT_VERSIONS);
+  const [promptVersions, setPromptVersions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRunningTrial, setIsRunningTrial] = useState(false);
@@ -71,11 +71,11 @@ export const Stage6Finish: React.FC = () => {
         }));
         setPromptVersions(formatted);
       } else {
-        setPromptVersions(PROMPT_VERSIONS);
+        setPromptVersions([]);
       }
     } catch (error) {
       console.error('Failed to fetch system prompts:', error);
-      setPromptVersions(PROMPT_VERSIONS);
+      setPromptVersions([]);
     } finally {
       setIsLoadingVersions(false);
     }
@@ -87,8 +87,8 @@ export const Stage6Finish: React.FC = () => {
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep6) return true;
-    if (num === 13 && promptText && promptText.trim() !== '') return true;
-    if (num === 14 && splitResult) return true;
+    if (num === 12 && promptText && promptText.trim() !== '') return true;
+    if (num === 13 && splitResult) return true;
     return false;
   };
 
@@ -605,8 +605,8 @@ export const Stage6Finish: React.FC = () => {
         ))}
       </div>
 
-      {/* Sub-step 13: System Prompt */}
-      {currentSubStep6 === 13 && (
+      {/* Sub-step 12: System Prompt */}
+      {currentSubStep6 === 12 && (
         <div className="s6-prompt">
           <div className="s6-prompt-title">
             <h3>System Prompt Versioning</h3>
@@ -804,8 +804,8 @@ export const Stage6Finish: React.FC = () => {
         </div>
       )}
 
-      {/* Sub-step 14: Split Guard */}
-      {currentSubStep6 === 14 && (
+      {/* Sub-step 13: Split Guard */}
+      {currentSubStep6 === 13 && (
         <div className="sg-container">
           {/* Header */}
           <div className="sg-header">
@@ -1134,8 +1134,8 @@ export const Stage6Finish: React.FC = () => {
         </div>
       )}
 
-      {/* Sub-step 15: Export */}
-      {currentSubStep6 === 15 && (
+      {/* Sub-step 14: Export */}
+      {currentSubStep6 === 14 && (
         <div className="ex-container">
           {/* Dataset Preview */}
           <div className="ex-preview-card">
@@ -1367,7 +1367,7 @@ export const Stage6Finish: React.FC = () => {
       {/* Action Buttons */}
       <div className="dataprep-actions-row">
         <button className="dataprep-btn-back" onClick={() => {
-          if (currentSubStep6 > 13) {
+          if (currentSubStep6 > 12) {
             setCurrentSubStep6(currentSubStep6 - 1);
           } else {
             setCurrentStage(4);
@@ -1380,7 +1380,7 @@ export const Stage6Finish: React.FC = () => {
           window.location.reload();
         }}><RotateCcw size={14} /> Reset & Upload New</button>
         <button className="dataprep-btn-next" onClick={() => {
-          if (currentSubStep6 < 15) {
+          if (currentSubStep6 < 14) {
             setCurrentSubStep6(currentSubStep6 + 1);
           }
         }}>

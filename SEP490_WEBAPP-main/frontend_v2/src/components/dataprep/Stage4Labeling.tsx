@@ -2626,9 +2626,9 @@ export const Stage4Labeling: React.FC = () => {
 
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => { setCurrentSubStep6(13); setCurrentStage(5); }}
+                  <button onClick={() => { setCurrentSubStep6(12); setCurrentStage(5); }}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: System Prompt &rarr;
+                    Next: Stage 5 &rarr;
                   </button>
                 </div>
 
