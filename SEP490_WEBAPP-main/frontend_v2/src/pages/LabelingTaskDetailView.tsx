@@ -193,6 +193,36 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
     setShowConflictModal(null);
   };
 
+  const renderSubjectSourceBadge = (value: string | null | undefined, source: 'ai' | 'human' | 'default') => {
+    if (!value) return <span className="td-label-empty">—</span>;
+    const config = {
+      ai: { label: 'AI', bg: '#eef2ff', color: '#3730a3', border: '#c7d2fe' },
+      human: { label: 'Human', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+      default: { label: 'Default', bg: '#f8fafc', color: '#475569', border: '#cbd5e1' },
+    }[source];
+    return (
+      <span
+        title={`${config.label}: ${value}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          maxWidth: '100%',
+          padding: '4px 9px',
+          borderRadius: 999,
+          background: config.bg,
+          color: config.color,
+          border: `1px solid ${config.border}`,
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ fontSize: 10, opacity: 0.75 }}>{config.label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      </span>
+    );
+  };
+
   // Open staff sample list modal
   const openStaffSamples = (staff: any) => {
     // Filter samples assigned to this staff
@@ -241,56 +271,56 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       <ToastContainer toasts={toasts} />
       <div className="td-container new-layout">
       <div className="td-layout-wrapper">
-        
-        {/* Left Sidebar: Navigation & Batches */}
-        <div className="td-left-sidebar">
-          <div className="td-back-header">
-            <button className="td-back-btn" onClick={onBack}>
-              <ArrowLeft size={16} /> Quay lại Quản lý
-            </button>
-          </div>
 
-          <div className="td-sidebar-title">
-            <Database size={16} />
+        {/* Top Toolbar: Navigation & Batch selector */}
+        <div className="td-topbar">
+          <button className="td-back-btn" onClick={onBack}>
+            <ArrowLeft size={16} /> Quay lại Quản lý
+          </button>
+
+          <div className="td-topbar-divider" />
+
+          <div className="td-topbar-title">
+            <Database size={18} />
             <div className="td-sidebar-title-text">
               <h3>{task.dataset || 'Dataset'}</h3>
               <span>{task.version || ''}</span>
             </div>
           </div>
 
-          <div className="td-sidebar-menu">
-            <div 
-              className={`td-menu-item ${!selectedBatchId ? 'active' : ''}`}
+          <div className="td-topbar-spacer" />
+
+          <div className="td-topbar-batch">
+            <button
+              className={`td-topbar-overview ${!selectedBatchId ? 'active' : ''}`}
               onClick={() => setSelectedBatchId(null)}
             >
-              <Activity size={16} /> Tổng quan Task
-            </div>
+              <Activity size={15} /> Tổng quan Task
+            </button>
 
-            <div className="td-menu-section-title">
-              DANH SÁCH BATCH ({batches.length})
-            </div>
-
-            {batches.map(b => (
-              <div 
-                key={b.id} 
-                className={`td-menu-item batch-item ${selectedBatchId === b.id ? 'active' : ''}`}
-                onClick={() => setSelectedBatchId(b.id)}
+            <div className="td-batch-select-wrap">
+              <Layers size={15} />
+              <select
+                className="td-batch-select"
+                value={selectedBatchId || ''}
+                onChange={e => setSelectedBatchId(e.target.value || null)}
               >
-                <Layers size={16} />
-                <div className="td-batch-item-info">
-                  <span className="td-batch-name">{b.name}</span>
-                  <span className="td-batch-desc">
-                    {b.batchStart != null
-                      ? `#${b.batchStart + 1} – #${(b.batchEnd != null ? b.batchEnd : b.batchStart + b.totalSamples - 1) + 1}`
-                      : `${b.totalSamples} samples`}
-                  </span>
-                </div>
-              </div>
-            ))}
+                <option value="">Tất cả batch ({batches.length})</option>
+                {batches.map(b => {
+                  const range = b.batchStart != null
+                    ? `#${b.batchStart + 1} – #${(b.batchEnd != null ? b.batchEnd : b.batchStart + b.totalSamples - 1) + 1}`
+                    : `${b.totalSamples} samples`;
+                  return (
+                    <option key={b.id} value={b.id}>{b.name} ({range})</option>
+                  );
+                })}
+              </select>
+              <ChevronRight size={14} className="td-batch-select-caret" />
+            </div>
           </div>
         </div>
 
-        {/* Right Content: Dashboard */}
+        {/* Main Content: Dashboard */}
         <div className="td-main-content">
           <div className="td-content-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -589,6 +619,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                       <tr>
                         <th style={{ width: '60px' }}>#</th>
                         <th>Preview nội dung</th>
+                        <th style={{ width: '180px' }}>Subject label with AI</th>
+                        <th style={{ width: '200px' }}>Subject label with human</th>
                         <th style={{ width: '160px' }}>Annotators</th>
                         <th style={{ width: '80px' }}>Xem</th>
                       </tr>
@@ -600,6 +632,12 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                         <tr key={s.id}>
                           <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
                           <td className="td-preview-cell" style={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px' }}>{s.preview}</td>
+                          <td>
+                            {renderSubjectSourceBadge(s.subjectLabelWithAI || s.subjectLabelDefault, s.subjectLabelWithAI ? 'ai' : 'default')}
+                          </td>
+                          <td>
+                            {renderSubjectSourceBadge(s.subjectLabelWithHuman, 'human')}
+                          </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
                               {staffList.map((staff: any, idx: number) => {
@@ -868,31 +906,77 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       </div>
 
       {/* ===== MODAL: CONFLICT RESOLUTION ===== */}
-      {showConflictModal && (
-        <div className="td-modal-overlay">
-          <div className="td-modal">
+      {showConflictModal && (() => {
+        const annotatorLabels = showConflictModal.annotatorLabels?.length
+          ? showConflictModal.annotatorLabels
+          : [showConflictModal.labelA, showConflictModal.labelB].filter(Boolean);
+        const msgs = showConflictModal.messages || [];
+        return (
+        <div className="td-modal-overlay" onClick={() => setShowConflictModal(null)}>
+          <div className="td-modal td-modal-large" onClick={e => e.stopPropagation()}>
             <div className="td-modal-header">
               <h3>Phân xử Xung đột - Sample #{showConflictModal.sampleId}</h3>
               <button className="td-modal-close" onClick={() => setShowConflictModal(null)}><X size={20}/></button>
             </div>
-            <div className="td-modal-body">
+            <div className="td-modal-body td-modal-body-scroll">
+              {/* Nội dung hội thoại để đối chiếu */}
+              <div className="td-conflict-section-label"><MessageSquare size={15} /> Nội dung dữ liệu</div>
+              {msgs.length > 0 ? (
+                <div className="td-chat-preview">
+                  {msgs.map((m: any, i: number) => {
+                    const isUser = String(m.role).toLowerCase() === 'user';
+                    return (
+                      <div key={i} className={`td-chat-msg ${isUser ? 'user' : 'bot'}`}>
+                        <div className="td-chat-role">{isUser ? 'Người dùng' : 'AI Assistant'}</div>
+                        <div>{m.content || m.text || ''}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="td-chat-preview"><div style={{ color: '#94a3b8', fontSize: 13 }}>{showConflictModal.preview || 'Không có nội dung'}</div></div>
+              )}
+
+              {/* So sánh nhãn của từng annotator */}
+              <div className="td-conflict-section-label"><Users size={15} /> Kết quả gán nhãn của từng người ({annotatorLabels.length})</div>
               <div className="td-decide-section">
-                <p><strong>Chọn nhãn đúng:</strong></p>
+                <p><strong>Chọn nhãn đúng để giữ lại:</strong></p>
                 <div className="td-decide-options">
-                  <button className="td-decide-btn" onClick={() => handleResolveConflict(showConflictModal.key)}>
-                    <div className="td-decide-title">Giữ nhãn của {showConflictModal.labelA.subject}</div>
-                    <div className="td-tag subject">{showConflictModal.labelA.quality}</div>
-                  </button>
-                  <button className="td-decide-btn" onClick={() => handleResolveConflict(showConflictModal.key)}>
-                    <div className="td-decide-title">Giữ nhãn của {showConflictModal.labelB.subject}</div>
-                    <div className="td-tag subject">{showConflictModal.labelB.quality}</div>
-                  </button>
+                  {annotatorLabels.map((al: any, i: number) => {
+                    const detail = al?.detail || {};
+                    const hasDetail = detail.subject || detail.quality || detail.completion;
+                    return (
+                      <button key={i} className="td-decide-btn" onClick={() => handleResolveConflict(showConflictModal.key)}>
+                        <div className="td-decide-annotator">
+                          <div className="al-avatar xs">{(al?.annotatorName || al?.subject || 'U').slice(0, 1).toUpperCase()}</div>
+                          <div>
+                            <div className="td-decide-title">{al?.annotatorName || al?.subject}</div>
+                            {al?.annotatorEmail && <div className="td-decide-email">{al.annotatorEmail}</div>}
+                          </div>
+                        </div>
+                        <div className="td-decide-labels">
+                          {hasDetail ? (
+                            <>
+                              {detail.subject && <div className="td-decide-row"><span className="td-decide-key">Chủ đề</span><span className="td-tag subject">{detail.subject}</span></div>}
+                              {detail.quality && <div className="td-decide-row"><span className="td-decide-key">Chất lượng</span><span className="td-tag quality">{detail.quality}</span></div>}
+                              {detail.completion && <div className="td-decide-row"><span className="td-decide-key">Hoàn chỉnh</span><span className="td-tag">{detail.completion}</span></div>}
+                              {detail.note && <div className="td-decide-note">“{detail.note}”</div>}
+                            </>
+                          ) : (
+                            <span className="td-tag subject">{al?.quality || al?.labelName || 'Chưa có nhãn'}</span>
+                          )}
+                          {al?.isComplete === false && <div className="td-decide-draft">Nháp (chưa hoàn tất)</div>}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ===== MODAL: STAFF SAMPLE LIST (Option B) ===== */}
       {staffSamplesModal && (

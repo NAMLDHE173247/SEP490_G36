@@ -14,6 +14,7 @@ interface MsgLabel { name: string; type: string; role: string; pedagogy_note?: s
 interface SplitViewData {
   original: { messages: Array<{ role: string; content: string }> };
   labeled: {
+    sampleMeta?: { subject?: string; completion?: string; quality?: string; flags?: string[]; note?: string };
     sampleLabels: Array<{ name: string; type: string }>;
     messageLabels: Record<number, MsgLabel[]>;
     rewrites: Record<number, { originalText: string; proposedText: string; approvedText: string; editReason: string; editType: string }>;
@@ -86,20 +87,24 @@ export default function SplitViewModal({ isOpen, onClose, sampleId, staffId, sta
 
   const messages = data?.original?.messages || [];
   const labeled = data?.labeled;
+  const sampleMeta = labeled?.sampleMeta || {};
   const sampleLabels = labeled?.sampleLabels || [];
   const messageLabels = labeled?.messageLabels || {};
   const rewrites = labeled?.rewrites || {};
 
-  const convMeta: Record<string, string> = {};
+  const convMeta: Record<string, any> = { ...sampleMeta };
   sampleLabels.forEach(lbl => {
     lbl.name.split('·').map((p: string) => p.trim()).forEach((part: string) => {
       if (part.startsWith('Chất lượng:')) convMeta.quality = part.replace('Chất lượng:', '').trim();
       else if (part.startsWith('Hoàn thành:')) convMeta.completion = part.replace('Hoàn thành:', '').trim();
-      else if (part) convMeta.subject = part;
+      else if (part && !convMeta.subject) convMeta.subject = part;
     });
   });
 
   const qualityColor: Record<string, any> = {
+    Gold: { bg: '#dcfce7', color: '#166534', border: '#a7f3d0' },
+    Rewrite: { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
+    Bad: { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
     Good: { bg: '#dcfce7', color: '#166534', border: '#a7f3d0' },
     Medium: { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' },
     Poor: { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
@@ -110,7 +115,8 @@ export default function SplitViewModal({ isOpen, onClose, sampleId, staffId, sta
     Abandoned: { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5' },
   };
 
-  const hasAnyLabels = sampleLabels.length > 0 || Object.keys(messageLabels).length > 0;
+  const hasConversationLabels = Boolean(convMeta.subject || convMeta.quality || convMeta.completion || (Array.isArray(convMeta.flags) && convMeta.flags.length) || convMeta.note);
+  const hasAnyLabels = hasConversationLabels || sampleLabels.length > 0 || Object.keys(messageLabels).length > 0;
   const totalWarnings = Object.values(messageLabels).flat().filter((l: any) => l.name.includes('⚠️')).length;
 
   const spinStyle = `@keyframes sv-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } .sv-spinning { animation: sv-spin 1s linear infinite; }`;
@@ -167,6 +173,12 @@ export default function SplitViewModal({ isOpen, onClose, sampleId, staffId, sta
                 {convMeta.completion && (() => { const s = completionColor[convMeta.completion] || { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' }; return (
                   <span style={{ padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 700, background: s.bg, color: s.color, border: '1px solid ' + s.border }}>✅ {convMeta.completion}</span>
                 ); })()}
+                {Array.isArray(convMeta.flags) && convMeta.flags.map((flag: string) => (
+                  <span key={flag} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 700, background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}>Flag: {flag}</span>
+                ))}
+                {convMeta.note && (
+                  <span style={{ padding: '3px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1' }}>Note: {convMeta.note}</span>
+                )}
                 {totalWarnings > 0 && (
                   <span style={{ marginLeft: 'auto', padding: '3px 10px', borderRadius: 99, fontSize: 12, fontWeight: 700, background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <AlertTriangle size={11} /> {totalWarnings} vi phạm Socratic

@@ -1734,8 +1734,11 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const targetScope = req.body?.targetScope === 'message' ? 'message' : 'sample';
       let messageIndex: number | undefined;
       let messageRole: 'user' | 'assistant' | undefined;
+      const parsedMessageIndex = Number(req.body?.messageIndex);
+      if (Number.isInteger(parsedMessageIndex) && parsedMessageIndex >= 0) {
+        messageIndex = parsedMessageIndex;
+      }
       if (targetScope === 'message') {
-        const parsedMessageIndex = Number(req.body?.messageIndex);
         const parsedMessageRole = req.body?.messageRole === 'user' || req.body?.messageRole === 'assistant'
           ? req.body.messageRole
           : undefined;
@@ -1743,7 +1746,6 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           res.status(400).json({ error: 'message target requires valid messageIndex and messageRole.' });
           return;
         }
-        messageIndex = parsedMessageIndex;
         messageRole = parsedMessageRole;
       }
 
@@ -1752,7 +1754,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         datasetVersionId: id,
         sampleId,
         targetScope,
-        messageIndex: targetScope === 'message' ? messageIndex : undefined,
+        messageIndex,
         messageRole,
         finalLabels,
         note: String(req.body?.note || ''),
@@ -1794,8 +1796,11 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const targetScope = req.body?.targetScope === 'message' ? 'message' : 'sample';
       let messageIndex: number | undefined;
       let messageRole: 'user' | 'assistant' | undefined;
+      const parsedMessageIndex = Number(req.body?.messageIndex);
+      if (Number.isInteger(parsedMessageIndex) && parsedMessageIndex >= 0) {
+        messageIndex = parsedMessageIndex;
+      }
       if (targetScope === 'message') {
-        const parsedMessageIndex = Number(req.body?.messageIndex);
         const parsedMessageRole = req.body?.messageRole === 'user' || req.body?.messageRole === 'assistant'
           ? req.body.messageRole
           : undefined;
@@ -1803,7 +1808,6 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           res.status(400).json({ error: 'message target requires valid messageIndex and messageRole.' });
           return;
         }
-        messageIndex = parsedMessageIndex;
         messageRole = parsedMessageRole;
       }
 
@@ -1811,7 +1815,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         datasetVersionId: id,
         sampleId,
         targetScope,
-        messageIndex: targetScope === 'message' ? messageIndex : undefined,
+        messageIndex,
         messageRole,
         publishedBy: ownerId,
       });

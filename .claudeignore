@@ -1,6 +1,0 @@
-bin/
-obj/
-build/
-.dart_tool/
-.vs/
-Migrations/

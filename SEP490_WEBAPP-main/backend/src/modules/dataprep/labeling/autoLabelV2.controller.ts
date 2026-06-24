@@ -89,7 +89,7 @@ function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: '
   return {
     subject: 'Unclear',
     completion: 'Completed',
-    quality: 'Medium',
+    quality: 'Rewrite',
     quality_reason: 'Không thể kết nối AI — nhãn được gợi ý tự động bằng quy tắc từ khóa, độ tin cậy thấp.',
     messages: messages.map((message) => {
       const text = message.content.toLowerCase();
@@ -99,7 +99,7 @@ function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: '
         let confidence = 0.45;
 
         if (/bài tập|giải|tính|tìm|solve|exercise/.test(text)) {
-          intent = 'INCORRECT'; confidence = 0.5;
+          intent = 'ANSWER_ATTEMPT'; confidence = 0.5;
         } else if (/đúng không|phải không|em hiểu|vậy là|confirm/.test(text)) {
           intent = 'CONFIRM_UNDERSTANDING'; confidence = 0.55;
         } else if (/công thức|formula|quy tắc|định lý|định nghĩa/.test(text)) {
@@ -136,13 +136,13 @@ function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: '
       } else if (/công thức|formula|áp dụng|định lý|định nghĩa/.test(text)) {
         action = 'CONCEPT_CLARIFY'; confidence = 0.6;
       } else if (/sai|chưa đúng|nhầm|lỗi|incorrect/.test(text) && /\?/.test(text)) {
-        action = 'SCAFFOLDING'; confidence = 0.6;
+        action = 'IDENTIFY_INCORRECT_ANSWER'; confidence = 0.6;
       } else if (/sai|chưa đúng|nhầm/.test(text) && !/\?/.test(text)) {
-        action = 'DIRECT_ANSWER'; confidence = 0.5;
+        action = 'CORRECT_MISTAKE'; confidence = 0.5;
         is_correct_pedagogy = false;
         pedagogy_note = 'Gia sư có thể đang chỉ ra lỗi mà không đặt câu hỏi gợi mở — cần xem xét lại.';
       } else if (/giỏi|tốt lắm|đúng rồi|chính xác|hay|great|cố lên/.test(text)) {
-        action = 'PRAISING'; confidence = 0.7;
+        action = 'CONFIRM_CORRECT_ANSWER'; confidence = 0.7;
       } else if (/tóm lại|tổng kết|summary|vậy ta có/.test(text)) {
         action = 'TRANSITIONING'; confidence = 0.6;
       } else if (/bước|step|đầu tiên|tiếp theo|thứ nhất/.test(text)) {
@@ -159,7 +159,14 @@ function buildFallbackSuggestion(messages: Array<{ messageIndex: number; role: '
         pedagogy_note = 'Phản hồi không có câu hỏi gợi mở — khả năng gia sư đang trả lời trực tiếp (cần kiểm tra lại).';
       }
 
-      return { messageIndex: message.messageIndex, action, confidence, is_correct_pedagogy, pedagogy_note };
+      return {
+        messageIndex: message.messageIndex,
+        response_quality: is_correct_pedagogy ? 'Gold' : 'Bad',
+        action,
+        confidence,
+        is_correct_pedagogy,
+        pedagogy_note,
+      };
     }),
   };
 }

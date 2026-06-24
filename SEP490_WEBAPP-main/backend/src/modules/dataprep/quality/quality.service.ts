@@ -12,6 +12,7 @@ export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as co
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
 
 const INTENTS = [
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -28,7 +29,8 @@ const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
 const CRITICAL_INTENTS = new Set(['INCORRECT', 'REQUEST_HINT'] as const);
 
 const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
-  CORRECT: new Set(['PRAISING']),
+  ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
+  CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
   REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
   ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
@@ -40,6 +42,7 @@ const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
 const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
@@ -86,6 +89,8 @@ export type QualityItem = {
   note?: string;
   adjudicatedBy?: string;
   adjudicatedAt?: string;
+  errorMessageIndex?: number | null;
+  conflictReason?: string;
   turnPairs: Array<{
     userMessageIndex: number;
     assistantMessageIndex: number;
@@ -237,7 +242,7 @@ function toTenPointScore(raw: number): number {
 // Map human-readable draft labels to the standard codes used by the scoring rules.
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -512,6 +517,35 @@ export class QualityService {
         });
       }
 
+      let errorMessageIndex: number | null = null;
+      const mismatchReasons: string[] = [];
+
+      for (const turn of turnPairs) {
+        if (!turn.matched) {
+          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Student intent '${turn.userLabels.join(',')}' and Assistant action '${turn.assistantLabels.join(',')}' are mismatched.`);
+          if (errorMessageIndex === null) {
+            errorMessageIndex = turn.assistantMessageIndex;
+          }
+        } else if (turn.turnScore < 0) {
+          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Harmful action detected.`);
+          if (errorMessageIndex === null) {
+            errorMessageIndex = turn.assistantMessageIndex;
+          }
+        }
+      }
+
+      if (errorMessageIndex === null) {
+        // Fallback to the last assistant message
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'assistant') {
+            errorMessageIndex = messages[i].messageIndex;
+            break;
+          }
+        }
+      }
+
+      const conflictReason = mismatchReasons.length > 0 ? mismatchReasons.join('; ') : undefined;
+
       const sid = String(item._id);
       const adj = adjudicationBySample.get(sid);
       const sReviews = reviewsBySample.get(sid) || [];
@@ -574,6 +608,8 @@ export class QualityService {
           note,
           adjudicatedBy,
           adjudicatedAt,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
         });
         continue;
@@ -597,6 +633,8 @@ export class QualityService {
           reviewStatus: 'pending',
           reviewCount: 0,
           conflict: false,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
         });
         continue;
@@ -619,6 +657,8 @@ export class QualityService {
           reviewStatus: 'pending',
           reviewCount: 0,
           conflict: false,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
         });
         continue;
@@ -641,6 +681,8 @@ export class QualityService {
         reviewStatus: 'pending',
         reviewCount: 0,
         conflict: false,
+        errorMessageIndex,
+        conflictReason,
         turnPairs,
       });
     }
@@ -818,6 +860,7 @@ export class QualityService {
       name: 'REJECT',
       type: 'hard' as const,
       targetScope: 'sample' as const,
+      source: 'system' as const,
       targetTextSnapshot: QUALITY_AUTO_REJECT_MARKER,
       createdBy: ownerOid,
     }));

@@ -108,16 +108,16 @@ function useStaffTasks() {
 }
 
 const STATUS_CONFIG = {
-  pending: { label: 'Cho thuc hien', icon: <Clock size={14} />, className: 'st-status-pending' },
-  in_progress: { label: 'Dang thuc hien', icon: <AlertCircle size={14} />, className: 'st-status-progress' },
-  submitted: { label: 'Da Submit', icon: <CheckCircle size={14} />, className: 'st-status-submitted' },
+  pending: { label: 'Chờ thực hiện', icon: <Clock size={14} />, className: 'st-status-pending' },
+  in_progress: { label: 'Đang thực hiện', icon: <AlertCircle size={14} />, className: 'st-status-progress' },
+  submitted: { label: 'Đã nộp', icon: <CheckCircle size={14} />, className: 'st-status-submitted' },
 };
 
 const PRIORITY_CONFIG = {
-  urgent: { label: 'Urgent', className: 'st-pri-urgent' },
-  high: { label: 'High', className: 'st-pri-high' },
-  medium: { label: 'Medium', className: 'st-pri-medium' },
-  low: { label: 'Low', className: 'st-pri-low' },
+  urgent: { label: 'Khẩn cấp', className: 'st-pri-urgent' },
+  high: { label: 'Cao', className: 'st-pri-high' },
+  medium: { label: 'Trung bình', className: 'st-pri-medium' },
+  low: { label: 'Thấp', className: 'st-pri-low' },
 };
 
 function StaffTasksView({ onOpenTask }) {
@@ -134,11 +134,11 @@ function StaffTasksView({ onOpenTask }) {
   const [isImportingRewrite, setIsImportingRewrite] = useState(false);
   const rewriteFileRef = React.useRef<HTMLInputElement>(null);
   const rewriteContextOptions = [
-    { value: 'n-2:n+2', label: 'n-2 to n+2' },
-    { value: 'n-1:n+1', label: 'n-1 to n+1' },
-    { value: 'n-1:n', label: 'n-1 to n' },
-    { value: 'target-only', label: 'Target only' },
-    { value: 'full', label: 'Full conversation' },
+    { value: 'n-2:n+2', label: 'n-2 đến n+2' },
+    { value: 'n-1:n+1', label: 'n-1 đến n+1' },
+    { value: 'n-1:n', label: 'n-1 đến n' },
+    { value: 'target-only', label: 'Chỉ mục tiêu' },
+    { value: 'full', label: 'Toàn bộ cuộc hội thoại' },
   ];
 
   const rewriteTaskCards = rewriteTasks.map((task: any) => ({
@@ -178,7 +178,7 @@ function StaffTasksView({ onOpenTask }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Rewrite Tasks');
     XLSX.writeFile(wb, `rewrite-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setOfflineMessage(`Đã tải ${editable.length} task rewrite (Excel).`);
+    setOfflineMessage(`Đã tải xuống ${editable.length} task viết lại (Excel).`);
   };
 
   const importRewriteBatch = async (file: File) => {
@@ -204,7 +204,7 @@ function StaffTasksView({ onOpenTask }) {
       }));
       
       const succeeded = results.filter((r: any) => r.status === 'fulfilled').length;
-      setOfflineMessage(`Đã nạp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
+      setOfflineMessage(`Đã nạp ${succeeded}/${valid.length} bản viết lại${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
     } catch (error: any) { 
       setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); 
     } finally { 
@@ -265,7 +265,7 @@ function StaffTasksView({ onOpenTask }) {
       }
     }
     const firstUser = messages.find((message: any) => message?.role === 'user' && String(message?.content || '').trim());
-    return firstUser?.content || 'No student request found in context.';
+    return firstUser?.content || 'Không tìm thấy yêu cầu của học sinh trong ngữ cảnh.';
   };
 
   const getVisibleRewriteMessages = (task: any) => {
@@ -298,13 +298,13 @@ function StaffTasksView({ onOpenTask }) {
             <ClipboardList size={24} />
           </div>
           <div>
-            <h2>Task cua toi</h2>
-            <p className="st-subtitle">Xem va thuc hien cac task duoc giao</p>
+            <h2>Task của tôi</h2>
+            <p className="st-subtitle">Xem và thực hiện các task được giao</p>
           </div>
         </div>
         <button className="st-btn-refresh" onClick={refreshNow}>
           <RefreshCw size={16} />
-          Lam moi
+          Làm mới
         </button>
       </div>
 
@@ -314,13 +314,13 @@ function StaffTasksView({ onOpenTask }) {
           className={`st-tab-btn ${taskType === 'labeling' ? 'active labeling' : ''}`}
           onClick={() => setTaskType('labeling')}
         >
-          Task Gan nhan
+          Task gán nhãn
         </button>
         <button
           className={`st-tab-btn ${taskType === 'rewrite' ? 'active crosscheck' : ''}`}
           onClick={() => setTaskType('rewrite')}
         >
-          Task Rewrite
+          Task viết lại
         </button>
       </div>
 
@@ -330,21 +330,21 @@ function StaffTasksView({ onOpenTask }) {
           <div className="st-stat-icon total"><ClipboardList size={20} /></div>
           <div className="st-stat-info">
             <span className="st-stat-value">{stats.total}</span>
-            <span className="st-stat-label">Tong Task</span>
+            <span className="st-stat-label">Tổng số task</span>
           </div>
         </div>
         <div className="st-stat-card">
           <div className="st-stat-icon progress"><AlertCircle size={20} /></div>
           <div className="st-stat-info">
             <span className="st-stat-value">{stats.inProgress}</span>
-            <span className="st-stat-label">Dang thuc hien</span>
+            <span className="st-stat-label">Đang thực hiện</span>
           </div>
         </div>
         <div className="st-stat-card">
           <div className="st-stat-icon submitted"><CheckCircle size={20} /></div>
           <div className="st-stat-info">
             <span className="st-stat-value">{stats.submitted}</span>
-            <span className="st-stat-label">Da Submit</span>
+            <span className="st-stat-label">Đã nộp</span>
           </div>
         </div>
       </div>
@@ -359,7 +359,7 @@ function StaffTasksView({ onOpenTask }) {
               className={`st-filter-btn ${statusFilter === key ? 'active' : ''}`}
               onClick={() => setStatusFilter(key)}
             >
-              {key === 'all' ? 'Tat ca' : STATUS_CONFIG[key]?.label}
+              {key === 'all' ? 'Tất cả' : STATUS_CONFIG[key]?.label}
             </button>
           ))}
         </div>
@@ -378,9 +378,9 @@ function StaffTasksView({ onOpenTask }) {
         <div className="st-sort-wrapper">
           <ArrowUpDown size={14} />
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="st-sort-select">
-            <option value="deadline">Deadline gan nhat</option>
-            <option value="priority">Uu tien cao nhat</option>
-            <option value="newest">Moi nhat</option>
+            <option value="deadline">Hạn chót gần nhất</option>
+            <option value="priority">Ưu tiên cao nhất</option>
+            <option value="newest">Mới nhất</option>
           </select>
         </div>
       </div>
@@ -390,7 +390,7 @@ function StaffTasksView({ onOpenTask }) {
         {filtered.length === 0 && (
           <div className="st-empty">
             <ClipboardList size={48} />
-            <p>Khong co task nao.</p>
+            <p>Không có task nào.</p>
           </div>
         )}
 
@@ -421,7 +421,7 @@ function StaffTasksView({ onOpenTask }) {
                 {task.taskType === 'rewrite' && task.rewriteTask?.reason && task.rewriteTask.reason !== 'None' && (
                   <div className="st-meta-row st-issue-row">
                     <AlertCircle size={13} />
-                    <span>Co loi: <strong>{task.rewriteTask.reason}</strong></span>
+                    <span>Có lỗi: <strong>{task.rewriteTask.reason}</strong></span>
                   </div>
                 )}
                 {task.taskType === 'rewrite' && (
@@ -439,9 +439,9 @@ function StaffTasksView({ onOpenTask }) {
                 </div>
                 <div className={`st-meta-row ${overdue ? 'deadline-overdue' : nearDl ? 'deadline-near' : ''}`}>
                   <Calendar size={13} />
-                  <span>Deadline: <strong>{task.deadline || 'No deadline'}</strong></span>
-                  {overdue && <span className="st-overdue-tag">Qua han!</span>}
-                  {nearDl && <span className="st-near-tag">Sap het han</span>}
+                  <span>Hạn chót: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  {overdue && <span className="st-overdue-tag">Quá hạn!</span>}
+                  {nearDl && <span className="st-near-tag">Sắp hết hạn</span>}
                 </div>
                 <div className="st-meta-row">
                   <Users size={13} />
@@ -452,7 +452,7 @@ function StaffTasksView({ onOpenTask }) {
               {/* Progress */}
               <div className="st-card-progress">
                 <div className="st-progress-header">
-                  <span>Tien do</span>
+                  <span>Tiến độ</span>
                   <span className="st-progress-num">{task.labeledCount}/{task.totalSamples} ({progress}%)</span>
                 </div>
                 <div className="st-progress-bar">
@@ -461,7 +461,7 @@ function StaffTasksView({ onOpenTask }) {
               </div>
 
               {task.disableAi && (
-                <div className="st-ai-disabled-badge">AI suggestions disabled</div>
+                <div className="st-ai-disabled-badge">Đề xuất AI bị vô hiệu hóa</div>
               )}
 
               {task.taskType === 'rewrite' ? (
@@ -475,7 +475,7 @@ function StaffTasksView({ onOpenTask }) {
                   }}
                 >
                   <ChevronRight size={16} />
-                  {task.status === 'submitted' ? 'Da Submit' : 'Rewrite AI response'}
+                  {task.status === 'submitted' ? 'Đã nộp' : 'Viết lại câu trả lời AI'}
                 </button>
               ) : (
                 <button
@@ -484,7 +484,7 @@ function StaffTasksView({ onOpenTask }) {
                   disabled={task.status === 'submitted'}
                 >
                   <ChevronRight size={16} />
-                  {task.status === 'submitted' ? 'Da Submit' : task.status === 'pending' ? 'Bat dau Task' : 'Tiep tuc gan nhan'}
+                  {task.status === 'submitted' ? 'Đã nộp' : task.status === 'pending' ? 'Bắt đầu task' : 'Tiếp tục gán nhãn'}
                 </button>
               )}
             </div>
@@ -497,7 +497,7 @@ function StaffTasksView({ onOpenTask }) {
           <div className="st-rewrite-modal" onClick={(e) => e.stopPropagation()}>
             <div className="st-rewrite-modal-header">
               <div>
-                <h3>Rewrite target AI response</h3>
+                <h3>Viết lại câu trả lời AI mục tiêu</h3>
                 <p>
                   {rewriteDraftTask.name}
                   {rewriteDraftTask.rewriteTask?.targetMessageIndex != null ? ` · turn #${Number(rewriteDraftTask.rewriteTask.targetMessageIndex) + 1}` : ''}
@@ -509,55 +509,55 @@ function StaffTasksView({ onOpenTask }) {
             {rewriteDraftTask.rewriteTask?.reason && rewriteDraftTask.rewriteTask.reason !== 'None' && (
               <div className="st-rewrite-issue">
                 <AlertCircle size={15} />
-                <span>Co loi: {rewriteDraftTask.rewriteTask.reason}</span>
+                <span>Có lỗi: {rewriteDraftTask.rewriteTask.reason}</span>
               </div>
             )}
             <div className="st-rewrite-helper">
-              Rewrite only the AI tutor response below. Use the student request and optional context to keep the answer aligned.
+              Chỉ viết lại câu trả lời của gia sư AI bên dưới. Sử dụng yêu cầu của học sinh và ngữ cảnh tùy chọn để giữ cho câu trả lời phù hợp.
             </div>
             <div className="st-rewrite-workbench">
               <section className="st-rewrite-panel student">
-                <div className="st-rewrite-panel-title">1. Student request</div>
+                <div className="st-rewrite-panel-title">1. Yêu cầu của học sinh</div>
                 <div className="st-rewrite-panel-body">{getStudentRequestForRewrite(rewriteDraftTask)}</div>
               </section>
               <section className="st-rewrite-panel original">
-                <div className="st-rewrite-panel-title">2. AI response needing rewrite</div>
-                <div className="st-rewrite-panel-body">{getTargetAiResponse(rewriteDraftTask) || '(no target AI response found)'}</div>
+                <div className="st-rewrite-panel-title">2. Câu trả lời AI cần viết lại</div>
+                <div className="st-rewrite-panel-body">{getTargetAiResponse(rewriteDraftTask) || '(không tìm thấy câu trả lời AI mục tiêu)'}</div>
               </section>
               <section className="st-rewrite-panel revised">
-                <div className="st-rewrite-panel-title">3. Revised response</div>
+                <div className="st-rewrite-panel-title">3. Câu trả lời đã sửa đổi</div>
                 <div className="st-rewrite-ai-row">
-                  <span>Write manually or use AI as a draft, then edit before submitting.</span>
+                  <span>Viết thủ công hoặc sử dụng AI làm bản nháp, sau đó chỉnh sửa trước khi nộp.</span>
                   <button
                     type="button"
                     disabled={isSuggestingRewrite || isSubmittingRewrite}
                     onClick={() => {
                       const versionId = rewriteDraftTask.datasetVersionId || localStorage.getItem('current_version_id');
                       if (!versionId) {
-                        alert('Missing dataset version, cannot generate AI suggestion.');
+                        alert('Thiếu phiên bản dataset, không thể tạo gợi ý AI.');
                         return;
                       }
                       setIsSuggestingRewrite(true);
                       stage4Api.suggestRewrite(versionId, rewriteDraftTask.id)
                         .then((res) => setRewriteDraftText(res.suggestedText || rewriteDraftText))
-                        .catch((err) => alert(err?.response?.data?.error || 'Failed to generate AI rewrite suggestion.'))
+                        .catch((err) => alert(err?.response?.data?.error || 'Tạo gợi ý viết lại AI thất bại.'))
                         .finally(() => setIsSuggestingRewrite(false));
                     }}
                   >
-                    {isSuggestingRewrite ? 'Generating...' : 'AI suggest'}
+                    {isSuggestingRewrite ? 'Đang tạo...' : 'AI gợi ý'}
                   </button>
                 </div>
                 <textarea
                   value={rewriteDraftText}
                   onChange={(e) => setRewriteDraftText(e.target.value)}
-                  placeholder="Write only the corrected AI tutor response here..."
+                  placeholder="Chỉ viết câu trả lời của gia sư AI đã sửa ở đây..."
                   className="st-rewrite-textarea"
                   disabled={isSubmittingRewrite}
                 />
               </section>
             </div>
             <div className="st-rewrite-context-toolbar">
-              <div className="st-rewrite-section-title">Optional conversation context</div>
+              <div className="st-rewrite-section-title">Ngữ cảnh cuộc hội thoại (Tùy chọn)</div>
               <select value={rewriteContextMode} onChange={(e) => setRewriteContextMode(e.target.value)}>
                 {rewriteContextOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
@@ -567,14 +567,14 @@ function StaffTasksView({ onOpenTask }) {
                 <div key={`${message.role}-${index}`} className={`st-rewrite-message ${message.role === 'assistant' ? 'assistant' : 'user'} ${message.isTarget ? 'target' : ''}`}>
                   <div className="st-rewrite-message-role">
                     {message.role === 'assistant' ? 'AI Tutor' : 'Student'}
-                    {message.isTarget && <span>Co loi</span>}
+                    {message.isTarget && <span>Có lỗi</span>}
                   </div>
                   <div className="st-rewrite-message-content">{message.content}</div>
                 </div>
               ))}
             </div>
             <div className="st-rewrite-modal-actions">
-              <button type="button" className="st-modal-secondary" onClick={() => setRewriteDraftTask(null)} disabled={isSubmittingRewrite}>Cancel</button>
+              <button type="button" className="st-modal-secondary" onClick={() => setRewriteDraftTask(null)} disabled={isSubmittingRewrite}>Hủy</button>
               <button
                 type="button"
                 className="st-modal-primary"
@@ -582,7 +582,7 @@ function StaffTasksView({ onOpenTask }) {
                 onClick={() => {
                   const versionId = rewriteDraftTask.datasetVersionId || localStorage.getItem('current_version_id');
                   if (!versionId) {
-                    alert('Missing dataset version, cannot submit rewrite.');
+                    alert('Thiếu phiên bản dataset, không thể nộp bản viết lại.');
                     return;
                   }
                   setIsSubmittingRewrite(true);
@@ -593,11 +593,11 @@ function StaffTasksView({ onOpenTask }) {
                       setRewriteDraftTask(null);
                       setRewriteDraftText('');
                     })
-                    .catch((err) => alert(err?.response?.data?.error || 'Failed to submit rewrite.'))
+                    .catch((err) => alert(err?.response?.data?.error || 'Nộp bản viết lại thất bại.'))
                     .finally(() => setIsSubmittingRewrite(false));
                 }}
               >
-                {isSubmittingRewrite ? 'Submitting...' : 'Submit replacement'}
+                {isSubmittingRewrite ? 'Đang nộp...' : 'Nộp bản thay thế'}
               </button>
             </div>
           </div>
