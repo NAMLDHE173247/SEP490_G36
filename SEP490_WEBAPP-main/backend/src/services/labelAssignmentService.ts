@@ -56,6 +56,7 @@ export type LabelScope = 'sample' | 'message';
 export type LabelQueryScope = 'sample' | 'message' | 'all';
 export type LabelRole = 'user' | 'assistant';
 export type LabelType = 'hard' | 'soft';
+export type LabelSource = 'ai' | 'human' | 'default' | 'system';
 
 export type LabelAssignmentAggregate = {
   _id: string;
@@ -66,6 +67,7 @@ export type LabelAssignmentAggregate = {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
   createdAt: Date | null;
   updatedAt: Date | null;
   assignedUserCount: number;
@@ -117,7 +119,7 @@ function sampleScopeMatch(): Record<string, any> {
 function buildTargetKey(targetScope: LabelScope, messageIndex?: number | null, messageRole?: LabelRole | null): string {
   return targetScope === 'message'
     ? `message:${Number(messageIndex)}:${String(messageRole || '')}`
-    : 'sample';
+    : `sample:${Number.isInteger(Number(messageIndex)) ? Number(messageIndex) : 0}`;
 }
 
 export function normalizeTargetScope(value: unknown): LabelScope {
@@ -169,6 +171,7 @@ async function ensureLabelAssignmentsForSampleObjectIds(sampleIds: mongoose.Type
         messageIndex: Number.isInteger(Number(label.messageIndex)) ? Number(label.messageIndex) : null,
         messageRole: label.messageRole === 'user' || label.messageRole === 'assistant' ? label.messageRole : null,
         targetTextSnapshot: label.targetTextSnapshot ? String(label.targetTextSnapshot) : undefined,
+        source: 'human',
         createdBy: new mongoose.Types.ObjectId(userId),
         legacyLabelId: label._id,
       });
@@ -274,6 +277,7 @@ function mergeAggregateDocs(
         messageIndex: Number.isInteger(Number(doc.messageIndex)) ? Number(doc.messageIndex) : undefined,
         messageRole: doc.messageRole === 'user' || doc.messageRole === 'assistant' ? doc.messageRole : undefined,
         targetTextSnapshot: doc.targetTextSnapshot ? String(doc.targetTextSnapshot) : undefined,
+        source: doc.source || 'human',
         createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
         updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
         assignedUserCount: 0,
@@ -322,6 +326,7 @@ function mapCanonicalRowsToAggregateDocs(rows: any[]): any[] {
         messageIndex: Number.isInteger(Number(row.messageIndex)) ? Number(row.messageIndex) : null,
         messageRole: row.messageRole === 'user' || row.messageRole === 'assistant' ? row.messageRole : null,
         targetTextSnapshot: row.targetTextSnapshot ? String(row.targetTextSnapshot) : undefined,
+        source: 'system',
         createdBy: row.publishedBy,
         createdAt: row.publishedAt || row.updatedAt || row.createdAt || null,
         updatedAt: row.updatedAt || row.publishedAt || row.createdAt || null,
@@ -463,6 +468,7 @@ export async function assignLabelToSample(params: {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -481,6 +487,7 @@ export async function assignLabelToSample(params: {
     {
       $setOnInsert: {
         targetTextSnapshot: params.targetTextSnapshot,
+        source: params.source || 'human',
       },
     },
     { upsert: true, returnDocument: 'after' }
@@ -549,6 +556,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
   messageRole?: LabelRole;
   labels: string[];
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -606,6 +614,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
       messageIndex: params.targetScope === 'message' ? Number(params.messageIndex) : null,
       messageRole: params.targetScope === 'message' ? params.messageRole : null,
       targetTextSnapshot: params.targetTextSnapshot,
+      source: params.source || 'human',
     }));
     await LabelAssignment.insertMany(docs, { ordered: false });
     await Promise.all(
@@ -634,8 +643,9 @@ export async function insertAssignments(docs: any[]) {
   if (!docs.length) {
     return;
   }
+  const docsWithSource = docs.map((doc) => ({ source: 'human', ...doc }));
   try {
-    await LabelAssignment.insertMany(docs, { ordered: false });
+    await LabelAssignment.insertMany(docsWithSource, { ordered: false });
   } catch (error: any) {
     if (error?.code !== 11000) {
       throw error;
@@ -1011,10 +1021,25 @@ function buildRequiredTargets(sample: any): DecisionTarget[] {
 
   return [
     {
-      key: buildTargetKey('sample'),
+      key: buildTargetKey('sample', 0),
       targetScope: 'sample',
+      messageIndex: 0,
       labels: [],
-      targetTextSnapshot: conversationContent.slice(0, 2000),
+      targetTextSnapshot: `Mon hoc\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 1),
+      targetScope: 'sample',
+      messageIndex: 1,
+      labels: [],
+      targetTextSnapshot: `Muc do hoan thien\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 2),
+      targetScope: 'sample',
+      messageIndex: 2,
+      labels: [],
+      targetTextSnapshot: `Chat luong hoi thoai\n${conversationContent}`.slice(0, 2000),
     },
     ...getLogicalMessagesForSample(sample).map((message) => ({
       key: buildTargetKey('message', message.messageIndex, message.role),
@@ -1171,7 +1196,7 @@ export async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
       status: { $ne: 'published' },
     });
@@ -1182,7 +1207,7 @@ export async function syncAdjudicationForTarget(params: {
     datasetVersionId: params.datasetVersionId,
     sampleId: params.sampleId,
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   })
     .select('status')
@@ -1193,7 +1218,7 @@ export async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1251,19 +1276,9 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     sampleId: sampleOid,
   }).lean();
 
-  const assignedIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
-  const sampleIndexByAssignee = new Map(assignments.map((item: any) => [String(item.assigneeId), Number(item.sampleIndex)]));
-  const submittedRows = assignedIds.length ? await DatasetAssignmentSubmission.find({
-    datasetVersionId: { $in: [versionOid, String(versionOid)] },
-    assigneeId: { $in: assignedIds.flatMap((id) => mongoose.Types.ObjectId.isValid(id) ? [id, new mongoose.Types.ObjectId(id)] : [id]) },
-    status: { $in: ['submitted', 'approved'] },
-  }).select('assigneeId batchStart batchCount').lean() : [];
-  const assigneeIds = assignedIds.filter((assigneeId) => submittedRows.some((row: any) => {
-    if (String(row.assigneeId) !== assigneeId) return false;
-    const sampleIndex = Number(sampleIndexByAssignee.get(assigneeId));
-    const start = Number(row.batchStart || 1);
-    return sampleIndex >= start && sampleIndex < start + Number(row.batchCount || 0);
-  }));
+  const assigneeIds = assignments
+    .filter((sa: any) => sa.reviewStatus === 'submitted' || sa.reviewStatus === 'approved')
+    .map((sa: any) => String(sa.assigneeId));
   const allSampleAssignments = await LabelAssignment.find({
     sampleId: sampleOid,
     type: { $in: ['hard', 'soft'] },
@@ -1284,12 +1299,17 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       saved = null;
     }
     if (!saved || typeof saved !== 'object') return;
-    ['subject', 'completion', 'quality'].forEach((field) => {
+    const sampleFields = [
+      ['subject', 0],
+      ['completion', 1],
+      ['quality', 2],
+    ] as const;
+    sampleFields.forEach(([field, fieldIndex]) => {
       if (saved[field]) {
         softDerivedAssignments.push({
           ...doc,
           targetScope: 'sample',
-          messageIndex: null,
+          messageIndex: fieldIndex,
           messageRole: null,
           name: String(saved[field]),
         });
@@ -1567,7 +1587,7 @@ export async function resolveAssignmentAdjudication(params: {
       datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
       sampleId: new mongoose.Types.ObjectId(params.sampleId),
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1607,7 +1627,7 @@ export async function publishAssignmentAdjudication(params: {
     datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
     sampleId: new mongoose.Types.ObjectId(params.sampleId),
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   };
 
@@ -1627,7 +1647,7 @@ export async function publishAssignmentAdjudication(params: {
         datasetVersionId: sample.datasetVersionId,
         sampleId: sample._id,
         targetScope: params.targetScope,
-        messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+        messageIndex: params.messageIndex ?? null,
         messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
         labels: adjudication.finalLabels,
         targetTextSnapshot: String((adjudication as any).targetTextSnapshot || ''),
@@ -1671,11 +1691,6 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
   const samples = await ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).select('_id sampleId data').lean();
   const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
 
-  const submittedRows = await DatasetAssignmentSubmission.find({
-    datasetVersionId: { $in: [versionOid, String(versionOid)] },
-    status: { $in: ['submitted', 'approved'] },
-  }).select('assigneeId batchStart batchCount').lean();
-
   const results: any[] = [];
   for (const sampleId of sampleIds) {
     const assignmentsForSample = assignmentRows.filter((row: any) => String(row.sampleId) === sampleId);
@@ -1687,17 +1702,7 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
       continue;
     }
 
-    let submittedCount = 0;
-    for (const assignee of assignmentsForSample) {
-      const isSubmitted = submittedRows.some((row: any) => 
-        String(row.assigneeId) === String(assignee.assigneeId) &&
-        sampleIndex >= Number(row.batchStart || 1) &&
-        sampleIndex < Number(row.batchStart || 1) + Number(row.batchCount || 0)
-      );
-      if (isSubmitted) {
-        submittedCount++;
-      }
-    }
+    const submittedCount = assignmentsForSample.filter((row: any) => row.reviewStatus === 'submitted' || row.reviewStatus === 'approved').length;
 
     if (submittedCount < 2) {
       continue;

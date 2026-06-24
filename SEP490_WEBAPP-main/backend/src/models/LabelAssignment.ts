@@ -3,6 +3,7 @@ import mongoose, { Document, Schema, Types } from 'mongoose';
 export type LabelAssignmentType = 'hard' | 'soft';
 export type LabelAssignmentScope = 'sample' | 'message';
 export type LabelAssignmentMessageRole = 'user' | 'assistant';
+export type LabelAssignmentSource = 'ai' | 'human' | 'default' | 'system';
 
 export interface ILabelAssignment extends Document {
   sampleId: Types.ObjectId | string;
@@ -11,6 +12,7 @@ export interface ILabelAssignment extends Document {
   targetScope: LabelAssignmentScope;
   messageIndex?: number | null;
   messageRole?: LabelAssignmentMessageRole | null;
+  source?: LabelAssignmentSource;
   targetTextSnapshot?: string;
   createdBy: Types.ObjectId | string;
   legacyLabelId?: Types.ObjectId | string | null;
@@ -43,6 +45,12 @@ const LabelAssignmentSchema = new Schema<ILabelAssignment>(
       type: String,
       enum: ['user', 'assistant'] as const,
       default: null,
+    },
+    source: {
+      type: String,
+      enum: ['ai', 'human', 'default', 'system'] as const,
+      default: 'human',
+      index: true,
     },
     targetTextSnapshot: { type: String },
     createdBy: {

@@ -133,7 +133,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [tablePage, setTablePage] = useState(1);
   const [tableSearch, setTableSearch] = useState('');
   const debouncedSearch = useDebounce(tableSearch, 300);
-  const [tableFilter, setTableFilter] = useState<'all' | 'labeled' | 'draft' | 'unlabeled'>('all');
+  const [tableFilter, setTableFilter] = useState<'all' | 'ready' | 'draft' | 'unlabeled'>('all');
   const [tableSort, setTableSort] = useState<'id_asc' | 'id_desc' | 'status'>('id_asc');
   const { toasts, toast } = useToast();
   const [drawerSampleId, setDrawerSampleId] = useState<string | null>(null);
@@ -286,6 +286,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
           subject: normalizeSubject(suggestion.subject),
           completion: normalizeOption(suggestion.completion, COMPLETION_OPTIONS, ''),
           quality: normalizeOption(suggestion.quality, QUALITY_OPTIONS, ''),
+          quality_reason: suggestion.quality_reason || '',
           status: 'reviewing',
           messages: {},
         };
@@ -484,10 +485,21 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   };
 
   const getSampleStatus = (sampleId: string): string => {
-    if (isSampleComplete(sampleId)) return 'labeled';
+    const reviewStatus = reviewOf(sampleId);
+    if (reviewStatus === 'submitted') return 'submitted';
+    if (reviewStatus === 'approved') return 'approved';
+    if (reviewStatus === 'rejected') return 'rejected';
+    if (isSampleComplete(sampleId)) return 'ready';
     if (labels[sampleId] && Object.keys(labels[sampleId]).length > 0) return 'draft';
     return 'unlabeled';
   };
+
+  const filteredSamples = useMemo(() => {
+    let result = samples.map((sample, index) => ({ ...sample, originalIndex: index, _status: getSampleStatus(sample.id) }));
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      result = result.filter(s => {
+        if (String(s.id ?? '').toLowerCase().includes(q)) return true;
 
   const filteredSamples = useMemo(() => {
     let result = samples.map((sample, index) => ({ ...sample, originalIndex: index, _status: getSampleStatus(sample.id) }));
@@ -502,7 +514,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     result.sort((a, b) => {
       if (tableSort === 'id_asc') return String(a.id ?? '').localeCompare(String(b.id ?? ''), undefined, { numeric: true });
       if (tableSort === 'id_desc') return String(b.id ?? '').localeCompare(String(a.id ?? ''), undefined, { numeric: true });
-      if (tableSort === 'status') return ({ unlabeled: 1, draft: 2, labeled: 3 }[a._status] || 0) - ({ unlabeled: 1, draft: 2, labeled: 3 }[b._status] || 0);
+      if (tableSort === 'status') return ({ unlabeled: 1, draft: 2, rejected: 3, ready: 4, submitted: 5, approved: 6 }[a._status] || 0) - ({ unlabeled: 1, draft: 2, rejected: 3, ready: 4, submitted: 5, approved: 6 }[b._status] || 0);
       return 0;
     });
     return result;
@@ -516,8 +528,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const drawerSample = drawerSampleId ? samples.find(s => s.id === drawerSampleId) : null;
 
   const renderStatusBadge = (status: string) => {
-    if (status === 'labeled') return <span className="sl-status-badge sl-status-labeled"><CheckCircle size={12} /> Đã gán</span>;
-    {status === 'draft' && <><Edit3 size={13} /> Sửa</>}
+    if (status === 'approved') return <span className="sl-status-badge sl-status-labeled"><CheckCircle size={12} /> Đã duyệt</span>;
+    if (status === 'submitted') return <span className="sl-status-badge sl-status-draft"><Clock size={12} /> Đã nộp</span>;
+    if (status === 'rejected') return <span className="sl-status-badge sl-status-unlabeled"><AlertCircle size={12} /> Bị từ chối</span>;
+    if (status === 'ready') return <span className="sl-status-badge sl-status-labeled"><CheckCircle size={12} /> Sẵn sàng nộp</span>;
+    if (status === 'draft') return <span className="sl-status-badge sl-status-draft"><Edit3 size={12} /> Đang lưu nháp</span>;
     return <span className="sl-status-badge sl-status-unlabeled"><Clock size={12} /> Chưa gán</span>;
   };
 
@@ -629,7 +644,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
               <option value="all">Tất cả ({samples.length})</option>
               <option value="unlabeled">Chưa gán ({samples.filter(s => getSampleStatus(s.id) === 'unlabeled').length})</option>
               <option value="draft">Nháp ({samples.filter(s => getSampleStatus(s.id) === 'draft').length})</option>
-              <option value="labeled">Đã gán ({labeledCount})</option>
+              <option value="ready">Sẵn sàng nộp ({labeledCount})</option>
             </select>
             <select value={tableSort} onChange={e => setTableSort(e.target.value as any)} className="sl-table-select">
               <option value="id_asc">ID tăng dần</option>
@@ -667,40 +682,23 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         <button className={`sl-action-btn ${status === 'unlabeled' ? 'sl-btn-primary' : status === 'draft' ? 'sl-btn-warning' : 'sl-btn-secondary'}`} onClick={() => handleOpenDrawer(sample.id)} disabled={submitted}>
                           {status === 'unlabeled' && <><Tag size={13} /> Gán nhãn</>}
                           {status === 'draft' && <><Edit3 size={13} /> Sửa</>}
-                          {status === 'labeled' && <><Eye size={13} /> Xem</>}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {filteredSamples.length > ITEMS_PER_PAGE && (
-            <div className="sl-table-pagination">
-              <button disabled={tablePage <= 1} onClick={() => setTablePage(p => p - 1)}><ChevronLeft size={16} /> Trang trước</button>
-              <div className="sl-pagination-info">Trang {tablePage} / {totalPages} · Hiển thị {pagedSamples.length} / {filteredSamples.length} mẫu</div>
-              <button disabled={tablePage >= totalPages} onClick={() => setTablePage(p => p + 1)}>Trang sau <ChevronRight size={16} /></button>
-            </div>
-          )}
-
-          {/* ===== DRAWER ===== */}
-          {drawerSampleId && drawerSample && (
-            <div className="sl-drawer-overlay" onClick={handleCloseDrawer}>
-              <div className="sl-drawer" onClick={e => e.stopPropagation()}>
-                {/* Drawer Header */}
-                <div className="sl-drawer-header">
-                  <div className="sl-drawer-title">
-                    <span className="sl-drawer-id">#{String(drawerSample.id).substring(0, 8)}</span>
+                          {status === 'ready' && <><Eye size={13} /> Xem</>}
+                          {status === 'submitted' && <><Eye size={13} /> Xem</>}
+                          {status === 'approved' && <><Eye size={13} /> Xem</>}
+                          {status === 'rejected' && <><Edit3 size={13} /> Sửa lại</>}
                     {renderStatusBadge(getSampleStatus(drawerSample.id))}
                     {(() => {
                       const rs = reviewOf(drawerSample.id);
                       const map: any = {
+<<<<<<< Updated upstream
                         submitted: { t: 'Đã nộp - chờ duyệt', c: '#92400e', b: '#fef3c7' },
                         approved: { t: 'Đã duyệt', c: '#166534', b: '#dcfce7' },
                         rejected: { t: 'Bị từ chối', c: '#b91c1c', b: '#fee2e2' },
+=======
+                        submitted: { t: 'Đã nộp - chờ duyệt', c: '#92400e', b: '#fef3c7' },
+                        approved: { t: 'Đã duyệt', c: '#166534', b: '#dcfce7' },
+                        rejected: { t: 'Bị từ chối', c: '#b91c1c', b: '#fee2e2' },
+>>>>>>> Stashed changes
                       };
                       return map[rs] ? (
                         <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: map[rs].c, background: map[rs].b }}>{map[rs].t}</span>

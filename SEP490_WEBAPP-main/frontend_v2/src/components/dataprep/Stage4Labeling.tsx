@@ -275,6 +275,45 @@ export const Stage4Labeling: React.FC = () => {
     }
   };
 
+  const handleAssignSingleRewrite = async (itemId: string, staffName: string) => {
+    const staff = shareUsers.find(u => u.name === staffName || u.username === staffName || u.email === staffName);
+    if (!staff || !activeVersionId) return;
+    const staffId = String(staff._id || staff.id);
+
+    const item = (qualityResult?.items || []).find((i: any) => String(i._id || i.id) === String(itemId) || String(i.sampleObjectId) === String(itemId));
+    if (!item) return;
+
+    const messages = item.data?.messages || item.messages || [];
+    let targetMessageIndex = item.errorMessageIndex ?? -1;
+    if (targetMessageIndex < 0) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i]?.role === 'assistant') {
+          targetMessageIndex = i;
+          break;
+        }
+      }
+    }
+    const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
+
+    try {
+      await stage4Api.assignRewrite(activeVersionId, {
+        sampleId: String(item.sampleObjectId || item._id || item.id),
+        assigneeId: staffId,
+        convId: String(item.convId || item.sampleId || item.id),
+        subject: item.subject || '',
+        reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
+        originalText,
+        targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
+        contextMode: 'n-2:n+2'
+      });
+      setReassignStaff((prev: any) => ({ ...prev, [item.id]: staffName }));
+      const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
+      setRewriteAssignments(refreshed.tasks || []);
+    } catch (error: any) {
+      alert(error?.response?.data?.error || 'Không thể giao task rewrite.');
+    }
+  };
+
   const handleExportDataset = () => {
     const blocking = rewriteAssignments.filter((task: any) => task.status !== 'approved' && task.status !== 'rejected');
     if (blocking.length > 0) {
@@ -1575,6 +1614,11 @@ export const Stage4Labeling: React.FC = () => {
                         </div>
                         <div style={{ padding: '2px 24px 12px', background: '#1e293b' }}>
                           <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8' }}>Subject: {staffSubject} - Issue: {reviewDetailModal.reason}</p>
+                          {reviewDetailModal.conflictReason && (
+                            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#f87171', lineHeight: '1.4' }}>
+                              <strong>Lý do xung đột (nhãn lệch luật):</strong> {reviewDetailModal.conflictReason}
+                            </p>
+                          )}
                         </div>
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                           <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Evaluation Scores (read-only)</h4>
@@ -1615,11 +1659,57 @@ export const Stage4Labeling: React.FC = () => {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto' }}>
                             {reviewDetailModal.messages.map((msg, idx) => {
                               const messageLabels = getStaffMessageLabels(idx, msg.role);
+                              const isTarget = String(idx) === String(reviewDetailModal.errorMessageIndex);
                               return (
-                                <div key={idx} style={{ padding: '10px 14px', borderRadius: '8px', fontSize: '14px', lineHeight: '1.6', background: msg.role === 'user' ? '#f8fafc' : idx === reviewDetailModal.errorMessageIndex ? '#fef3c7' : '#f0fdf4', border: idx === reviewDetailModal.errorMessageIndex ? '2px solid #fcd34d' : '1px solid transparent', alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end', maxWidth: '85%' }}>
-                                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
-                                    {msg.role === 'user' ? 'Student' : idx === reviewDetailModal.errorMessageIndex ? 'AI Tutor (with error)' : 'AI Tutor'}
+                                <div key={idx} 
+                                  onClick={() => {
+                                    if (msg.role === 'assistant') {
+                                      const updatedIndex = idx;
+                                      setReviewDetailModal((prev: any) => prev ? { ...prev, errorMessageIndex: updatedIndex } : prev);
+                                      setQualityResult((prev: any) => {
+                                        if (!prev) return prev;
+                                        return {
+                                          ...prev,
+                                          items: prev.items.map((i: any) => 
+                                            (String(i._id) === String(reviewDetailModal._id) || String(i.id) === String(reviewDetailModal.id))
+                                              ? { ...i, errorMessageIndex: updatedIndex }
+                                              : i
+                                          )
+                                        };
+                                      });
+                                    }
+                                  }}
+                                  style={{ 
+                                    padding: '10px 14px', 
+                                    borderRadius: '8px', 
+                                    fontSize: '14px', 
+                                    lineHeight: '1.6', 
+                                    background: msg.role === 'user' 
+                                      ? '#f8fafc' 
+                                      : isTarget 
+                                        ? '#fffbeb' 
+                                        : '#f0fdf4', 
+                                    border: isTarget 
+                                      ? '2px solid #f59e0b' 
+                                      : msg.role === 'assistant' 
+                                        ? '1px dashed #cbd5e1' 
+                                        : '1px solid transparent', 
+                                    alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end', 
+                                    maxWidth: '85%',
+                                    cursor: msg.role === 'assistant' ? 'pointer' : 'default',
+                                    position: 'relative'
+                                  }}
+                                >
+                                  <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
+                                      {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target Rewrite)' : 'AI Tutor'}
+                                    </span>
+                                    {msg.role === 'assistant' && (
+                                      <span style={{ fontSize: '10px', color: isTarget ? '#d97706' : '#94a3b8', fontWeight: 'bold' }}>
+                                        {isTarget ? '🎯 Đang chọn' : '✏️ Click để chọn'}
+                                      </span>
+                                    )}
                                   </div>
                                   <div>{msg.text}</div>
                                   {messageLabels.length > 0 && (
@@ -1892,7 +1982,7 @@ export const Stage4Labeling: React.FC = () => {
                                     style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: 1 }}>&times;</button>
                                 </div>
                               ) : (
-                                <select value="" onChange={e => setReassignStaff(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                <select value="" onChange={e => handleAssignSingleRewrite(item.id, e.target.value)}
                                   style={{ padding: '7px 12px', fontSize: '13px', borderRadius: '8px', border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#64748b', outline: 'none', minWidth: '160px' }}>
                                   <option value="">Select staff member...</option>
                                   {staffList.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
@@ -1930,19 +2020,56 @@ export const Stage4Labeling: React.FC = () => {
                       style={{ padding: '10px 14px', fontSize: '14px', borderRadius: '8px', border: '1px solid #475569', background: '#334155', color: '#f1f5f9', cursor: 'pointer', flex: 1, maxWidth: '240px', outline: 'none' }}>
                       {rewriteReasonOptions.map(reason => <option key={reason} value={reason}>{reason}</option>)}
                     </select>
-                    <button onClick={() => {
-                      if (!bulkAssignStaff) return alert('Vui long chon nhan vien!');
-                      const updates = {};
-                      const reasonUpdates = {};
-                      selectedRewriteIds.forEach(id => {
-                        updates[id] = bulkAssignStaff;
-                        reasonUpdates[id] = bulkRewriteReason;
+                    <button onClick={async () => {
+                      if (!bulkAssignStaff) return alert('Vui lòng chọn nhân viên!');
+                      const staff = shareUsers.find(u => u.name === bulkAssignStaff || u.username === bulkAssignStaff || u.email === bulkAssignStaff);
+                      if (!staff || !activeVersionId) return;
+                      const staffId = String(staff._id || staff.id);
+
+                      const assignments = selectedRewriteIds.map(id => {
+                        const item = rewriteItems.find(x => x.id === id);
+                        const messages = item?.data?.messages || item?.messages || [];
+                        let targetMessageIndex = item?.errorMessageIndex ?? -1;
+                        if (targetMessageIndex < 0) {
+                          for (let i = messages.length - 1; i >= 0; i--) {
+                            if (messages[i]?.role === 'assistant') {
+                              targetMessageIndex = i;
+                              break;
+                            }
+                          }
+                        }
+                        const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
+                        return {
+                          sampleId: String(item.sampleObjectId || item._id || item.id),
+                          assigneeId: staffId,
+                          convId: String(item.convId || item.sampleId || item.id),
+                          subject: item?.subject || '',
+                          reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
+                          originalText,
+                          targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
+                          contextMode: 'n-2:n+2'
+                        };
                       });
-                      setReassignStaff(prev => ({ ...prev, ...updates }));
-                      setRewriteReasons(prev => ({ ...prev, ...reasonUpdates }));
-                      setSelectedRewriteIds([]);
-                      setBulkAssignStaff('');
-                      setBulkRewriteReason('None');
+
+                      try {
+                        const result = await stage4Api.bulkAssignRewrite(activeVersionId, assignments);
+                        const updates = {};
+                        const reasonUpdates = {};
+                        selectedRewriteIds.forEach(id => {
+                          updates[id] = bulkAssignStaff;
+                          reasonUpdates[id] = bulkRewriteReason;
+                        });
+                        setReassignStaff(prev => ({ ...prev, ...updates }));
+                        setRewriteReasons(prev => ({ ...prev, ...reasonUpdates }));
+                        setSelectedRewriteIds([]);
+                        setBulkAssignStaff('');
+                        setBulkRewriteReason('None');
+                        const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
+                        setRewriteAssignments(refreshed.tasks || []);
+                        alert(`Đã giao thành công ${result.assignedCount}/${result.requestedCount} task rewrite.`);
+                      } catch (error: any) {
+                        alert(error?.response?.data?.error || 'Không thể giao task rewrite.');
+                      }
                     }} style={{ padding: '10px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.4)' }}>
                       Assign All
                     </button>
