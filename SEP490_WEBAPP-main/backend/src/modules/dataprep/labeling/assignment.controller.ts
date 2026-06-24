@@ -879,6 +879,9 @@ export class AssignmentController {
             assignees: [],
             staffStatus: {},
             staffLabels: {},
+            subjectLabelWithAI: null,
+            subjectLabelWithHuman: null,
+            subjectLabelDefault: null,
             conflict: false,
           };
           sampleIdMap[String(sa.sampleId)] = sa.sampleIndex;
@@ -921,6 +924,14 @@ export class AssignmentController {
             }
             samplesMap[sIndex].preview = preview || `Sample #${sIndex}`;
             samplesMap[sIndex].messages = messages;
+            samplesMap[sIndex].subjectLabelDefault =
+              data.subject ||
+              data.subjectLabel ||
+              data.subject_label ||
+              data.groupLabel ||
+              data.group_label ||
+              data.meta?.subject ||
+              null;
           }
         }
       }
@@ -934,8 +945,20 @@ export class AssignmentController {
       for (const label of labels) {
         const sIndex = sampleIdMap[String(label.sampleId)];
         if (sIndex && samplesMap[sIndex]) {
-          // Only mark 'done' if the saved label is complete (has subject + completion + quality)
           const parsed = parseSavedLabel(label.targetTextSnapshot);
+          if (!parsed && label.targetScope === 'sample' && label.type === 'hard' && label.name) {
+            const labelSource = (label as any).source;
+            const createdByStaff = Boolean(staffMap[String(label.createdBy)]);
+            if (labelSource === 'human' || (!labelSource && createdByStaff)) {
+              samplesMap[sIndex].subjectLabelWithHuman = label.name;
+            } else if (labelSource === 'default') {
+              samplesMap[sIndex].subjectLabelDefault = label.name;
+            } else {
+              samplesMap[sIndex].subjectLabelWithAI = label.name;
+            }
+            continue;
+          }
+          // Only mark 'done' if the saved label is complete (has subject + completion + quality)
           const isComplete = isCompleteStaffLabel(parsed);
           samplesMap[sIndex].staffStatus[String(label.createdBy)] = isComplete ? 'done' : 'in_progress';
           samplesMap[sIndex].staffLabels[String(label.createdBy)] = {
@@ -946,6 +969,9 @@ export class AssignmentController {
             isDraft: !isComplete,
             raw: parsed?.subject || label.name,
           };
+          if (parsed?.subject) {
+            samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
+          }
           if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
           conflictMap[sIndex].push(label);
         }
@@ -1160,6 +1186,7 @@ export class AssignmentController {
       });
 
       if (existingLabel) {
+        (existingLabel as any).source = 'human';
         existingLabel.targetTextSnapshot = JSON.stringify(label);
         await existingLabel.save();
       } else {
@@ -1169,6 +1196,7 @@ export class AssignmentController {
           name: 'Label',
           type: 'soft',
           targetScope: 'sample',
+          source: 'human',
           targetTextSnapshot: JSON.stringify(label)
         });
       }
@@ -1241,7 +1269,7 @@ export class AssignmentController {
         if (labelData && typeof labelData === 'object' && Object.keys(labelData).length > 0) {
           await LabelAssignment.findOneAndUpdate(
             { createdBy: submission.assigneeId, sampleId: sa.sampleId },
-            { $set: { name: 'Label', type: 'soft', targetScope: 'sample', targetTextSnapshot: JSON.stringify(labelData) } },
+            { $set: { name: 'Label', type: 'soft', targetScope: 'sample', source: 'human', targetTextSnapshot: JSON.stringify(labelData) } },
             { upsert: true }
           );
         }
@@ -1311,7 +1339,9 @@ export class AssignmentController {
       const sampleIds = rows.map((r: any) => r.sampleId);
       const [items, labels] = await Promise.all([
         ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).select('_id data').lean(),
-        LabelAssignment.find({ sampleId: { $in: sampleIds } }).lean(),
+        LabelAssignment.find({ sampleId: { $in: sampleIds } })
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .lean(),
       ]);
       const itemMap = new Map(items.map((i: any) => [String(i._id), i]));
       const userIds = [...new Set(rows.map((r: any) => String(r.assigneeId)).filter((id: string) => mongoose.Types.ObjectId.isValid(id)))];
@@ -1331,7 +1361,13 @@ export class AssignmentController {
 
       const data = rows.map((r: any) => {
         const item = itemMap.get(String(r.sampleId));
-        const label = labels.find((l: any) => String(l.sampleId) === String(r.sampleId) && String(l.createdBy) === String(r.assigneeId));
+        const label = labels.find((l: any) =>
+          String(l.sampleId) === String(r.sampleId) &&
+          String(l.createdBy) === String(r.assigneeId) &&
+          String(l.type || '') === 'soft' &&
+          (String(l.targetScope || 'sample') === 'sample') &&
+          safeParse(l.targetTextSnapshot)
+        ) || labels.find((l: any) => String(l.sampleId) === String(r.sampleId) && String(l.createdBy) === String(r.assigneeId));
         return {
           assignmentId: String(r._id),
           sampleIndex: r.sampleIndex,
@@ -1475,6 +1511,7 @@ export class AssignmentController {
                 name: 'Label',
                 type: 'soft',
                 targetScope: 'sample',
+                source: 'human',
                 targetTextSnapshot: JSON.stringify(labelData),
               } },
               upsert: true,
@@ -1588,6 +1625,7 @@ export class AssignmentController {
       // 4. Map labels và rewrites theo messageIndex
       const labelsByMsg: Record<number, any[]> = {};
       const sampleLabels: any[] = [];
+      const sampleMeta: any = {};
       for (const label of labels) {
         if (label.targetScope === 'message' && label.messageIndex != null) {
           if (!labelsByMsg[label.messageIndex]) labelsByMsg[label.messageIndex] = [];
@@ -1602,9 +1640,11 @@ export class AssignmentController {
           if (parsed) {
             // Conversation-level summary
             const parts: string[] = [];
-            if (parsed.subject) parts.push(parsed.subject);
-            if (parsed.quality) parts.push('Chất lượng: ' + parsed.quality);
-            if (parsed.completion) parts.push('Hoàn thành: ' + parsed.completion);
+            if (parsed.subject) { sampleMeta.subject = parsed.subject; parts.push(parsed.subject); }
+            if (parsed.quality) { sampleMeta.quality = parsed.quality; parts.push('Chất lượng: ' + parsed.quality); }
+            if (parsed.completion) { sampleMeta.completion = parsed.completion; parts.push('Hoàn thành: ' + parsed.completion); }
+            if (Array.isArray(parsed.flags)) sampleMeta.flags = parsed.flags;
+            if (parsed.note) sampleMeta.note = parsed.note;
             if (parts.length) sampleLabels.push({ name: parts.join(' · '), type: label.type });
             // Message-level intent/action extracted from blob
             if (parsed.messages && typeof parsed.messages === 'object') {
@@ -1647,6 +1687,7 @@ export class AssignmentController {
         data: {
           original: { messages: originalMessages },
           labeled: {
+            sampleMeta,
             sampleLabels,
             messageLabels: labelsByMsg,
             rewrites: rewritesByMsg,
@@ -2044,6 +2085,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
           name: mappedSubject,
           type: 'hard',
           targetScope: 'sample',
+          source: 'human',
           createdBy: submission.assigneeId
         });
       }
@@ -2069,6 +2111,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               targetScope: 'message',
               messageIndex: msgIdx,
               messageRole: 'user',
+              source: 'human',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
               });
@@ -2086,6 +2129,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               targetScope: 'message',
               messageIndex: msgIdx,
               messageRole: 'assistant',
+              source: 'human',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
               });

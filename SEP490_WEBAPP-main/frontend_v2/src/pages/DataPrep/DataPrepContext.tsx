@@ -11,9 +11,9 @@ export const STAGES = [
 ];
 
 export const SUB_STEPS_STAGE2 = [
-  { num: 1, label: 'Clean' },
-  { num: 2, label: 'Find K' },
-  { num: 3, label: 'K-means Cluster' },
+  { num: 2, label: 'Clean' },
+  { num: 3, label: 'Find K' },
+  { num: 4, label: 'K-means Cluster' },
 ];
 
 export const SAMPLE_RAW_DATA = `[
@@ -220,8 +220,8 @@ export const PREVIEW_REMOVED = [
 const DataPrepContext = createContext<any>(null);
 
 const resolveStageFromResumeStep = (step: number) => {
-  if (step >= 13) return 5;
-  if (step >= 7) return 4;
+  if (step >= 12) return 5;
+  if (step >= 8) return 4;
   if (step >= 5) return 3;
   if (step >= 2) return 2;
   return 1;
@@ -283,7 +283,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   });
   const [currentSubStep, setCurrentSubStep] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep');
-    return saved ? parseInt(saved, 10) : 1;
+    const parsed = saved ? parseInt(saved, 10) : 2;
+    if (!Number.isFinite(parsed)) return 2;
+    return Math.max(2, Math.min(4, parsed));
   });
 
   React.useEffect(() => {
@@ -723,7 +725,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
       const stage = resolveStageFromResumeStep(resumeStep);
       setCurrentStage(stage);
-      if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
+      if (stage === 2) setCurrentSubStep(Math.max(2, Math.min(4, resumeStep)));
       if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(7, resumeStep)));
       if (stage === 4) setCurrentSubStep4(Math.max(8, Math.min(11, resumeStep)));
       if (stage === 5) setCurrentSubStep6(Math.max(12, Math.min(14, resumeStep)));
@@ -743,7 +745,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     localStorage.removeItem('dp_currentSubStep6');
     setActiveWorkflowVersion(null);
     setCurrentStage(1);
-    setCurrentSubStep(1);
+    setCurrentSubStep(2);
     setCurrentSubStep3(5);
     setCurrentSubStep4(8);
     setCurrentSubStep6(12);
@@ -762,7 +764,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
       setActiveWorkflowVersion(null);
       setCurrentStage(1);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
       setCurrentSubStep3(5);
       setCurrentSubStep4(8);
       setCurrentSubStep6(12);
@@ -985,7 +987,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
 
       setCurrentStage(2);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
     } catch (err: any) {
       console.error('Conversion failed:', err);
       alert(err.response?.data?.error || err.message || 'Chuyển đổi dữ liệu thất bại');

@@ -193,6 +193,36 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
     setShowConflictModal(null);
   };
 
+  const renderSubjectSourceBadge = (value: string | null | undefined, source: 'ai' | 'human' | 'default') => {
+    if (!value) return <span className="td-label-empty">—</span>;
+    const config = {
+      ai: { label: 'AI', bg: '#eef2ff', color: '#3730a3', border: '#c7d2fe' },
+      human: { label: 'Human', bg: '#ecfdf5', color: '#047857', border: '#a7f3d0' },
+      default: { label: 'Default', bg: '#f8fafc', color: '#475569', border: '#cbd5e1' },
+    }[source];
+    return (
+      <span
+        title={`${config.label}: ${value}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          maxWidth: '100%',
+          padding: '4px 9px',
+          borderRadius: 999,
+          background: config.bg,
+          color: config.color,
+          border: `1px solid ${config.border}`,
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ fontSize: 10, opacity: 0.75 }}>{config.label}</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+      </span>
+    );
+  };
+
   // Open staff sample list modal
   const openStaffSamples = (staff: any) => {
     // Filter samples assigned to this staff
@@ -589,6 +619,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                       <tr>
                         <th style={{ width: '60px' }}>#</th>
                         <th>Preview nội dung</th>
+                        <th style={{ width: '180px' }}>Subject label with AI</th>
+                        <th style={{ width: '200px' }}>Subject label with human</th>
                         <th style={{ width: '160px' }}>Annotators</th>
                         <th style={{ width: '80px' }}>Xem</th>
                       </tr>
@@ -600,6 +632,12 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                         <tr key={s.id}>
                           <td style={{ fontWeight: 600, color: '#6366f1' }}>#{s.id}</td>
                           <td className="td-preview-cell" style={{ maxWidth: '400px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '13px' }}>{s.preview}</td>
+                          <td>
+                            {renderSubjectSourceBadge(s.subjectLabelWithAI || s.subjectLabelDefault, s.subjectLabelWithAI ? 'ai' : 'default')}
+                          </td>
+                          <td>
+                            {renderSubjectSourceBadge(s.subjectLabelWithHuman, 'human')}
+                          </td>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
                               {staffList.map((staff: any, idx: number) => {

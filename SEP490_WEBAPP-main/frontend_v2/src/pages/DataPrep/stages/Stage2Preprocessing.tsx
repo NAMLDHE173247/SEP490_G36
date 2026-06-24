@@ -141,7 +141,7 @@ export const Stage2Preprocessing = () => {
           ))}
         </div>
 
-        {currentSubStep === 1 && (
+        {currentSubStep === 2 && (
           <>
             {/* Post-conversion Statistics — shown above table after cleaning is applied */}
             {cleaningApplied && (
@@ -839,7 +839,7 @@ export const Stage2Preprocessing = () => {
           </>
         )}
 
-        {currentSubStep === 2 && (
+        {currentSubStep === 3 && (
           <div className="findk-container">
             <div className="findk-card">
               <h3>Find K</h3>
@@ -980,7 +980,7 @@ export const Stage2Preprocessing = () => {
           </div>
         )}
 
-        {currentSubStep === 3 && (() => {
+        {currentSubStep === 4 && (() => {
 
           const CLUSTER_GROUPS = [
             { name: 'Group 0', count: 17, sim: 0.9973 },
@@ -1335,7 +1335,7 @@ export const Stage2Preprocessing = () => {
         {/* Action Buttons */}
         <div className="dataprep-actions-row">
           <button className="dataprep-btn-back" onClick={() => {
-            if (currentSubStep > 1) {
+            if (currentSubStep > 2) {
               setCurrentSubStep(currentSubStep - 1);
             } else {
               setCurrentStage(1);
@@ -1344,7 +1344,7 @@ export const Stage2Preprocessing = () => {
             Back
           </button>
           <button className="dataprep-btn-next" onClick={() => {
-            if (currentSubStep < SUB_STEPS_STAGE2.length) {
+            if (currentSubStep < SUB_STEPS_STAGE2[SUB_STEPS_STAGE2.length - 1].num) {
               setCurrentSubStep(currentSubStep + 1);
             } else {
               setCurrentStage(3);
