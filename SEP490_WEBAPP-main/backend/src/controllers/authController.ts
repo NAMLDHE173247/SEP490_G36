@@ -31,7 +31,7 @@ export const register = async (req: Request, res: Response) => {
     // Otherwise, force role: staff, status: pending.
     const callingUser = (req as any).user;
     const isAdmin = callingUser && callingUser.role === 'admin';
-    const assignedRole = isAdmin && ['admin', 'supervisor', 'staff'].includes(role) ? role : 'staff';
+    const assignedRole = isAdmin && ['admin', 'supervisor', 'staff', 'reviewer'].includes(role) ? role : 'staff';
     const assignedStatus = isAdmin ? (req.body.status || 'active') : 'pending';
 
     // Create user
@@ -174,8 +174,8 @@ export const updateUserRole = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { role } = req.body;
 
-    if (!['admin', 'supervisor', 'staff'].includes(role)) {
-      res.status(400).json({ error: 'Role không hợp lệ. Chỉ chấp nhận admin, supervisor, staff.' });
+    if (!['admin', 'supervisor', 'staff', 'reviewer'].includes(role)) {
+      res.status(400).json({ error: 'Role không hợp lệ. Chỉ chấp nhận admin, supervisor, staff, reviewer.' });
       return;
     }
 

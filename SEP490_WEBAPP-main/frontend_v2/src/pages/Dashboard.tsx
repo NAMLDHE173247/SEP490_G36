@@ -22,6 +22,7 @@ import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
 import TrainingHistoryView from './TrainingHistoryView';
+import ReviewerDashboardView from './ReviewerDashboardView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -41,6 +42,7 @@ function Dashboard() {
       case 'admin': return 'Dashboard';
       case 'supervisor': return 'Supervisor Review';
       case 'staff': return 'My Tasks';
+      case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
     }
   };
@@ -61,6 +63,7 @@ function Dashboard() {
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+    { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
   ];
 
   const [activeTab, setActiveTabState] = useState(() => {
@@ -175,8 +178,11 @@ function Dashboard() {
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
       case 'My Stats':
         return <MyStatsView />;
+      case 'Reviewer Dashboard':
+        return <ReviewerDashboardView />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
+        if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;
     }
