@@ -31,7 +31,47 @@ export class ModelRegistryController {
       }
 
       const registries = await ModelRegistry.find({ ownerId }).sort({ updatedAt: -1 });
-      res.json(registries);
+      
+      const enrichedRegistries = await Promise.all(registries.map(async (registry) => {
+        const versions = await ModelVersion.find({ ownerId, modelRegistryId: registry._id })
+          .populate('trainingHistoryId')
+          .sort({ createdAt: -1 });
+
+        const enrichedVersions = await Promise.all(versions.map(async (v: any) => {
+          const versionJson = v.toJSON();
+          if (v.trainingHistoryId) {
+            const history = v.trainingHistoryId as any;
+            const searchId = history.jobId || history._id?.toString() || history.toString();
+
+            const evaluation = await getLatestEvaluation(searchId, ownerId);
+
+            if (evaluation && evaluation.summary) {
+              versionJson.evaluationResult = evaluation.summary;
+              if (evaluation.summary.overall) {
+                const max = evaluation.summary.max_possible || 5;
+                versionJson.metrics = {
+                  ...(versionJson.metrics || {}),
+                  overallScore: (evaluation.summary.overall / max) * 100,
+                  evalSummary: evaluation.summary
+                };
+              }
+            }
+          }
+          return versionJson;
+        }));
+
+        const versionsCount = enrichedVersions.length;
+        const activeVersion = enrichedVersions.find(v => v.status === ModelVersionStatus.USE) || enrichedVersions[0] || null;
+
+        return {
+          ...registry.toJSON(),
+          versionsCount,
+          activeVersion,
+          versions: enrichedVersions
+        };
+      }));
+
+      res.json(enrichedRegistries);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -21,6 +21,7 @@ import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
+import TrainingHistoryView from './TrainingHistoryView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -52,6 +53,7 @@ function Dashboard() {
     { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
@@ -147,6 +149,8 @@ function Dashboard() {
         return <DataPrepView />;
       case 'AutoTrain':
         return <AutoTrainView setActiveTab={setActiveTab} />;
+      case 'Training History':
+        return <TrainingHistoryView setActiveTab={setActiveTab} />;
       case 'Model Registry':
         return <ModelRegistryView />;
       case 'Model Eval':
