@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -21,6 +21,8 @@ import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
+import TrainingHistoryView from './TrainingHistoryView';
+import ReviewerDashboardView from './ReviewerDashboardView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -40,6 +42,7 @@ function Dashboard() {
       case 'admin': return 'Dashboard';
       case 'supervisor': return 'Supervisor Review';
       case 'staff': return 'My Tasks';
+      case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
     }
   };
@@ -52,6 +55,7 @@ function Dashboard() {
     { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+    { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
@@ -59,6 +63,7 @@ function Dashboard() {
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+    { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
   ];
 
   const [activeTab, setActiveTabState] = useState(() => {
@@ -147,6 +152,8 @@ function Dashboard() {
         return <DataPrepView />;
       case 'AutoTrain':
         return <AutoTrainView setActiveTab={setActiveTab} />;
+      case 'Training History':
+        return <TrainingHistoryView setActiveTab={setActiveTab} />;
       case 'Model Registry':
         return <ModelRegistryView />;
       case 'Model Eval':
@@ -171,8 +178,11 @@ function Dashboard() {
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
       case 'My Stats':
         return <MyStatsView />;
+      case 'Reviewer Dashboard':
+        return <ReviewerDashboardView />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
+        if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;
     }

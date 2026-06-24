@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import toast from 'react-hot-toast';
 import { api, apiService } from '../services/api';
 import {
   LineChart,
@@ -483,7 +484,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
         throw new Error('Không nhận được Job ID mới từ backend');
       }
     } catch (err: any) {
-      alert(err.response?.data?.error || err.message || 'Khôi phục Job thất bại');
+      toast.error(err.response?.data?.error || err.message || 'Khôi phục Job thất bại');
     } finally {
       setResumeLoading(null);
     }
@@ -511,13 +512,14 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
 
   const handleRegisterSubmit = async () => {
     if (!selectedRegistryId) {
-      alert('Vui lòng tạo hoặc chọn Model Registry trước.');
+      toast.error('Vui lòng tạo hoặc chọn Model Registry trước.');
       return;
     }
     const item = histories.find(h => h.jobId === showRegisterModal);
     if (!item) return;
 
     setRegistering(true);
+    const toastId = toast.loading('Đang đăng ký phiên bản Model...');
     try {
       await apiService.registerModelVersion({
         modelRegistryId: selectedRegistryId,
@@ -528,10 +530,10 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
         promptVersion: promptVersion,
         notes: `Đăng ký từ Training Job: ${item.jobId}`,
       });
-      alert('Đăng ký phiên bản Model thành công!');
+      toast.success('Đăng ký phiên bản Model thành công!', { id: toastId });
       setShowRegisterModal(null);
     } catch (err: any) {
-      alert('Lỗi đăng ký model: ' + (err.response?.data?.message || err.message));
+      toast.error('Lỗi đăng ký model: ' + (err.response?.data?.message || err.message), { id: toastId });
     } finally {
       setRegistering(false);
     }
