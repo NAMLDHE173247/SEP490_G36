@@ -1900,7 +1900,7 @@ function mapToStandardIntent(rawIntent: string): string {
   if (INTENT_MAP[trimmed]) return INTENT_MAP[trimmed];
   const upper = trimmed.toUpperCase();
   if ((USER_MESSAGE_LABELS as readonly string[]).includes(upper)) return upper;
-  return 'WAIT_READY';
+  return 'ANSWER_ATTEMPT';
 }
 
 function mapToStandardAction(rawAction: string): string {

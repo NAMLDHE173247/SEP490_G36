@@ -31,6 +31,10 @@ export const HARD_LABELS = [
   'OFF_TOPIC',
   'NEXT_SECTION',
   'WAIT_READY',
+  // V2 Socratic student intents (đồng bộ với bộ nhãn của Staff)
+  'DISCOURAGED',
+  'READY_NEXT',
+  'CONFIRM_UNDERSTANDING',
   'CONFIRM_CORRECT_ANSWER',
   'IDENTIFY_INCORRECT_ANSWER',
   'CORRECT_MISTAKE',

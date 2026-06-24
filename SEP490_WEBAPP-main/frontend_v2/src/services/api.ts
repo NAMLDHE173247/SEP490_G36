@@ -173,6 +173,13 @@ export const apiService = {
     const response = await api.get(`/dataprep/export/${versionId}/training-data`);
     return response.data;
   },
+  snapshotDatasetLabels: async (
+    versionId: string,
+    payload?: { name?: string; description?: string },
+  ): Promise<{ success: boolean; snapshotId: string; totalLabels: number; message: string }> => {
+    const response = await api.post(`/dataprep/export/${versionId}/snapshot`, payload || {});
+    return response.data;
+  },
   listUsers: async (): Promise<{ users: User[] }> => {
     const response = await api.get('/auth/users');
     return response.data;

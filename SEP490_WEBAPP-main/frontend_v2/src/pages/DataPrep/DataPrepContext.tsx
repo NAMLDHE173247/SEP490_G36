@@ -558,19 +558,24 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const getLabelBadgeStyle = (labelName: string) => {
     const name = labelName.toUpperCase();
+    // Tích cực / xác nhận đúng → xanh lá
+    if (name === 'ANS' || name === 'CONF' || name === 'PR') {
+      return { backgroundColor: '#16a34a', color: '#ffffff' };
+    }
+    // Sai / cần sửa → đỏ
+    if (name === 'WRONG' || name === 'FIX') {
+      return { backgroundColor: '#dc2626', color: '#ffffff' };
+    }
+    // Dẫn dắt Socratic → xám đậm
     if (name === 'SCAF') {
       return { backgroundColor: '#475569', color: '#ffffff' };
     }
+    // Gợi ý → cam
     if (name === 'HINT') {
       return { backgroundColor: '#f97316', color: '#ffffff' };
     }
-    if (name === 'PR') {
-      return { backgroundColor: '#10b981', color: '#ffffff' };
-    }
-    if (name === 'OK') {
-      return { backgroundColor: '#16a34a', color: '#ffffff' };
-    }
-    if (name === 'THEO') {
+    // Lý thuyết / khái niệm → tím
+    if (name === 'THEO' || name === 'CLR') {
       return { backgroundColor: '#7c3aed', color: '#ffffff' };
     }
     return { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
