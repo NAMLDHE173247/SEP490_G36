@@ -2059,15 +2059,7 @@ export const Stage3Labeling: React.FC = () => {
               />
             </div>
           </details>
-          <div style={{ marginBottom: 16, padding: '14px 18px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-            <div>
-              <strong style={{ color: '#0369a1', fontSize: 14 }}>🤖 Gán nhãn nhanh bằng AI</strong>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>AI tự động gán nhãn Intent/Action cho toàn bộ {stage3Convs.length} sample để bạn kiểm tra và chỉnh sửa ngay tại Step 7.</p>
-            </div>
-            <button type="button" onClick={handleAiQuickLabelAll} disabled={isAutoLabelingBatch} style={{ padding: '9px 16px', background: isAutoLabelingBatch ? '#94a3b8' : '#0ea5e9', color: '#fff', border: 0, borderRadius: 8, fontWeight: 700, cursor: isAutoLabelingBatch ? 'not-allowed' : 'pointer' }}>
-              {isAutoLabelingBatch ? 'Đang xử lý...' : 'Gán nhãn tự động'}
-            </button>
-          </div>
+
           {/* Coverage Bar */}
           <div className="ia-coverage-bar">
             <div>
