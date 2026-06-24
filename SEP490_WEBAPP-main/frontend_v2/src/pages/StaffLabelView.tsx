@@ -500,13 +500,6 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
       const q = debouncedSearch.toLowerCase();
       result = result.filter(s => {
         if (String(s.id ?? '').toLowerCase().includes(q)) return true;
-
-  const filteredSamples = useMemo(() => {
-    let result = samples.map((sample, index) => ({ ...sample, originalIndex: index, _status: getSampleStatus(sample.id) }));
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(s => {
-        if (String(s.id ?? '').toLowerCase().includes(q)) return true;
         return s.messages?.some((msg: any) => msg.content?.toLowerCase().includes(q));
       });
     }
@@ -686,19 +679,39 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                           {status === 'submitted' && <><Eye size={13} /> Xem</>}
                           {status === 'approved' && <><Eye size={13} /> Xem</>}
                           {status === 'rejected' && <><Edit3 size={13} /> Sửa lại</>}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {filteredSamples.length > ITEMS_PER_PAGE && (
+            <div className="sl-table-pagination">
+              <button disabled={tablePage <= 1} onClick={() => setTablePage(p => p - 1)}><ChevronLeft size={16} /> Trang trước</button>
+              <div className="sl-pagination-info">Trang {tablePage} / {totalPages} · Hiển thị {pagedSamples.length} / {filteredSamples.length} mẫu</div>
+              <button disabled={tablePage >= totalPages} onClick={() => setTablePage(p => p + 1)}>Trang sau <ChevronRight size={16} /></button>
+            </div>
+          )}
+
+          {/* ===== DRAWER ===== */}
+          {drawerSampleId && drawerSample && (
+            <div className="sl-drawer-overlay" onClick={handleCloseDrawer}>
+              <div className="sl-drawer" onClick={e => e.stopPropagation()}>
+                {/* Drawer Header */}
+                <div className="sl-drawer-header">
+                  <div className="sl-drawer-title">
+                    <span className="sl-drawer-id">#{String(drawerSample.id).substring(0, 8)}</span>
                     {renderStatusBadge(getSampleStatus(drawerSample.id))}
                     {(() => {
                       const rs = reviewOf(drawerSample.id);
                       const map: any = {
-<<<<<<< Updated upstream
                         submitted: { t: 'Đã nộp - chờ duyệt', c: '#92400e', b: '#fef3c7' },
                         approved: { t: 'Đã duyệt', c: '#166534', b: '#dcfce7' },
                         rejected: { t: 'Bị từ chối', c: '#b91c1c', b: '#fee2e2' },
-=======
-                        submitted: { t: 'Đã nộp - chờ duyệt', c: '#92400e', b: '#fef3c7' },
-                        approved: { t: 'Đã duyệt', c: '#166534', b: '#dcfce7' },
-                        rejected: { t: 'Bị từ chối', c: '#b91c1c', b: '#fee2e2' },
->>>>>>> Stashed changes
                       };
                       return map[rs] ? (
                         <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: map[rs].c, background: map[rs].b }}>{map[rs].t}</span>
