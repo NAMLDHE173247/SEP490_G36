@@ -822,7 +822,7 @@ export class QualityController {
       }
 
       // Run AutoLabelV2Service to predict the action for the submitted text
-      const provider = new OpenRouterProvider();
+      const provider = await apiKeyService.createProvider(userId, 'gemini', true);
       const autoLabelService = new AutoLabelV2Service(provider);
       
       let suggestion;
