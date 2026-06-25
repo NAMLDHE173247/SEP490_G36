@@ -837,6 +837,7 @@ export class AssignmentController {
       const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
       const users = await User.find({ _id: { $in: validAssigneeIds } });
       const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
+      const userEmailMap = new Map(users.map(u => [String(u._id), u.email || null]));
 
       subs.forEach(sub => {
         const assigneeIdStr = String(sub.assigneeId);
@@ -942,7 +943,9 @@ export class AssignmentController {
           if (item && sIndex && samplesMap[sIndex]) {
             const data = (item as any).data || {};
             let preview = '';
+            let messages: any[] = [];
             if (Array.isArray(data.messages) && data.messages.length > 0) {
+              messages = data.messages.map((m: any) => ({ role: m.role, content: m.content || m.text || '' }));
               // Lấy 2 tin nhắn đầu, mỗi tin cắt 100 ký tự
               preview = data.messages.slice(0, 2).map((m: any) => {
                 const role = m.role === 'user' ? 'U' : 'A';
@@ -950,9 +953,14 @@ export class AssignmentController {
                 return `[${role}] ${text}`;
               }).join(' | ');
             } else if (data.prompt || data.response) {
+              messages = [
+                { role: 'user', content: data.prompt || '' },
+                { role: 'assistant', content: data.response || '' },
+              ];
               preview = `[U] ${(data.prompt || '').substring(0, 80)} | [A] ${(data.response || '').substring(0, 80)}`;
             }
             samplesMap[sIndex].preview = preview || `Sample #${sIndex}`;
+            samplesMap[sIndex].messages = messages;
             samplesMap[sIndex].subjectLabelDefault =
               data.subject ||
               data.subjectLabel ||
@@ -1007,6 +1015,31 @@ export class AssignmentController {
       }
 
       const samples = Object.values(samplesMap);
+
+      // Chuẩn hoá nhãn của 1 annotator để hiển thị đầy đủ khi phân xử
+      const buildAnnotatorLabel = (l: any) => {
+        const parsed = parseSavedLabel(l.targetTextSnapshot) || {};
+        const u = staffMap[String(l.createdBy)] || {};
+        return {
+          annotatorId: String(l.createdBy),
+          annotatorName: u.name || String(l.createdBy),
+          annotatorEmail: userEmailMap.get(String(l.createdBy)) || null,
+          // Giữ tương thích ngược: subject = tên annotator, quality = tên nhãn
+          subject: u.name || u.email || String(l.createdBy),
+          quality: l.name,
+          labelName: l.name,
+          // Chi tiết nhãn thật mà annotator đã gán
+          detail: {
+            subject: parsed.subject || null,
+            quality: parsed.quality || null,
+            completion: parsed.completion || null,
+            note: parsed.note || parsed.reason || null,
+          },
+          isComplete: isCompleteStaffLabel(parsed),
+          updatedAt: l.updatedAt || l.createdAt || null,
+        };
+      };
+
       const conflicts = [];
       for (const sIndexStr of Object.keys(conflictMap)) {
         const sIndex = Number(sIndexStr);
@@ -1016,14 +1049,20 @@ export class AssignmentController {
           const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
           if (hasConflict || true) { // Always show as conflict for now if > 1 label for demo purposes
             samplesMap[sIndex].conflict = true;
+            const annotatorLabels = sLabels.map(buildAnnotatorLabel);
             conflicts.push({
               sampleId: sIndex,
               key: samplesMap[sIndex].key,
               annotators: sLabels.length,
               iaa: 0.45,
               status: 'pending' as const,
-              labelA: { subject: staffMap[String(sLabels[0].createdBy)]?.name || String(sLabels[0].createdBy), quality: sLabels[0].name },
-              labelB: { subject: staffMap[String(sLabels[1].createdBy)]?.name || String(sLabels[1].createdBy), quality: sLabels[1].name }
+              // Nội dung sample để người phân xử đọc và đối chiếu
+              preview: samplesMap[sIndex].preview || '',
+              messages: samplesMap[sIndex].messages || [],
+              // Danh sách nhãn đầy đủ của tất cả annotator (hỗ trợ >2 người)
+              annotatorLabels,
+              labelA: annotatorLabels[0],
+              labelB: annotatorLabels[1],
             });
           }
         }

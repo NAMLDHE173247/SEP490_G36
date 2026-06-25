@@ -502,8 +502,8 @@ export const apiService = {
   validateModel: async (...args: any[]) => { const response = await api.post('/chat/validate-model', args[0]); return response.data; },
   listModelRegistries: async (...args: any[]) => { const response = await api.get('/model-registry'); return response.data; },
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
-  getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
-  registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
+  getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/model-versions/evaluations/${args[0]}`); return response.data; },
+  registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-versions', args[0]); return response.data; },
   getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset-prompts'); return response.data; },
 
   // Generic POST helper for dynamic endpoints

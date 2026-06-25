@@ -22,6 +22,8 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_traini
 import { User } from './models/User';
 import bcrypt from 'bcryptjs';
 import { seedDefaultStage4Data } from './seedStage4';
+import { seedModelRegistryData } from './seedModelRegistry';
+import { seedTrainingHistoryData } from './seedTrainingHistory';
 
 async function seedDefaultUsers() {
   try {
@@ -32,6 +34,7 @@ async function seedDefaultUsers() {
       { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const, status: 'active' as const },
       { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const, status: 'active' as const },
       { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const, status: 'active' as const },
+      { name: 'System Reviewer', email: 'reviewer', passwordHash, role: 'reviewer' as const, status: 'active' as const },
       { name: 'System Pending', email: 'pending', passwordHash, role: 'staff' as const, status: 'pending' as const },
       { name: 'System Disabled', email: 'disabled', passwordHash, role: 'staff' as const, status: 'inactive' as const },
     ];
@@ -54,6 +57,8 @@ mongoose
     console.log('✅ MongoDB connected:', MONGO_URI);
     await seedDefaultUsers();
     await seedDefaultStage4Data();
+    await seedModelRegistryData();
+    await seedTrainingHistoryData();
   })
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 
