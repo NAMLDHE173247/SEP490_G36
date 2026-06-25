@@ -329,6 +329,21 @@ export const stage4Api = {
     return res.data;
   },
 
+  adminSubmitRewrite: async (versionId: string, payload: {
+    sampleId: string;
+    submittedText: string;
+    reason?: string;
+    targetMessageIndex?: number | null;
+  }): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/admin-submit`, payload);
+    return res.data;
+  },
+
+  validateRewrite: async (versionId: string, taskId: string, submittedText: string): Promise<{ pass: boolean; message?: string; error?: string; reason?: string }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/validate`, { submittedText });
+    return res.data;
+  },
+
   suggestRewrite: async (versionId: string, taskId: string): Promise<{ suggestedText: string }> => {
     const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/suggest`);
     return res.data;

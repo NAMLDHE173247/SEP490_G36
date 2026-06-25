@@ -78,6 +78,7 @@ export const Stage4Labeling: React.FC = () => {
   const [reviewDetailModal, setReviewDetailModal] = useState<any>(null);
   const [rewriteTextContent, setRewriteTextContent] = useState('');
   const [selectedRewriteIds, setSelectedRewriteIds] = useState<any[]>([]);
+  const [selectedRewriteStaffIds, setSelectedRewriteStaffIds] = useState<string[]>([]);
   const [stage4StaffReady, setStage4StaffReady] = useState(false);
   const [assignmentDashboard, setAssignmentDashboard] = useState<any>(null);
   const [shareUsers, setShareUsers] = useState<any[]>([]);
@@ -89,6 +90,12 @@ export const Stage4Labeling: React.FC = () => {
   const [sampleComparisons, setSampleComparisons] = useState<Record<string, any>>({});
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [rewriteAssignPage, setRewriteAssignPage] = useState(1);
+  const [showRewriteStaffPicker, setShowRewriteStaffPicker] = useState(false);
+  const [showRewriteProgress, setShowRewriteProgress] = useState(false);
+  const [adminRewriteModal, setAdminRewriteModal] = useState<any>(null);
+  const [adminRewriteDraft, setAdminRewriteDraft] = useState('');
+  const [isSavingAdminRewrite, setIsSavingAdminRewrite] = useState(false);
   const rewriteReasonOptions = [
     'None',
     'Direct answer too early',
@@ -1765,6 +1772,9 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 10: ASSIGN REWRITE (BULK ASSIGN) ===== */}
           {currentSubStep4 === 10 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
+            const rewriteAssignTotalPages = Math.max(1, Math.ceil(rewriteItems.length / itemsPerPage));
+            const rewriteAssignSafePage = Math.min(rewriteAssignPage, rewriteAssignTotalPages);
+            const paginatedRewriteItems = rewriteItems.slice((rewriteAssignSafePage - 1) * itemsPerPage, rewriteAssignSafePage * itemsPerPage);
             const allSelected = rewriteItems.length > 0 && selectedRewriteIds.length === rewriteItems.length;
             const rewriteTaskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
             const assignedCount = rewriteItems.filter(i => rewriteTaskBySample.has(String(i.sampleObjectId || i._id || i.id))).length;
@@ -1788,11 +1798,14 @@ export const Stage4Labeling: React.FC = () => {
             const getSubjectStyle = (s) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
 
             const staffColors = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#7c3aed', '#dc2626'];
-            const staffList = shareUsers.length > 0
-              ? shareUsers.map((u: any, idx: number) => {
+            const selectedRewriteStaff = shareUsers.filter((u: any) => selectedRewriteStaffIds.includes(String(u._id || u.id || '')));
+            const assignmentStaffPool = selectedRewriteStaff;
+            const staffList = assignmentStaffPool.length > 0
+              ? assignmentStaffPool.map((u: any, idx: number) => {
                 const name = u.name || u.username || u.email || 'Unknown Staff';
                 return {
                   value: name,
+                  id: String(u._id || u.id || ''),
                   initials: name.split(' ').map((part: string) => part[0]).join('').slice(0, 2).toUpperCase() || 'ST',
                   color: staffColors[idx % staffColors.length],
                 };
@@ -1800,21 +1813,44 @@ export const Stage4Labeling: React.FC = () => {
               : [];
             const getStaffColor = (name) => staffList.find(s => s.value === name)?.color || '#64748b';
             const getStaffInitials = (name) => staffList.find(s => s.value === name)?.initials || '??';
+            const getRewriteProjectName = (item: any) => String(
+              item.projectName ||
+              item.dataset ||
+              item.datasetName ||
+              item.versionName ||
+              name ||
+              'Current Project'
+            );
+            const getRewriteItemKey = (item: any) => String(item.sampleObjectId || item._id || item.id);
+            const buildRewriteAssignmentPayload = (item: any, staff: any, reason?: string) => {
+              const messages = item.data?.messages || item.messages || [];
+              let targetMessageIndex = item.errorMessageIndex ?? -1;
+              if (targetMessageIndex < 0) {
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  if (messages[i]?.role === 'assistant') {
+                    targetMessageIndex = i;
+                    break;
+                  }
+                }
+              }
+              const originalText = targetMessageIndex >= 0
+                ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '')
+                : '';
+              return {
+                sampleId: getRewriteItemKey(item),
+                assigneeId: String(staff._id || staff.id || ''),
+                convId: String(item.convId || item.sampleId || item.id),
+                subject: item.subject || '',
+                reason: reason || rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
+                originalText,
+                targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
+                contextMode: 'n-2:n+2',
+                projectName: getRewriteProjectName(item),
+              };
+            };
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '14px 18px', borderRadius: '12px', border: '1px solid #c7d2fe', background: '#eef2ff' }}>
-                  <div>
-                    <strong style={{ color: '#312e81' }}>AI cross-check nằm trong Step 7</strong>
-                    <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#475569' }}>
-                      {results.length > 0 ? `Đã có ${results.length} kết quả AI để so sánh với Staff.` : 'Chạy AI để phát hiện conflict Staff–AI. Với task chỉ có 1 Staff, đây là nguồn conflict cần chuyển Supervisor.'}
-                    </p>
-                  </div>
-                  <button onClick={handleStartScoring} disabled={sepRunningEval || results.length > 0}
-                    style={{ padding: '10px 16px', border: 0, borderRadius: '8px', background: results.length > 0 ? '#dcfce7' : '#4f46e5', color: results.length > 0 ? '#15803d' : '#fff', fontWeight: 800, cursor: sepRunningEval ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-                    {sepRunningEval ? 'Đang chấm...' : results.length > 0 ? 'AI cross-check hoàn tất' : 'Chạy AI cross-check'}
-                  </button>
-                </div>
                 {/* Header card */}
                 <div style={{ background: 'linear-gradient(135deg, #fafbff 0%, #f0f4ff 100%)', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '22px 28px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
@@ -1836,13 +1872,23 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned</div>
                         <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{assignedCount}</div>
                       </div>
-                      <button disabled={isAutoAssigningRewrite || !rewriteItems.length || !shareUsers.length} onClick={async () => {
+                      <button onClick={() => setShowRewriteStaffPicker(true)}
+                        style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#3730a3', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Chọn Staff ({assignmentStaffPool.length})
+                      </button>
+                      <button disabled={isAutoAssigningRewrite || !rewriteItems.length || !assignmentStaffPool.length} onClick={async () => {
                         if (!activeVersionId) return alert('Missing dataset version.');
-                        if (!window.confirm(`Tự động chia đều ${rewriteItems.length} mẫu cho ${shareUsers.length} Staff? Mỗi mẫu chỉ giao cho 1 người.`)) return;
+                        if (!assignmentStaffPool.length) return alert('Chọn Staff rảnh để chia task rewrite trước.');
+                        const groupedItems = rewriteItems.reduce((groups: Record<string, any[]>, item: any) => {
+                          const key = getRewriteProjectName(item);
+                          if (!groups[key]) groups[key] = [];
+                          groups[key].push(item);
+                          return groups;
+                        }, {});
                         setIsAutoAssigningRewrite(true);
                         const nextAssignments: Record<string, string> = {};
-                        const assignments = rewriteItems.map((item: any, index: number) => {
-                          const staff = shareUsers[index % shareUsers.length];
+                        const assignments = Object.values(groupedItems).flatMap((items: any[]) => items.map((item: any, index: number) => {
+                          const staff = assignmentStaffPool[index % assignmentStaffPool.length];
                           const staffId = String(staff._id || staff.id || '');
                           const staffName = staff.name || staff.username || staff.email || 'Staff';
                           const messages = item.data?.messages || item.messages || [];
@@ -1856,11 +1902,14 @@ export const Stage4Labeling: React.FC = () => {
                             reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
                             originalText, targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
                             contextMode: 'n-2:n+2',
+                            projectName: getRewriteProjectName(item),
                           };
-                        });
+                        }));
                         try {
                           const result = await stage4Api.bulkAssignRewrite(activeVersionId, assignments);
                           setReassignStaff(prev => ({ ...prev, ...nextAssignments }));
+                          const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
+                          setRewriteAssignments(refreshed.tasks || []);
                           alert(`Đã giao thành công ${result.assignedCount}/${result.requestedCount} task rewrite.`);
                         } catch (error: any) {
                           alert(error?.response?.data?.error || 'Không thể giao task rewrite. Không có thay đổi nào được áp dụng.');
@@ -1871,24 +1920,9 @@ export const Stage4Labeling: React.FC = () => {
                         style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #0f766e', background: isAutoAssigningRewrite ? '#ccfbf1' : '#0f766e', color: isAutoAssigningRewrite ? '#115e59' : '#fff', cursor: isAutoAssigningRewrite ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
                         {isAutoAssigningRewrite ? 'Đang chia task...' : 'Tự động chia đều'}
                       </button>
-                      <button disabled={isAutoAssigningRewrite || rewriteAssignments.length === 0} onClick={async () => {
-                        if (!activeVersionId) return;
-                        const candidates = rewriteAssignments.filter((task: any) => ['assigned', 'redo', 'rejected'].includes(task.status));
-                        if (!candidates.length) return alert('Không còn rewrite task nào phù hợp để Auto-Bypass.');
-                        if (!window.confirm(`Auto-Bypass sẽ dùng Gemini viết và tự duyệt tối đa ${Math.min(20, candidates.length)} task. Staff sẽ được bỏ qua và kết quả được ghi thẳng vào bản export. Tiếp tục?`)) return;
-                        setIsAutoAssigningRewrite(true);
-                        try {
-                          const result = await stage4Api.autoBypassRewrite(activeVersionId, 20);
-                          const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
-                          setRewriteAssignments(refreshed.tasks || []);
-                          alert(`Auto-Bypass hoàn tất ${result.processedCount} task${result.failedCount ? `, lỗi ${result.failedCount} task` : ''}.`);
-                        } catch (error: any) {
-                          alert(error?.response?.data?.error || 'Auto-Bypass không thể hoàn tất.');
-                        } finally {
-                          setIsAutoAssigningRewrite(false);
-                        }
-                      }} style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #7c3aed', background: '#f5f3ff', color: '#6d28d9', cursor: isAutoAssigningRewrite ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}>
-                        <Sparkles size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} /> Auto-Bypass AI
+                      <button onClick={() => setShowRewriteProgress(true)}
+                        style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        Tiến độ
                       </button>
                       <button onClick={() => setCurrentSubStep4(11)}
                         style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
@@ -1908,7 +1942,50 @@ export const Stage4Labeling: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
+                <div style={{ display: 'none', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a' }}>Chọn Staff rảnh để chia Rewrite</div>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: 2 }}>Auto chia chỉ dùng danh sách được chọn, không lấy toàn bộ Staff trong hệ thống.</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" onClick={() => setSelectedRewriteStaffIds(shareUsers.map((u: any) => String(u._id || u.id || '')).filter(Boolean))}
+                        style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#3730a3', fontWeight: 800, cursor: 'pointer' }}>
+                        Chọn tất cả
+                      </button>
+                      <button type="button" onClick={() => setSelectedRewriteStaffIds([])}
+                        style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontWeight: 800, cursor: 'pointer' }}>
+                        Bỏ chọn
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px', maxHeight: 220, overflowY: 'auto' }}>
+                    {shareUsers.map((u: any, idx: number) => {
+                      const id = String(u._id || u.id || '');
+                      const checked = selectedRewriteStaffIds.includes(id);
+                      const staffName = u.name || u.username || u.email || 'Staff';
+                      return (
+                        <label key={id || idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${checked ? '#a7f3d0' : '#e2e8f0'}`, background: checked ? '#f0fdf4' : '#fff', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={checked} onChange={() => setSelectedRewriteStaffIds(prev => checked ? prev.filter(x => x !== id) : [...prev, id])}
+                            style={{ width: 16, height: 16, accentColor: '#059669' }} />
+                          <span style={{ width: 28, height: 28, borderRadius: '50%', background: staffColors[idx % staffColors.length], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>
+                            {staffName.split(' ').map((part: string) => part[0]).join('').slice(0, 2).toUpperCase() || 'ST'}
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <strong style={{ display: 'block', fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffName}</strong>
+                            <small style={{ display: 'block', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email || u.username || 'Active Staff'}</small>
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {!shareUsers.length && <div style={{ color: '#94a3b8', fontSize: 13 }}>Không có Staff active.</div>}
+                  </div>
+                  <div style={{ marginTop: 12, fontSize: 12, fontWeight: 800, color: assignmentStaffPool.length ? '#047857' : '#b45309' }}>
+                    Đã chọn {assignmentStaffPool.length}/{shareUsers.length} Staff cho rewrite assignment.
+                  </div>
+                </div>
+
+                <div style={{ display: 'none', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px 20px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
                     <div><div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>Tiến độ Rewrite của Staff</div><div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Tự cập nhật mỗi 10 giây, không cần theo dõi từng notification.</div></div>
                     <strong style={{ fontSize: '18px', color: '#0f766e' }}>{completionProgress}%</strong>
@@ -1924,6 +2001,73 @@ export const Stage4Labeling: React.FC = () => {
                   </div>
                 </div>
 
+                {showRewriteStaffPicker && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.42)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setShowRewriteStaffPicker(false)}>
+                    <div style={{ width: 'min(860px, 96vw)', maxHeight: '86vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Chọn Staff rảnh để chia Rewrite</h3>
+                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>Auto chia chỉ dùng danh sách được chọn.</p>
+                        </div>
+                        <button onClick={() => setShowRewriteStaffPicker(false)} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
+                      </div>
+                      <div style={{ padding: 20 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
+                          <strong style={{ color: assignmentStaffPool.length ? '#047857' : '#b45309' }}>Đã chọn {assignmentStaffPool.length}/{shareUsers.length} Staff</strong>
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <button type="button" onClick={() => setSelectedRewriteStaffIds(shareUsers.map((u: any) => String(u._id || u.id || '')).filter(Boolean))}
+                              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#3730a3', fontWeight: 800, cursor: 'pointer' }}>Chọn tất cả</button>
+                            <button type="button" onClick={() => setSelectedRewriteStaffIds([])}
+                              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontWeight: 800, cursor: 'pointer' }}>Bỏ chọn</button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+                          {shareUsers.map((u: any, idx: number) => {
+                            const id = String(u._id || u.id || '');
+                            const checked = selectedRewriteStaffIds.includes(id);
+                            const staffName = u.name || u.username || u.email || 'Staff';
+                            return (
+                              <label key={id || idx} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${checked ? '#a7f3d0' : '#e2e8f0'}`, background: checked ? '#f0fdf4' : '#fff', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={checked} onChange={() => setSelectedRewriteStaffIds(prev => checked ? prev.filter(x => x !== id) : [...prev, id])} style={{ width: 16, height: 16, accentColor: '#059669' }} />
+                                <span style={{ width: 28, height: 28, borderRadius: '50%', background: staffColors[idx % staffColors.length], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>
+                                  {staffName.split(' ').map((part: string) => part[0]).join('').slice(0, 2).toUpperCase() || 'ST'}
+                                </span>
+                                <span style={{ minWidth: 0 }}>
+                                  <strong style={{ display: 'block', fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{staffName}</strong>
+                                  <small style={{ display: 'block', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email || u.username || 'Active Staff'}</small>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showRewriteProgress && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.42)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setShowRewriteProgress(false)}>
+                    <div style={{ width: 'min(620px, 96vw)', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Tiến độ Rewrite</h3>
+                        <button onClick={() => setShowRewriteProgress(false)} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
+                      </div>
+                      <div style={{ padding: 20 }}>
+                        <strong style={{ fontSize: 28, color: '#0f766e' }}>{completionProgress}%</strong>
+                        <div style={{ height: 9, background: '#e2e8f0', borderRadius: 999, overflow: 'hidden', margin: '12px 0 16px' }}><div style={{ height: '100%', width: `${completionProgress}%`, background: '#0f766e' }} /></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(100px, 1fr))', gap: 8 }}>
+                          {[
+                            { label: 'Đang làm', value: Math.max(0, rewriteAssignments.length - submittedCount - approvedTaskCount - redoCount), color: '#2563eb', bg: '#eff6ff' },
+                            { label: 'Chờ duyệt', value: submittedCount, color: '#c2410c', bg: '#fff7ed' },
+                            { label: 'Làm lại', value: redoCount, color: '#be123c', bg: '#fff1f2' },
+                            { label: 'Đã duyệt', value: approvedTaskCount, color: '#15803d', bg: '#f0fdf4' },
+                          ].map(status => <div key={status.label} style={{ background: status.bg, borderRadius: 8, padding: '10px 12px' }}><div style={{ fontSize: 20, fontWeight: 900, color: status.color }}>{status.value}</div><div style={{ fontSize: 11, fontWeight: 700, color: status.color }}>{status.label}</div></div>)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Table */}
                 <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
@@ -1934,6 +2078,7 @@ export const Stage4Labeling: React.FC = () => {
                             style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }} />
                         </th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conv ID</th>
+                        <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Project</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subject</th>
                         <th style={{ padding: '14px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Issue Detected</th>
                         <th style={{ padding: '14px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', width: '190px' }}>Rewrite Reason</th>
@@ -1942,7 +2087,7 @@ export const Stage4Labeling: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {rewriteItems.map((item, i) => {
+                      {paginatedRewriteItems.map((item, i) => {
                         const checked = selectedRewriteIds.includes(item.id);
                         const persistedTask = rewriteTaskBySample.get(String(item.sampleObjectId || item._id || item.id));
                         const staff = persistedTask?.staffName || reassignStaff[item.id];
@@ -1955,6 +2100,9 @@ export const Stage4Labeling: React.FC = () => {
                             </td>
                             <td style={{ padding: '14px 16px' }}>
                               <span style={{ fontWeight: '700', color: '#1e293b', fontFamily: 'monospace', fontSize: '13px', background: '#f8fafc', padding: '3px 8px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>{item.convId}</span>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: '700', color: '#334155' }}>{getRewriteProjectName(item)}</span>
                             </td>
                             <td style={{ padding: '14px 16px' }}>
                               <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: subjStyle.bg, color: subjStyle.color }}>{item.subject}</span>
@@ -1999,6 +2147,22 @@ export const Stage4Labeling: React.FC = () => {
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 4px' }}>
+                  <span style={{ fontSize: 13, color: '#64748b', fontWeight: 700 }}>
+                    Showing {rewriteItems.length ? (rewriteAssignSafePage - 1) * itemsPerPage + 1 : 0}-{Math.min(rewriteAssignSafePage * itemsPerPage, rewriteItems.length)} of {rewriteItems.length}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button type="button" disabled={rewriteAssignSafePage <= 1} onClick={() => setRewriteAssignPage((p) => Math.max(1, p - 1))}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: rewriteAssignSafePage <= 1 ? '#f8fafc' : '#fff', color: '#334155', cursor: rewriteAssignSafePage <= 1 ? 'not-allowed' : 'pointer', fontWeight: 800 }}>
+                      Prev
+                    </button>
+                    <strong style={{ fontSize: 13, color: '#0f172a' }}>{rewriteAssignSafePage}/{rewriteAssignTotalPages}</strong>
+                    <button type="button" disabled={rewriteAssignSafePage >= rewriteAssignTotalPages} onClick={() => setRewriteAssignPage((p) => Math.min(rewriteAssignTotalPages, p + 1))}
+                      style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', background: rewriteAssignSafePage >= rewriteAssignTotalPages ? '#f8fafc' : '#fff', color: '#334155', cursor: rewriteAssignSafePage >= rewriteAssignTotalPages ? 'not-allowed' : 'pointer', fontWeight: 800 }}>
+                      Next
+                    </button>
+                  </div>
                 </div>
 
                 {/* Floating bulk assign bar */}
@@ -2079,6 +2243,74 @@ export const Stage4Labeling: React.FC = () => {
                     </button>
                   </div>
                 )}
+                {adminRewriteModal && (
+                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.48)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => !isSavingAdminRewrite && setAdminRewriteModal(null)}>
+                    <div style={{ width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Admin tự rewrite</h3>
+                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{adminRewriteModal.item?.convId || adminRewriteModal.item?.sampleId || 'Conversation'} - lưu xong sẽ được duyệt thẳng vào bản export.</p>
+                        </div>
+                        <button onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
+                      </div>
+                      <div style={{ padding: 20, display: 'grid', gap: 14 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, background: '#f8fafc' }}>
+                            <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Câu AI gốc cần sửa</div>
+                            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#0f172a' }}>{adminRewriteModal.originalText || '(Không tìm thấy câu AI mục tiêu)'}</div>
+                          </section>
+                          <section style={{ border: '1px solid #bae6fd', borderRadius: 10, padding: 14, background: '#f0f9ff' }}>
+                            <div style={{ fontSize: 12, fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: 8 }}>Bản sửa sẽ dùng trong export</div>
+                            <textarea value={adminRewriteDraft} onChange={(e) => setAdminRewriteDraft(e.target.value)}
+                              disabled={isSavingAdminRewrite}
+                              style={{ width: '100%', minHeight: 220, resize: 'vertical', border: '1px solid #7dd3fc', borderRadius: 8, padding: 12, fontSize: 14, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
+                              placeholder="Nhập câu trả lời AI đã sửa ở đây..." />
+                          </section>
+                        </div>
+                        <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#fff' }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
+                          {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
+                            <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
+                              <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'AI' : 'Student'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
+                              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                          <button type="button" onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite}
+                            style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 800, cursor: 'pointer' }}>Hủy</button>
+                          <button type="button" disabled={isSavingAdminRewrite || !adminRewriteDraft.trim()} onClick={async () => {
+                            if (!activeVersionId) return alert('Missing dataset version.');
+                            const sampleId = String(adminRewriteModal.item?.sampleObjectId || adminRewriteModal.item?._id || adminRewriteModal.item?.id || '');
+                            setIsSavingAdminRewrite(true);
+                            try {
+                              const response = await stage4Api.adminSubmitRewrite(activeVersionId, {
+                                sampleId,
+                                submittedText: adminRewriteDraft.trim(),
+                                reason: adminRewriteModal.item?.issue || 'Admin self rewrite',
+                                targetMessageIndex: adminRewriteModal.targetIndex,
+                              });
+                              setRewriteAssignments((prev) => {
+                                const next = prev.filter((task: any) => task.id !== response.task.id && String(task.sampleId) !== String(response.task.sampleId));
+                                return [...next, response.task];
+                              });
+                              setCompletedRewrites((prev: any) => ({ ...prev, [sampleId]: true, [String(adminRewriteModal.item?.id)]: true }));
+                              setAdminRewriteModal(null);
+                              setAdminRewriteDraft('');
+                            } catch (error: any) {
+                              alert(error?.response?.data?.error || 'Không thể lưu bản admin rewrite.');
+                            } finally {
+                              setIsSavingAdminRewrite(false);
+                            }
+                          }}
+                            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#0369a1', color: '#fff', fontWeight: 900, cursor: isSavingAdminRewrite ? 'wait' : 'pointer' }}>
+                            {isSavingAdminRewrite ? 'Đang lưu...' : 'Lưu và duyệt thẳng'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                   <button onClick={() => setCurrentSubStep4(11)}
@@ -2098,6 +2330,30 @@ export const Stage4Labeling: React.FC = () => {
             const activeRewriteTask: any = activeItem ? taskBySample.get(String(activeItem.sampleObjectId || activeItem._id || activeItem.id)) : null;
             const approvedCount = rewriteAssignments.filter((task: any) => task.status === 'approved').length;
             const pendingCount = rewriteAssignments.filter((task: any) => task.status === 'submitted').length;
+            const getAdminRewriteTarget = (item: any) => {
+              const messages = item?.sampleData?.messages || item?.data?.messages || item?.messages || [];
+              let targetIndex = Number(item?.errorMessageIndex);
+              if (!Number.isInteger(targetIndex) || targetIndex < 0 || !messages[targetIndex]) {
+                targetIndex = -1;
+                for (let i = messages.length - 1; i >= 0; i -= 1) {
+                  if (messages[i]?.role === 'assistant') {
+                    targetIndex = i;
+                    break;
+                  }
+                }
+              }
+              const targetMessage = targetIndex >= 0 ? messages[targetIndex] : null;
+              return {
+                targetIndex,
+                originalText: String(targetMessage?.content || targetMessage?.text || ''),
+                messages,
+              };
+            };
+            const openAdminRewrite = (item: any) => {
+              const target = getAdminRewriteTarget(item);
+              setAdminRewriteModal({ item, ...target });
+              setAdminRewriteDraft(activeRewriteTask?.submittedText || target.originalText || '');
+            };
 
             const subjectColors = {
               'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
@@ -2299,6 +2555,11 @@ export const Stage4Labeling: React.FC = () => {
                         {activeRewriteTask?.submittedText ? (
                           <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                             <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569', flex: 1 }}>Admin Decision:</span>
+                            <button onClick={() => openAdminRewrite(activeItem)}
+                              disabled={isSavingAdminRewrite}
+                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: '1.5px solid #bae6fd', background: '#f0f9ff', color: '#0369a1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Pencil size={14} /> Admin tự sửa
+                            </button>
                             <button onClick={() => reviewRewriteTask(activeRewriteTask, 'approved')} disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
                               style={{ padding: '11px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: activeRewriteTask.status === 'approved' ? '#e2e8f0' : 'linear-gradient(135deg, #16a34a, #15803d)', color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Approved</> : <><Check size={14} /> Approve</>}
@@ -2318,6 +2579,11 @@ export const Stage4Labeling: React.FC = () => {
                             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', color: '#cbd5e1' }}><Inbox size={32} /></div>
                             <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Staff has not submitted a rewrite yet.</p>
                             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>Waiting for the rewrite submission workflow to provide revised text.</p>
+                            <button onClick={() => openAdminRewrite(activeItem)}
+                              disabled={isSavingAdminRewrite}
+                              style={{ marginTop: '14px', padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: '#0369a1', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <Pencil size={14} /> Admin tự rewrite
+                            </button>
                           </div>
                         )}
                       </div>

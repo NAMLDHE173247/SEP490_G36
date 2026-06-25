@@ -121,8 +121,8 @@ export const chatWithAI = async (req: Request, res: Response): Promise<void> => 
         llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'gemini') {
         // Use GeminiProvider with isJson = false for chat
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
+        const { OpenRouterProvider } = await import('../services/providers/OpenRouterProvider.js');
+        llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'openai') {
         const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
         llmProvider = new OpenAIProvider();
@@ -230,8 +230,8 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       if (normalizedProvider === 'openrouter') {
         llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
+        const { OpenRouterProvider } = await import('../services/providers/OpenRouterProvider.js');
+        llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'openai') {
         const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
         llmProvider = new OpenAIProvider();
@@ -341,8 +341,8 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
       if (normalizedProvider === 'openrouter') {
         llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
+        const { OpenRouterProvider } = await import('../services/providers/OpenRouterProvider.js');
+        llmProvider = new OpenRouterProvider();
       }
 
       if (llmProvider) {
@@ -511,8 +511,8 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       if (normalizedProvider === 'openrouter') {
         llmProvider = new OpenRouterProvider();
       } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
+        const { OpenRouterProvider } = await import('../services/providers/OpenRouterProvider.js');
+        llmProvider = new OpenRouterProvider();
       }
 
       if (llmProvider) {

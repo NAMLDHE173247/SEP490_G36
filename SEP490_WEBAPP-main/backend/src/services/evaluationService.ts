@@ -1,7 +1,7 @@
 import { ILlmProvider } from './providers/ILlmProvider';
 import { AlpacaFormat } from '../types';
 import { ALPACA_SYSTEM_PROMPT, OPENAI_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT, REWRITE_SYSTEM_PROMPT } from '../constants/prompts';
-import { GeminiProvider } from './providers/GeminiProvider';
+import { OpenRouterProvider } from './providers/OpenRouterProvider';
 
 export interface SampleEvaluation {
     instruction: string;
@@ -515,5 +515,5 @@ export class EvaluationService {
     }
 }
 
-// Export a default instance powered by Gemini
-export const evaluationService = new EvaluationService(new GeminiProvider());
+// Export a default instance powered by OpenRouter (since Gemini/Qwen are down)
+export const evaluationService = new EvaluationService(new OpenRouterProvider());

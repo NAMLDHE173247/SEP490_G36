@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
+import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
 import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { MessageAutoLabelingService } from './messageAutoLabel.service';
@@ -13,7 +13,7 @@ function getService(provider?: string) {
   if (normalized === 'deepseek') {
     return new MessageAutoLabelingService(new DeepseekProvider());
   }
-  return new MessageAutoLabelingService(new GeminiProvider());
+  return new MessageAutoLabelingService(new OpenRouterProvider());
 }
 
 export class MessageAutoLabelingController {

@@ -12,7 +12,7 @@ import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudi
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
-import { GeminiProvider } from '../services/providers/GeminiProvider';
+import { OpenRouterProvider } from '../services/providers/OpenRouterProvider';
 import { OpenAIProvider } from '../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../services/providers/DeepseekProvider';
 import { getAuthUserId, isManager } from '../utils/auth';
@@ -349,7 +349,7 @@ export class EvaluationController {
       return new EvaluationService(new DeepseekProvider());
     }
 
-    return new EvaluationService(new GeminiProvider());
+    return new EvaluationService(new OpenRouterProvider());
   }
 
   async evaluate(req: Request, res: Response): Promise<void> {
@@ -432,7 +432,7 @@ ${conflictingLabels.map((c: any) => `- ${c.annotator}: [${c.labels.join(', ')}]`
 
 Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên giữ nhãn nào):`;
 
-      const provider = new GeminiProvider(false);
+      const provider = new OpenRouterProvider();
       const advice = await provider.generateContent(prompt, 'gemini-2.5-flash');
 
       res.json({ advice });

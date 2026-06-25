@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { AutoLabelingService } from './autoLabel.service';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
+import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
 import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 
@@ -13,7 +13,7 @@ function getService(provider?: string) {
   if (normalized === 'deepseek') {
     return new AutoLabelingService(new DeepseekProvider());
   }
-  return new AutoLabelingService(new GeminiProvider());
+  return new AutoLabelingService(new OpenRouterProvider());
 }
 
 export class AutoLabelingController {

@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
+import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
 import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
 import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
-import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
+
 import { ILlmProvider } from '../../../services/providers/ILlmProvider';
 import { AutoLabelV2Service } from './autoLabelV2.service';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
@@ -18,7 +18,7 @@ function createProvider(providerName?: string): ILlmProvider {
       return new OpenRouterProvider();
     case 'gemini':
     default:
-      return new GeminiProvider();
+      return new OpenRouterProvider();
   }
 }
 
