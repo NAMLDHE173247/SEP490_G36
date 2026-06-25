@@ -1,25 +1,14 @@
 import { Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
-import { OpenRouterProvider } from '../../../services/providers/OpenRouterProvider';
 import { ILlmProvider } from '../../../services/providers/ILlmProvider';
 import { AutoLabelV2Service } from './autoLabelV2.service';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 
-function createProvider(providerName?: string): ILlmProvider {
-  switch (providerName) {
-    case 'openai':
-      return new OpenAIProvider();
-    case 'deepseek':
-      return new DeepseekProvider();
-    case 'openrouter':
-      return new OpenRouterProvider();
-    case 'gemini':
-    default:
-      return new GeminiProvider();
-  }
+import { apiKeyService } from '../../../services/apiKeyService';
+
+async function createProvider(userId: string | null | undefined, providerName?: string): Promise<ILlmProvider> {
+  const normalized = String(providerName || 'gemini').toLowerCase();
+  return apiKeyService.createProvider(userId, normalized, true);
 }
 
 export class AutoLabelV2Controller {
@@ -62,7 +51,7 @@ export class AutoLabelV2Controller {
           content: String(message.content || (message as any).text || ''),
         }));
 
-      const selectedProvider = createProvider(providerName);
+      const selectedProvider = await createProvider(ownerId, providerName);
       const service = new AutoLabelV2Service(selectedProvider);
       let suggestions;
       let usedFallback = false;

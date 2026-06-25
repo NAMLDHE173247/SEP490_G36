@@ -33,6 +33,7 @@ export const Stage4Labeling: React.FC = () => {
     adjudicateQuality,
     adjudicateMultiEvalResult,
     refreshData,
+    setQualityResult,
   } = useStage4Data(activeVersionId);
 
   const dataPrep = useDataPrep();

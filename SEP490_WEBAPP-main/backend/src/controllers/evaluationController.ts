@@ -12,9 +12,7 @@ import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudi
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
-import { GeminiProvider } from '../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../services/providers/DeepseekProvider';
+import { apiKeyService } from '../services/apiKeyService';
 import { getAuthUserId, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
 import { EvalFormat, inferFormatFromRow } from '../utils/evalUtils';
@@ -340,16 +338,10 @@ async function ensureEvaluationHistoryIndexes(): Promise<void> {
 }
 
 export class EvaluationController {
-  private getService(provider?: string): EvaluationService {
-    const normalizedProvider = String(provider || '').toLowerCase();
-    if (normalizedProvider === 'openai') {
-      return new EvaluationService(new OpenAIProvider());
-    }
-    if (normalizedProvider === 'deepseek') {
-      return new EvaluationService(new DeepseekProvider());
-    }
-
-    return new EvaluationService(new GeminiProvider());
+  private async getService(provider: string | undefined, userId?: string | null): Promise<EvaluationService> {
+    const normalizedProvider = String(provider || 'gemini').toLowerCase();
+    const llmProvider = await apiKeyService.createProvider(userId, normalizedProvider, true);
+    return new EvaluationService(llmProvider);
   }
 
   async evaluate(req: Request, res: Response): Promise<void> {
@@ -365,7 +357,8 @@ export class EvaluationController {
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const result = await service.evaluateBatch(data, format);
 
       res.json(result);
@@ -390,7 +383,8 @@ export class EvaluationController {
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const samples = data.map((item) => ({
         assistant: String(item?.assistant || ''),
         reason: String(item?.reason || ''),
@@ -432,7 +426,7 @@ ${conflictingLabels.map((c: any) => `- ${c.annotator}: [${c.labels.join(', ')}]`
 
 Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên giữ nhãn nào):`;
 
-      const provider = new GeminiProvider(false);
+      const provider = await apiKeyService.createProvider(ownerId, 'gemini', false);
       const advice = await provider.generateContent(prompt, 'gemini-2.5-flash');
 
       res.json({ advice });
@@ -1146,7 +1140,8 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const samples = data.map((item) => ({
         turns: Array.isArray(item?.turns) ? item.turns.map((turn) => ({
           userMessageIndex: Number(turn?.userMessageIndex),

@@ -1,7 +1,6 @@
 import { ILlmProvider } from './providers/ILlmProvider';
 import { AlpacaFormat } from '../types';
 import { ALPACA_SYSTEM_PROMPT, OPENAI_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT, REWRITE_SYSTEM_PROMPT } from '../constants/prompts';
-import { GeminiProvider } from './providers/GeminiProvider';
 
 export interface SampleEvaluation {
     instruction: string;
@@ -515,5 +514,4 @@ export class EvaluationService {
     }
 }
 
-// Export a default instance powered by Gemini
-export const evaluationService = new EvaluationService(new GeminiProvider());
+// Removed default instance export because api keys are dynamic

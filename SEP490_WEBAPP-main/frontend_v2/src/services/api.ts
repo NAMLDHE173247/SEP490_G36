@@ -216,10 +216,10 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File, projectId: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
+  uploadFile: async (file: File, projectId?: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('projectId', projectId);
+    if (projectId) formData.append('projectId', projectId);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',

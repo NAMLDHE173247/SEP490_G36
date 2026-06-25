@@ -378,9 +378,12 @@ function Navbar() {
                       <User size={18} className="dropdown-item-icon" />
                       Profile Settings
                     </li>
-                    <li className="dropdown-item">
-                      <CreditCard size={18} className="dropdown-item-icon" />
-                      API Tokens
+                    <li className="dropdown-item" onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/dashboard', { state: { tab: 'API Keys' } });
+                    }}>
+                      <Shield size={18} className="dropdown-item-icon" />
+                      Cấu hình API Keys
                     </li>
                     <li className="dropdown-item">
                       <Settings size={18} className="dropdown-item-icon" />

@@ -43,6 +43,17 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [supervisors, setSupervisors] = useState<any[]>([]);
   const [updatingSupervisor, setUpdatingSupervisor] = useState<string | null>(null);
 
+  const handleSupervisorChange = async (e: any, task: any) => {
+    // Add logic here to handle supervisor change
+    setUpdatingSupervisor(task.id);
+    try {
+      // Dummy logic for now
+      await new Promise(resolve => setTimeout(resolve, 500));
+    } finally {
+      setUpdatingSupervisor(null);
+    }
+  };
+
   const fetchProjects = async () => {
     try {
       const res = await api.get('/dataprep/projects');

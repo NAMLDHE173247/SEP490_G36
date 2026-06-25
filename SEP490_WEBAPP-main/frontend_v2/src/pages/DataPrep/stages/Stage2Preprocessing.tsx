@@ -177,7 +177,7 @@ export const Stage2Preprocessing = () => {
                   <div className="post-stat-item">
                     <div className="post-stat-label">Lọc do vi phạm độ dài</div>
                     <div className="post-stat-value cleaning-red">
-                      {((conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)) ?? 0}
+                      {(conversionStats?.stats?.cleaning?.removedTooShort ?? 0) + (conversionStats?.stats?.cleaning?.removedTooLong ?? 0)}
                     </div>
                   </div>
                   <div className="post-stat-item">
@@ -1214,7 +1214,7 @@ export const Stage2Preprocessing = () => {
                         <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             Target K (Clusters)
-                            <Tooltip position="bottom" text="Số lượng nhóm dữ liệu mà AI sẽ tự động phân loại. Giá trị này được AI khuyến nghị tự động (Recommended K) dựa trên biểu đồ Silhouette để đạt chất lượng chia nhóm tốt nhất.">
+                            <Tooltip text="Số lượng nhóm dữ liệu mà AI sẽ tự động phân loại. Giá trị này được AI khuyến nghị tự động (Recommended K) dựa trên biểu đồ Silhouette để đạt chất lượng chia nhóm tốt nhất.">
                               <HelpCircle size={14} color="#94a3b8" />
                             </Tooltip>
                           </label>
@@ -1233,7 +1233,7 @@ export const Stage2Preprocessing = () => {
                           <div className="cleaning-input-group">
                             <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               DBSCAN EPS
-                              <Tooltip position="bottom" text="Khoảng cách cho phép (bán kính) để 2 hội thoại được xem là 'giống nhau'. Nếu vượt quá mức này, AI sẽ loại chúng ra thành dữ liệu rác (Noise) để làm sạch cụm.">
+                              <Tooltip text="Khoảng cách cho phép (bán kính) để 2 hội thoại được xem là 'giống nhau'. Nếu vượt quá mức này, AI sẽ loại chúng ra thành dữ liệu rác (Noise) để làm sạch cụm.">
                                 <HelpCircle size={14} color="#94a3b8" />
                               </Tooltip>
                             </label>
@@ -1242,7 +1242,7 @@ export const Stage2Preprocessing = () => {
                           <div className="cleaning-input-group">
                             <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               Min Samples
-                              <Tooltip position="bottom" text="Số lượng hội thoại tối thiểu cần có để tạo thành 1 nhóm. Nếu một nhóm có ít hội thoại hơn mức này, nó sẽ bị AI coi là rác (Noise) và loại bỏ.">
+                              <Tooltip text="Số lượng hội thoại tối thiểu cần có để tạo thành 1 nhóm. Nếu một nhóm có ít hội thoại hơn mức này, nó sẽ bị AI coi là rác (Noise) và loại bỏ.">
                                 <HelpCircle size={14} color="#94a3b8" />
                               </Tooltip>
                             </label>

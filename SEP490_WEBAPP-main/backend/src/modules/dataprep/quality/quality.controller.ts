@@ -7,7 +7,7 @@ import { Stage4Notification } from '../../../models/Stage4Notification';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { User } from '../../../models/User';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
+import { apiKeyService } from '../../../services/apiKeyService';
 import { sendTransactionalEmail } from '../../../services/emailService';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 
@@ -666,7 +666,7 @@ export class QualityController {
           'Return JSON only: {"suggestedText":"..."}',
         ],
       };
-      const provider = new GeminiProvider();
+      const provider = await apiKeyService.createProvider(userId, 'gemini', true);
       const raw = await provider.generateContent(
         JSON.stringify(prompt, null, 2),
         undefined,
@@ -763,7 +763,7 @@ export class QualityController {
         res.json({ processedCount: 0, failedCount: 0, failures: [] });
         return;
       }
-      const provider = new GeminiProvider();
+      const provider = await apiKeyService.createProvider(actorId, 'gemini', true);
       const failures: Array<{ taskId: string; error: string }> = [];
       let processedCount = 0;
       for (const task of tasks) {

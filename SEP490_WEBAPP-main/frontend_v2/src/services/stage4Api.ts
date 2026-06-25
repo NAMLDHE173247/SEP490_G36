@@ -59,11 +59,11 @@ export interface QualityItem {
     turnScore: number;
     intentScores: Array<{
       intent: string;
-      value: number;
-      matched: boolean;
+      score: number;
       harmfulActions: string[];
     }>;
   }>;
+  [key: string]: any;
 }
 
 export interface QualityResult {
@@ -177,6 +177,7 @@ export interface MultiEvalResult {
   adjudicationNote?: string;
   adjudicatedBy?: string;
   adjudicatedAt?: string;
+  [key: string]: any;
 }
 
 // --- API CLIENT ---

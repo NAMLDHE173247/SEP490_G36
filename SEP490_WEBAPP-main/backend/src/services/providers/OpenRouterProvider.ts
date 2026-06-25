@@ -9,8 +9,8 @@ dotenv.config();
 export class OpenRouterProvider implements ILlmProvider {
     private apiKey: string;
 
-    constructor() {
-        this.apiKey = process.env.OPENROUTER_API_KEY || '';
+    constructor(customApiKey?: string) {
+        this.apiKey = customApiKey || process.env.OPENROUTER_API_KEY || '';
     }
 
     async generateContent(prompt: string, modelOverride?: string, systemPrompt?: string): Promise<string> {

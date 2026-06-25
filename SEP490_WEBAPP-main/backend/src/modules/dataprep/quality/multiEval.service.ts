@@ -4,11 +4,9 @@ import { MultiModelEvaluationResult, ILlmScorecard } from '../../../models/Multi
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { DatasetVersion } from '../../../models/DatasetVersion';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
 import { QualityService } from './quality.service';
+import { apiKeyService } from '../../../services/apiKeyService';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -25,15 +23,9 @@ export class MultiEvalService {
     }
   }
 
-  private getProvider(modelName: string) {
+  private async getProvider(modelName: string, userId: string | null | undefined) {
     const name = String(modelName).toLowerCase();
-    if (name === 'openai') {
-      return new OpenAIProvider();
-    }
-    if (name === 'deepseek') {
-      return new DeepseekProvider();
-    }
-    return new GeminiProvider();
+    return apiKeyService.createProvider(userId, name, true);
   }
 
   async runJob(
@@ -215,7 +207,7 @@ export class MultiEvalService {
           const modelNames = models;
           const evaluationPromises = modelNames.map(async (modelName) => {
             try {
-              const provider = this.getProvider(modelName);
+              const provider = await this.getProvider(modelName, job.startedBy?.toString());
               const inputData = {
                 contextWindow,
                 originalMessageIndex: targetIdx,
@@ -367,7 +359,7 @@ export class MultiEvalService {
           // Auto Rewrite Logic
           if (finalRecommendation === 'Need Rewrite' && bestModelSelected && bestModelScorecard?.reason) {
             try {
-              const refineProvider = this.getProvider(bestModelSelected);
+              const refineProvider = await this.getProvider(bestModelSelected, job.startedBy?.toString());
               const assistantString = contextWindow.map((m: any) => `[${m.role.toUpperCase()}${m.isTarget ? ' (TARGET)' : ''}]: ${m.content}`).join('\n\n');
               const payload = [{
                 index: 0,

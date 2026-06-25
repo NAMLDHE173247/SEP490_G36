@@ -8,8 +8,8 @@ export class DeepseekProvider implements ILlmProvider {
   private readonly apiKey: string;
   private readonly baseUrl: string;
 
-  constructor() {
-    this.apiKey = process.env.DEEPSEEK_API_KEY || '';
+  constructor(customApiKey?: string) {
+    this.apiKey = customApiKey || process.env.DEEPSEEK_API_KEY || '';
     this.baseUrl = 'https://api.deepseek.com';
 
     if (!this.apiKey) {

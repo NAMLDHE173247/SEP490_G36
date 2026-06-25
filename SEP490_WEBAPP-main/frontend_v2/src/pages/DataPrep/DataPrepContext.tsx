@@ -1284,7 +1284,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
           ...res,
           clusterStats: updatedStats
         });
-        alert(`Đã loại bỏ ${res.removedCount} hội thoại trùng lặp. Giữ lại ${res.keptCount} hội thoại.`);
+        alert(`Đã loại bỏ ${(res as any).removedCount} hội thoại trùng lặp. Giữ lại ${(res as any).keptCount} hội thoại.`);
       }
     } catch (err: any) {
       console.error('Deduplicate failed:', err);

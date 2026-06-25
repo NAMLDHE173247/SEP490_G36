@@ -794,7 +794,7 @@ function DataPrepInner() {
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+        const res = await apiService.uploadFile(uploaded, undefined, (progressEvent: any) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);

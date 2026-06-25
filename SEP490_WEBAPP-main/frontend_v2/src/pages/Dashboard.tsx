@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
@@ -23,10 +23,19 @@ import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ReviewerDashboardView from './ReviewerDashboardView';
+import ApiKeySettingsPage from './ApiKeySettingsPage';
 
 function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Read tab from location state if available
+  React.useEffect(() => {
+    if (location.state?.tab) {
+      setActiveTab(location.state.tab as string);
+    }
+  }, [location.state]);
 
   // Redirect to login if user is not authenticated
   React.useEffect(() => {
@@ -92,6 +101,7 @@ function Dashboard() {
   React.useEffect(() => {
     if (user) {
       const isValid = 
+        (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
         (activeTab === 'Task Detail' && user.role === 'admin') ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
@@ -180,6 +190,8 @@ function Dashboard() {
         return <MyStatsView />;
       case 'Reviewer Dashboard':
         return <ReviewerDashboardView />;
+      case 'API Keys':
+        return <ApiKeySettingsPage />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
         if (user.role === 'reviewer') return <ReviewerDashboardView />;

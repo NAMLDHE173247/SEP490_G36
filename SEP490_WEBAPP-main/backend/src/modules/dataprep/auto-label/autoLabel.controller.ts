@@ -1,19 +1,12 @@
 import { Request, Response } from 'express';
 import { AutoLabelingService } from './autoLabel.service';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
+import { apiKeyService } from '../../../services/apiKeyService';
 
-function getService(provider?: string) {
-  const normalized = String(provider || '').toLowerCase();
-  if (normalized === 'openai') {
-    return new AutoLabelingService(new OpenAIProvider());
-  }
-  if (normalized === 'deepseek') {
-    return new AutoLabelingService(new DeepseekProvider());
-  }
-  return new AutoLabelingService(new GeminiProvider());
+async function getService(userId: string | null | undefined, provider?: string) {
+  const normalized = String(provider || 'gemini').toLowerCase();
+  const llmProvider = await apiKeyService.createProvider(userId, normalized, true);
+  return new AutoLabelingService(llmProvider);
 }
 
 export class AutoLabelingController {
@@ -27,7 +20,7 @@ export class AutoLabelingController {
 
       const { versionId } = req.params;
       const { provider } = req.body as { provider?: 'gemini' | 'openai' | 'deepseek' };
-      const service = getService(provider);
+      const service = await getService(ownerId, provider);
       const suggestions = await service.preview(versionId, ownerId);
 
       res.json({ suggestions });
@@ -49,7 +42,7 @@ export class AutoLabelingController {
 
       const { versionId } = req.params;
       const { labels } = req.body as { labels?: Array<{ clusterId: number; label: string }> };
-      const service = getService('gemini');
+      const service = await getService(ownerId, 'gemini');
       const result = await service.save(versionId, ownerId, labels || []);
 
       res.json({
