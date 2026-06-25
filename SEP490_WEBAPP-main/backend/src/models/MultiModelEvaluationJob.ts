@@ -2,7 +2,7 @@ import mongoose, { Schema, Document, Types } from 'mongoose';
 
 export interface IMultiModelEvaluationJob extends Document {
   datasetVersionId: Types.ObjectId;
-  models: ('gemini' | 'openai' | 'deepseek')[];
+  models: ('gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq')[];
   contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2';
   status: 'running' | 'completed' | 'failed';
   progress: {
@@ -29,7 +29,7 @@ const MultiModelEvaluationJobSchema = new Schema<IMultiModelEvaluationJob>(
     models: [
       {
         type: String,
-        enum: ['gemini', 'openai', 'deepseek'],
+        enum: ['gemini', 'openai', 'deepseek', 'openrouter', 'groq'],
       },
     ],
     contextWindow: {

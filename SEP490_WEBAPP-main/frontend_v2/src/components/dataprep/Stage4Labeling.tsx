@@ -601,19 +601,19 @@ export const Stage4Labeling: React.FC = () => {
 
     if (resMatch) {
       const modelScores = resMatch.modelScores || {};
-      const gemini = resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
+      const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || null;
       const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
-      const openai = resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
+      const groq = resMatch.scores?.groq || resMatch.scores?.OpenAI || modelScores.groq?.overall || null;
       const human = resolveHumanScore(
         toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
       );
-      const aiVals = [gemini, deepseek, openai].filter(v => v != null) as number[];
+      const aiVals = [openrouter, deepseek, openai].filter(v => v != null) as number[];
       const avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
       const diff = avgAI != null && human != null ? Math.abs(avgAI - human) : (resMatch.diff || 0);
       return {
-        gemini,
+        openrouter,
         deepseek,
-        openai,
+        groq,
         human,
         conflict: Boolean(resMatch.hasConflict) || resMatch.recommendation === 'Conflict' || (human != null && diff >= conflictThreshold),
         resultId: resMatch._id,
@@ -624,16 +624,16 @@ export const Stage4Labeling: React.FC = () => {
     }
     const human = resolveHumanScore(toTenPointHumanScore(humanItem));
     return {
-      gemini: null,
+      openrouter: null,
       deepseek: null,
-      openai: null,
+      groq: null,
       human,
       conflict: false
     };
   };
 
   const getAvgAI = (scores) => {
-    const vals = [scores.gemini, scores.deepseek, scores.openai].filter(v => v != null);
+    const vals = [scores.openrouter, scores.deepseek, scores.groq].filter(v => v != null);
     return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
   };
 
@@ -1238,8 +1238,8 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 8: AUTOMATED AI SCORING ===== */}
           {false && currentSubStep4 === 8 && (() => {
             const aiModels = [
-              { key: 'gemini', label: 'Gemini Flash 1.5', desc: 'Default education judge, low cost', color: '#4f46e5', badge: 'Recommended' },
-              { key: 'openai', label: 'Qwen 3.7 Plus', desc: 'Qwen model on Groq API (gpt-oss-120b)', color: '#059669', badge: '' },
+              { key: 'openrouter', label: 'OpenRouter Model', desc: 'Custom OpenRouter endpoint', color: '#4f46e5', badge: 'Recommended' },
+              { key: 'groq', label: 'Groq Llama', desc: 'Fast inference via Groq', color: '#059669', badge: '' },
               { key: 'deepseek', label: 'Deepseek R1/V3', desc: 'Advanced pedagogical logic, free', color: '#0891b2', badge: 'Free' },
             ];
             const selectedCount = Object.values(judgeModels).filter(Boolean).length;
@@ -1413,7 +1413,7 @@ export const Stage4Labeling: React.FC = () => {
                       <span style={{ fontSize: '13px', fontWeight: '800', color: '#6d28d9' }}>AI Score (0–10)</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '12px', color: '#5b21b6', lineHeight: 1.5 }}>
-                      Mỗi conversation được 3 mô hình (Gemini, Deepseek, Qwen) chấm độc lập dựa trên: tính đúng đắn về mặt sư phạm,
+                      Mỗi conversation được 3 mô hình (OpenRouter, Deepseek, Groq) chấm độc lập dựa trên: tính đúng đắn về mặt sư phạm,
                       mức độ phù hợp giữa câu hỏi của học sinh và phản hồi của trợ giảng, tính rõ ràng và an toàn của nội dung.
                       Cột <strong>Avg AI</strong> là trung bình điểm của các mô hình đã chấm. Ô hiển thị <strong>-</strong> nghĩa là mô hình đó chưa chấm.
                     </p>
@@ -1474,9 +1474,9 @@ export const Stage4Labeling: React.FC = () => {
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Conv ID</th>
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Issue</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>Gemini</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>OpenRouter</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#0891b2', fontSize: '11px', textTransform: 'uppercase', background: '#ecfeff' }}>Deepseek</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>Qwen</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>Groq</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Avg AI</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Staff Rule Score</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Conflict</th>
@@ -1501,9 +1501,9 @@ export const Stage4Labeling: React.FC = () => {
                                 <span style={{ padding: '2px 8px', borderRadius: '999px', fontSize: '11px', fontWeight: '700', background: '#f1f5f9', color: '#475569' }}>{item.subject}</span>
                               </td>
                               <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '12px', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.reason}</td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f8faff' }}><ScoreCell val={scores.gemini} /></td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f8faff' }}><ScoreCell val={scores.openrouter} /></td>
                               <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f0faff' }}><ScoreCell val={scores.deepseek} /></td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f0fff4' }}><ScoreCell val={scores.openai} /></td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f0fff4' }}><ScoreCell val={scores.groq} /></td>
                               <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f5f3ff' }}>
                                 {avgAI != null ? <span style={{ fontWeight: '800', color: avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI.toFixed(1)}</span> : <span style={{ color: '#cbd5e1' }}>-</span>}
                               </td>
@@ -1630,7 +1630,7 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                           <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Evaluation Scores (read-only)</h4>
                           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            {[{ label: 'Gemini', val: scores.gemini, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.openai, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
+                            {[{ label: 'OpenRouter', val: scores.openrouter, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.groq, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
                               <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: '700', color, marginBottom: '4px' }}>{lbl}</div>
                                 <div style={{ fontSize: '20px', fontWeight: '900', color: val == null ? '#cbd5e1' : val >= 7 ? '#15803d' : val >= 5 ? '#d97706' : '#dc2626' }}>{val != null ? val.toFixed(1) : '-'}</div>
@@ -2720,7 +2720,7 @@ export const Stage4Labeling: React.FC = () => {
             const conflictData = realConflicts.length > 0 ? realConflicts.map(c => ({
               id: c.item.convId,
               subject: c.item.subject,
-              gemini: c.scores.gemini,
+              openrouter: c.scores.openrouter,
               deepseek: c.scores.deepseek,
               human: c.scores.human,
               diff: getAvgAI(c.scores) != null && c.scores.human != null ? Math.abs(getAvgAI(c.scores)! - c.scores.human) : 0,
@@ -2771,7 +2771,7 @@ export const Stage4Labeling: React.FC = () => {
                   {[
                     { label: 'Conversations', value: totalConv, sub: `${totalMsg} messages`, color: '#4f46e5', bg: '#eef2ff', Icon: MessageSquare },
                     { label: 'Gold Rate', value: `${goldRate}%`, sub: `${goldCount} / ${totalConv} conv`, color: '#15803d', bg: '#f0fdf4', Icon: Award },
-                    { label: 'Avg AI Score', value: avgAIScore, sub: 'Gemini + Deepseek', color: '#0891b2', bg: '#f0f9ff', Icon: Bot },
+                    { label: 'Avg AI Score', value: avgAIScore, sub: 'OpenRouter + Deepseek', color: '#0891b2', bg: '#f0f9ff', Icon: Bot },
                     { label: 'Subjects', value: subjectData.length, sub: subjectData.length ? 'from current dataset' : 'no subject data', color: '#7c3aed', bg: '#f5f3ff', Icon: BookOpen },
                     { label: 'Conflict', value: conflictCount, sub: `${conflictData.filter(c => c.resolved).length} resolved`, color: '#dc2626', bg: '#fff5f5', Icon: AlertTriangle },
                   ].map(({ label, value, sub, color, bg, Icon }) => (
@@ -2988,13 +2988,13 @@ export const Stage4Labeling: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                          {['ID', 'Subject', 'Gemini', 'Deepseek', 'Staff Rule Score', 'Delta', 'Status'].map(h => (
+                          {['ID', 'Subject', 'OpenRouter', 'Deepseek', 'Staff Rule Score', 'Delta', 'Status'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {conflictData.map(({ id, subject, gemini, deepseek, human, diff, resolved }) => (
+                        {conflictData.map(({ id, subject, openrouter, deepseek, human, diff, resolved }) => (
                           <tr key={id} style={{ borderBottom: '1px solid #f1f5f9', background: resolved ? '#f0fdf4' : '#fff7f7' }}>
                             <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#1e293b' }}>{id.slice(-6)}</td>
                             <td style={{ padding: '10px 12px', fontSize: '12px', color: '#475569' }}>{subject}</td>

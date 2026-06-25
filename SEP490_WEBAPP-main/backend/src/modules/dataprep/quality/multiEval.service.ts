@@ -47,7 +47,7 @@ export class MultiEvalService {
   async runJob(
     versionId: string,
     startedBy: string,
-    models: ('gemini' | 'openai' | 'deepseek')[],
+    models: ('gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq')[],
     contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2',
     conflictThreshold = 2
   ) {

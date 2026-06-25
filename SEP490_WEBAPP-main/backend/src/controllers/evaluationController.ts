@@ -540,7 +540,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const { items } = req.body as {
         items: Array<{
           sampleId: string;
-          evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+          evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq' | 'none';
           results: EvaluationScorePayload;
         }>;
       };
@@ -555,7 +555,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           return (
             item &&
             mongoose.Types.ObjectId.isValid(item.sampleId) &&
-            ['manual', 'gemini', 'openai', 'deepseek', 'none'].includes(item.evaluatedBy) &&
+            ['manual', 'gemini', 'openai', 'deepseek', 'openrouter', 'groq', 'none'].includes(item.evaluatedBy) &&
             item.results
           );
         });
@@ -2247,7 +2247,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const { id } = req.params;
       const { results, evaluatedBy } = req.body as {
         results: EvaluationScorePayload;
-        evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+        evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq' | 'none';
       };
 
       if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -2260,8 +2260,8 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      if (!['manual', 'gemini', 'openai', 'deepseek', 'none'].includes(evaluatedBy)) {
-        res.status(400).json({ error: 'evaluatedBy chỉ nhận manual, gemini, openai, deepseek hoặc none.' });
+      if (!['manual', 'gemini', 'openai', 'deepseek', 'openrouter', 'groq', 'none'].includes(evaluatedBy)) {
+        res.status(400).json({ error: 'evaluatedBy chỉ nhận manual, gemini, openai, deepseek, openrouter, groq hoặc none.' });
         return;
       }
 

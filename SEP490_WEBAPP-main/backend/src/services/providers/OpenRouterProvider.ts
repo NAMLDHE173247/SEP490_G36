@@ -15,7 +15,7 @@ export class OpenRouterProvider implements ILlmProvider {
 
     async generateContent(prompt: string, modelOverride?: string, systemPrompt?: string): Promise<string> {
         // Fallback to a sensible default if no model is provided
-        const model = modelOverride || 'poolside/laguna-m.1:free';
+        const model = modelOverride || process.env.OPENROUTER_MODEL || 'poolside/laguna-m.1:free';
         
         const messages: any[] = [];
         if (systemPrompt) {
