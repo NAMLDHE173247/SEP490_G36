@@ -602,13 +602,13 @@ export const Stage4Labeling: React.FC = () => {
 
     if (resMatch) {
       const modelScores = resMatch.modelScores || {};
-      const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || null;
+      const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
       const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
-      const groq = resMatch.scores?.groq || resMatch.scores?.OpenAI || modelScores.groq?.overall || null;
+      const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
       const human = resolveHumanScore(
         toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
       );
-      const aiVals = [openrouter, deepseek, openai].filter(v => v != null) as number[];
+      const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
       const avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
       const diff = avgAI != null && human != null ? Math.abs(avgAI - human) : (resMatch.diff || 0);
       return {
@@ -2999,7 +2999,7 @@ export const Stage4Labeling: React.FC = () => {
                           <tr key={id} style={{ borderBottom: '1px solid #f1f5f9', background: resolved ? '#f0fdf4' : '#fff7f7' }}>
                             <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '700', color: '#1e293b' }}>{id.slice(-6)}</td>
                             <td style={{ padding: '10px 12px', fontSize: '12px', color: '#475569' }}>{subject}</td>
-                            <td style={{ padding: '10px 12px', fontWeight: '700', color: '#dc2626', fontSize: '13px' }}>{gemini}</td>
+                            <td style={{ padding: '10px 12px', fontWeight: '700', color: '#dc2626', fontSize: '13px' }}>{openrouter}</td>
                             <td style={{ padding: '10px 12px', fontWeight: '700', color: '#16a34a', fontSize: '13px' }}>{deepseek}</td>
                             <td style={{ padding: '10px 12px', fontWeight: '700', color: human ? '#ea580c' : '#cbd5e1', fontSize: '13px' }}>{human ?? '-'}</td>
                             <td style={{ padding: '10px 12px', fontWeight: '800', color: diff >= 3 ? '#dc2626' : '#d97706', fontSize: '13px' }}>±{diff}</td>

@@ -40,7 +40,7 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -50,7 +50,7 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [apiKey, setApiKey] = React.useState('');
   const [useCustomApi, setUseCustomApi] = React.useState(false);
   const [scoringVersionId] = React.useState<string | null>(() => localStorage.getItem('current_version_id'));
-  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ gemini: true, deepseek: true, openai: false });
+  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ openrouter: true, deepseek: true, groq: false });
   const [isStartingCrossCheck, setIsStartingCrossCheck] = React.useState(false);
   const {
     results: crossCheckResults,
@@ -698,8 +698,8 @@ export const Stage3Labeling = (dataPrep: any) => {
                         disabled={isLabelingWithAI}
                       >
                         <option value="deepseek">Deepseek</option>
-                        <option value="openai">ChatGPT</option>
-                        <option value="gemini">Gemini</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
                       </select>
                       <button
                         className="label-ai-btn"
@@ -734,7 +734,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                                 projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                                 operationType: 'labeling_base' as const,
                                 similarityThreshold: 0.85,
-                                format: 'openai' as const,
+                                format: 'groq' as const,
                                 data: stage3Convs.map((conv, idx) => {
                                   const messages = conv.messages.flatMap((m: any) => [
                                     { role: 'user', content: m.user },
@@ -1323,7 +1323,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                 </button>
               </div>
               <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
-                {['gemini', 'deepseek', 'openai'].map(model => (
+                {['openrouter', 'deepseek', 'groq'].map(model => (
                   <label key={model} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, textTransform: 'capitalize' }}>
                     <input type="checkbox" checked={judgeModels[model]} onChange={() => setJudgeModels(prev => ({ ...prev, [model]: !prev[model] }))} /> {model}
                   </label>
@@ -1541,7 +1541,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                     <button className="ia-add-label-btn">Th├¬m Nh├ún</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
-                      <option>Gemini</option>
+                      <option>OpenRouter</option>
                       <option>Deepseek</option>
                     </select>
                   </div>

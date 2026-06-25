@@ -276,7 +276,7 @@ export const Stage3Labeling: React.FC = () => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -344,7 +344,7 @@ export const Stage3Labeling: React.FC = () => {
   /** Số batch count cho auto-label (controlled input) */
   const [batchCount, setBatchCount] = React.useState(1);
   /** Provider cho auto-label batch */
-  const [batchProvider, setBatchProvider] = React.useState<'gemini' | 'openai' | 'deepseek'>('gemini');
+  const [batchProvider, setBatchProvider] = React.useState<'openrouter' | 'groq' | 'deepseek'>('openrouter');
   /** Trạng thái đang export dữ liệu */
   const [isExporting, setIsExporting] = React.useState(false);
   /** Trạng thái đang đẩy sang Stage 4 */
@@ -390,7 +390,7 @@ export const Stage3Labeling: React.FC = () => {
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
       operationType: 'labeling_base' as const,
       similarityThreshold: 0.85,
-      format: 'openai' as const,
+      format: 'groq' as const,
       data: stage3Convs.map((conv, idx) => {
         const messages = conv.messages.flatMap((m: any) => [
           { role: 'user', content: m.user },
@@ -736,7 +736,7 @@ export const Stage3Labeling: React.FC = () => {
       });
 
       const result = await apiService.previewAndSaveMessageAutoLabelsBatch({
-        provider: 'gemini',
+        provider: 'openrouter',
         samples: payload,
         concurrency: 3,
       });
@@ -1374,8 +1374,8 @@ export const Stage3Labeling: React.FC = () => {
                       disabled={isLabelingWithAI}
                     >
                       <option value="deepseek">Deepseek</option>
-                      <option value="openai">ChatGPT</option>
-                      <option value="gemini">Gemini</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                     <button
                       className="label-ai-btn"
@@ -1410,7 +1410,7 @@ export const Stage3Labeling: React.FC = () => {
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,
-                              format: 'openai' as const,
+                              format: 'groq' as const,
                               data: stage3Convs.map((conv, idx) => {
                                 const messages = conv.messages.flatMap((m: any) => [
                                   { role: 'user', content: m.user },
@@ -2282,10 +2282,10 @@ export const Stage3Labeling: React.FC = () => {
                     <select
                       className="ia-autolabel-input"
                       value={batchProvider}
-                      onChange={(e) => setBatchProvider(e.target.value as 'gemini' | 'openai' | 'deepseek')}
+                      onChange={(e) => setBatchProvider(e.target.value as 'openrouter' | 'groq' | 'deepseek')}
                     >
-                      <option value="gemini">Gemini</option>
-                      <option value="openai">OpenAI</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="groq">Groq</option>
                       <option value="deepseek">Deepseek</option>
                     </select>
                   </label>

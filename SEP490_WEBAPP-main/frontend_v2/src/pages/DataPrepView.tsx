@@ -302,7 +302,7 @@ function DataPrepInner() {
   const [selectedConv3, setSelectedConv3] = useState(null);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
   /* AI Labeling state */
-  const [aiProvider, setAiProvider] = useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
   const [isSavingLabels, setIsSavingLabels] = useState(false);
   const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
@@ -714,7 +714,7 @@ function DataPrepInner() {
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: false, deepseek: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -1369,8 +1369,8 @@ function DataPrepInner() {
 
             {/* Radio: OpenAI Message Format */}
             <div
-              className={`dataprep-radio-option ${selectedFormat === 'openai' ? 'selected' : ''}`}
-              onClick={() => setSelectedFormat('openai')}
+              className={`dataprep-radio-option ${selectedFormat === 'groq' ? 'selected' : ''}`}
+              onClick={() => setSelectedFormat('groq')}
             >
               <div className="radio-circle">
                 <div className="radio-dot" />
@@ -2952,8 +2952,8 @@ function DataPrepInner() {
                       disabled={isLabelingWithAI}
                     >
                       <option value="deepseek">Deepseek</option>
-                      <option value="openai">ChatGPT</option>
-                      <option value="gemini">Gemini</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                     <button
                       className="label-ai-btn"
@@ -2988,7 +2988,7 @@ function DataPrepInner() {
                               projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,
-                              format: 'openai' as const,
+                              format: 'groq' as const,
                               data: stage3Convs.map((conv, idx) => {
                                 const messages = conv.messages.flatMap((m: any) => [
                                   { role: 'user', content: m.user },
@@ -3611,7 +3611,7 @@ function DataPrepInner() {
                     <button className="ia-add-label-btn">Add Label</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
-                      <option>Gemini</option>
+                      <option>OpenRouter</option>
                       <option>Deepseek</option>
                     </select>
                   </div>

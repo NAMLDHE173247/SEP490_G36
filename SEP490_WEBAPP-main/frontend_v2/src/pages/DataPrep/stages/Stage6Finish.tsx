@@ -45,7 +45,7 @@ export const Stage6Finish: React.FC = () => {
   const [historyPage, setHistoryPage] = useState(1);
   const historyPerPage = 5;
 
-  const [trialProvider, setTrialProvider] = useState<'gemini' | 'deepseek'>('gemini');
+  const [trialProvider, setTrialProvider] = useState<'openrouter' | 'deepseek'>('openrouter');
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitResult, setSplitResult] = useState<any>(null);
 
@@ -134,7 +134,7 @@ export const Stage6Finish: React.FC = () => {
     setIsRunningTrial(true);
     setTrialResponse('Đang gọi API chạy thử prompt...');
     try {
-      let modelId = 'gemini-flash-latest';
+      let modelId = 'meta-llama/llama-3.1-8b-instruct:free';
       if (trialProvider === 'deepseek') modelId = 'deepseek-chat';
 
       const res = await apiService.infer({
@@ -313,10 +313,10 @@ export const Stage6Finish: React.FC = () => {
       const resMatch = results.find(r => candidates.includes(getResultSampleId(r)) || candidates.includes(String(r.sampleIdRef?.sampleId || '')));
       if (resMatch) {
         const modelScores = resMatch.modelScores || {};
-        const gemini = resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
+        const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
         const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
-        const openai = resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
-        const aiVals = [gemini, deepseek, openai].filter(v => v != null) as number[];
+        const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
+        const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
         avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
       }
     }
@@ -810,7 +810,7 @@ export const Stage6Finish: React.FC = () => {
                   style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
                 >
                   <option value="deepseek">Deepseek</option>
-                  <option value="gemini">Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
                 </select>
                 <button
                   className="s6-trial-btn"

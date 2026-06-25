@@ -248,14 +248,14 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiBackup, setAiBackup] = useState<Record<string, any>>({});
-  const [aiProvider, setAiProvider] = useState('gemini');
+  const [aiProvider, setAiProvider] = useState('openrouter');
   // aiMeta[sampleId][msgIdx] = { confidence, is_correct_pedagogy, pedagogy_note }
   const [aiMeta, setAiMeta] = useState<Record<string, Record<number, any>>>({});
   // aiSummary[sampleId] = { subject, completion, quality, quality_reason }
   const [aiSummary, setAiSummary] = useState<Record<string, any>>({});
   const AI_PROVIDERS = [
-    { value: 'gemini', label: 'Gemini 2.0 Flash' },
-    { value: 'openai', label: 'OpenAI (GPT-4o-mini)' },
+    { value: 'openrouter', label: 'OpenRouter' },
+    { value: 'groq', label: 'OpenAI (GPT-4o-mini)' },
     { value: 'deepseek', label: 'Deepseek Chat' },
     { value: 'openrouter', label: 'OpenRouter' },
   ];

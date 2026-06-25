@@ -547,9 +547,9 @@ export const Stage4TrainEval: React.FC = () => {
                 <p>Review the flagged tutor turn, compare suggestions, and choose the final training response.</p>
               </div>
               <div className="sep490-actions">
-                <select className="sep490-select" defaultValue="gemini">
-                  <option value="gemini">AI Judge: GEMINI</option>
-                  <option value="openai">AI Judge: OPENAI</option>
+                <select className="sep490-select" defaultValue="openrouter">
+                  <option value="openrouter">AI Judge: OPENROUTER</option>
+                  <option value="groq">AI Judge: GROQ</option>
                   <option value="deepseek">AI Judge: DEEPSEEK</option>
                 </select>
                 <button className="sep490-outline" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> AI fix all</button>

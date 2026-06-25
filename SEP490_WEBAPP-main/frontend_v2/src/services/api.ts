@@ -307,7 +307,7 @@ export const apiService = {
    */
   previewAutoLabels: async (
     versionId: string,
-    provider: 'gemini' | 'openai' | 'deepseek'
+    provider: 'openrouter' | 'groq' | 'deepseek'
   ): Promise<{
     suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
@@ -644,7 +644,7 @@ export const apiService = {
   previewMessageAutoLabels: async (
     sampleId: string,
     payload: {
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'openrouter' | 'groq' | 'deepseek';
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
     }
   ): Promise<{ suggestions: MessageAutoLabelSuggestion[] }> => {
@@ -694,7 +694,7 @@ export const apiService = {
    * Chạy AI gán nhãn hàng loạt cho nhiều sample cùng lúc (preview + save trong một lần).
    */
   previewAndSaveMessageAutoLabelsBatch: async (payload: {
-    provider?: 'gemini' | 'openai' | 'deepseek';
+    provider?: 'openrouter' | 'groq' | 'deepseek';
     samples: Array<{
       sampleId: string;
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
