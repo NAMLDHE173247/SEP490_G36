@@ -5,7 +5,7 @@ import { ILlmProvider } from './providers/ILlmProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
 import { OpenAIProvider } from './providers/OpenAIProvider';
 import { DeepseekProvider } from './providers/DeepseekProvider';
-
+import { GroqProvider } from './providers/GroqProvider';
 
 export type ProviderType = 'openai' | 'gemini' | 'deepseek';
 
@@ -121,6 +121,9 @@ class ApiKeyService {
     } else if (norm.includes('deepseek')) {
       const key = await this.getApiKeyForUser(userId, 'deepseek');
       return new DeepseekProvider(key);
+    } else if (norm.includes('groq')) {
+      // Groq uses OpenAI SDK, so we can map it to OpenAI key logic if no specific Groq key is managed in DB
+      return new GroqProvider();
     } else {
       const key = await this.getApiKeyForUser(userId, 'openai');
       return new OpenAIProvider(key);
