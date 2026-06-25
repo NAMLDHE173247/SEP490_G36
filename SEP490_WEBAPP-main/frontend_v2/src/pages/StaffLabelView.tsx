@@ -405,7 +405,22 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     setSavedDraft(false);
   };
 
-  const isSampleComplete = (sampleId: string) => Boolean(labels[sampleId]?.subject && labels[sampleId]?.completion && labels[sampleId]?.quality);
+  const isSampleComplete = (sampleId: string) => {
+    const label = labels[sampleId];
+    if (!label) return false;
+    if (label.subject && label.completion && label.quality) return true;
+
+    const sample = samples.find((s: any) => String(s.id) === String(sampleId));
+    const messages = Array.isArray(sample?.messages) ? sample.messages : [];
+    if (!messages.length) return false;
+
+    return messages.every((message: any, msgIdx: number) => {
+      const role = normalizeRole(message.role);
+      if (role === 'user') return getMsgLabels(sampleId, msgIdx, 'intent').length > 0;
+      if (role === 'assistant') return getMsgLabels(sampleId, msgIdx, 'action').length > 0;
+      return true;
+    });
+  };
   const labeledCount = samples.filter((s: any) => isSampleComplete(s.id)).length;
   const progress = samples.length > 0 ? Math.round((labeledCount / samples.length) * 100) : 0;
   const [isSaving, setIsSaving] = useState(false);
@@ -734,7 +749,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff' }}
                         onClick={() => handleSubmitSamples([drawerSample.id])}
                         disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
-                        title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần chọn đủ Môn học/Trạng thái/Chất lượng hội thoại trước khi nộp'}
+                        title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần gán đủ nhãn tổng hội thoại hoặc nhãn từng tin nhắn trước khi nộp'}
                       >
                         <Send size={14} /> Nộp câu #{drawerSample.id}
                       </button>

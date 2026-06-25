@@ -276,17 +276,10 @@ const buildConversationRowsFromVersionItems = (items: any[]) => {
 };
 
 export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentStage, setCurrentStage] = useState(() => {
-    const saved = localStorage.getItem('dp_currentStage');
-    const parsed = saved ? parseInt(saved, 10) : 1;
-    return parsed > 5 ? 5 : parsed;
-  });
-  const [currentSubStep, setCurrentSubStep] = useState(() => {
-    const saved = localStorage.getItem('dp_currentSubStep');
-    const parsed = saved ? parseInt(saved, 10) : 2;
-    if (!Number.isFinite(parsed)) return 2;
-    return Math.max(2, Math.min(4, parsed));
-  });
+  // Always start at Stage 1 — session resume is handled by the mount useEffect
+  // which calls openWorkflowVersion() via the API with full data hydration.
+  const [currentStage, setCurrentStage] = useState(1);
+  const [currentSubStep, setCurrentSubStep] = useState(2);
 
   React.useEffect(() => {
     localStorage.setItem('dp_currentStage', currentStage.toString());

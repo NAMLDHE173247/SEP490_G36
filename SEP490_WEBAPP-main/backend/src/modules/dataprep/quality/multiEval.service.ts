@@ -31,7 +31,7 @@ export class MultiEvalService {
   async runJob(
     versionId: string,
     startedBy: string,
-    models: ('gemini' | 'openai' | 'deepseek')[],
+    models: ('gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq')[],
     contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2',
     conflictThreshold = 2
   ) {
@@ -268,6 +268,12 @@ export class MultiEvalService {
                   : 0;
               }
 
+              // Apply Veto Rule: Overall score cannot exceed Factuality score
+              if (typeof scorecard.factuality === 'number' && scorecard.overall > scorecard.factuality) {
+                scorecard.overall = scorecard.factuality;
+              }
+
+
               if (!scorecard.overall) throw new Error('Model trả về kết quả không hợp lệ hoặc thiếu điểm đánh giá.');
 
               return { modelName, scorecard };
@@ -340,7 +346,8 @@ export class MultiEvalService {
 
           // Detect Conflict
           const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
-          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold);
+          const hasStaffMismatch = failedTargetMap.has(String(sample._id)) || failedTargetMap.has(String((sample as any).sampleId));
+          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold, hasStaffMismatch);
           if (hasConflict) {
             conflictCount += 1;
           }
@@ -449,9 +456,12 @@ export class MultiEvalService {
     }
   }
 
-  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2): boolean {
+  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2, hasStaffMismatch = false): boolean {
     const models = Object.keys(scorecards).filter(model => scorecards[model].status !== 'unavailable');
-    if (models.length <= 1 && humanScore === null) return false;
+    if (models.length <= 1 && humanScore === null && !hasStaffMismatch) return false;
+
+    if (hasStaffMismatch) return true;
+
 
     let hasPass = false;
     let hasReject = false;
@@ -463,6 +473,10 @@ export class MultiEvalService {
       if (card.recommendation === 'Reject') hasReject = true;
       if (typeof card.overall === 'number' && !isNaN(card.overall)) {
         overallScores.push(card.overall);
+      }
+      // Layer 1 - Factuality < 4 automatically flags conflict
+      if (typeof card.factuality === 'number' && card.factuality < 4) {
+        return true;
       }
     }
 

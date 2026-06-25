@@ -13,7 +13,16 @@ import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabe
 import { broadcastAssignmentUpdate } from './assignment.events';
 
 function isCompleteStaffLabel(label: any): boolean {
-  return Boolean(label?.subject && label?.completion && label?.quality);
+  if (!label || typeof label !== 'object') return false;
+  if (label.subject && label.completion && label.quality) return true;
+
+  const messages = label.messages && typeof label.messages === 'object' ? label.messages : {};
+  return Object.values(messages).some((value: any) => {
+    if (!value || typeof value !== 'object') return false;
+    const intents = Array.isArray(value.intent) ? value.intent : value.intent ? [value.intent] : [];
+    const actions = Array.isArray(value.action) ? value.action : value.action ? [value.action] : [];
+    return intents.length > 0 || actions.length > 0 || Boolean(value.responseQuality);
+  });
 }
 
 function parseSavedLabel(snapshot?: string): any {
@@ -23,6 +32,16 @@ function parseSavedLabel(snapshot?: string): any {
   } catch {
     return null;
   }
+}
+
+function resolveAssignmentSupervisor(req: Request, supervisorId?: string): string | undefined {
+  const cleanSupervisorId = String(supervisorId || '').trim();
+  if (cleanSupervisorId) return cleanSupervisorId;
+
+  const authUser = (req as any).user;
+  const role = String(authUser?.role || '').toLowerCase();
+  if (role !== 'supervisor') return undefined;
+  return String(authUser?.id || authUser?._id || authUser?.userId || '').trim() || undefined;
 }
 
 export class AssignmentController {
@@ -113,6 +132,7 @@ export class AssignmentController {
       const { versionId } = req.params;
       const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
+      const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
       if (!assigneeIds || !assigneeIds.length) {
         return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên' });
@@ -205,7 +225,7 @@ export class AssignmentController {
             taskType: 'labeling',
             priority: priority || 'medium',
             deadline: parsedDeadline,
-            supervisor: supervisorId || assignedBy,
+            supervisor: assignmentSupervisor,
             labeledCount: 0,
             totalSamples: group.sampleIds.length,
             dataset: datasetName,
@@ -281,6 +301,7 @@ export class AssignmentController {
       const { versionId } = req.params;
       const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
+      const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -325,7 +346,7 @@ export class AssignmentController {
           totalSamples: sampleCount,
           dataset: datasetName,
           version: version?.versionName || 'v1',
-          supervisor: supervisorId || assignedBy
+          supervisor: assignmentSupervisor
         });
 
         await submission.save();
@@ -440,7 +461,7 @@ export class AssignmentController {
         taskType: src?.taskType || 'labeling',
         priority: src?.priority || 'medium',
         deadline: src?.deadline,
-        supervisor: assignedBy,
+        supervisor: src?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId),
         dataset: src?.dataset || version.projectName,
         version: src?.version || version.versionName,
         totalSamples: src?.totalSamples || fromSamples.length,
@@ -521,6 +542,12 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Không tìm thấy mẫu nào để gán thêm' });
       }
       const startIndex = sourceSamples[0].sampleIndex;
+      const sourceSubmission = await DatasetAssignmentSubmission.findOne({
+        datasetVersionId: versionId,
+        ...(fromAssigneeId ? { assigneeId: fromAssigneeId } : {}),
+        active: { $ne: false },
+      }).select('supervisor').lean();
+      const assignmentSupervisor = (sourceSubmission as any)?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId);
 
       let added = 0;
       for (const assigneeId of assigneeIds) {
@@ -547,7 +574,7 @@ export class AssignmentController {
           batchCount: sourceSamples.length,
           taskType: 'labeling',
           priority: 'medium',
-          supervisor: assignedBy,
+          supervisor: assignmentSupervisor,
           dataset: version.projectName,
           version: version.versionName,
           totalSamples: sourceSamples.length,
@@ -662,9 +689,19 @@ export class AssignmentController {
       if (role === 'supervisor' && !viewerId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
-      // Supervisors may only see submissions explicitly assigned to them.
-      // Admin keeps the system-wide overview.
-      const submissionFilter = role === 'supervisor' ? { supervisor: viewerId } : {};
+      let submissionFilter: any = {};
+      if (role === 'supervisor') {
+        const supervisorUsers = await User.find({ role: 'supervisor' }).select('_id').lean();
+        const supervisorIds = supervisorUsers.map((user: any) => String(user._id));
+        submissionFilter = {
+          $or: [
+            { supervisor: viewerId },
+            { supervisor: { $exists: false } },
+            { supervisor: '' },
+            { supervisor: { $nin: supervisorIds } },
+          ],
+        };
+      }
       const submissions = await DatasetAssignmentSubmission.find(submissionFilter);
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];
       const versions = await DatasetVersion.find({ _id: { $in: versionIds } });

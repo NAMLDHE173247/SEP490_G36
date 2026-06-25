@@ -28,7 +28,7 @@ const INTENTS = [
 const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
 const CRITICAL_INTENTS = new Set(['INCORRECT', 'REQUEST_HINT'] as const);
 
-const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
+export const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
   CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
@@ -41,7 +41,7 @@ const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   OFF_TOPIC: new Set(['REDIRECTING', 'TRANSITIONING']),
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
-const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+export const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
   ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
@@ -450,6 +450,7 @@ export class QualityService {
           .filter((label) => ASSISTANT_ACTION_SET.has(label));
         if (!userLabels.length || !assistantLabels.length) {
           hasMissingLabeling = true;
+          totalTurnScore -= 0.5; // Phạt -0.5 cho lượt chưa được dán nhãn
           continue;
         }
 
@@ -585,8 +586,8 @@ export class QualityService {
       const iar = vector.map((value, index) => (
         intentCounts[index] > 0 ? value / intentCounts[index] : null
       ));
-      const score = scorableTurns > 0 ? totalTurnScore / scorableTurns : -1;
-      const humanScore = scorableTurns > 0 ? toTenPointScore(score) : null;
+      const score = requiredTurns > 0 ? totalTurnScore / requiredTurns : -1;
+      const humanScore = requiredTurns > 0 ? toTenPointScore(score) : null;
 
       if (isClassified) {
         qualityItems.push({

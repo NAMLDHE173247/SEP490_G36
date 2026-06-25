@@ -4190,7 +4190,7 @@ function DataPrepInner() {
         </div>
       )}
 
-      {false && shouldShowWorkflowBar && (
+      {shouldShowWorkflowBar && (
         <div className="dataprep-workflow-bar">
           <div className="dataprep-workflow-copy">
             <span className="dataprep-workflow-label">Resume draft</span>

@@ -10,6 +10,9 @@ import { User } from '../../../models/User';
 import { apiKeyService } from '../../../services/apiKeyService';
 import { sendTransactionalEmail } from '../../../services/emailService';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
+import { AutoLabelV2Service } from '../labeling/autoLabelV2.service';
+import { LabelAssignment } from '../../../models/LabelAssignment';
+import { DatasetVersion } from '../../../models/DatasetVersion';
 
 const qualityService = new QualityService();
 const REWRITE_CONTEXT_MODES = ['n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'] as const;
@@ -368,7 +371,16 @@ export class QualityController {
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(), Stage4RewriteAssignment.countDocuments(query)]);
-      res.json({ tasks: tasks.map((task) => this.serializeRewriteTask(task)), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+      const version = await DatasetVersion.findById(versionId).select('projectName versionName versionNo').lean();
+      res.json({
+        tasks: tasks.map((task) => ({
+          ...this.serializeRewriteTask(task),
+          projectName: version?.projectName || '',
+          dataset: version?.projectName || '',
+          versionName: version?.versionName || (version?.versionNo ? `v${version.versionNo}` : ''),
+        })),
+        pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+      });
     } catch (error: any) {
       console.error('List rewrite assignments error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list rewrite assignments' });
@@ -521,7 +533,22 @@ export class QualityController {
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(), Stage4RewriteAssignment.countDocuments(query)]);
-      res.json({ tasks: tasks.map((task) => ({ ...this.serializeRewriteTask(task), datasetVersionId: String(task.datasetVersionId) })), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } });
+      const versionIds = Array.from(new Set(tasks.map((task: any) => String(task.datasetVersionId)).filter(Boolean)));
+      const versions = await DatasetVersion.find({ _id: { $in: versionIds } }).select('projectName versionName versionNo').lean();
+      const versionMap = new Map(versions.map((version: any) => [String(version._id), version]));
+      res.json({
+        tasks: tasks.map((task) => {
+          const version = versionMap.get(String(task.datasetVersionId));
+          return {
+            ...this.serializeRewriteTask(task),
+            datasetVersionId: String(task.datasetVersionId),
+            projectName: version?.projectName || '',
+            dataset: version?.projectName || '',
+            versionName: version?.versionName || (version?.versionNo ? `v${version.versionNo}` : ''),
+          };
+        }),
+        pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+      });
     } catch (error: any) {
       console.error('List my rewrite assignments error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list rewrite assignments' });
@@ -629,6 +656,219 @@ export class QualityController {
     } catch (error: any) {
       console.error('Submit rewrite error:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to submit rewrite' });
+    }
+  }
+
+  async adminSubmitRewrite(req: Request, res: Response): Promise<void> {
+    try {
+      const actorId = getAuthUserId(req);
+      if (!actorId || !isManager(req)) {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Manager role required' : 'Unauthorized' });
+        return;
+      }
+      const { versionId } = req.params;
+      const { sampleId, submittedText, reason, targetMessageIndex } = req.body;
+      if (!sampleId || !mongoose.Types.ObjectId.isValid(String(sampleId))) {
+        res.status(400).json({ error: 'sampleId is required' });
+        return;
+      }
+      if (!submittedText || !String(submittedText).trim()) {
+        res.status(400).json({ error: 'submittedText is required' });
+        return;
+      }
+
+      const sample = await ProcessedDatasetItem.findOne({ _id: sampleId, datasetVersionId: versionId }).lean();
+      if (!sample) {
+        res.status(404).json({ error: 'Sample not found in this dataset version' });
+        return;
+      }
+
+      const messages = Array.isArray((sample as any).data?.messages) ? (sample as any).data.messages : [];
+      let messageIndex = Number(targetMessageIndex);
+      if (!Number.isInteger(messageIndex) || messageIndex < 0 || !messages[messageIndex]) {
+        messageIndex = -1;
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+          if (messages[i]?.role === 'assistant') {
+            messageIndex = i;
+            break;
+          }
+        }
+      }
+      if (messageIndex < 0 || !messages[messageIndex] || messages[messageIndex]?.role !== 'assistant') {
+        res.status(400).json({ error: 'No assistant message found to rewrite' });
+        return;
+      }
+
+      const originalText = String(messages[messageIndex]?.content || messages[messageIndex]?.text || '');
+      await ConversationRewriteHistory.findOneAndUpdate(
+        {
+          datasetVersionId: new mongoose.Types.ObjectId(versionId),
+          sampleId: new mongoose.Types.ObjectId(String(sampleId)),
+          messageIndex,
+        },
+        {
+          datasetVersionId: new mongoose.Types.ObjectId(versionId),
+          sampleId: new mongoose.Types.ObjectId(String(sampleId)),
+          messageIndex,
+          originalText,
+          proposedText: String(submittedText).trim(),
+          approvedText: String(submittedText).trim(),
+          editorId: new mongoose.Types.ObjectId(actorId),
+          editReason: String(reason || 'Admin self rewrite'),
+          editType: 'manual',
+        },
+        { upsert: true, new: true }
+      );
+
+      const task = await Stage4RewriteAssignment.findOneAndUpdate(
+        {
+          datasetVersionId: new mongoose.Types.ObjectId(versionId),
+          sampleId: new mongoose.Types.ObjectId(String(sampleId)),
+          targetMessageIndex: messageIndex,
+        },
+        {
+          $set: {
+            datasetVersionId: new mongoose.Types.ObjectId(versionId),
+            sampleId: new mongoose.Types.ObjectId(String(sampleId)),
+            assigneeId: new mongoose.Types.ObjectId(actorId),
+            assignedBy: new mongoose.Types.ObjectId(actorId),
+            convId: String((sample as any).sampleId || sampleId),
+            subject: String((sample as any).data?.subject || ''),
+            reason: String(reason || 'Admin self rewrite'),
+            originalText,
+            targetMessageIndex: messageIndex,
+            contextMode: 'n-2:n+2',
+            conversationMessages: this.buildRewriteContextMessages(messages, messageIndex, 'n-2:n+2'),
+            submittedText: String(submittedText).trim(),
+            status: 'approved',
+            reviewedBy: new mongoose.Types.ObjectId(actorId),
+            submittedAt: new Date(),
+            reviewedAt: new Date(),
+            reviewNote: 'Admin self rewrite',
+          },
+        },
+        { upsert: true, new: true }
+      ).populate('assigneeId', 'name email');
+
+      res.json({ task: this.serializeRewriteTask(task) });
+    } catch (error: any) {
+      console.error('Admin submit rewrite error:', error);
+      res.status(error.statusCode || 500).json({ error: error.message || 'Failed to save admin rewrite' });
+    }
+  }
+
+  async validateRewrite(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = getAuthUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const { versionId, taskId } = req.params;
+      const { submittedText } = req.body;
+      if (!submittedText || !String(submittedText).trim()) {
+        res.status(400).json({ error: 'submittedText is required' });
+        return;
+      }
+
+      const task = await Stage4RewriteAssignment.findOne({
+        _id: taskId,
+        datasetVersionId: versionId,
+      }).lean();
+
+      if (!task) {
+        res.status(404).json({ error: 'Rewrite task not found' });
+        return;
+      }
+
+      // Reconstruct messages with the submitted text
+      const messages = [...(task.conversationMessages || [])].map((m: any, index: number) => ({
+        messageIndex: index,
+        role: m.role as 'user' | 'assistant',
+        content: m.isTarget ? String(submittedText).trim() : m.content,
+      }));
+
+      // Find the target message index (assume it's the last assistant message if not marked)
+      const targetIndex = messages.findIndex(m => (task.conversationMessages as any)?.[m.messageIndex]?.isTarget) !== -1 
+        ? messages.findIndex(m => (task.conversationMessages as any)?.[m.messageIndex]?.isTarget)
+        : messages.map(m => m.role).lastIndexOf('assistant');
+
+      if (targetIndex === -1) {
+        res.json({ pass: true, reason: 'No assistant target found to evaluate.' });
+        return;
+      }
+
+      // We need to fetch the previous user intent to know what actions are expected
+      // The previous user message is usually at targetIndex - 1
+      let expectedActions: string[] = [];
+      let previousUserIntent = 'ANSWER_ATTEMPT';
+
+      if (targetIndex > 0 && messages[targetIndex - 1].role === 'user') {
+        const userMsgIndexInSample = (task as any).targetMessageIndex ? (task as any).targetMessageIndex - 1 : targetIndex - 1;
+        const userLabels = await LabelAssignment.find({
+          sampleId: task.sampleId,
+          messageIndex: userMsgIndexInSample,
+          messageRole: 'user',
+        }).lean();
+        
+        if (userLabels.length > 0) {
+          // Assume the first one is the intent
+          previousUserIntent = String(userLabels[0].name || '').toUpperCase();
+          const { VALID_ACTIONS } = await import('./quality.service.js');
+          if (VALID_ACTIONS[previousUserIntent]) {
+            expectedActions = Array.from(VALID_ACTIONS[previousUserIntent]);
+          }
+        }
+      }
+
+      // Run AutoLabelV2Service to predict the action for the submitted text
+      const provider = new OpenRouterProvider();
+      const autoLabelService = new AutoLabelV2Service(provider);
+      
+      let suggestion;
+      try {
+        suggestion = await autoLabelService.preview(messages);
+      } catch (err: any) {
+        res.status(502).json({ error: 'AI Evaluation failed: ' + (err.message || 'Unknown error') });
+        return;
+      }
+
+      const assistantLabel = suggestion.messages.find((m: any) => m.messageIndex === targetIndex);
+      if (!assistantLabel || !assistantLabel.action) {
+        res.json({ pass: false, error: 'Không thể nhận diện nhãn hành động (Action) cho câu trả lời này.' });
+        return;
+      }
+
+      const action = assistantLabel.action;
+      
+      // Check harmful actions
+      const { HARMFUL_ACTIONS } = await import('./quality.service.js');
+      const harmfulSet = HARMFUL_ACTIONS[previousUserIntent];
+      if (harmfulSet && harmfulSet.has(action)) {
+        res.json({ 
+          pass: false, 
+          error: `Hành động "${action}" được coi là độc hại (Harmful) đối với intent "${previousUserIntent}". Vui lòng sửa lại cách tiếp cận.` 
+        });
+        return;
+      }
+
+      // Check expected actions
+      if (expectedActions.length > 0 && !expectedActions.includes(action)) {
+        res.json({ 
+          pass: false, 
+          error: `Hành động "${action}" không khớp với yêu cầu của học sinh (Intent: ${previousUserIntent}). Các hành động hợp lệ: ${expectedActions.join(', ')}.` 
+        });
+        return;
+      }
+
+      res.json({ 
+        pass: true, 
+        message: `Phản hồi hợp lệ (Nhận diện hành động: ${action}).` 
+      });
+
+    } catch (error: any) {
+      console.error('Validate rewrite error:', error);
+      res.status(error.statusCode || 500).json({ error: error.message || 'Failed to validate rewrite' });
     }
   }
 

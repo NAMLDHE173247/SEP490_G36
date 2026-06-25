@@ -10,6 +10,7 @@ export interface IStage4RewriteAssignment extends Document {
   reason: string;
   originalText: string;
   targetMessageIndex?: number | null;
+  targetMessageIndices?: number[];
   contextMode?: 'n-2:n+2' | 'n-1:n+1' | 'n-1:n' | 'target-only' | 'full';
   conversationMessages?: Array<{ role: string; content: string; isTarget?: boolean }>;
   submittedText?: string;
@@ -33,6 +34,7 @@ const Stage4RewriteAssignmentSchema = new Schema<IStage4RewriteAssignment>(
     reason: { type: String, default: 'None' },
     originalText: { type: String, default: '' },
     targetMessageIndex: { type: Number, default: null },
+    targetMessageIndices: { type: [Number], default: [] },
     contextMode: {
       type: String,
       enum: ['n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'],
