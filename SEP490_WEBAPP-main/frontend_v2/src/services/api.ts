@@ -164,7 +164,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'staff';
+  role: 'admin' | 'supervisor' | 'staff' | 'reviewer' | 'checker';
   status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
@@ -385,6 +385,11 @@ export const apiService = {
 
   getDatasetVersionAssignmentSampleComparison: async (id: string, sampleId: string): Promise<any> => {
     const response = await api.get(`/dataprep/versions/${id}/assignments/samples/${sampleId}/comparison`);
+    return response.data;
+  },
+
+  getCheckerActivityLogs: async (id: string): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments/checker-logs`);
     return response.data;
   },
 

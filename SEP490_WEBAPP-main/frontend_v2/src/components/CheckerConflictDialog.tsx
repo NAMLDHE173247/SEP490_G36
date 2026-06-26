@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, Check, ChevronLeft, Loader2, MessageSquare, Send, User, X } from 'lucide-react';
 import { api, apiService, type AssignmentConflictItem } from '../services/api';
-import '../styles/supervisorconflict.css';
-import '../styles/supervisorconflict-polish.css';
+import '../styles/checkerconflict.css';
+import '../styles/checkerconflict-polish.css';
 
 type Item=AssignmentConflictItem&{versionId:string;taskName:string;datasetName:string;sampleData?:any;reviewerRows?:any[]};
 type Props={item:Item;onClose:()=>void;onCompleted:()=>void};
+
+const removeAccents = (str: string) => {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+};
 
 const LABEL_MAP: Record<string, string> = {
   // Quality & Status
@@ -100,7 +104,7 @@ const LABEL_MAP: Record<string, string> = {
   'Correct Error': 'Sửa lỗi sai',
   'Summarize': 'Chuyển bước/chủ đề',
   'Ask Explanation': 'Yêu cầu giải thích',
-  'Solve Exercise': 'Chi ra câu trả lời sai',
+  'Solve Exercise': 'Chỉ ra câu trả lời sai',
   'Request Formula': 'Hỏi lý thuyết',
   'Confirm Understanding': 'Xác nhận đã hiểu',
   'Ask Example': 'Muốn giải thích đơn giản hơn',
@@ -127,47 +131,47 @@ const annotatorLabelText = (annotator: any, label: string, index: number) => (
 );
 
 const targetKindText = (target: any) => {
-  if (!target) return 'Nhan';
+  if (!target) return 'Nhãn';
   if (target.targetScope === 'sample') {
-    if (Number(target.messageIndex) === 1) return 'Muc hoan thien';
-    if (Number(target.messageIndex) === 2) return 'Chat luong hoi thoai';
-    return 'Mon hoc';
+    if (Number(target.messageIndex) === 1) return 'Mức hoàn thiện';
+    if (Number(target.messageIndex) === 2) return 'Chất lượng hội thoại';
+    return 'Môn học';
   }
-  return target.messageRole === 'assistant' ? 'Hanh dong cua AI' : 'Y dinh hoc sinh';
+  return target.messageRole === 'assistant' ? 'Hành động của AI' : 'Ý định học sinh';
 };
 
 const targetTitle = (target: any) => {
-  if (!target) return 'Muc can kiem tra';
+  if (!target) return 'Mục cần kiểm tra';
   if (target.targetScope === 'sample') return targetKindText(target);
-  return `${target.messageRole === 'assistant' ? 'Tro ly AI' : 'Nguoi dung'} - Tin nhan ${Number(target.messageIndex) + 1}`;
+  return `${target.messageRole === 'assistant' ? 'Trợ lý AI' : 'Người dùng'} - Tin nhắn ${Number(target.messageIndex) + 1}`;
 };
 
 const conversationReviewerGroups = (label: any) => {
   if (!label || typeof label !== 'object') return [];
   const groups: { title: string; values: string[] }[] = [];
   const meta = [
-    label.subject && `Mon: ${labelText(label.subject)}`,
-    label.completion && `Hoan thien: ${labelText(label.completion)}`,
-    label.quality && `Chat luong: ${labelText(label.quality)}`,
+    label.subject && `Môn: ${labelText(label.subject)}`,
+    label.completion && `Hoàn thiện: ${labelText(label.completion)}`,
+    label.quality && `Chất lượng: ${labelText(label.quality)}`,
   ].filter(Boolean) as string[];
-  if (meta.length) groups.push({ title: 'Nhan hoi thoai', values: meta });
+  if (meta.length) groups.push({ title: 'Nhãn hội thoại', values: meta });
   const reasons = [
-    label.quality_reason && `Chat luong: ${String(label.quality_reason)}`,
-    label.reason && `Ghi chu: ${String(label.reason)}`,
-    label.note && `Ghi chu: ${String(label.note)}`,
+    label.quality_reason && `Chất lượng: ${String(label.quality_reason)}`,
+    label.reason && `Ghi chú: ${String(label.reason)}`,
+    label.note && `Ghi chú: ${String(label.note)}`,
   ].filter(Boolean) as string[];
-  if (reasons.length) groups.push({ title: 'Giai thich chi tiet', values: reasons });
+  if (reasons.length) groups.push({ title: 'Giải thích chi tiết', values: reasons });
   return groups;
 };
 
 const labelReasonForTarget = (label: any, target: any) => {
   if (!label || typeof label !== 'object') return '';
   const title = targetTitle(target).toLowerCase();
-  const candidates = title.includes('chat luong')
+  const candidates = title.includes('chất lượng')
     ? [label.quality_reason, label.qualityReason, label.reason_quality]
-    : title.includes('hoan thien')
+    : title.includes('hoàn thiện')
       ? [label.completion_reason, label.completionReason, label.reason_completion]
-      : title.includes('mon hoc')
+      : title.includes('môn học')
         ? [label.subject_reason, label.subjectReason, label.reason_subject]
         : [];
   candidates.push(label.reason, label.note);
@@ -175,13 +179,13 @@ const labelReasonForTarget = (label: any, target: any) => {
 };
 
 const inferAdviceLabel = (title: string, text: string) => {
-  const source = text.toLowerCase();
-  const candidates = title.toLowerCase().includes('mon')
-    ? ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro']
-    : title.toLowerCase().includes('hoan')
-      ? ['Hoan thanh', 'Chua hoan thanh', 'Bo do', 'Chua ro']
-      : ['Tot', 'Can viet lai', 'Chua dat', 'Chua ro'];
-  return candidates.find(label => source.includes(label.toLowerCase()));
+  const source = removeAccents(text.toLowerCase());
+  const candidates = title.toLowerCase().includes('môn') || title.toLowerCase().includes('mon')
+    ? ['Toán', 'Vật lý', 'Hóa học', 'Sinh học', 'Tiếng Anh', 'Lịch sử', 'Địa lý', 'GDCD', 'Tin học', 'Liên môn', 'Chưa rõ']
+    : title.toLowerCase().includes('hoàn') || title.toLowerCase().includes('hoan')
+      ? ['Hoàn thành', 'Chưa hoàn thành', 'Bỏ dở', 'Chưa rõ']
+      : ['Tốt', 'Cần viết lại', 'Chưa đạt', 'Chưa rõ'];
+  return candidates.find(label => removeAccents(label.toLowerCase()) === source || source.includes(removeAccents(label.toLowerCase())));
 };
 
 const compactAiAdvice = (value: string) => {
@@ -239,7 +243,7 @@ const ensureAdviceTargets = (advice: string, targets: any[]) => {
   return lines.slice(0, 4).join('\n');
 };
 
-export default function SupervisorConflictDialog({item,onClose,onCompleted}:Props){
+export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
   const [data,setData]=useState<any>(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false);
   const [error,setError]=useState(''),[activeKey,setActiveKey]=useState('');
   const [drafts, setDrafts] = useState<Record<string, {labels: string[], note: string}>>({});
@@ -310,6 +314,8 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
 
   const sampleConflictTargets = (data?.targets || []).filter((t: any) => t.targetScope === 'sample' && t.hasConflict);
   const sampleTargetsResolved = sampleConflictTargets.length > 0 && sampleConflictTargets.every((t: any) => t.adjudication?.status === 'published');
+  const allSampleTargets = (data?.targets || []).filter((t: any) => t.targetScope === 'sample');
+  const hasPendingSampleConflict = allSampleTargets.some((t: any) => t.hasConflict && t.adjudication?.status !== 'published');
   const activeAiKey = target?.targetScope === 'sample' ? 'sample-summary' : target?.targetKey;
   const aiSourceTargets = target?.targetScope === 'sample' ? sampleConflictTargets : (target ? [target] : []);
   const hasAiConflicts = aiSourceTargets.some((t: any) => t?.hasConflict);
@@ -425,19 +431,19 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
     ) : (
       <div className="sv-dialog-layout">
         <aside className="sv-targets">
-          <div className="sv-target-title">Các mục cần kiểm tra <span>{(sampleConflictTargets.length ? 1 : 0) + (data?.targets?.filter((t: any) => t.targetScope !== 'sample').length || 0)}</span></div>
-          {sampleConflictTargets.length > 0 && (
+          <div className="sv-target-title">Các mục cần kiểm tra <span>{(allSampleTargets.length ? 1 : 0) + (data?.targets?.filter((t: any) => t.targetScope !== 'sample').length || 0)}</span></div>
+          {allSampleTargets.length > 0 && (
             <button
               className={target?.targetScope === 'sample' ? 'active' : ''}
               onClick={() => {
-                setActiveKey(sampleConflictTargets[0].targetKey);
+                setActiveKey(allSampleTargets[0].targetKey);
                 document.querySelector('.sv-col-chat')?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
             >
-              <span className={`sv-target-dot ${sampleTargetsResolved ? 'agreed' : 'conflict'}`}>{sampleTargetsResolved ? <Check size={13} /> : 1}</span>
+              <span className={`sv-target-dot ${!hasPendingSampleConflict ? 'agreed' : 'conflict'}`}>{!hasPendingSampleConflict ? <Check size={13} /> : 1}</span>
               <span>
-                <strong>Hoi thoai tong</strong>
-                <small>{sampleTargetsResolved ? 'Da xu ly' : 'Co bat dong'}</small>
+                <strong>Hội thoại tổng</strong>
+                <small>{!hasPendingSampleConflict ? 'Đã xử lý' : 'Có bất đồng'}</small>
               </span>
             </button>
           )}
@@ -450,12 +456,12 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
                 onClick={() => {
                   setActiveKey(t.targetKey);
                   if (t.targetScope === 'message') {
-                    document.getElementById(`supervisor-msg-${t.messageIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.getElementById(`checker-msg-${t.messageIndex}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                   }
                 }}
               >
                 <span className={`sv-target-dot ${resolved ? 'agreed' : t.hasConflict ? 'conflict' : 'agreed'}`}>
-                  {resolved ? <Check size={13} /> : index + 1 + (sampleConflictTargets.length ? 1 : 0)}
+                  {resolved ? <Check size={13} /> : index + 1 + (allSampleTargets.length ? 1 : 0)}
                 </span>
                 <span>
                   <strong>{targetTitle(t)}</strong>
@@ -473,8 +479,8 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
               <div className="sv-section-label"><MessageSquare size={15} /> Hội thoại (Click tin nhắn để chọn mục giải quyết)</div>
               <div className="sv-chat-container">
                 {(() => {
-                  let msgs = data?.sample?.messages || item.sampleData?.messages || [];
-                  const text = target?.targetTextSnapshot || data?.sample?.preview || '';
+                  let msgs = data?.sample?.messages || data?.sample?.data?.messages || item.sampleData?.messages || item.sampleData?.data?.messages || [];
+                  const text = (target && target.targetScope !== 'sample') ? (target.targetTextSnapshot || data?.sample?.preview || '') : (data?.sample?.preview || '');
                   if (!msgs.length && data?.sample?.content) {
                     try { msgs = JSON.parse(data.sample.content); } catch (e) {}
                   }
@@ -492,27 +498,25 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
                   return msgs.map((m: any, i: number) => {
                     const isUser = String(m.role).toLowerCase() === 'user';
                     const msgTarget = data?.targets?.find((t: any) => t.targetScope === 'message' && Number(t.messageIndex) === i);
-                    const isActive = activeKey === msgTarget?.targetKey;
+                    const isActive = activeKey === (msgTarget ? msgTarget.targetKey : `message-${i}`);
                     const hasConflict = msgTarget?.hasConflict;
                     const resolved = msgTarget?.adjudication?.status === 'published';
 
                     return (
                       <div
                         key={i}
-                        id={`supervisor-msg-${i}`}
-                        className={`sv-chat-msg ${isUser ? 'user' : 'assistant'} ${isActive ? 'active' : ''} ${hasConflict ? 'has-conflict' : ''} ${resolved ? 'resolved' : ''} ${msgTarget ? 'clickable' : ''}`}
+                        id={`checker-msg-${i}`}
+                        className={`sv-chat-msg ${isUser ? 'user' : 'assistant'} ${isActive ? 'active' : ''} ${hasConflict ? 'has-conflict' : ''} ${resolved ? 'resolved' : ''} clickable`}
                         onClick={() => {
-                          if (msgTarget) {
-                            setActiveKey(msgTarget.targetKey);
-                          }
+                          setActiveKey(msgTarget ? msgTarget.targetKey : `message-${i}`);
                         }}
                       >
                         <div className="sv-chat-role-bar">
                           <span className="role-name">
-                            {isUser ? `Nguoi dung (Luot ${Math.floor(i / 2) + 1})` : `Tro ly AI (Luot ${Math.floor(i / 2) + 1})`}
+                            {isUser ? `Người dùng (Lượt ${Math.floor(i / 2) + 1})` : `Trợ lý AI (Lượt ${Math.floor(i / 2) + 1})`}
                           </span>
-                          {hasConflict && <span className="conflict-badge-inline">Bat dong</span>}
-                          {resolved && <span className="resolved-badge-inline">Da chot</span>}
+                          {hasConflict && <span className="conflict-badge-inline">Bất đồng</span>}
+                          {resolved && <span className="resolved-badge-inline">Đã chốt</span>}
                         </div>
                         <div className="sv-chat-bubble">{m.content || m.text || JSON.stringify(m)}</div>
 
@@ -548,206 +552,218 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
 
             {/* RIGHT COLUMN: DETAILED LABELS & FINAL DECISION FORM */}
             <div className="sv-col-decision">
-              {target?.targetScope === 'sample' && Array.isArray(item.reviewerRows) && item.reviewerRows.length > 0 && (
-                <div className="sv-full-label-panel">
-                  <div className="sv-section-label"><User size={15} /> Nhan reviewer da nop</div>
-                  <div className="sv-full-label-grid">
-                    {item.reviewerRows.map((row: any) => {
-                      const conversationGroups = conversationReviewerGroups(row.label);
-                      return (
-                        <article key={row.assignmentId || row.assigneeName}>
-                          <header>
-                            <strong>{row.assigneeName || 'Reviewer'}</strong>
-                            <small>{row.reviewStatus === 'approved' ? 'Da duyet' : 'Da nop'}</small>
-                          </header>
-                          {conversationGroups.length ? conversationGroups.map(group => (
-                            <div className={`sv-full-label-group ${group.title === 'Giai thich chi tiet' ? 'reason' : ''}`} key={group.title}>
-                              <span>{group.title}</span>
-                              <div>{group.values.map(value => group.title === 'Giai thich chi tiet' ? <p key={value}>{value}</p> : <b key={value}>{value}</b>)}</div>
+              {!target ? (
+                <div className="sv-state empty-state" style={{ padding: '32px 24px', borderStyle: 'solid', background: '#F8FAFC', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+                  <MessageSquare size={36} style={{ color: '#94A3B8', marginBottom: '12px' }} />
+                  <h3>Không cần phân xử</h3>
+                  <p style={{ fontSize: '13px', color: '#64748B', maxWidth: '300px', margin: '0 auto', lineHeight: 1.5, textAlign: 'center' }}>
+                    Tin nhắn này đã đồng thuận hoặc không nằm trong phạm vi cần gán nhãn của dự án.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {target?.targetScope === 'sample' && Array.isArray(item.reviewerRows) && item.reviewerRows.length > 0 && (
+                    <div className="sv-full-label-panel">
+                      <div className="sv-section-label"><User size={15} /> Nhãn reviewer đã nộp</div>
+                      <div className="sv-full-label-grid">
+                        {item.reviewerRows.map((row: any) => {
+                          const conversationGroups = conversationReviewerGroups(row.label);
+                          return (
+                            <article key={row.assignmentId || row.assigneeName}>
+                              <header>
+                                <strong>{row.assigneeName || 'Reviewer'}</strong>
+                                <small>{row.reviewStatus === 'approved' ? 'Đã duyệt' : 'Đã nộp'}</small>
+                              </header>
+                              {conversationGroups.length ? conversationGroups.map(group => (
+                                <div className={`sv-full-label-group ${group.title === 'Giải thích chi tiết' ? 'reason' : ''}`} key={group.title}>
+                                  <span>{group.title}</span>
+                                  <div>{group.values.map(value => group.title === 'Giải thích chi tiết' ? <p key={value}>{value}</p> : <b key={value}>{value}</b>)}</div>
+                                </div>
+                              )) : <p>Chưa có nhãn hội thoại.</p>}
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Detailed reviewer cards */}
+                  <div className="sv-section-label"><User size={15} /> Kết quả chi tiết reviewer {readOnly && <span className="sv-readonly-pill">Chỉ xem</span>}</div>
+                  {target?.targetScope === 'sample' ? (
+                    <div className="sv-sample-reviewers">
+                      {allSampleTargets.map((sampleTarget: any) => {
+                        const targetDraft = drafts[sampleTarget.targetKey] || { labels: [], note: '' };
+                        const targetResolved = sampleTarget.adjudication?.status === 'published';
+                        return (
+                          <section className="sv-sample-review-section" key={sampleTarget.targetKey}>
+                            <h4>{targetTitle(sampleTarget)} {targetResolved && <span className="sv-final-chip">Đã chốt</span>}</h4>
+                            <div className="sv-reviewers">
+                              {sampleTarget.annotators?.map((a: any) => {
+                                const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
+                                const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
+                                const reviewerReason = labelReasonForTarget(reviewerRow?.label, sampleTarget);
+                                return (
+                                  <article key={a.annotator.id}>
+                                    <header>
+                                      <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
+                                      <div>
+                                        <strong>{displayName}</strong>
+                                        <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetTitle(sampleTarget)}</small>
+                                      </div>
+                                    </header>
+                                    <div className="sv-review-labels">
+                                      {(a.labels || []).map((label: string, idx: number) => (
+                                        <button
+                                          key={`${label}-${idx}`}
+                                          className={hasLabel(targetDraft.labels, label) ? 'selected' : ''}
+                                          disabled={readOnly}
+                                          onClick={() => setTargetLabels(sampleTarget.targetKey, hasLabel(targetDraft.labels, label) ? withoutLabel(targetDraft.labels, label) : [...targetDraft.labels, label])}
+                                        >
+                                          <span>{annotatorLabelText(a, label, idx)}</span>
+                                          {hasLabel(targetDraft.labels, label) && <Check size={14} />}
+                                        </button>
+                                      ))}
+                                      {reviewerReason && <p className="sv-review-reason">Lý do: {reviewerReason}</p>}
+                                    </div>
+                                  </article>
+                                );
+                              })}
                             </div>
-                          )) : <p>Chua co nhan hoi thoai.</p>}
+                            {!readOnly && (() => {
+                              const mIdx = Number(sampleTarget.messageIndex);
+                              const overrideChoices = mIdx === 1
+                                ? ['Completed', 'Incomplete', 'Abandoned']
+                                : mIdx === 2
+                                  ? ['Gold', 'Rewrite', 'Bad']
+                                  : ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro'];
+                              
+                              return (
+                                <div className="sv-final-decision-override">
+                                  <label>
+                                    🎯 Quyết định {targetTitle(sampleTarget).toLowerCase()} cuối cùng:
+                                  </label>
+                                  <div className="sv-override-choices">
+                                    {overrideChoices.map((choice) => (
+                                      <button
+                                        key={choice}
+                                        type="button"
+                                        className={hasLabel(targetDraft.labels, choice) ? 'selected' : ''}
+                                        onClick={() => setTargetLabels(sampleTarget.targetKey, hasLabel(targetDraft.labels, choice) ? [] : [choice])}
+                                      >
+                                        {labelText(choice)}
+                                        {hasLabel(targetDraft.labels, choice) && <Check size={13} style={{ marginLeft: '4px' }} />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="sv-reviewers">
+                    {target?.annotators?.map((a: any) => {
+                      const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
+                      const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
+                      const reviewerReason = labelReasonForTarget(reviewerRow?.label, target);
+                      return (
+                        <article key={a.annotator.id}>
+                          <header>
+                            <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
+                            <div>
+                              <strong>{displayName}</strong>
+                              <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetKindText(target)}</small>
+                            </div>
+                          </header>
+                          <div className="sv-review-labels">
+                            {(a.labels || []).map((label: string, idx: number) => {
+                              const translatedLabel = annotatorLabelText(a, label, idx);
+                              return (
+                                <button
+                                  key={label}
+                                  className={hasLabel(currentLabels, label) ? 'selected' : ''}
+                                  disabled={readOnly}
+                                  onClick={() => toggle(label)}
+                                >
+                                  <span>{translatedLabel}</span>
+                                  {hasLabel(currentLabels, label) && <Check size={14} />}
+                                </button>
+                              );
+                            })}
+                            {reviewerReason && <p className="sv-review-reason">Lý do: {reviewerReason}</p>}
+                          </div>
                         </article>
                       );
                     })}
-                  </div>
-                </div>
-              )}
-
-              {/* Detailed reviewer cards */}
-              <div className="sv-section-label"><User size={15} /> Ket qua chi tiet reviewer {readOnly && <span className="sv-readonly-pill">Chi xem</span>}</div>
-              {target?.targetScope === 'sample' ? (
-                <div className="sv-sample-reviewers">
-                  {sampleConflictTargets.map((sampleTarget: any) => {
-                    const targetDraft = drafts[sampleTarget.targetKey] || { labels: [], note: '' };
-                    const targetResolved = sampleTarget.adjudication?.status === 'published';
-                    return (
-                      <section className="sv-sample-review-section" key={sampleTarget.targetKey}>
-                        <h4>{targetTitle(sampleTarget)} {targetResolved && <span className="sv-final-chip">Da chot</span>}</h4>
-                        <div className="sv-reviewers">
-                          {sampleTarget.annotators?.map((a: any) => {
-                            const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
-                            const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
-                            const reviewerReason = labelReasonForTarget(reviewerRow?.label, sampleTarget);
-                            return (
-                              <article key={a.annotator.id}>
-                                <header>
-                                  <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
-                                  <div>
-                                    <strong>{displayName}</strong>
-                                    <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetTitle(sampleTarget)}</small>
-                                  </div>
-                                </header>
-                                <div className="sv-review-labels">
-                                  {(a.labels || []).map((label: string, idx: number) => (
-                                    <button
-                                      key={`${label}-${idx}`}
-                                      className={hasLabel(targetDraft.labels, label) ? 'selected' : ''}
-                                      disabled={readOnly}
-                                      onClick={() => setTargetLabels(sampleTarget.targetKey, hasLabel(targetDraft.labels, label) ? withoutLabel(targetDraft.labels, label) : [...targetDraft.labels, label])}
-                                    >
-                                      <span>{annotatorLabelText(a, label, idx)}</span>
-                                      {hasLabel(targetDraft.labels, label) && <Check size={14} />}
-                                    </button>
-                                  ))}
-                                  {reviewerReason && <p className="sv-review-reason">Ly do: {reviewerReason}</p>}
-                                </div>
-                              </article>
-                            );
-                          })}
-                        </div>
-                        {!readOnly && (() => {
-                          const mIdx = Number(sampleTarget.messageIndex);
-                          const overrideChoices = mIdx === 1
-                            ? ['Completed', 'Incomplete', 'Abandoned']
-                            : mIdx === 2
-                              ? ['Gold', 'Rewrite', 'Bad']
-                              : ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro'];
-                          
-                          return (
-                            <div className="sv-final-decision-override">
-                              <label>
-                                🎯 Quyết định {targetTitle(sampleTarget).toLowerCase()} cuối cùng:
-                              </label>
-                              <div className="sv-override-choices">
-                                {overrideChoices.map((choice) => (
-                                  <button
-                                    key={choice}
-                                    type="button"
-                                    className={hasLabel(targetDraft.labels, choice) ? 'selected' : ''}
-                                    onClick={() => setTargetLabels(sampleTarget.targetKey, hasLabel(targetDraft.labels, choice) ? [] : [choice])}
-                                  >
-                                    {labelText(choice)}
-                                    {hasLabel(targetDraft.labels, choice) && <Check size={13} style={{ marginLeft: '4px' }} />}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </section>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="sv-reviewers">
-                {target?.annotators?.map((a: any) => {
-                  const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
-                  const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
-                  const reviewerReason = labelReasonForTarget(reviewerRow?.label, target);
-                  return (
-                    <article key={a.annotator.id}>
-                      <header>
-                        <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
-                        <div>
-                          <strong>{displayName}</strong>
-                          <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetKindText(target)}</small>
-                        </div>
-                      </header>
-                      <div className="sv-review-labels">
-                        {(a.labels || []).map((label: string, idx: number) => {
-                          const translatedLabel = annotatorLabelText(a, label, idx);
-                          return (
-                            <button
-                              key={label}
-                              className={hasLabel(currentLabels, label) ? 'selected' : ''}
-                              disabled={readOnly}
-                              onClick={() => toggle(label)}
-                            >
-                              <span>{translatedLabel}</span>
-                              {hasLabel(currentLabels, label) && <Check size={14} />}
-                            </button>
-                          );
-                        })}
-                        {reviewerReason && <p className="sv-review-reason">Ly do: {reviewerReason}</p>}
-                      </div>
-                    </article>
-                  );
-                })}
-                </div>
-              )}
-
-              {/* AI helper box */}
-              {hasAiConflicts && activeAiKey && (
-                <div className="sv-ai-analysis">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: aiAdvice[activeAiKey] ? 10 : 0 }}>
-                    <div className="sv-section-label" style={{ margin: 0 }}><span style={{ marginRight: 6 }}>🪄</span> Phân tích bằng AI (Gợi ý)</div>
-                    <button className="sv-button secondary" onClick={analyzeWithAi} disabled={aiLoading[activeAiKey]}>
-                      {aiLoading[activeAiKey] ? <Loader2 size={14} className="sv-spin" style={{ marginRight: 6 }} /> : <MessageSquare size={14} style={{ marginRight: 6 }} />}
-                      {aiAdvice[activeAiKey] ? 'Phân tích lại' : 'Nhờ AI làm trọng tài'}
-                    </button>
-                  </div>
-                  {aiAdvice[activeAiKey] && <div className="sv-ai-advice-text">{aiAdvice[activeAiKey]}</div>}
-                </div>
-              )}
-
-              {/* Final adjudication decision */}
-              {target?.targetScope !== 'sample' && <div className="sv-decision">
-                <div className="sv-section-label"><Check size={15} /> Quyết định cuối cùng</div>
-                <p>Chọn nhãn cuối cùng từ danh sách gợi ý hoặc tự nhập nếu tất cả đều sai.</p>
-                <div className="sv-choice-row">
-                  {choices.map(label => (
-                    <button
-                      key={label}
-                      className={hasLabel(currentLabels, label) ? 'selected' : ''}
-                      disabled={readOnly}
-                      onClick={() => toggle(label)}
-                    >
-                      {labelText(label)}
-                      {hasLabel(currentLabels, label) && <Check size={13} />}
-                    </button>
-                  ))}
-                  {choices.length > 1 && (
-                    <button
-                      className={choices.every(label => hasLabel(currentLabels, label)) ? 'selected' : ''}
-                      disabled={readOnly}
-                      onClick={() => setLabels(choices.every(label => hasLabel(currentLabels, label)) ? [] : choices)}
-                    >
-                      <Check size={13} /> Giữ tất cả nhãn hợp lý
-                    </button>
+                    </div>
                   )}
-                </div>
-                {!readOnly && (
-                  <div style={{ marginTop: '12px' }}>
-                    <input
-                      type="text"
-                      placeholder="Nhập nhãn tùy chỉnh mới và ấn Enter..."
-                      className="sv-search"
-                      style={{ width: '100%', padding: '10px 12px', fontSize: '13px' }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          const val = e.currentTarget.value.trim();
-                          if (val) {
-                            toggle(val);
-                            e.currentTarget.value = '';
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                )}
-                {error && <div className="sv-inline-error"><AlertTriangle size={15} />{error}</div>}
-              </div>}
+
+                  {/* AI helper box */}
+                  {hasAiConflicts && activeAiKey && (
+                    <div className="sv-ai-analysis">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: aiAdvice[activeAiKey] ? 10 : 0 }}>
+                        <div className="sv-section-label" style={{ margin: 0 }}><span style={{ marginRight: 6 }}>🪄</span> Phân tích bằng AI (Gợi ý)</div>
+                        <button className="sv-button secondary" onClick={analyzeWithAi} disabled={aiLoading[activeAiKey]}>
+                          {aiLoading[activeAiKey] ? <Loader2 size={14} className="sv-spin" style={{ marginRight: 6 }} /> : <MessageSquare size={14} style={{ marginRight: 6 }} />}
+                          {aiAdvice[activeAiKey] ? 'Phân tích lại' : 'Nhờ AI làm trọng tài'}
+                        </button>
+                      </div>
+                      {aiAdvice[activeAiKey] && <div className="sv-ai-advice-text">{aiAdvice[activeAiKey]}</div>}
+                    </div>
+                  )}
+
+                  {/* Final adjudication decision */}
+                  {target?.targetScope !== 'sample' && <div className="sv-decision">
+                    <div className="sv-section-label"><Check size={15} /> Quyết định cuối cùng</div>
+                    <p>Chọn nhãn cuối cùng từ danh sách gợi ý hoặc tự nhập nếu tất cả đều sai.</p>
+                    <div className="sv-choice-row">
+                      {choices.map(label => (
+                        <button
+                          key={label}
+                          className={hasLabel(currentLabels, label) ? 'selected' : ''}
+                          disabled={readOnly}
+                          onClick={() => toggle(label)}
+                        >
+                          {labelText(label)}
+                          {hasLabel(currentLabels, label) && <Check size={13} />}
+                        </button>
+                      ))}
+                      {choices.length > 1 && (
+                        <button
+                          className={choices.every(label => hasLabel(currentLabels, label)) ? 'selected' : ''}
+                          disabled={readOnly}
+                          onClick={() => setLabels(choices.every(label => hasLabel(currentLabels, label)) ? [] : choices)}
+                        >
+                          <Check size={13} /> Giữ tất cả nhãn hợp lý
+                        </button>
+                      )}
+                    </div>
+                    {!readOnly && (
+                      <div style={{ marginTop: '12px' }}>
+                        <input
+                          type="text"
+                          placeholder="Nhập nhãn tùy chỉnh mới và ấn Enter..."
+                          className="sv-search"
+                          style={{ width: '100%', padding: '10px 12px', fontSize: '13px' }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const val = e.currentTarget.value.trim();
+                              if (val) {
+                                toggle(val);
+                                e.currentTarget.value = '';
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+                    )}
+                    {error && <div className="sv-inline-error"><AlertTriangle size={15} />{error}</div>}
+                  </div>}
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -755,7 +771,7 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
     )}
     {!loading && data && (
       <footer className="sv-dialog-footer">
-        <button className="sv-button secondary" onClick={onClose}><ChevronLeft size={16} /> Quay lại queue</button>
+        <button className="sv-button secondary" onClick={onClose}><ChevronLeft size={16} /> Quay lại danh sách</button>
         <div>
           {!readOnly && <>
             <button className="sv-button publish" disabled={saving} onClick={() => submitAll(true)}>

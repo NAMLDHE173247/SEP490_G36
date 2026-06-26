@@ -1495,6 +1495,8 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       id: String(sample._id),
       sampleKey: String(sample.sampleId || ''),
       preview: requiredTargets.map((target) => target.targetTextSnapshot || '').join(' ').trim().slice(0, 180),
+      sampleIndex: typeof assignments[0]?.sampleIndex === 'number' ? assignments[0].sampleIndex : 0,
+      data: (sample as any).data,
     },
     agreementScore: targetScores.length
       ? Number((targetScores.reduce((sum, value) => sum + value, 0) / targetScores.length).toFixed(4))

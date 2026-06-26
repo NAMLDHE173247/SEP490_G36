@@ -101,7 +101,7 @@ export class QualityController {
     versionId: string;
     actorId?: string;
     recipientId?: string;
-    recipientRole?: 'admin' | 'supervisor' | 'staff';
+    recipientRole?: 'admin' | 'supervisor' | 'staff' | 'checker';
     type?: 'info' | 'success' | 'warning';
     message: string;
   }) {
@@ -590,7 +590,7 @@ export class QualityController {
       const recipientClauses: any[] = [{ recipientId: userId }];
       // Supervisor notifications are task-scoped and must target a concrete user.
       // Do not expose legacy role-wide notices to unrelated supervisors.
-      if (role !== 'supervisor') recipientClauses.push({ recipientRole: role });
+      if (role !== 'supervisor' && role !== 'checker') recipientClauses.push({ recipientRole: role });
       const notes = await Stage4Notification.find({
         $or: recipientClauses,
       }).sort({ createdAt: -1 }).limit(50).lean();
@@ -648,6 +648,13 @@ export class QualityController {
           versionId,
           actorId: userId,
           recipientRole: 'supervisor',
+          type: 'success',
+          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
+        });
+        await this.notify({
+          versionId,
+          actorId: userId,
+          recipientRole: 'checker',
           type: 'success',
           message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
         });
@@ -989,8 +996,9 @@ export class QualityController {
   async autoBypassRewrite(req: Request, res: Response): Promise<void> {
     try {
       const actorId = getAuthUserId(req);
-      if (!actorId || String((req as any).user?.role || '').toLowerCase() !== 'admin') {
-        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Admin role required' : 'Unauthorized' });
+      const actorRole = String((req as any).user?.role || '').toLowerCase();
+      if (!actorId || !['admin', 'supervisor'].includes(actorRole)) {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Admin or Supervisor role required' : 'Unauthorized' });
         return;
       }
       const { versionId } = req.params;

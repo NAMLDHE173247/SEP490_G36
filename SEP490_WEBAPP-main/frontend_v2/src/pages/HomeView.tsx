@@ -90,6 +90,11 @@ function HomeView({ setActiveTab }) {
     return <SupervisorHomeView setActiveTab={setActiveTab} dashboardStats={dashboardStats} />;
   }
 
+  // ==================== CHECKER VIEW ====================
+  if (role === 'checker') {
+    return <CheckerHomeView setActiveTab={setActiveTab} dashboardStats={dashboardStats} />;
+  }
+
   // ==================== STAFF VIEW ====================
   return <StaffHomeView setActiveTab={setActiveTab} dashboardStats={dashboardStats} />;
 }
@@ -188,12 +193,14 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
         const supervisorCount = usersList.filter((u: any) => u.role === 'supervisor').length;
         const staffCount = usersList.filter((u: any) => u.role === 'staff').length;
         const reviewerCount = usersList.filter((u: any) => u.role === 'reviewer').length;
+        const checkerCount = usersList.filter((u: any) => u.role === 'checker').length;
 
         setRoleDistribution([
           { role: 'Admin', count: adminCount, color: '#f59e0b', icon: <ShieldCheck size={14} style={{ color: '#f59e0b' }} /> },
           { role: 'Supervisor', count: supervisorCount, color: '#10b981', icon: <ShieldAlert size={14} style={{ color: '#10b981' }} /> },
           { role: 'Staff', count: staffCount, color: '#6366f1', icon: <Shield size={14} style={{ color: '#6366f1' }} /> },
-          { role: 'Reviewer', count: reviewerCount, color: '#8b5cf6', icon: <ClipboardCheck size={14} style={{ color: '#8b5cf6' }} /> }
+          { role: 'Reviewer', count: reviewerCount, color: '#8b5cf6', icon: <ClipboardCheck size={14} style={{ color: '#8b5cf6' }} /> },
+          { role: 'Checker', count: checkerCount, color: '#f43f5e', icon: <ShieldAlert size={14} style={{ color: '#f43f5e' }} /> }
         ]);
 
         // 4. Recent accounts
@@ -321,6 +328,7 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
       case 'Supervisor': return 'role-dot-supervisor';
       case 'Staff': return 'role-dot-staff';
       case 'Reviewer': return 'role-dot-reviewer';
+      case 'Checker': return 'role-dot-checker';
       default: return '';
     }
   };
@@ -481,6 +489,7 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
 /* ──────── SUPERVISOR HOME ──────── */
 function SupervisorHomeView({ setActiveTab, dashboardStats }) {
   const cards = [
+    { icon: <ShieldCheck size={24} />, title: 'Supervisor Review', description: 'Phân xử và giải quyết bất đồng nhãn giữa các nhân viên', metaIcon: <AlertTriangle size={14} />, metaText: `${dashboardStats?.needsReview ?? 0} task cần phân xử`, actionText: 'Vào duyệt nhãn', badge: dashboardStats?.needsReview > 0 ? `${dashboardStats.needsReview} Review` : 'OK', badgeColor: dashboardStats?.needsReview > 0 ? 'warning' : 'default', tab: 'Supervisor Review' },
     { icon: <ClipboardList size={24} />, title: 'Quản lý Task gán nhãn', description: 'Tạo, giao việc và theo dõi tiến độ gán nhãn', metaIcon: <AlertTriangle size={14} />, metaText: `${dashboardStats?.needsReview ?? 0} tasks cần review`, actionText: 'Quản lý Task', badge: dashboardStats?.needsReview > 0 ? `${dashboardStats.needsReview} Review` : 'OK', badgeColor: dashboardStats?.needsReview > 0 ? 'warning' : 'default', tab: 'Assign Labeling' },
     { icon: <MessageSquare size={24} />, title: 'Chat', description: 'Conversational AI with streaming inference', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.chatSessionsCount ?? 0} active sessions`, actionText: 'New Chat', badge: 'Idle', badgeColor: 'default', tab: 'Chat' },
     { icon: <Database size={24} />, title: 'Data Prep', description: 'Multi-step dataset conversion pipeline', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.datasetCount ?? 0} datasets`, actionText: 'Start Conversion', badge: 'Idle', badgeColor: 'default', tab: 'Data Prep' },
@@ -570,6 +579,61 @@ function StaffHomeView({ setActiveTab, dashboardStats }) {
             <span>Xem Task của tôi</span><ArrowRight size={16} />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────── CHECKER HOME ──────── */
+function CheckerHomeView({ setActiveTab, dashboardStats }) {
+  const cards = [
+    { icon: <ShieldCheck size={24} />, title: 'Checker Review', description: 'Phân xử bất đồng nhãn và theo dõi nhật ký hoạt động', metaIcon: <AlertTriangle size={14} />, metaText: `${dashboardStats?.needsReview ?? 0} mẫu cần phân xử`, actionText: 'Vào thẩm định', badge: dashboardStats?.needsReview > 0 ? `${dashboardStats.needsReview} Review` : 'OK', badgeColor: dashboardStats?.needsReview > 0 ? 'warning' : 'default', tab: 'Checker Review' },
+    { icon: <ClipboardList size={24} />, title: 'Quản lý Task gán nhãn', description: 'Tạo, giao việc và theo dõi tiến độ gán nhãn', metaIcon: <AlertTriangle size={14} />, metaText: `${dashboardStats?.needsReview ?? 0} tasks cần review`, actionText: 'Quản lý Task', badge: dashboardStats?.needsReview > 0 ? `${dashboardStats.needsReview} Review` : 'OK', badgeColor: dashboardStats?.needsReview > 0 ? 'warning' : 'default', tab: 'Assign Labeling' },
+    { icon: <MessageSquare size={24} />, title: 'Chat', description: 'Conversational AI with streaming inference', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.chatSessionsCount ?? 0} active sessions`, actionText: 'New Chat', badge: 'Idle', badgeColor: 'default', tab: 'Chat' },
+    { icon: <Database size={24} />, title: 'Data Prep', description: 'Multi-step dataset conversion pipeline', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.datasetCount ?? 0} datasets`, actionText: 'Start Conversion', badge: 'Idle', badgeColor: 'default', tab: 'Data Prep' },
+    { icon: <GitBranch size={24} />, title: 'Version Data Prep', description: 'Quản lý phiên bản dữ liệu', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.datasetCount ?? 0} versions`, actionText: 'Xem Versions', badge: 'Idle', badgeColor: 'default', tab: 'Version Data Prep' },
+    { icon: <Zap size={24} />, title: 'AutoTrain', description: 'Configure and run training jobs', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.activeJobsCount ?? 0} active jobs`, actionText: 'New Training Job', badge: dashboardStats?.activeJobsCount > 0 ? 'Running' : 'Idle', badgeColor: dashboardStats?.activeJobsCount > 0 ? 'success' : 'default', tab: 'AutoTrain' },
+    { icon: <Package size={24} />, title: 'Model Registry', description: 'Upload, version, and manage models', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.modelRegistryCount ?? 0} models`, actionText: 'Browse Models', badge: 'Idle', badgeColor: 'default', tab: 'Model Registry' },
+    { icon: <BarChart2 size={24} />, title: 'Model Evaluation', description: 'Run evaluations and compare models', metaIcon: <Activity size={14} />, metaText: `${dashboardStats?.modelEvaluationCount ?? 0} evaluations`, actionText: 'Run Evaluation', badge: 'Idle', badgeColor: 'default', tab: 'Model Eval' },
+  ];
+
+  return (
+    <div className="home-view">
+      <div className="home-header card">
+        <div className="home-header-title">
+          <h1>👋 Xin chào, Checker</h1>
+          <p>Quản lý dữ liệu & giám sát gán nhãn</p>
+        </div>
+        <div className="home-header-stats">
+          <div className="stat-item"><span className="stat-value text-primary">{dashboardStats?.datasetCount ?? 0}</span><span className="stat-label">Tasks</span></div>
+          <div className="stat-divider"></div>
+          <div className="stat-item"><span className="stat-value text-blue">{dashboardStats?.needsReview ?? 0}</span><span className="stat-label">Cần Review</span></div>
+          <div className="stat-divider"></div>
+          <div className="stat-item"><span className="stat-value text-green">{dashboardStats?.completed ?? 0}</span><span className="stat-label">Completed</span></div>
+          <div className="stat-divider"></div>
+          <div className="stat-item"><span className="stat-value text-orange">{dashboardStats?.staffCount ?? 0}</span><span className="stat-label">Staff</span></div>
+        </div>
+      </div>
+      <div className="home-cards-grid">
+        {cards.map((card, index) => (
+          <div className="home-card card" key={index}>
+            <div className="home-card-header">
+              <div className="home-card-icon">{card.icon}</div>
+              <div className={`home-badge badge-${card.badgeColor}`}>
+                {card.badgeColor === 'success' && <div className="badge-dot"></div>}
+                {card.badgeColor === 'warning' && <div className="badge-dot-warning"></div>}
+                {card.badge}
+              </div>
+            </div>
+            <div className="home-card-body">
+              <h3>{card.title}</h3><p>{card.description}</p>
+              <div className="home-card-meta">{card.metaIcon}<span>{card.metaText}</span></div>
+            </div>
+            <div className="home-card-footer" onClick={() => setActiveTab(card.tab)}>
+              <span>{card.actionText}</span><ArrowRight size={16} />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

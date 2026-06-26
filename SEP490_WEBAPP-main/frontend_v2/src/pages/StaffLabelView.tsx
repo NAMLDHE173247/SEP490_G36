@@ -743,34 +743,6 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <span>{chatFontSize}px</span>
                       <button onClick={() => setChatFontSize(f => Math.min(24, f + 1))}>A+</button>
                     </div>
-                    {!isSampleLocked(drawerSample.id) && (
-                      <button
-                        className="sl-drawer-next-btn"
-                        style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff' }}
-                        onClick={() => handleSubmitSamples([drawerSample.id])}
-                        disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
-                        title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần gán đủ nhãn tổng hội thoại hoặc nhãn từng tin nhắn trước khi nộp'}
-                      >
-                        <Send size={14} /> Nộp câu #{drawerSample.id}
-                      </button>
-                    )}
-                    {(() => {
-                      const recentComplete = recentlyEdited.filter(id => isSampleComplete(id) && ['labeling','rejected'].includes(reviewOf(id)));
-                      const isOnlyCurrentSample = recentComplete.length === 1 && String(recentComplete[0]) === String(drawerSample.id);
-                      if (recentComplete.length < 2 || isOnlyCurrentSample) return null;
-                      return (
-                        <button
-                          className="sl-drawer-next-btn"
-                          style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff' }}
-                          onClick={() => handleSubmitSamples(recentComplete)}
-                          disabled={isSubmitting}
-                          title={`Nộp ${recentComplete.length} câu vừa sửa gần nhất`}
-                        >
-                          <Send size={14} /> Nộp {recentComplete.length} câu vừa sửa
-                        </button>
-                      );
-                    })()}
-                    <button className="sl-drawer-next-btn" onClick={handleNextUnlabeled}>Lưu & Tới câu kế <ChevronRight size={16} /></button>
                     <button className="sl-drawer-close-btn" onClick={handleCloseDrawer}><X size={20} /></button>
                   </div>
                 </div>
@@ -886,6 +858,37 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         </div>
                       );
                     })()}
+                    {/* Action buttons pinned to bottom of label panel */}
+                    <div className="sl-label-panel-footer">
+                      {!isSampleLocked(drawerSample.id) && (
+                        <button
+                          className="sl-panel-action-btn sl-btn-submit"
+                          onClick={() => handleSubmitSamples([drawerSample.id])}
+                          disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
+                          title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần gán đủ nhãn tổng hội thoại hoặc nhãn từng tin nhắn trước khi nộp'}
+                        >
+                          <Send size={14} /> Nộp câu #{drawerSample.id}
+                        </button>
+                      )}
+                      {(() => {
+                        const recentComplete = recentlyEdited.filter(id => isSampleComplete(id) && ['labeling','rejected'].includes(reviewOf(id)));
+                        const isOnlyCurrentSample = recentComplete.length === 1 && String(recentComplete[0]) === String(drawerSample.id);
+                        if (recentComplete.length < 2 || isOnlyCurrentSample) return null;
+                        return (
+                          <button
+                            className="sl-panel-action-btn sl-btn-submit-multi"
+                            onClick={() => handleSubmitSamples(recentComplete)}
+                            disabled={isSubmitting}
+                            title={`Nộp ${recentComplete.length} câu vừa sửa gần nhất`}
+                          >
+                            <Send size={14} /> Nộp {recentComplete.length} câu vừa sửa
+                          </button>
+                        );
+                      })()}
+                      <button className="sl-panel-action-btn sl-btn-next" onClick={handleNextUnlabeled}>
+                        Lưu & Tới câu kế <ChevronRight size={16} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* RIGHT: Chat Messages */}
@@ -916,7 +919,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                             </span>
                           )}
                         </div>
-                        <div className={`sl-msg-bubble ${msgRole}`} style={{ fontSize: `${chatFontSize}px` }}><textarea key={`${drawerSample.id}-${mIdx}`} className="sl-message-editor" defaultValue={getEditedMessageContent(drawerSample.id, mIdx, msg.content || '')} onBlur={(e) => setEditedMessageContent(drawerSample.id, mIdx, e.currentTarget.value)} disabled={isSampleLocked(drawerSample.id)} /></div>
+                        <div className={`sl-msg-bubble ${msgRole}`} style={{ fontSize: `${chatFontSize}px` }}><textarea key={`${drawerSample.id}-${mIdx}`} className="sl-message-editor" defaultValue={getEditedMessageContent(drawerSample.id, mIdx, msg.content || '')} onBlur={(e) => setEditedMessageContent(drawerSample.id, mIdx, e.currentTarget.value)} disabled={isSampleLocked(drawerSample.id)} ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }} onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }} /></div>
                         {!badOk && meta?.pedagogy_note && (
                           <div style={{ margin: '2px 8px 4px', padding: '4px 10px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 11, fontStyle: 'italic' }}>
                             {meta.pedagogy_note}

@@ -12,6 +12,7 @@ import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudi
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
+import { CheckerActivityLog } from '../models/CheckerActivityLog';
 import { apiKeyService } from '../services/apiKeyService';
 import { getAuthUserId, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
@@ -337,6 +338,36 @@ async function ensureEvaluationHistoryIndexes(): Promise<void> {
   evaluationIndexesEnsured = true;
 }
 
+async function logCheckerActivity(params: {
+  datasetVersionId: string;
+  sampleId: string;
+  userId: string;
+  action: 'view' | 'save_draft' | 'publish';
+  targetScope?: 'sample' | 'message';
+  messageIndex?: number | null;
+  messageRole?: 'user' | 'assistant' | null;
+  details?: string;
+}) {
+  try {
+    const user = await User.findById(params.userId).select('name email').lean();
+    if (!user) return;
+    await CheckerActivityLog.create({
+      datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
+      sampleId: new mongoose.Types.ObjectId(params.sampleId),
+      userId: new mongoose.Types.ObjectId(params.userId),
+      userName: user.name || 'Unknown',
+      userEmail: user.email || 'unknown@test.com',
+      action: params.action,
+      targetScope: params.targetScope || null,
+      messageIndex: params.messageIndex || null,
+      messageRole: params.messageRole || null,
+      details: params.details || '',
+    });
+  } catch (err) {
+    console.error('Failed to log checker activity:', err);
+  }
+}
+
 export class EvaluationController {
   private async getService(provider: string | undefined, userId?: string | null): Promise<EvaluationService> {
     const normalizedProvider = String(provider || 'gemini').toLowerCase();
@@ -466,7 +497,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const normalizedProjectName = normalizeProjectName(projectName);
       const normalizedFormat = format === 'openai' || format === 'alpaca'
         ? format
-        : inferFormatFromRow(data[0] || {});
+        : inferFormatFromRow((data[0] as any)?.data || data[0] || {});
       const threshold = Number.isFinite(Number(similarityThreshold))
         ? Math.min(1, Math.max(0, Number(similarityThreshold)))
         : 0.9;
@@ -1696,6 +1727,27 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       }
 
       const comparison = await buildAssignmentSampleComparison(id, sampleId);
+
+      // Check for recent view logs to avoid duplicate logs (e.g. from React StrictMode double render)
+      const recentViewLog = await DatasetAssignmentActivity.findOne({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'view',
+        createdAt: { $gte: new Date(Date.now() - 5000) }
+      }).lean();
+
+      if (!recentViewLog) {
+        // Log activity
+        await logCheckerActivity({
+          datasetVersionId: id,
+          sampleId,
+          userId: ownerId,
+          action: 'view',
+          details: `Xem đối chiếu nhãn mẫu #${comparison.sample?.sampleIndex !== undefined ? comparison.sample.sampleIndex : ''} (Mã: ${comparison.sample?.sampleKey || ''})`,
+        });
+      }
+
       res.json(comparison);
     } catch (error: any) {
       console.error('Get assignment sample comparison error:', error);
@@ -1754,6 +1806,27 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         finalLabels,
         note: String(req.body?.note || ''),
         resolvedBy: ownerId,
+      });
+
+      const assignment = await DatasetSampleAssignment.findOne({
+        datasetVersionId: id,
+        sampleId: sampleId
+      }).select('sampleIndex').lean();
+      const sampleIndexStr = assignment?.sampleIndex !== undefined ? `#${assignment.sampleIndex}` : '';
+      const scopeText = targetScope === 'message' && messageIndex !== undefined
+        ? ` (tin nhắn #${messageIndex + 1} - ${messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+
+      // Log resolve activity
+      await logCheckerActivity({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'save_draft',
+        targetScope,
+        messageIndex,
+        messageRole,
+        details: `Lưu nháp nhãn: [${finalLabels.join(', ')}]${req.body?.note ? ' (Ghi chú: ' + req.body.note + ')' : ''} cho mẫu ${sampleIndexStr}${scopeText}`,
       });
 
       res.json({
@@ -1815,6 +1888,27 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         publishedBy: ownerId,
       });
 
+      const assignment = await DatasetSampleAssignment.findOne({
+        datasetVersionId: id,
+        sampleId: sampleId
+      }).select('sampleIndex').lean();
+      const sampleIndexStr = assignment?.sampleIndex !== undefined ? `#${assignment.sampleIndex}` : '';
+      const scopeText = targetScope === 'message' && messageIndex !== undefined
+        ? ` (tin nhắn #${messageIndex + 1} - ${messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+
+      // Log publish activity
+      await logCheckerActivity({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'publish',
+        targetScope,
+        messageIndex,
+        messageRole,
+        details: `Đã chốt nhãn: [${adjudication?.finalLabels?.join(', ') || ''}] cho mẫu ${sampleIndexStr}${scopeText}`,
+      });
+
       res.json({
         message: 'Đã publish final labels.',
         adjudication,
@@ -1823,6 +1917,57 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       console.error('Publish assignment adjudication error:', error);
       res.status(error?.statusCode || 500).json({
         error: error.message || 'Publish final labels thất bại',
+      });
+    }
+  }
+
+  async getCheckerActivityLogs(req: Request, res: Response): Promise<void> {
+    try {
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ error: 'Dataset version id không hợp lệ.' });
+        return;
+      }
+
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      if (!version) {
+        res.status(404).json({ error: 'Không tìm thấy dataset version.' });
+        return;
+      }
+
+      const logs = await CheckerActivityLog.find({ datasetVersionId: id })
+        .populate('sampleId', 'sampleId')
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean();
+
+      res.json({
+        success: true,
+        data: logs.map((log: any) => ({
+          id: String(log._id),
+          sampleId: String(log.sampleId?._id || log.sampleId),
+          sampleKey: log.sampleId ? String(log.sampleId.sampleId || '') : '',
+          action: log.action,
+          userName: log.userName,
+          userEmail: log.userEmail,
+          targetScope: log.targetScope,
+          messageIndex: log.messageIndex,
+          messageRole: log.messageRole,
+          details: log.details,
+          createdAt: log.createdAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Get checker activity logs error:', error);
+      res.status(500).json({
+        error: 'Lấy nhật ký hoạt động của checker thất bại',
+        details: error.message,
       });
     }
   }

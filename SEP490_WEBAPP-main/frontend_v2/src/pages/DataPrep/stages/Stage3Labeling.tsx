@@ -390,7 +390,7 @@ export const Stage3Labeling: React.FC = () => {
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
       operationType: 'labeling_base' as const,
       similarityThreshold: 0.85,
-      format: 'groq' as const,
+      format: 'openai' as const,
       data: stage3Convs.map((conv, idx) => {
         const messages = conv.messages.flatMap((m: any) => [
           { role: 'user', content: m.user },
@@ -1410,7 +1410,7 @@ export const Stage3Labeling: React.FC = () => {
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,
-                              format: 'groq' as const,
+                              format: 'openai' as const,
                               data: stage3Convs.map((conv, idx) => {
                                 const messages = conv.messages.flatMap((m: any) => [
                                   { role: 'user', content: m.user },
@@ -3063,47 +3063,53 @@ export const Stage3Labeling: React.FC = () => {
             ) : (
               /* Step 2: Config & Confirm */
               <>
-                <div className="ct-wizard-step2" style={{ padding: '24px', overflowY: 'auto', flex: 1, gap: '24px' }}>
-                  <div className="ct-wizard-config" style={{ flex: '0 0 320px', background: 'transparent', border: 'none', padding: 0 }}>
-                    <div className="ct-form-group">
-                      <label>Tên Task <span style={{ color: '#ef4444' }}>*</span></label>
-                      <input
-                        type="text"
-                        className="ct-input"
-                        placeholder="Nhập tên chung cho Task..."
-                        value={taskNameInput}
-                        onChange={(e) => setTaskNameInput(e.target.value)}
-                        style={!taskNameInput.trim() ? { borderColor: '#ef4444' } : undefined}
-                      />
-                      {!taskNameInput.trim() && (
-                        <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>
-                          Bắt buộc nhập tên Task để phân biệt Project/Dataset.
-                        </span>
-                      )}
+                <div className="ct-wizard-step2" style={{ display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto', flex: 1, gap: '24px' }}>
+                  
+                  {/* Hàng 1: Form Inputs cơ bản */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flexShrink: 0 }}>
+                    {/* Cột trái của Hàng 1 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div className="ct-form-group">
+                        <label>Tên Task <span style={{ color: '#ef4444' }}>*</span></label>
+                        <input
+                          type="text"
+                          className="ct-input"
+                          placeholder="Nhập tên chung cho Task..."
+                          value={taskNameInput}
+                          onChange={(e) => setTaskNameInput(e.target.value)}
+                          style={!taskNameInput.trim() ? { borderColor: '#ef4444' } : undefined}
+                        />
+                        {!taskNameInput.trim() && (
+                          <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>
+                            Bắt buộc nhập tên Task để phân biệt Project/Dataset.
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                        <div className="ct-form-group">
+                          <label>Mức độ ưu tiên</label>
+                          <select
+                            className="ct-select"
+                            value={taskPriority}
+                            onChange={(e) => setTaskPriority(e.target.value)}
+                          >
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                        </div>
+                        <div className="ct-form-group">
+                          <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
+                          <input type="date" className="ct-input" required min={new Date().toISOString().slice(0, 10)} value={taskDeadline} onChange={(e) => setTaskDeadline(e.target.value)} style={!taskDeadline ? { borderColor: '#ef4444' } : undefined} />
+                          {!taskDeadline && <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Bắt buộc chọn hạn chót.</span>}
+                        </div>
+                      </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                      <div className="ct-form-group">
-                        <label>Mức độ ưu tiên</label>
-                        <select
-                          className="ct-select"
-                          value={taskPriority}
-                          onChange={(e) => setTaskPriority(e.target.value)}
-                        >
-                          <option value="low">Low</option>
-                          <option value="medium">Medium</option>
-                          <option value="high">High</option>
-                        </select>
-                      </div>
-                      <div className="ct-form-group">
-                        <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
-                        <input type="date" className="ct-input" required min={new Date().toISOString().slice(0, 10)} value={taskDeadline} onChange={(e) => setTaskDeadline(e.target.value)} style={!taskDeadline ? { borderColor: '#ef4444' } : undefined} />
-                        {!taskDeadline && <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Bắt buộc chọn hạn chót.</span>}
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 16, padding: 14, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc' }}>
-                      <div className="ct-form-group" style={{ marginBottom: 14 }}>
+                    {/* Cột phải của Hàng 1 (Supervisor & Threshold) */}
+                    <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      <div className="ct-form-group" style={{ marginBottom: 0 }}>
                         <label>Người xử lý Conflict</label>
                         <select className="ct-select" value={assignedSupervisorId} onChange={(e) => setAssignedSupervisorId(e.target.value)}>
                           <option value="">Admin tự review và xử lý</option>
@@ -3121,186 +3127,193 @@ export const Stage3Labeling: React.FC = () => {
                         <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
                       </div>
                     </div>
-
-                    {/* AI permission panel */}
-                    {(() => {
-                      const selIds: string[] = staffAssignments['__selected__'] || [];
-                      const selUsers = selIds.map(id => shareUsers.find((u: any) => u._id === id)).filter(Boolean) as any[];
-                      const q = aiSearch.trim().toLowerCase();
-                      const shown = selUsers.filter(u => !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
-                      const aiCount = selIds.filter(id => aiSelected.includes(id)).length;
-                      const pillBtn = (active: boolean): React.CSSProperties => ({
-                        padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                        border: '1px solid', borderColor: active ? '#a78bfa' : '#e2e8f0',
-                        background: active ? '#ede9fe' : '#fff', color: active ? '#6d28d9' : '#64748b',
-                      });
-                      return (
-                        <div style={{ marginTop: 18, border: '1px solid #e0e7ff', borderRadius: 14, overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff, #eef2ff)', borderBottom: '1px solid #e0e7ff' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: '#6d28d9' }}>
-                              <Sparkles size={16} /> Quyền dùng AI key
-                              <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', background: '#fff', border: '1px solid #ddd6fe', borderRadius: 999, padding: '1px 8px' }}>{aiCount}/{selIds.length}</span>
-                            </div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button type="button" onClick={() => setAiSelected([...selIds])} style={pillBtn(false)}>Bật tất cả</button>
-                              <button type="button" onClick={() => setAiSelected([])} style={pillBtn(false)}>Tắt tất cả</button>
-                            </div>
-                          </div>
-                          <div style={{ padding: '12px 14px' }}>
-                            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
-                              Chỉ nhân viên được bật mới thấy nút <strong>“Gợi ý AI”</strong> khi gán nhãn.
-                            </p>
-                            {selIds.length > 5 && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', marginBottom: 10 }}>
-                                <Search size={15} style={{ color: '#94a3b8' }} />
-                                <input type="text" placeholder="Lọc nhân viên..." value={aiSearch} onChange={e => setAiSearch(e.target.value)}
-                                  style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#334155' }} />
-                              </div>
-                            )}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
-                              {selIds.length === 0 && (
-                                <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '14px 0' }}>
-                                  Chưa chọn nhân viên nào ở Bước 1.
-                                </div>
-                              )}
-                              {shown.map((u: any) => {
-                                const on = aiSelected.includes(u._id);
-                                return (
-                                  <div key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${on ? '#ddd6fe' : '#eef2f7'}`, background: on ? '#faf5ff' : '#fff' }}>
-                                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
-                                      {(u.name || 'U').split(' ').pop()?.[0] || 'U'}
-                                    </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || u.username}</div>
-                                      <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
-                                    </div>
-                                    <button
-                                      type="button"
-                                      role="switch"
-                                      aria-checked={on}
-                                      onClick={() => setAiSelected(prev => prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id])}
-                                      title={on ? 'Đang cho phép AI — bấm để tắt' : 'Bấm để cho phép dùng AI'}
-                                      style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background .2s', background: on ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#cbd5e1' }}
-                                    >
-                                      <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </div>
 
-                  {/* Distribution Preview */}
-                  <div style={{
-                    background: 'linear-gradient(135deg, #f8fafc, #eef2ff)', border: '1px solid #c7d2fe',
-                    borderRadius: '14px', padding: '20px', marginTop: '20px'
-                  }}>
-                    <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#4338ca', margin: '0 0 4px 0' }}>
-                      📊 Phân bổ {overlapCount > 1 ? `(Overlap ${overlapCount} người/nhóm)` : 'tự động'}
-                    </h3>
-                    <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
-                      {assignmentSamples.length} samples ÷ {(staffAssignments['__selected__'] || []).length} nhân viên
-                      {overlapCount > 1 && ` (${Math.ceil((staffAssignments['__selected__'] || []).length / overlapCount)} nhóm × tối đa ${overlapCount} người)`}
-                    </p>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {/* Hàng 2: AI Key & Phân bổ (Ngang hàng nhau) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1 }}>
+                    {/* Cột trái Hàng 2: Quyền dùng AI Key */}
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {/* AI permission panel */}
                       {(() => {
-                        const selectedIds = staffAssignments['__selected__'] || [];
-                        const N = assignmentSamples.length;
-                        const M = selectedIds.length;
-                        if (M === 0) return null;
-                        const K = overlapCount;
-                        const numberOfGroups = Math.ceil(M / K);
-                        const perGroup = Math.floor(N / numberOfGroups);
-                        const remainder = N % numberOfGroups;
-                        let sampleCursor = 1;
-
-                        if (K > 1) {
-                          // Grouped display
-                          return Array.from({ length: numberOfGroups }).map((_, gIdx) => {
-                            const chunkSize = perGroup + (gIdx < remainder ? 1 : 0);
-                            const staffStart = gIdx * K;
-                            const groupStaffIds = selectedIds.slice(staffStart, Math.min(staffStart + K, M));
-                            const range = `#${sampleCursor}–${sampleCursor + chunkSize - 1}`;
-                            const startIdx = sampleCursor;
-                            sampleCursor += chunkSize;
-                            return (
-                              <div key={gIdx} style={{
-                                border: '1px solid #e0e7ff', borderRadius: '10px', overflow: 'hidden',
-                                background: '#fafafe', marginBottom: '4px'
-                              }}>
-                                <div style={{
-                                  display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px',
-                                  background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06))',
-                                  borderBottom: '1px solid #e0e7ff', fontSize: '12px', fontWeight: 600, color: '#4f46e5'
-                                }}>
-                                  <Layers size={14} />
-                                  <span>Nhóm {gIdx + 1} — Câu {range} ({chunkSize} samples)</span>
+                        const selIds: string[] = staffAssignments['__selected__'] || [];
+                        const selUsers = selIds.map(id => shareUsers.find((u: any) => u._id === id)).filter(Boolean) as any[];
+                        const q = aiSearch.trim().toLowerCase();
+                        const shown = selUsers.filter(u => !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
+                        const aiCount = selIds.filter(id => aiSelected.includes(id)).length;
+                        const pillBtn = (active: boolean): React.CSSProperties => ({
+                          padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                          border: '1px solid', borderColor: active ? '#a78bfa' : '#e2e8f0',
+                          background: active ? '#ede9fe' : '#fff', color: active ? '#6d28d9' : '#64748b',
+                        });
+                        return (
+                          <div style={{ border: '1px solid #e0e7ff', borderRadius: 14, overflow: 'hidden' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '12px 14px', background: 'linear-gradient(135deg, #f5f3ff, #eef2ff)', borderBottom: '1px solid #e0e7ff' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14, color: '#6d28d9' }}>
+                                <Sparkles size={16} /> Quyền dùng AI key
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#7c3aed', background: '#fff', border: '1px solid #ddd6fe', borderRadius: 999, padding: '1px 8px' }}>{aiCount}/{selIds.length}</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" onClick={() => setAiSelected([...selIds])} style={pillBtn(false)}>Bật tất cả</button>
+                                <button type="button" onClick={() => setAiSelected([])} style={pillBtn(false)}>Tắt tất cả</button>
+                              </div>
+                            </div>
+                            <div style={{ padding: '12px 14px' }}>
+                              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
+                                Chỉ nhân viên được bật mới thấy nút <strong>“Gợi ý AI”</strong> khi gán nhãn.
+                              </p>
+                              {selIds.length > 5 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 10, background: '#f8fafc', marginBottom: 10 }}>
+                                  <Search size={15} style={{ color: '#94a3b8' }} />
+                                  <input type="text" placeholder="Lọc nhân viên..." value={aiSearch} onChange={e => setAiSearch(e.target.value)}
+                                    style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#334155' }} />
                                 </div>
-                                {groupStaffIds.map((staffId: string) => {
-                                  const user = shareUsers.find((u: any) => u._id === staffId);
+                              )}
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {selIds.length === 0 && (
+                                  <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13, padding: '14px 0' }}>
+                                    Chưa chọn nhân viên nào ở Bước 1.
+                                  </div>
+                                )}
+                                {shown.map((u: any) => {
+                                  const on = aiSelected.includes(u._id);
                                   return (
-                                    <div key={staffId} style={{
-                                      display: 'flex', alignItems: 'center', gap: '12px',
-                                      padding: '8px 14px 8px 28px', borderBottom: '1px solid #f1f5f9'
-                                    }}>
-                                      <div style={{
-                                        width: '28px', height: '28px', borderRadius: '50%',
-                                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontWeight: 700, fontSize: '12px', flexShrink: 0
-                                      }}>
-                                        {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                    <div key={u._id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 10px', borderRadius: 10, border: `1px solid ${on ? '#ddd6fe' : '#eef2f7'}`, background: on ? '#faf5ff' : '#fff' }}>
+                                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                                        {(u.name || 'U').split(' ').pop()?.[0] || 'U'}
                                       </div>
-                                      <span style={{ flex: 1, fontWeight: 600, fontSize: '13px', color: '#334155' }}>
-                                        {user?.name || staffId}
-                                      </span>
-                                      <span style={{ fontWeight: 700, fontSize: '13px', color: '#6366f1' }}>
-                                        {chunkSize} samples
-                                      </span>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name || u.username}</div>
+                                        <div style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.email}</div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={on}
+                                        onClick={() => setAiSelected(prev => prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id])}
+                                        title={on ? 'Đang cho phép AI — bấm để tắt' : 'Bấm để cho phép dùng AI'}
+                                        style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background .2s', background: on ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#cbd5e1' }}
+                                      >
+                                        <span style={{ position: 'absolute', top: 3, left: on ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+                                      </button>
                                     </div>
                                   );
                                 })}
                               </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Cột phải Hàng 2: Phân bổ Preview */}
+                    <div style={{
+                      display: 'flex', flexDirection: 'column',
+                      background: 'linear-gradient(135deg, #f8fafc, #eef2ff)', border: '1px solid #c7d2fe',
+                      borderRadius: '14px', padding: '20px'
+                    }}>
+                      <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#4338ca', margin: '0 0 4px 0' }}>
+                        📊 Phân bổ {overlapCount > 1 ? `(Overlap ${overlapCount} người/nhóm)` : 'tự động'}
+                      </h3>
+                      <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
+                        {assignmentSamples.length} samples ÷ {(staffAssignments['__selected__'] || []).length} nhân viên
+                        {overlapCount > 1 && ` (${Math.ceil((staffAssignments['__selected__'] || []).length / overlapCount)} nhóm × tối đa ${overlapCount} người)`}
+                      </p>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {(() => {
+                          const selectedIds = staffAssignments['__selected__'] || [];
+                          const N = assignmentSamples.length;
+                          const M = selectedIds.length;
+                          if (M === 0) return null;
+                          const K = overlapCount;
+                          const numberOfGroups = Math.ceil(M / K);
+                          const perGroup = Math.floor(N / numberOfGroups);
+                          const remainder = N % numberOfGroups;
+                          let sampleCursor = 1;
+
+                          if (K > 1) {
+                            // Grouped display
+                            return Array.from({ length: numberOfGroups }).map((_, gIdx) => {
+                              const chunkSize = perGroup + (gIdx < remainder ? 1 : 0);
+                              const staffStart = gIdx * K;
+                              const groupStaffIds = selectedIds.slice(staffStart, Math.min(staffStart + K, M));
+                              const range = `#${sampleCursor}–${sampleCursor + chunkSize - 1}`;
+                              const startIdx = sampleCursor;
+                              sampleCursor += chunkSize;
+                              return (
+                                <div key={gIdx} style={{
+                                  border: '1px solid #e0e7ff', borderRadius: '10px', overflow: 'hidden',
+                                  background: '#fafafe', marginBottom: '4px'
+                                }}>
+                                  <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px',
+                                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06))',
+                                    borderBottom: '1px solid #e0e7ff', fontSize: '12px', fontWeight: 600, color: '#4f46e5'
+                                  }}>
+                                    <Layers size={14} />
+                                    <span>Nhóm {gIdx + 1} — Câu {range} ({chunkSize} samples)</span>
+                                  </div>
+                                  {groupStaffIds.map((staffId: string) => {
+                                    const user = shareUsers.find((u: any) => u._id === staffId);
+                                    return (
+                                      <div key={staffId} style={{
+                                        display: 'flex', alignItems: 'center', gap: '12px',
+                                        padding: '8px 14px 8px 28px', borderBottom: '1px solid #f1f5f9'
+                                      }}>
+                                        <div style={{
+                                          width: '28px', height: '28px', borderRadius: '50%',
+                                          background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                          color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                          fontWeight: 700, fontSize: '12px', flexShrink: 0
+                                        }}>
+                                          {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                        </div>
+                                        <span style={{ flex: 1, fontWeight: 600, fontSize: '13px', color: '#334155' }}>
+                                          {user?.name || staffId}
+                                        </span>
+                                        <span style={{ fontWeight: 700, fontSize: '13px', color: '#6366f1' }}>
+                                          {chunkSize} samples
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            });
+                          }
+
+                          // Normal (no overlap) display
+                          return selectedIds.map((staffId: string, i: number) => {
+                            const user = shareUsers.find((u: any) => u._id === staffId);
+                            const count = perGroup + (i < remainder ? 1 : 0);
+                            const range = `#${sampleCursor}–${sampleCursor + count - 1}`;
+                            sampleCursor += count;
+                            return (
+                              <div key={staffId} style={{
+                                display: 'flex', alignItems: 'center', gap: '12px',
+                                padding: '10px 14px', background: '#fff', borderRadius: '10px',
+                                border: '1px solid #e5e7eb'
+                              }}>
+                                <div style={{
+                                  width: '32px', height: '32px', borderRadius: '50%',
+                                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontWeight: 700, fontSize: '13px', flexShrink: 0
+                                }}>
+                                  {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
+                                </div>
+                                <span style={{ flex: 1, fontWeight: 600, fontSize: '14px', color: '#334155' }}>
+                                  {user?.name || staffId}
+                                </span>
+                                <span style={{ fontWeight: 700, fontSize: '14px', color: '#6366f1' }}>
+                                  {count} samples
+                                </span>
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>{range}</span>
+                              </div>
                             );
                           });
-                        }
-
-                        // Normal (no overlap) display
-                        return selectedIds.map((staffId: string, i: number) => {
-                          const user = shareUsers.find((u: any) => u._id === staffId);
-                          const count = perGroup + (i < remainder ? 1 : 0);
-                          const range = `#${sampleCursor}–${sampleCursor + count - 1}`;
-                          sampleCursor += count;
-                          return (
-                            <div key={staffId} style={{
-                              display: 'flex', alignItems: 'center', gap: '12px',
-                              padding: '10px 14px', background: '#fff', borderRadius: '10px',
-                              border: '1px solid #e5e7eb'
-                            }}>
-                              <div style={{
-                                width: '32px', height: '32px', borderRadius: '50%',
-                                background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontWeight: 700, fontSize: '13px', flexShrink: 0
-                              }}>
-                                {(user?.name || 'U').split(' ').pop()?.[0] || 'U'}
-                              </div>
-                              <span style={{ flex: 1, fontWeight: 600, fontSize: '14px', color: '#334155' }}>
-                                {user?.name || staffId}
-                              </span>
-                              <span style={{ fontWeight: 700, fontSize: '14px', color: '#6366f1' }}>
-                                {count} samples
-                              </span>
-                              <span style={{ fontSize: '12px', color: '#94a3b8' }}>{range}</span>
-                            </div>
-                          );
-                        });
-                      })()}
+                        })()}
+                      </div>
                     </div>
                   </div>
                 </div>

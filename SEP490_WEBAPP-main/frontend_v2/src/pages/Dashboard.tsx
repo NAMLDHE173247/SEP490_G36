@@ -21,6 +21,7 @@ import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
+import CheckerReviewView from './CheckerReviewView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
@@ -49,7 +50,8 @@ function Dashboard() {
     if (!user) return 'Dashboard';
     switch (user.role) {
       case 'admin': return 'Dashboard';
-      case 'supervisor': return 'Supervisor Review';
+      case 'checker': return 'Checker Review';
+      case 'supervisor': return 'Dashboard';
       case 'staff': return 'My Tasks';
       case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
@@ -57,19 +59,22 @@ function Dashboard() {
   };
 
   const allMenuItems = [
-    { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
+    { key: 'Checker Review', label: 'Checker Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
+    { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
@@ -100,12 +105,12 @@ function Dashboard() {
 
   React.useEffect(() => {
     if (user) {
-      const isValid = 
+      const isValid =
         (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
         (activeTab === 'Task Detail' && user.role === 'admin') ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
-      
+
       if (!isValid) {
         setActiveTab(getDefaultTab());
       }
@@ -186,6 +191,8 @@ function Dashboard() {
         return <StaffStatsView />;
       case 'Supervisor Review':
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
+      case 'Checker Review':
+        return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
       case 'My Stats':
         return <MyStatsView />;
       case 'Reviewer Dashboard':
@@ -196,6 +203,7 @@ function Dashboard() {
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
         if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
+        if (user.role === 'checker') return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;
     }
   };
