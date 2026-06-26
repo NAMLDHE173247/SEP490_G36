@@ -989,8 +989,9 @@ export class QualityController {
   async autoBypassRewrite(req: Request, res: Response): Promise<void> {
     try {
       const actorId = getAuthUserId(req);
-      if (!actorId || String((req as any).user?.role || '').toLowerCase() !== 'admin') {
-        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Admin role required' : 'Unauthorized' });
+      const actorRole = String((req as any).user?.role || '').toLowerCase();
+      if (!actorId || !['admin', 'supervisor'].includes(actorRole)) {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Admin or Supervisor role required' : 'Unauthorized' });
         return;
       }
       const { versionId } = req.params;
