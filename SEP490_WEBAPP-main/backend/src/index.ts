@@ -33,6 +33,7 @@ async function seedDefaultUsers() {
     const demoUsers = [
       { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const, status: 'active' as const },
       { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const, status: 'active' as const },
+      { name: 'System Checker', email: 'checker', passwordHash, role: 'checker' as const, status: 'active' as const },
       { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const, status: 'active' as const },
       { name: 'System Reviewer', email: 'reviewer', passwordHash, role: 'reviewer' as const, status: 'active' as const },
       { name: 'System Pending', email: 'pending', passwordHash, role: 'staff' as const, status: 'pending' as const },

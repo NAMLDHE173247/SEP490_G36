@@ -1,7 +1,7 @@
 export type EvalFormat = 'openai' | 'alpaca';
 
 export function inferFormatFromRow(row: Record<string, any>): EvalFormat {
-  if (Array.isArray(row?.messages)) {
+  if (Array.isArray(row?.messages) || Array.isArray(row?.data?.messages)) {
     return 'openai';
   }
   return 'alpaca';

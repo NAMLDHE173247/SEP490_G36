@@ -734,7 +734,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                                 projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                                 operationType: 'labeling_base' as const,
                                 similarityThreshold: 0.85,
-                                format: 'groq' as const,
+                                format: 'openai' as const,
                                 data: stage3Convs.map((conv, idx) => {
                                   const messages = conv.messages.flatMap((m: any) => [
                                     { role: 'user', content: m.user },

@@ -20,6 +20,7 @@ router.get('/:id/assignments', (req, res) => controller.getAssignments(req, res)
 router.get('/:id/assignments/dashboard', (req, res) => controller.getAssignmentDashboard(req, res));
 router.get('/:id/assignments/conflicts', (req, res) => controller.getAssignmentConflicts(req, res));
 router.get('/:id/assignments/users/:userId/detail', (req, res) => controller.getUserAssignmentDetail(req, res));
+router.get('/:id/assignments/checker-logs', (req, res) => controller.getCheckerActivityLogs(req, res));
 router.get('/:id/assignments/samples/:sampleId/comparison', (req, res) => controller.getAssignmentSampleComparison(req, res));
 router.post('/:id/assignments/samples/:sampleId/adjudications', (req, res) => controller.resolveAssignmentAdjudication(req, res));
 router.post('/:id/assignments/samples/:sampleId/adjudications/publish', (req, res) => controller.publishAssignmentAdjudication(req, res));

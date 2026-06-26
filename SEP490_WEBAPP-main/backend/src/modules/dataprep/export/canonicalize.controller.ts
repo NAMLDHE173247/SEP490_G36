@@ -7,6 +7,7 @@ import { LabelSnapshot } from '../../../models/LabelSnapshot';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { getAuthUserId } from '../../../utils/auth';
+import { buildAssignmentConflictList } from '../../../services/labelAssignmentService';
 
 export class CanonicalizeController {
   async getTrainingData(req: Request, res: Response): Promise<void> {
@@ -19,7 +20,7 @@ export class CanonicalizeController {
       }
       const viewerId = getAuthUserId(req);
       const role = String((req as any).user?.role || '').toLowerCase();
-      if (String(version.ownerId) !== String(viewerId) && !['admin', 'supervisor'].includes(role)) {
+      if (String(version.ownerId) !== String(viewerId) && !['admin', 'supervisor', 'checker'].includes(role)) {
         res.status(403).json({ error: 'Forbidden' });
         return;
       }
@@ -97,6 +98,17 @@ export class CanonicalizeController {
     try {
       const { versionId } = req.params;
       const userId = (req as any).user?.id || (req as any).user?._id || 'admin';
+
+      // 0. Kiểm tra xem có conflict nào chưa xử lý không
+      const conflicts = await buildAssignmentConflictList(versionId, { status: 'pending' });
+      if (conflicts.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: `Vẫn còn ${conflicts.length} conflict chưa được giải quyết. Yêu cầu Checker xử lý xong mới được chốt nhãn.`,
+          pendingConflicts: conflicts.length
+        });
+        return;
+      }
 
       // 1. Kiểm tra tất cả submissions đã approved
       const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: versionId });
@@ -238,6 +250,17 @@ export class CanonicalizeController {
       const version = await DatasetVersion.findById(versionId).lean();
       if (!version) {
         res.status(404).json({ error: 'Version not found' });
+        return;
+      }
+
+      // Kiểm tra xem có conflict nào chưa xử lý không
+      const conflicts = await buildAssignmentConflictList(versionId, { status: 'pending' });
+      if (conflicts.length > 0) {
+        res.status(400).json({
+          success: false,
+          error: `Vẫn còn ${conflicts.length} conflict chưa được giải quyết. Yêu cầu Checker xử lý xong mới được xuất dữ liệu.`,
+          pendingConflicts: conflicts.length
+        });
         return;
       }
 

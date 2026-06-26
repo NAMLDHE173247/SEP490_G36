@@ -143,6 +143,10 @@ export class DataPrepVersionController {
     return legacyEvaluationController.publishDatasetVersionAssignmentAdjudication(req, res);
   }
 
+  async getCheckerActivityLogs(req: Request, res: Response): Promise<void> {
+    return legacyEvaluationController.getCheckerActivityLogs(req, res);
+  }
+
   async autoPublishAssignmentAdjudications(req: Request, res: Response): Promise<void> {
     return legacyEvaluationController.autoPublishDatasetVersionAssignmentAdjudications(req, res);
   }
@@ -223,17 +227,25 @@ export class DataPrepVersionController {
         }
       }
 
+      const targetVersionOid = mongoose.Types.ObjectId.isValid(id)
+        ? new mongoose.Types.ObjectId(id)
+        : null;
+
+      const queryVersionId = targetVersionOid
+        ? { $in: [id, targetVersionOid] }
+        : id;
+
       // Lấy tất cả sampleIds thuộc version này để xóa LabelAssignment
-      const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: id })
+      const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: targetVersionOid || id })
         .select('_id').lean().then(items => items.map(i => i._id));
 
       // Xóa toàn bộ dữ liệu assignment + labeling liên quan
       const [subDel, saDel, actDel, adjDel, canDel, laDel] = await Promise.all([
-        DatasetAssignmentSubmission.deleteMany({ datasetVersionId: id }),
-        DatasetSampleAssignment.deleteMany({ datasetVersionId: id }),
-        DatasetAssignmentActivity.deleteMany({ datasetVersionId: id }),
-        DatasetAssignmentAdjudication.deleteMany({ datasetVersionId: id }),
-        DatasetCanonicalLabel.deleteMany({ datasetVersionId: id }),
+        DatasetAssignmentSubmission.deleteMany({ datasetVersionId: queryVersionId }),
+        DatasetSampleAssignment.deleteMany({ datasetVersionId: queryVersionId }),
+        DatasetAssignmentActivity.deleteMany({ datasetVersionId: targetVersionOid || id }),
+        DatasetAssignmentAdjudication.deleteMany({ datasetVersionId: targetVersionOid || id }),
+        DatasetCanonicalLabel.deleteMany({ datasetVersionId: targetVersionOid || id }),
         sampleIds.length > 0
           ? LabelAssignment.deleteMany({ sampleId: { $in: sampleIds } })
           : Promise.resolve({ deletedCount: 0 }),

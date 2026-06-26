@@ -11,6 +11,7 @@ import { Stage4Notification } from '../../../models/Stage4Notification';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
 import { broadcastAssignmentUpdate } from './assignment.events';
+import { buildAssignmentConflictList, buildAssignmentSampleComparison } from '../../../services/labelAssignmentService';
 
 function isCompleteStaffLabel(label: any): boolean {
   if (!label || typeof label !== 'object') return false;
@@ -40,11 +41,48 @@ function resolveAssignmentSupervisor(req: Request, supervisorId?: string): strin
 
   const authUser = (req as any).user;
   const role = String(authUser?.role || '').toLowerCase();
-  if (role !== 'supervisor') return undefined;
+  if (role !== 'supervisor' && role !== 'checker') return undefined;
   return String(authUser?.id || authUser?._id || authUser?.userId || '').trim() || undefined;
 }
 
 export class AssignmentController {
+  private async checkAndNotifyConflicts(submission: any, sampleIds: string[]) {
+    try {
+      if (!sampleIds || sampleIds.length === 0) return;
+
+      const overlapping = await DatasetSampleAssignment.aggregate([
+        { $match: { sampleId: { $in: sampleIds.map(id => typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id) }, reviewStatus: { $in: ['submitted', 'approved'] }, active: { $ne: false } } },
+        { $group: { _id: "$sampleId", count: { $sum: 1 } } },
+        { $match: { count: { $gte: 2 } } }
+      ]);
+      if (overlapping.length === 0) return;
+
+      const overlappingSampleIds = overlapping.map(o => String(o._id));
+      let hasConflict = false;
+      for (const sId of overlappingSampleIds) {
+        const comp = await buildAssignmentSampleComparison(String(submission.datasetVersionId), sId);
+        if (comp.hasConflict) {
+          hasConflict = true;
+          break;
+        }
+      }
+
+      if (hasConflict) {
+        const actor = await User.findById(submission.assigneeId).select('name email').lean();
+        const actorName = String((actor as any)?.name || (actor as any)?.email || 'Nhân viên');
+        const msg = `Phát sinh mẫu cần phân xử sau khi ${actorName} nộp bài.`;
+        await Stage4Notification.create({
+          datasetVersionId: submission.datasetVersionId,
+          recipientRole: 'checker',
+          actorId: submission.assigneeId,
+          type: 'warning',
+          message: msg,
+        });
+      }
+    } catch (e) {
+      console.error('[AssignmentController] Error checking conflicts for notification', e);
+    }
+  }
 
   /**
    * API: Xóa toàn bộ dữ liệu Test của Assignment
@@ -686,12 +724,12 @@ export class AssignmentController {
       const authUser = (req as any).user;
       const role = String(authUser?.role || '').toLowerCase();
       const viewerId = String(authUser?._id || authUser?.userId || authUser?.id || '');
-      if (role === 'supervisor' && !viewerId) {
+      if ((role === 'supervisor' || role === 'checker') && !viewerId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
       let submissionFilter: any = {};
-      if (role === 'supervisor') {
-        const supervisorUsers = await User.find({ role: 'supervisor' }).select('_id').lean();
+      if (role === 'supervisor' || role === 'checker') {
+        const supervisorUsers = await User.find({ role: { $in: ['supervisor', 'checker'] } }).select('_id').lean();
         const supervisorIds = supervisorUsers.map((user: any) => String(user._id));
         submissionFilter = {
           $or: [
@@ -1319,6 +1357,9 @@ export class AssignmentController {
 
       await this.recomputeSubmissionCounts(submission);
 
+      const submittedSampleIds = sampleAssigns.map((sa: any) => sa.sampleId);
+      this.checkAndNotifyConflicts(submission, submittedSampleIds).catch(err => console.error(err));
+
       broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit_samples' });
       return res.status(200).json({ success: true, message: `Đã nộp ${submitted} câu.`, submitted });
     } catch (error: any) {
@@ -1601,6 +1642,16 @@ export class AssignmentController {
         ]);
       }
 
+      // Check conflicts and only notify checker if there is actual conflict
+      const sampleAssigns = await DatasetSampleAssignment.find({
+        datasetVersionId: submission.datasetVersionId,
+        assigneeId: submission.assigneeId,
+        sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+        active: { $ne: false }
+      }).lean();
+      const submittedSampleIds = sampleAssigns.map((sa: any) => sa.sampleId);
+      this.checkAndNotifyConflicts(submission, submittedSampleIds).catch(err => console.error(err));
+
       // Trigger SSE update for Step 7 real-time reflection
       broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit' });
 
@@ -1753,6 +1804,19 @@ export class AssignmentController {
 
       if (submission.status !== 'submitted') {
         return res.status(400).json({ success: false, error: `Không thể duyệt submission ở trạng thái "${submission.status}". Chỉ duyệt được khi status = "submitted".` });
+      }
+
+      // Check if this specific staff has any pending conflicts in this version
+      const conflicts = await buildAssignmentConflictList(String(submission.datasetVersionId), { 
+        status: 'pending', 
+        assigneeId: String(submission.assigneeId) 
+      });
+
+      if (conflicts.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Không thể duyệt! Nhân viên này đang có ${conflicts.length} mẫu gán nhãn bị conflict (xung đột) chưa được Checker giải quyết.`
+        });
       }
 
       submission.status = 'approved';

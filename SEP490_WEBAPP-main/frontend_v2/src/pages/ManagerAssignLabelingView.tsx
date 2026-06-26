@@ -637,7 +637,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
         {projectGroups.map((group) => {
           const groupKey = group.projectId || group.projectName;
-          const isOpen = expandedProjects[groupKey] ?? true;
+          const isOpen = expandedProjects[groupKey] ?? false;
           const groupSamples = group.tasks.reduce((s: number, t: any) => s + (t.totalSamples || 0), 0);
           const groupLabeled = group.tasks.reduce((s: number, t: any) => s + (t.labeledCount || 0), 0);
           const groupProgress = groupSamples > 0 ? Math.round((groupLabeled / groupSamples) * 100) : 0;

@@ -86,6 +86,7 @@ const roleOptions = [
   { value: 'all', label: 'All Roles', icon: <Shield size={14} /> },
   { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={14} style={{ color: '#d97706' }} /> },
   { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={14} style={{ color: '#10b981' }} /> },
+  { value: 'Checker', label: 'Checker', icon: <UserCheck size={14} style={{ color: '#f43f5e' }} /> },
   { value: 'Staff', label: 'Staff', icon: <Shield size={14} style={{ color: '#6366f1' }} /> },
   { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={14} style={{ color: '#8b5cf6' }} /> }
 ];
@@ -272,6 +273,7 @@ function AdminAccountView() {
     switch (role) {
       case 'Admin': return <ShieldCheck size={14} className="role-icon-admin" />;
       case 'Supervisor': return <ShieldAlert size={14} className="role-icon-supervisor" />;
+      case 'Checker': return <UserCheck size={14} className="role-icon-checker" />;
       case 'Staff': return <Shield size={14} className="role-icon-staff" />;
       case 'Reviewer': return <ClipboardCheck size={14} className="role-icon-reviewer" />;
       default: return <Shield size={14} />;
@@ -282,6 +284,7 @@ function AdminAccountView() {
     switch (role) {
       case 'Admin': return 'avatar-admin';
       case 'Supervisor': return 'avatar-supervisor';
+      case 'Checker': return 'avatar-checker';
       case 'Reviewer': return 'avatar-reviewer';
       default: return '';
     }
@@ -289,7 +292,7 @@ function AdminAccountView() {
 
   // Generate role change options based on current role
   const getRoleChangeOptions = (currentRole) => {
-    const allRoles = ['Admin', 'Supervisor', 'Staff', 'Reviewer'];
+    const allRoles = ['Admin', 'Supervisor', 'Checker', 'Staff', 'Reviewer'];
     return allRoles.filter(r => r !== currentRole);
   };
 
@@ -297,6 +300,7 @@ function AdminAccountView() {
     switch (targetRole) {
       case 'Admin': return <ShieldCheck size={14} />;
       case 'Supervisor': return <ShieldAlert size={14} />;
+      case 'Checker': return <UserCheck size={14} />;
       case 'Staff': return <Shield size={14} />;
       case 'Reviewer': return <ClipboardCheck size={14} />;
       default: return <Shield size={14} />;
@@ -660,6 +664,7 @@ function AdminAccountView() {
                   {[
                     { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={16} />, color: '#d97706', bg: '#fffbeb' },
                     { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={16} />, color: '#10b981', bg: '#f0fdf4' },
+                    { value: 'Checker', label: 'Checker', icon: <UserCheck size={16} />, color: '#f43f5e', bg: '#ffe4e6' },
                     { value: 'Staff', label: 'Staff', icon: <Shield size={16} />, color: '#6366f1', bg: '#e0e7ff' },
                     { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={16} />, color: '#8b5cf6', bg: '#f5f3ff' }
                   ].map(roleOpt => {
@@ -783,6 +788,7 @@ function AdminAccountView() {
                   {[
                     { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={16} />, color: '#d97706', bg: '#fffbeb' },
                     { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={16} />, color: '#10b981', bg: '#f0fdf4' },
+                    { value: 'Checker', label: 'Checker', icon: <UserCheck size={16} />, color: '#f43f5e', bg: '#ffe4e6' },
                     { value: 'Staff', label: 'Staff', icon: <Shield size={16} />, color: '#6366f1', bg: '#e0e7ff' },
                     { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={16} />, color: '#8b5cf6', bg: '#f5f3ff' }
                   ].map(roleOpt => {

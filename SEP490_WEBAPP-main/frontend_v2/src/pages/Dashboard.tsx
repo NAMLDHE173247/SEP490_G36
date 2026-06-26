@@ -21,6 +21,7 @@ import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
+import CheckerReviewView from './CheckerReviewView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
@@ -50,6 +51,7 @@ function Dashboard() {
     switch (user.role) {
       case 'admin': return 'Dashboard';
       case 'supervisor': return 'Supervisor Review';
+      case 'checker': return 'Checker Review';
       case 'staff': return 'My Tasks';
       case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
@@ -70,6 +72,7 @@ function Dashboard() {
     { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
+    { key: 'Checker Review', label: 'Checker Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
@@ -186,6 +189,8 @@ function Dashboard() {
         return <StaffStatsView />;
       case 'Supervisor Review':
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
+      case 'Checker Review':
+        return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
       case 'My Stats':
         return <MyStatsView />;
       case 'Reviewer Dashboard':
@@ -196,6 +201,7 @@ function Dashboard() {
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
         if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
+        if (user.role === 'checker') return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;
     }
   };
