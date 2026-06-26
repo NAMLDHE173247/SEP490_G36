@@ -1277,6 +1277,64 @@
   overflow-y: auto;
   border-right: 1px solid #e2e8f0;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Sticky footer with action buttons at bottom of label panel */
+.sl-label-panel-footer {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+.sl-panel-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.sl-panel-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sl-btn-submit {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+}
+.sl-btn-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+}
+.sl-btn-submit-multi {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #fff;
+}
+.sl-btn-submit-multi:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+.sl-btn-next {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+}
+.sl-btn-next:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
 }
 .sl-drawer-body > .sl-chat-area {
   flex: 1;
@@ -1507,8 +1565,10 @@
 
 .sl-message-editor {
   width: 100%;
-  min-height: 96px;
-  resize: vertical;
+  min-height: 32px;
+  max-height: 600px;
+  field-sizing: content;
+  resize: none;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -1516,6 +1576,7 @@
   font: inherit;
   line-height: 1.55;
   padding: 6px 8px;
+  overflow-y: hidden;
 }
 
 .sl-message-editor:focus {
