@@ -50,9 +50,11 @@ export const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
 const USER_INTENT_SET = new Set<string>(INTENTS);
-const ASSISTANT_ACTION_SET = new Set<string>(
-  Array.from(new Set(Object.values(VALID_ACTIONS).flatMap((actions) => Array.from(actions))))
-);
+const ASSISTANT_ACTION_SET = new Set<string>([
+  ...Array.from(new Set(Object.values(VALID_ACTIONS).flatMap((actions) => Array.from(actions)))),
+  'WAITING',
+  'DIRECT_ANSWER',
+]);
 
 const ALL_VALID_INTENTS = new Set<string>([
   ...Array.from(USER_INTENT_SET),
@@ -82,6 +84,7 @@ const STAGE3_TO_BACKEND_MAP: Record<string, string> = {
   'OFF': 'OFF_TOPIC',
   'RDY': 'NEXT_SECTION',
   'CFM': 'NEXT_SECTION',
+  'CONFIRM_UNDERSTANDING': 'NEXT_SECTION',
 
   // Actions (Assistant)
   'CONF': 'CONFIRM_CORRECT_ANSWER',
@@ -96,7 +99,9 @@ const STAGE3_TO_BACKEND_MAP: Record<string, string> = {
   'REDIR': 'REDIRECTING',
   'TRAN': 'TRANSITIONING',
   'DIR': 'DIRECT_ANSWER',
-  'WAIT': 'WAITING'
+  'WAIT': 'WAITING',
+  'WAITING': 'WAITING',
+  'DIRECT_ANSWER': 'DIRECT_ANSWER'
 };
 
 type SerializedMessage = {

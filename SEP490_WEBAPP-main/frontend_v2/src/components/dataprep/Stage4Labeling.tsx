@@ -771,21 +771,8 @@ export const Stage4Labeling: React.FC = () => {
     messageLevelTargets: any[],
   ) => {
     const kindForRole = (r: string): 'Intent' | 'Action' => (r === 'user' ? 'Intent' : 'Action');
-    const turn = turnPairs.find((t: any) =>
-      t.userMessageIndex === messageIndex || t.assistantMessageIndex === messageIndex
-    );
-    const turnLabels: string[] = role === 'user' ? (turn?.userLabels || []) : (turn?.assistantLabels || []);
-    if (turnLabels.length > 0) {
-      return turnLabels.map((label: string) => ({
-        label: displayStaffLabel(label, role),
-        kind: kindForRole(role),
-        staff: 'Staff',
-        isOwner: false,
-        source: 'staff' as const,
-      }));
-    }
 
-    return messageLevelTargets
+    const allLabels = messageLevelTargets
       .filter((target: any) => Number(target.messageIndex) === messageIndex && target.messageRole === role)
       .flatMap((target: any) => target.annotators
         .filter((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
@@ -809,6 +796,32 @@ export const Stage4Labeling: React.FC = () => {
           }));
         })
       );
+
+    if (allLabels.length > 0) {
+      // Filter to only show the final level of labeling
+      const hasSupervisor = allLabels.some(l => l.source === 'supervisor');
+      const hasChecker = allLabels.some(l => l.source === 'checker');
+
+      if (hasSupervisor) {
+        return allLabels.filter(l => l.source === 'supervisor');
+      }
+      if (hasChecker) {
+        return allLabels.filter(l => l.source === 'checker');
+      }
+      return allLabels;
+    }
+
+    const turn = turnPairs.find((t: any) =>
+      t.userMessageIndex === messageIndex || t.assistantMessageIndex === messageIndex
+    );
+    const turnLabels: string[] = role === 'user' ? (turn?.userLabels || []) : (turn?.assistantLabels || []);
+    return turnLabels.map((label: string) => ({
+      label: displayStaffLabel(label, role),
+      kind: kindForRole(role),
+      staff: 'Staff',
+      isOwner: false,
+      source: 'staff' as const,
+    }));
   };
 
   const openReviewDetailModal = (item: any) => {
@@ -1650,7 +1663,7 @@ export const Stage4Labeling: React.FC = () => {
                                       return "⏳ Đang tính toán";
                                     }
                                   }
-                                  return scores.human;
+                                  return scores.human ?? "⏳ Đang tính toán";
                                 })()} />
                               </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
@@ -1744,6 +1757,7 @@ export const Stage4Labeling: React.FC = () => {
                         return "⏳ Đang tính toán";
                       }
                     }
+                    if (staffHuman == null) return "⏳ Đang tính toán";
                     return staffHuman;
                   })();
 
@@ -1827,8 +1841,8 @@ export const Stage4Labeling: React.FC = () => {
                             <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: '22px', fontWeight: '300', alignSelf: 'center' }}>vs</div>
                             <div style={{ background: '#fed7aa', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '2px solid #f97316' : '2px solid transparent' }}>
                               <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Điểm luật Staff</div>
-                              <div style={{ fontSize: scores.human == null || typeof displayStaffHumanScore === 'string' ? '14px' : '22px', fontWeight: '900', color: scores.human == null ? '#cbd5e1' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>
-                                {typeof displayStaffHumanScore === 'string' ? displayStaffHumanScore : (scores.human != null ? scores.human.toFixed(1) : '-')}
+                              <div style={{ fontSize: scores.human == null || typeof displayStaffHumanScore === 'string' ? '14px' : '22px', fontWeight: '900', color: scores.human == null ? '#ea580c' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>
+                                {typeof displayStaffHumanScore === 'string' ? displayStaffHumanScore : (scores.human != null ? scores.human.toFixed(1) : '⏳ Đang tính toán')}
                               </div>
                             </div>
                             {diff != null && (
@@ -3413,7 +3427,9 @@ export const Stage4Labeling: React.FC = () => {
                             </div>
                             <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                               <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm luật Staff</p>
-                              <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#94a3b8' }}>{activeScores.human != null ? activeScores.human.toFixed(1) : '-'}</p>
+                              <p style={{ margin: 0, fontSize: activeScores.human != null ? '16px' : '13px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#ea580c' }}>
+                                {activeScores.human != null ? activeScores.human.toFixed(1) : '⏳ Đang tính toán'}
+                              </p>
                             </div>
                           </div>
                         );

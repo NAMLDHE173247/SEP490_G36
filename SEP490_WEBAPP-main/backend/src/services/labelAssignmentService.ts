@@ -737,36 +737,6 @@ export async function getAggregatedSampleLabels(sampleIds: mongoose.Types.Object
   ]);
 }
 
-async function getAggregatedHardSampleLabels(sampleIds: mongoose.Types.ObjectId[]) {
-  await ensureLabelAssignmentsForSamples(sampleIds.map((id) => String(id)));
-  return LabelAssignment.aggregate([
-    { $match: { sampleId: { $in: sampleIds }, type: 'hard' } },
-    {
-      $group: {
-        _id: {
-          sampleId: '$sampleId',
-          name: '$name',
-          type: '$type',
-          targetScope: '$targetScope',
-          messageIndex: '$messageIndex',
-          messageRole: '$messageRole',
-        },
-        contributors: { $addToSet: '$createdBy' },
-      },
-    },
-    {
-      $project: {
-        sampleId: '$_id.sampleId',
-        name: '$_id.name',
-        type: '$_id.type',
-        targetScope: '$_id.targetScope',
-        messageIndex: '$_id.messageIndex',
-        messageRole: '$_id.messageRole',
-        assignedUserCount: { $size: '$contributors' },
-      },
-    },
-  ]);
-}
 
 export async function getCanonicalSampleLabelsForVersion(
   datasetVersionId: string | mongoose.Types.ObjectId,
@@ -808,15 +778,25 @@ export async function getEffectiveSampleLabelsForVersion(
   const versionOid = typeof datasetVersionId === 'string'
     ? new mongoose.Types.ObjectId(datasetVersionId)
     : datasetVersionId;
-  const hasAssignments = Boolean(
-    await DatasetSampleAssignment.exists({ datasetVersionId: versionOid })
-  );
 
-  if (!hasAssignments) {
-    return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
-  }
+  // 1. Get all canonical/published labels
+  const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
 
-  // Check overlap counts (active assignments count per sample)
+  // 2. Load all raw hard label assignments
+  await ensureLabelAssignmentsForSamples(sampleIds.map(id => String(id)));
+  const hardAssignments = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'hard'
+  }).lean();
+
+  // 3. Find unique creators and get their roles
+  const creatorIds = Array.from(new Set(hardAssignments.map(a => String(a.createdBy))));
+  const creators = creatorIds.length
+    ? await User.find({ _id: { $in: creatorIds } }).select('_id role').lean()
+    : [];
+  const creatorRoleMap = new Map<string, string>(creators.map((c: any) => [String(c._id), c.role || 'staff']));
+
+  // 4. Load assignee count per sample to know if it's overlap/multi-staff
   const assignments = await DatasetSampleAssignment.find({
     datasetVersionId: versionOid,
     sampleId: { $in: sampleIds },
@@ -829,29 +809,89 @@ export async function getEffectiveSampleLabelsForVersion(
     sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
   });
 
-  const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
-  const aggregated = await getAggregatedHardSampleLabels(sampleIds);
+  // 5. Group hard assignments by sample + target key
+  // Target key: targetScope:messageIndex:messageRole
+  const groupedHard = new Map<string, any[]>();
+  hardAssignments.forEach((a: any) => {
+    const targetKey = `${String(a.sampleId)}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
+    const list = groupedHard.get(targetKey) || [];
+    list.push(a);
+    groupedHard.set(targetKey, list);
+  });
 
+  // 6. For each group, determine the effective labels
   const canonicalKeys = new Set(canonical.map(c => 
     `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
   ));
 
-  const effectiveAggregated = (aggregated as any).filter((a: any) => {
-    const key = `${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
-    if (canonicalKeys.has(key)) {
-      return false;
+  const effectiveHard: EffectiveLabelAggregate[] = [];
+  
+  groupedHard.forEach((docs, targetKey) => {
+    // If it's already in canonical, discard hard assignments
+    if (canonicalKeys.has(targetKey)) {
+      return;
     }
-    const sid = String(a.sampleId);
+
+    // Partition docs by role
+    const checkerDocs = docs.filter(d => {
+      const role = creatorRoleMap.get(String(d.createdBy));
+      return role === 'checker' || role === 'supervisor' || role === 'admin';
+    });
+
+    const sid = String(docs[0].sampleId);
     const assigneeCount = sampleAssigneeCount.get(sid) || 0;
-    // If the sample has 2 or more staff assigned (overlapCount >= 2), we only accept checker (canonical) labels.
-    // If no canonical label is published yet, we do NOT fall back to staff labels.
-    if (assigneeCount >= 2) {
-      return false;
+
+    if (checkerDocs.length > 0) {
+      // If checker/supervisor/admin has labeled, use their labels ONLY!
+      const counts = new Map<string, Set<string>>();
+      checkerDocs.forEach((d) => {
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = counts.get(name) || new Set<string>();
+          list.add(String(d.createdBy));
+          counts.set(name, list);
+        }
+      });
+      counts.forEach((contributors, name) => {
+        effectiveHard.push({
+          sampleId: docs[0].sampleId,
+          name,
+          type: 'hard',
+          targetScope: docs[0].targetScope,
+          messageIndex: docs[0].messageIndex,
+          messageRole: docs[0].messageRole,
+          assignedUserCount: contributors.size
+        });
+      });
+    } else {
+      // If no checker label yet, but overlapCount < 2 (only 1 staff), we can fall back to staff labels.
+      // If assigneeCount >= 2, we return empty (waiting for checker to label).
+      if (assigneeCount < 2) {
+        const counts = new Map<string, Set<string>>();
+        docs.forEach((d) => {
+          const name = String(d.name || '').trim().toUpperCase();
+          if (name) {
+            const list = counts.get(name) || new Set<string>();
+            list.add(String(d.createdBy));
+            counts.set(name, list);
+          }
+        });
+        counts.forEach((contributors, name) => {
+          effectiveHard.push({
+            sampleId: docs[0].sampleId,
+            name,
+            type: 'hard',
+            targetScope: docs[0].targetScope,
+            messageIndex: docs[0].messageIndex,
+            messageRole: docs[0].messageRole,
+            assignedUserCount: contributors.size
+          });
+        });
+      }
     }
-    return true;
   });
 
-  return [...canonical, ...effectiveAggregated];
+  return [...canonical, ...effectiveHard];
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
