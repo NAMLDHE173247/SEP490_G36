@@ -5,6 +5,112 @@ import { useStage4Data } from '../../hooks/useStage4Data';
 import { apiService } from '../../services/api';
 import { stage4Api } from '../../services/stage4Api';
 
+const TRANSLATED_LABEL_MAP: Record<string, string> = {
+  // Quality & Status
+  'Completed': 'Hoàn thành',
+  'Incomplete': 'Chưa hoàn thành',
+  'Abandoned': 'Bỏ dở',
+  'Gold': 'Tốt',
+  'Rewrite': 'Cần viết lại',
+  'Bad': 'Chưa đạt',
+  'Chua ro': 'Chưa rõ',
+  'spam': 'Spam',
+  'toxic': 'Độc hại',
+
+  // Domains
+  'MATH': 'Toán',
+  'Math': 'Toán',
+  'Toan': 'Toán',
+  'PHYSICAL': 'Vật lý',
+  'Physical': 'Vật lý',
+  'PHYSICS': 'Vật lý',
+  'Physics': 'Vật lý',
+  'Vat ly': 'Vật lý',
+  'CHEMISTRY': 'Hóa học',
+  'Chemistry': 'Hóa học',
+  'Hoa hoc': 'Hóa học',
+  'BIOLOGY': 'Sinh học',
+  'Biology': 'Sinh học',
+  'Sinh hoc': 'Sinh học',
+  'LITERATURE': 'Ngữ văn',
+  'Literature': 'Ngữ văn',
+  'Van hoc': 'Ngữ văn',
+  'ENGLISH': 'Tiếng Anh',
+  'English': 'Tiếng Anh',
+  'Tieng Anh': 'Tiếng Anh',
+  'HISTORY': 'Lịch sử',
+  'History': 'Lịch sử',
+  'Lich su': 'Lịch sử',
+  'GEOGRAPHY': 'Địa lý',
+  'Geography': 'Địa lý',
+  'Dia ly': 'Địa lý',
+  'CODING': 'Tin học',
+  'Coding': 'Tin học',
+  'IT': 'Tin học',
+  'Tin hoc': 'Tin học',
+  'GDCD': 'GDCD',
+  'Civics': 'GDCD',
+  'Lien mon': 'Liên môn',
+  'Multi-subject': 'Liên môn',
+  'Unclear': 'Chưa rõ',
+  'OTHER': 'Khác',
+  'Other': 'Khác',
+
+  // DB Hard Labels (User)
+  'ANSWER_ATTEMPT': 'Học sinh trả lời/thử làm bài',
+  'REQUEST_HINT': 'Xin gợi ý',
+  'ASK_THEORY': 'Hỏi lý thuyết',
+  'REQUEST_EXPLANATION': 'Yêu cầu giải thích',
+  'REQUEST_SIMPLER': 'Muốn giải thích đơn giản hơn',
+  'SKIP_EXERCISE': 'Bỏ qua bài',
+  'DISCOURAGED': 'Chán nản',
+  'OFF_TOPIC': 'Ngoài phạm vi',
+  'READY_NEXT': 'Muốn học tiếp/chuyển câu',
+  'CONFIRM_UNDERSTANDING': 'Xác nhận đã hiểu',
+
+  // DB Hard Labels (Assistant)
+  'CONFIRM_CORRECT_ANSWER': 'Xác nhận câu trả lời đúng',
+  'IDENTIFY_INCORRECT_ANSWER': 'Chỉ ra câu trả lời sai',
+  'CORRECT_MISTAKE': 'Sửa lỗi sai',
+  'PRAISING': 'Khen ngợi',
+  'SCAFFOLDING': 'Dẫn dắt từng bước',
+  'HINTING': 'Đưa gợi ý',
+  'CONCEPT_CLARIFY': 'Làm rõ khái niệm',
+  'LOGIC_BREAKDOWN': 'Phân tích lập luận',
+  'SIMPLIFYING': 'Diễn giải đơn giản',
+  'MOTIVATING': 'Động viên',
+  'REDIRECTING': 'Kéo về đúng chủ đề',
+  'TRANSITIONING': 'Chuyển bước/chủ đề',
+  'DIRECT_ANSWER': 'Đưa đáp án trực tiếp',
+  'WAITING': 'Chờ học sinh phản hồi',
+
+  // Legacy/Fallback aliases (supporting alternative db values)
+  'CORRECT': 'Xác nhận câu trả lời đúng',
+  'INCORRECT': 'Chỉ ra câu trả lời sai',
+  'WAIT_READY': 'Chờ học sinh phản hồi',
+  'NEXT_SECTION': 'Muốn học tiếp/chuyển câu',
+  'ENCOURAGE': 'Động viên',
+  'OFFTOPIC': 'Ngoài phạm vi',
+  'Guide Step-by-step': 'Dẫn dắt từng bước',
+  'Give Hint': 'Đưa gợi ý',
+  'Ask Probing Question': 'Phân tích lập luận',
+  'Provide Formula': 'Làm rõ khái niệm',
+  'Correct Error': 'Sửa lỗi sai',
+  'Summarize': 'Chuyển bước/chủ đề',
+  'Ask Explanation': 'Yêu cầu giải thích',
+  'Solve Exercise': 'Chỉ ra câu trả lời sai',
+  'Request Formula': 'Hỏi lý thuyết',
+  'Confirm Understanding': 'Xác nhận đã hiểu',
+  'Ask Example': 'Muốn giải thích đơn giản hơn',
+  'Hint': 'Đưa gợi ý',
+  'Ques': 'Câu hỏi',
+  'Ques/Hint': 'Hỏi/Gợi ý',
+  'QA': 'Hỏi đáp',
+  'Factual Error': 'Sai kiến thức',
+  'Direct Answer': 'Lộ đáp án trực tiếp',
+  'Language Issue': 'Lỗi ngôn ngữ',
+};
+
 export const Stage4Labeling: React.FC = () => {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(() => localStorage.getItem('current_version_id'));
   const sampleComparisonsRef = useRef<Record<string, any>>({});
@@ -1897,7 +2003,7 @@ export const Stage4Labeling: React.FC = () => {
                                             }}
                                           >
                                             <span style={{ opacity: 0.8, fontWeight: '800' }}>{prefix}</span>
-                                            {item.label}
+                                            {TRANSLATED_LABEL_MAP[item.label] || item.label}
                                           </span>
                                         );
                                       })}
