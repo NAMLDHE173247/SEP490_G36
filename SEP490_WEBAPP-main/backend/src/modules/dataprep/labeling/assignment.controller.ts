@@ -740,14 +740,24 @@ export class AssignmentController {
       if (role === 'supervisor' || role === 'checker') {
         const supervisorUsers = await User.find({ role: { $in: ['supervisor', 'checker'] } }).select('_id').lean();
         const supervisorIds = supervisorUsers.map((user: any) => String(user._id));
-        submissionFilter = {
-          $or: [
-            { supervisor: viewerId },
-            { supervisor: { $exists: false } },
-            { supervisor: '' },
-            { supervisor: { $nin: supervisorIds } },
-          ],
-        };
+        if (role === 'checker') {
+          submissionFilter = {
+            $or: [
+              { checker: viewerId },
+              { checker: { $exists: false } },
+              { checker: '' },
+            ],
+          };
+        } else {
+          submissionFilter = {
+            $or: [
+              { supervisor: viewerId },
+              { supervisor: { $exists: false } },
+              { supervisor: '' },
+              { supervisor: { $nin: supervisorIds } },
+            ],
+          };
+        }
       }
       const submissions = await DatasetAssignmentSubmission.find(submissionFilter);
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];

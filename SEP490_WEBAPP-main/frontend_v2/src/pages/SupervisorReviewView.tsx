@@ -27,6 +27,21 @@ const REWRITE_REASON_VI_MAP: Record<string, string> = {
   'Incomplete answer': 'Câu trả lời chưa hoàn thiện',
 };
 
+const LABEL_MAP: Record<string, string> = {
+  'Completed': 'Hoàn thành',
+  'Incomplete': 'Chưa hoàn thành',
+  'Abandoned': 'Bỏ dở',
+  'Gold': 'Tốt',
+  'Rewrite': 'Cần viết lại',
+  'Bad': 'Chưa đạt',
+  'Chua ro': 'Chưa rõ'
+};
+
+const labelText = (value: any) => {
+  const raw = String(value || '').trim();
+  return LABEL_MAP[raw] || raw;
+};
+
 type QueueItem = AssignmentConflictItem & {
   versionId:string; taskName:string; datasetName:string; task:any;
   resultId?:string; modelScores?:any; humanScore?:number|null; sampleData?:any;
@@ -55,7 +70,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
   const [selected, setSelected] = useState<QueueItem|null>(null);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string|null>(null);
-  const [activeTab, setActiveTab] = useState<'conflicts'|'history'|'rewrites'>('conflicts');
+  const [activeTab, setActiveTab] = useState<'quick_reviews' | 'rewrites' | 'history'>('quick_reviews');
 
   const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
   const [loadingRewrites, setLoadingRewrites] = useState(false);
@@ -258,7 +273,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
       const pGroups = Array.from(sampleMap.values()).sort((a, b) => a.sampleIndex - b.sampleIndex);
 
       p.quickReviews = pGroups.filter(g => g.rows.length === 1 && !g.conflictItem && g.rows[0]?.reviewStatus === 'submitted');
-      p.overlapReviews = pGroups.filter(g => !!g.conflictItem);
+      p.overlapReviews = [];
     });
 
     return Array.from(map.values()).sort((a, b) => a.projectName.localeCompare(b.projectName, 'vi'));
@@ -287,18 +302,18 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
     const proj = projects.find(p => p.versionId === pId);
     setSelectedVersionId(pId);
     if (proj) {
-      if (proj.overlapReviews.length > 0) {
-        setActiveTab('conflicts');
+      if (proj.quickReviews.length > 0) {
+        setActiveTab('quick_reviews');
       } else {
         setActiveTab('history');
       }
     }
   };
 
-  const overlapTotal = selectedProject?.overlapReviews.length || 0;
-  const overlapTotalPages = Math.max(1, Math.ceil(overlapTotal / PAGE_SIZE));
-  const overlapPage = Math.min(page, overlapTotalPages);
-  const visibleOverlapReviews = selectedProject?.overlapReviews.slice((overlapPage - 1) * PAGE_SIZE, overlapPage * PAGE_SIZE) || [];
+  const quickReviewsTotal = selectedProject?.quickReviews.length || 0;
+  const quickReviewsTotalPages = Math.max(1, Math.ceil(quickReviewsTotal / PAGE_SIZE));
+  const quickReviewsPage = Math.min(page, quickReviewsTotalPages);
+  const visibleQuickReviews = selectedProject?.quickReviews.slice((quickReviewsPage - 1) * PAGE_SIZE, quickReviewsPage * PAGE_SIZE) || [];
   const historyItems = selectedProject?.conflicts.filter(item => item.status === 'published') || [];
   const filteredHistoryItems = historyItems.filter(item => {
     const matchQuery = `${item.taskName} ${item.datasetName} ${item.sampleKey} ${item.sampleIndex}`
@@ -440,8 +455,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
 
             <div className="workspace-kpis">
               <div className="wkpi purple">
-                <strong>{selectedProject?.overlapReviews.length}</strong>
-                <span>Phan xu</span>
+                <strong>{selectedProject?.quickReviews.length}</strong>
+                <span>Cần duyệt</span>
               </div>
               <div className="wkpi blue" style={{ borderLeft: '3px solid #3b82f6' }}>
                 <strong>{rewriteTasks.filter(t => t.status === 'checker_approved').length}</strong>
@@ -449,17 +464,17 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
               </div>
               <div className="wkpi green">
                 <strong>{selectedProject?.resolvedConflictsCount}</strong>
-                <span>Da chot</span>
+                <span>Đã chốt</span>
               </div>
             </div>
           </div>
 
           <div className="sv-workspace-tabs">
             <button
-              className={activeTab === 'conflicts' ? 'active' : ''}
-              onClick={() => setActiveTab('conflicts')}
+              className={activeTab === 'quick_reviews' ? 'active' : ''}
+              onClick={() => setActiveTab('quick_reviews')}
             >
-              Phan xu bat dong <span>{selectedProject?.overlapReviews.length}</span>
+              Duyệt bài của Staff <span>{selectedProject?.quickReviews.length}</span>
             </button>
             <button
               className={activeTab === 'rewrites' ? 'active' : ''}
@@ -474,22 +489,22 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
               className={activeTab === 'history' ? 'active' : ''}
               onClick={() => setActiveTab('history')}
             >
-              Da chot <span>{selectedProject?.resolvedConflictsCount}</span>
+              Đã chốt <span>{selectedProject?.resolvedConflictsCount}</span>
             </button>
           </div>
 
           <div className="workspace-tab-content">
-            {activeTab === 'conflicts' && (
+            {activeTab === 'quick_reviews' && (
               <section className="sv-queue">
-                {selectedProject?.overlapReviews.length === 0 ? (
+                {selectedProject?.quickReviews.length === 0 ? (
                   <div className="sv-state empty-state">
                     <CheckCircle2 size={40} className="success-icon" />
                     <h3>Tuyệt vời!</h3>
-                    <p>Không có mẫu trùng lặp hoặc xung đột nào cần phân xử trong dự án này.</p>
+                    <p>Không có bài gán nhãn nào của Staff cần duyệt trong dự án này.</p>
                   </div>
                 ) : (
                   <div className="sv-list">
-                    {visibleOverlapReviews.map(group => {
+                    {visibleQuickReviews.map(group => {
                       const conflictItem: QueueItem = group.conflictItem || {
                         sampleId: group.sampleId,
                         sampleKey: group.key,
@@ -511,34 +526,41 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                         <article className="sv-overlap-card modern-overlap" key={group.key}>
                           <div className="sv-overlap-top">
                             <div>
-                              <span className="sample-number">Mẫu #{group.sampleIndex + 1}</span>
+                              <span className="sample-number">Mẫu #{group.sampleIndex}</span>
                               <h3>{group.taskName}</h3>
                             </div>
                             <button
                               className="sv-open-btn action-btn adjudication-btn"
                               onClick={() => setSelected({ ...conflictItem, reviewerRows: group.rows })}
                             >
-                              Phan xu nhan
+                              Duyệt nhãn
                             </button>
                           </div>
 
                           {group.rows.length > 0 && (
-                            <div className="sv-reviewer-strip">
-                              {group.rows.map(row => <span key={row.assignmentId}>{row.assigneeName}</span>)}
+                            <div className="sv-overlap-reviewers">
+                              <strong>Staff thực hiện:</strong>
+                              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+                                {group.rows.map(row => (
+                                  <span key={row.assignmentId} className="sv-reviewer-tag">
+                                    👤 {row.assigneeName} ({labelText(row.label?.quality || 'Chưa gán')})
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </article>
                       );
                     })}
-                    {overlapTotalPages > 1 && (
+                    {quickReviewsTotalPages > 1 && (
                       <div className="sv-pagination compact-pagination">
-                        <span>Hien {visibleOverlapReviews.length}/{overlapTotal} mau can phan xu</span>
+                        <span>Hiển thị {visibleQuickReviews.length}/{quickReviewsTotal} mẫu cần duyệt</span>
                         <div>
-                          <button disabled={overlapPage === 1} onClick={() => setPage(overlapPage - 1)}>
-                            <ArrowLeft size={14} /> Truoc
+                          <button disabled={quickReviewsPage === 1} onClick={() => setPage(quickReviewsPage - 1)}>
+                            <ArrowLeft size={14} /> Trước
                           </button>
-                          <span className="page-indicator">{overlapPage}/{overlapTotalPages}</span>
-                          <button disabled={overlapPage === overlapTotalPages} onClick={() => setPage(overlapPage + 1)}>
+                          <span className="page-indicator">{quickReviewsPage}/{quickReviewsTotalPages}</span>
+                          <button disabled={quickReviewsPage === quickReviewsTotalPages} onClick={() => setPage(quickReviewsPage + 1)}>
                             Sau <ArrowRight size={14} />
                           </button>
                         </div>

@@ -87,6 +87,12 @@ function Dashboard() {
     return getDefaultTab();
   });
 
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
+  const [managerSelectedTask, setManagerSelectedTask] = useState(null);
+  const [managerSelectedBatchId, setManagerSelectedBatchId] = useState(null);
+
   // Wrapper: update state AND persist to localStorage
   const setActiveTab = (tab: string) => {
     localStorage.setItem(`dashboard_active_tab_${user?.role || 'guest'}`, tab);
@@ -105,6 +111,15 @@ function Dashboard() {
 
   React.useEffect(() => {
     if (user) {
+      if (activeTab === 'Staff Label' && !selectedTask) {
+        setActiveTab('My Tasks');
+        return;
+      }
+      if (activeTab === 'Task Detail' && !managerSelectedTask) {
+        setActiveTab('Assign Labeling');
+        return;
+      }
+
       const isValid =
         (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
@@ -115,32 +130,15 @@ function Dashboard() {
         setActiveTab(getDefaultTab());
       }
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, selectedTask, managerSelectedTask]);
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [viewingTaskDetail, setViewingTaskDetail] = useState(false);
 
-  if (!user) {
-    return null;
-  }
-
-  const menuItems = allMenuItems.filter(item => item.roles.includes(user.role));
-
-  // Handle Staff opening a task for labeling
-  const handleOpenTask = (task) => {
-    setSelectedTask(task);
-    setActiveTab('Staff Label');
-  };
 
   // Handle going back from labeling to task list
   const handleBackFromLabel = () => {
     setSelectedTask(null);
     setActiveTab('My Tasks');
   };
-
-  const [managerSelectedTask, setManagerSelectedTask] = useState(null);
-  const [managerSelectedBatchId, setManagerSelectedBatchId] = useState(null);
 
   // Handle Supervisor viewing task detail
   const handleViewTaskDetail = (task, batchId = null) => {
@@ -155,6 +153,17 @@ function Dashboard() {
     setManagerSelectedTask(null);
     setManagerSelectedBatchId(null);
     setActiveTab('Assign Labeling');
+  };
+
+  if (!user) {
+    return null;
+  }
+
+  const menuItems = allMenuItems.filter(item => item.roles.includes(user.role));
+
+  const handleOpenTask = (task: any) => {
+    setSelectedTask(task);
+    setActiveTab('Staff Label');
   };
 
   const renderContent = () => {

@@ -110,14 +110,13 @@ export const Stage4Labeling: React.FC = () => {
   ];
 
   useEffect(() => {
-    // Step 8 is now an embedded AI cross-check action inside Step 7.
-    // Migrate stale browser state so users cannot land on the old standalone screen.
-    if (currentSubStep4 === 8) setCurrentSubStep4(7);
+    // Step 7 no longer exists; redirect to 8 (the new lobby gate).
+    if (currentSubStep4 === 7) setCurrentSubStep4(8);
   }, [currentSubStep4, setCurrentSubStep4]);
 
   const reviewRewriteTask = async (task: any, action: 'approved' | 'redo' | 'rejected') => {
     if (!activeVersionId || !task?.id) return;
-    const note = action === 'approved' ? 'Approved by Admin' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+    const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
     if (action !== 'approved' && !note?.trim()) return;
     setReviewingRewriteId(task.id);
     try {
@@ -130,7 +129,7 @@ export const Stage4Labeling: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!activeVersionId || ![10, 11].includes(currentSubStep4)) return;
+    if (!activeVersionId || ![10, 11].includes(currentSubStep4)) return; // step 10=Rewrite Assignment, 11=Assignment Review
     let cancelled = false;
     const loadRewriteProgress = () => stage4Api.listRewriteAssignments(activeVersionId)
       .then((response) => { if (!cancelled) setRewriteAssignments(response.tasks || []); })
@@ -141,7 +140,7 @@ export const Stage4Labeling: React.FC = () => {
   }, [activeVersionId, currentSubStep4]);
 
   useEffect(() => {
-    if (!(currentSubStep4 === 7 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
+    if (!(currentSubStep4 === 8 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
 
     let cancelled = false;
     const refreshAssignmentDashboard = () => {
@@ -181,7 +180,7 @@ export const Stage4Labeling: React.FC = () => {
     };
 
     refreshAssignmentDashboard();
-    const intervalId = window.setInterval(refreshAssignmentDashboard, currentSubStep4 === 7 ? 5000 : 15000);
+    const intervalId = window.setInterval(refreshAssignmentDashboard, currentSubStep4 === 8 ? 5000 : 15000);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -211,12 +210,12 @@ export const Stage4Labeling: React.FC = () => {
     if (reviewDetailModal) {
       sampleIds.add(String(reviewDetailModal.sampleObjectId || reviewDetailModal.id));
     }
-    if (currentSubStep4 === 11) {
+    if (currentSubStep4 === 10) {
       const rewriteItems = (qualityResult?.items || []).filter((i: any) => ['Rewrite', 'Reject', 'Bad'].includes(i.bucket));
       const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
       if (activeItem?._id) sampleIds.add(String(activeItem._id));
     }
-    if (currentSubStep4 === 9 && qualityResult?.items?.length) {
+    if (currentSubStep4 === 8 && qualityResult?.items?.length) {
       const start = (currentPage - 1) * itemsPerPage;
       qualityResult.items.slice(start, start + itemsPerPage).forEach((item: any) => {
         if (item?._id) sampleIds.add(String(item._id));
@@ -240,24 +239,23 @@ export const Stage4Labeling: React.FC = () => {
   ]);
 
   const SUB_STEPS_STAGE4 = [
-    { num: 7, label: 'Quality Review' },
-    { num: 9, label: 'Quality Review' },
-    { num: 10, label: 'Rewrite Assignment' },
-    { num: 11, label: 'Assignment Review' },
-    { num: 12, label: 'Dataset Distribution' },
+    { num: 8, label: 'Xem xét Chất lượng' },
+    { num: 9, label: 'Giao task Viết lại' },
+    { num: 10, label: 'Duyệt bài Viết lại' },
+    { num: 11, label: 'Phân phối Dataset' },
   ];
 
   const handleStartScoring = async () => {
     const selectedModels = Object.keys(judgeModels).filter(k => judgeModels[k]);
     if (selectedModels.length === 0) {
-      alert('Please select at least 1 AI Judge model.');
+      alert('Vui lòng chọn ít nhất 1 mô hình AI Judge.');
       return;
     }
     try {
       setSepRunningEval(true);
       await runMultiEval(selectedModels, 'No Context');
     } catch (err: any) {
-      alert(err.message || 'Failed to start scoring');
+      alert(err.message || 'Không thể bắt đầu chấm điểm');
     } finally {
       setSepRunningEval(false);
     }
@@ -273,15 +271,15 @@ export const Stage4Labeling: React.FC = () => {
 
   const handleAdminSetVerdict = async (item: any, finalClassification: 'Gold' | 'Rewrite' | 'Reject') => {
     try {
-      await handleAdjudicateQuality(item.sampleObjectId || item.id, finalClassification, `Admin set verdict to ${finalClassification} in Stage 4 review.`);
+      await handleAdjudicateQuality(item.sampleObjectId || item.id, finalClassification, `Supervisor đã đặt kết quả ${finalClassification} trong Stage 4.`);
       setSepQualityLabels((prev: any) => ({ ...prev, [item.id]: finalClassification }));
       if (item.scores?.resultId) {
         const action = finalClassification === 'Gold' ? 'approve' : finalClassification === 'Rewrite' ? 'rewrite' : 'reject';
-        await adjudicateMultiEvalResult(item.scores.resultId, action as any, `Admin set verdict to ${finalClassification} in Stage 4 review.`);
+        await adjudicateMultiEvalResult(item.scores.resultId, action as any, `Supervisor đã đặt kết quả ${finalClassification} trong Stage 4.`);
       }
       setReviewDetailModal((prev: any) => prev ? { ...prev, bucket: finalClassification } : prev);
     } catch (err: any) {
-      alert(err.message || 'Failed to update verdict');
+      alert(err.message || 'Không thể cập nhật kết luận');
     }
   };
 
@@ -294,28 +292,37 @@ export const Stage4Labeling: React.FC = () => {
     if (!item) return;
 
     const messages = item.data?.messages || item.messages || [];
-    let targetMessageIndex = item.errorMessageIndex ?? -1;
-    if (targetMessageIndex < 0) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i]?.role === 'assistant') {
-          targetMessageIndex = i;
-          break;
-        }
-      }
-    }
-    const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
+    
+    // Support multiple message indices selected
+    const targetIndices = item.errorMessageIndices && item.errorMessageIndices.length > 0
+      ? item.errorMessageIndices
+      : (() => {
+          let targetIdx = item.errorMessageIndex ?? -1;
+          if (targetIdx < 0) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i]?.role === 'assistant') {
+                targetIdx = i;
+                break;
+              }
+            }
+          }
+          return targetIdx >= 0 ? [targetIdx] : [1];
+        })();
 
     try {
-      await stage4Api.assignRewrite(activeVersionId, {
-        sampleId: String(item.sampleObjectId || item._id || item.id),
-        assigneeId: staffId,
-        convId: String(item.convId || item.sampleId || item.id),
-        subject: item.subject || '',
-        reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
-        originalText,
-        targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-        contextMode: 'n-2:n+2'
-      });
+      for (const targetIdx of targetIndices) {
+        const originalText = targetIdx >= 0 ? String(messages[targetIdx]?.content || messages[targetIdx]?.text || '') : '';
+        await stage4Api.assignRewrite(activeVersionId, {
+          sampleId: String(item.sampleObjectId || item._id || item.id),
+          assigneeId: staffId,
+          convId: String(item.convId || item.sampleId || item.id),
+          subject: item.subject || '',
+          reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
+          originalText,
+          targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
+          contextMode: 'n-2:n+2'
+        });
+      }
       setReassignStaff((prev: any) => ({ ...prev, [item.id]: staffName }));
       const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
       setRewriteAssignments(refreshed.tasks || []);
@@ -666,6 +673,7 @@ export const Stage4Labeling: React.FC = () => {
         kind: kindForRole(role),
         staff: 'Staff',
         isOwner: false,
+        source: 'staff' as const,
       }));
     }
 
@@ -676,11 +684,20 @@ export const Stage4Labeling: React.FC = () => {
         .flatMap((a: any) => {
           const codes = Array.isArray(a.labels) ? a.labels : [];
           const displays = Array.isArray(a.displayLabels) ? a.displayLabels : codes;
+          
+          let source: 'staff' | 'checker' | 'supervisor' | 'ai' = 'staff';
+          if (a.isCanonical || a.annotator?.role === 'checker') {
+            source = 'checker';
+          } else if (a.isOwner || a.annotator?.role === 'supervisor' || a.annotator?.role === 'admin') {
+            source = 'supervisor';
+          }
+
           return codes.map((lbl: string, labelIndex: number) => ({
             label: displayStaffLabel(lbl, role, displays[labelIndex]),
             kind: kindForRole(role),
             staff: a.annotator?.name || a.annotator?.email || (a.isOwner ? 'Owner' : 'Staff'),
             isOwner: Boolean(a.isOwner),
+            source,
           }));
         })
       );
@@ -736,7 +753,8 @@ export const Stage4Labeling: React.FC = () => {
       issue: item.conflict ? 'Conflict' : 'None',
       issueKey: item.conflict ? 'conflict' : 'none',
       reason: item.note || 'No special issues flagged.',
-      errorMessageIndex: 1,
+      errorMessageIndices: item.errorMessageIndices ?? (item.errorMessageIndex != null ? [item.errorMessageIndex] : [1]),
+      errorMessageIndex: item.errorMessageIndex ?? 1,
       messages: mapBackendMessagesToUiMessages(item.data?.messages || []),
       rawItem: item,
     };
@@ -791,17 +809,16 @@ export const Stage4Labeling: React.FC = () => {
     : stage4UnlabeledSamples;
 
   const canNavigateToStage4Step = (targetStep: number) => {
-    if (currentSubStep4 === 7 && stage4CanScore && targetStep === 10) return true;
+    if (currentSubStep4 === 8 && stage4CanScore && targetStep === 9) return true;
     if (targetStep <= currentSubStep4) return true;
     if (targetStep !== currentSubStep4 + 1) return false;
-    if (currentSubStep4 === 7) return stage4CanScore;
-    if (currentSubStep4 === 8) return false;
+    if (currentSubStep4 === 8) return stage4CanScore;
     return currentSubStep4 >= 9;
   };
 
   const goToStage4Step = (targetStep: number) => {
-    if (targetStep === 7) {
-      setCurrentSubStep4(7);
+    if (targetStep === 8) {
+      setCurrentSubStep4(8);
       return;
     }
     if (canNavigateToStage4Step(targetStep)) {
@@ -996,18 +1013,18 @@ export const Stage4Labeling: React.FC = () => {
   return (
     <div className="dataprep-stage2 sep490-stage">
       <div className="sub-stepper">
-        {SUB_STEPS_STAGE4.filter(step => step.num !== 8 && step.num !== 9).map((step, idx, visibleSteps) => (
+        {SUB_STEPS_STAGE4.map((step, idx) => (
           <React.Fragment key={step.num}>
             <div
-              className={`sub-step ${(step.num === currentSubStep4 || (step.num === 7 && currentSubStep4 === 9)) ? 'active' : ''} ${step.num < currentSubStep4 && !(step.num === 7 && currentSubStep4 === 9) ? 'completed' : ''}`}
+              className={`sub-step ${step.num === currentSubStep4 ? 'active' : ''} ${step.num < currentSubStep4 ? 'completed' : ''}`}
               onClick={() => goToStage4Step(step.num)}
             >
               <div className="sub-step-circle">
-                {step.num < currentSubStep4 ? <Check size={14} /> : idx + 1}
+                {step.num < currentSubStep4 ? <Check size={14} /> : step.num}
               </div>
               <div className="sub-step-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{step.label}</div>
             </div>
-            {idx < visibleSteps.length - 1 && <div className="sub-step-connector" />}
+            {idx < SUB_STEPS_STAGE4.length - 1 && <div className="sub-step-connector" />}
           </React.Fragment>
         ))}
       </div>
@@ -1072,15 +1089,15 @@ export const Stage4Labeling: React.FC = () => {
       {!isStage4Loading && !stage4Error && (
         <>
           {/* ===== STEP 7: LOBBY GATE ===== */}
-          {currentSubStep4 === 7 && !stage4CanScore && (
+          {currentSubStep4 === 8 && !stage4CanScore && (
             <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Hero card - Light Theme */}
               <div style={{ background: 'linear-gradient(135deg, #f8fafc, #eff6ff)', border: '1px solid #dbeafe', borderRadius: '12px', padding: '32px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap', boxShadow: '0 4px 12px rgba(37,99,235,0.03)' }}>
                 <div style={{ flex: '1', minWidth: '240px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>SUB-STEP 1 · LIVE REVIEW</div>
-                  <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '900', color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Quality Review</h2>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>BƯỚC 8 · THEO DÕI TRỰC TIẾP</div>
+                  <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '900', color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Xem xét Chất lượng</h2>
                   <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: '1.6' }}>
-                    Admin có thể theo dõi nhãn và chất lượng ngay khi Staff đang làm. AI scoring và xuất kết quả cuối chỉ mở sau khi dữ liệu đủ điều kiện.
+                    Supervisor có thể theo dõi nhãn và chất lượng ngay khi Staff đang làm. AI scoring và xuất kết quả cuối chỉ mở sau khi dữ liệu đủ điều kiện.
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -1093,11 +1110,11 @@ export const Stage4Labeling: React.FC = () => {
                     </svg>
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                       <span style={{ fontSize: '22px', fontWeight: '900', color: '#1e293b' }}>{step7DisplayPct}%</span>
-                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>labeled</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>đã gán nhãn</span>
                     </div>
                   </div>
                   <span style={{ fontSize: '12px', color: '#475569', fontWeight: '600' }}>
-                    {stage4CanScore ? 'Ready for scoring' : `${pendingStaffCount} staff pending`}
+                    {stage4CanScore ? 'Sẵn sàng chấm điểm' : `${pendingStaffCount} staff đang chờ`}
                   </span>
                 </div>
               </div>
@@ -1105,9 +1122,9 @@ export const Stage4Labeling: React.FC = () => {
               {/* Staff Status Board */}
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Staff Status Board</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Bảng trạng thái Staff</h3>
                   <span style={{ fontSize: '13px', color: '#64748b' }}>
-                    Auto-refreshing every 5s · {step7DisplayLabeled}/{step7DisplayTotal} samples labeled
+                    Tự cập nhật mỗi 5 giây · {step7DisplayLabeled}/{step7DisplayTotal} mẫu đã gán nhãn
                   </span>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1115,11 +1132,11 @@ export const Stage4Labeling: React.FC = () => {
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Staff</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Assigned Subject</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Labeled / Assigned</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase', minWidth: '150px' }}>Progress</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Action</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Môn được giao</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Đã gán / Tổng</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase', minWidth: '150px' }}>Tiến độ</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Trạng thái</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Hành động</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1202,7 +1219,7 @@ export const Stage4Labeling: React.FC = () => {
                                       e.currentTarget.style.boxShadow = '0 2px 4px rgba(79, 70, 229, 0.05)';
                                     }}
                                   >
-                                    Remind
+                                    Nhắc việc
                                   </button>
                                 )}
                               </td>
@@ -1227,7 +1244,7 @@ export const Stage4Labeling: React.FC = () => {
                   onClick={() => {
                     if (!stage4CanScore) return;
                     setStage4StaffReady(true);
-                    setCurrentSubStep4(7);
+                    setCurrentSubStep4(8);
                   }}
                   disabled={!stage4CanScore}
                   style={{ padding: '14px 28px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: stage4CanScore ? '#1e293b' : '#e2e8f0', color: stage4CanScore ? '#fff' : '#94a3b8', cursor: stage4CanScore ? 'pointer' : 'not-allowed' }}
@@ -1241,9 +1258,9 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 8: AUTOMATED AI SCORING ===== */}
           {false && currentSubStep4 === 8 && (() => {
             const aiModels = [
-              { key: 'openrouter', label: 'OpenRouter Model', desc: 'Custom OpenRouter endpoint', color: '#4f46e5', badge: 'Recommended' },
-              { key: 'groq', label: 'Groq Llama', desc: 'Fast inference via Groq', color: '#059669', badge: '' },
+              { key: 'gemini', label: 'Gemini Model', desc: 'Default Gemini model (gemini-2.0-flash)', color: '#4f46e5', badge: 'Recommended' },
               { key: 'deepseek', label: 'Deepseek R1/V3', desc: 'Advanced pedagogical logic, free', color: '#0891b2', badge: 'Free' },
+              { key: 'openai', label: 'OpenAI GPT', desc: 'GPT-4o-mini via OpenAI', color: '#059669', badge: '' },
             ];
             const selectedCount = Object.values(judgeModels).filter(Boolean).length;
 
@@ -1336,9 +1353,9 @@ export const Stage4Labeling: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    <button onClick={() => setCurrentSubStep4(9)}
+                    <button onClick={() => setCurrentSubStep4(8)}
                       style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                      Next: Quality Management &rarr;
+                      Tiếp: Xem xét Chất lượng &rarr;
                     </button>
                   </div>
                 </div>
@@ -1346,8 +1363,8 @@ export const Stage4Labeling: React.FC = () => {
             );
           })()}
 
-          {/* ===== STEP 9: QUALITY REVIEW (read-only) ===== */}
-          {(currentSubStep4 === 9 || currentSubStep4 === 7) && (() => {
+          {/* ===== STEP 8: QUALITY REVIEW (read-only) ===== */}
+          {currentSubStep4 === 8 && (() => {
             const rewriteItems = displayQualityItems.filter(i => i.bucket === 'Rewrite');
             const badItems = displayQualityItems.filter(i => i.bucket === 'Reject' || i.bucket === 'Bad' || getQualityLabel(i) === 'Bad');
             const goldItems = displayQualityItems.filter(i => i.bucket === 'Gold');
@@ -1363,17 +1380,21 @@ export const Stage4Labeling: React.FC = () => {
             const safePage = Math.min(currentPage, totalPages);
             const paginatedItems = displayItems.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
-            const ScoreCell = ({ val }) => val != null
-              ? <span style={{ fontWeight: '700', color: val >= 7 ? '#16a34a' : val >= 5 ? '#d97706' : '#dc2626' }}>{val.toFixed(1)}</span>
-              : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>;
+            const ScoreCell = ({ val }) => {
+              if (val == null) return <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>;
+              if (typeof val === 'string') {
+                return <span style={{ fontWeight: '700', color: '#ea580c', fontSize: '12.5px' }}>{val}</span>;
+              }
+              return <span style={{ fontWeight: '700', color: val >= 7 ? '#16a34a' : val >= 5 ? '#d97706' : '#dc2626' }}>{val.toFixed(1)}</span>;
+            };
 
             return (
               <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Header read-only */}
                 <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Quality Review (read-only)</h2>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>Read AI judge scores and the Stage 3 Staff Rule Score. Human review decisions are created from the review/adjudication actions.</p>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Xem xét Chất lượng (chỉ xem)</h2>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>Xem điểm AI và Điểm luật Staff từ Stage 3. Quyết định được tạo từ các hành động xem xét/phân xử.</p>
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     {[
@@ -1455,9 +1476,9 @@ export const Stage4Labeling: React.FC = () => {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <button onClick={() => setCurrentSubStep4(10)}
+                    <button onClick={() => setCurrentSubStep4(9)}
                       style={{ padding: '12px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                      Go to Assign Rewrite &rarr;
+                      Tiếp: Giao Viết lại &rarr;
                     </button>
                   </div>
                 </div>
@@ -1467,24 +1488,24 @@ export const Stage4Labeling: React.FC = () => {
                   {displayItems.length === 0 ? (
                     <div className="empty-state-card">
                       <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
-                      <h3 className="empty-state-title">{allItems.length === 0 ? 'No quality results yet' : 'All clear!'}</h3>
-                      <p className="empty-state-desc">{allItems.length === 0 ? 'Run AI scoring in Step 8 after Step 7 is ready. This screen no longer shows demo samples.' : 'No items found in this category. Everything looks great so far.'}</p>
+                      <h3 className="empty-state-title">{allItems.length === 0 ? 'Chưa có kết quả chất lượng' : 'Mọi thứ đã ổn!'}</h3>
+                      <p className="empty-state-desc">{allItems.length === 0 ? 'Hãy chạy AI Scoring trong Bước 8 sau khi Bước 7 sẵn sàng.' : 'Không tìm thấy mục nào trong danh mục này.'}</p>
                     </div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
                       <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Conv ID</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Issue</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Mã hội thoại</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Môn học</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Vấn đề</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>OpenRouter</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#0891b2', fontSize: '11px', textTransform: 'uppercase', background: '#ecfeff' }}>Deepseek</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>Groq</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Avg AI</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Staff Rule Score</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Conflict</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Verdict</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Details</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Trung bình AI</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Điểm luật Staff</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Xung đột</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Kết luận</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Chi tiết</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1510,7 +1531,19 @@ export const Stage4Labeling: React.FC = () => {
                               <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f5f3ff' }}>
                                 {avgAI != null ? <span style={{ fontWeight: '800', color: avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI.toFixed(1)}</span> : <span style={{ color: '#cbd5e1' }}>-</span>}
                               </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center' }}><ScoreCell val={scores.human} /></td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                <ScoreCell val={(() => {
+                                  const comparison = sampleComparisons[item.sampleObjectId || item.id];
+                                  if (comparison) {
+                                    const target = comparison.targets?.find((t: any) => t.targetScope === 'sample' && t.messageIndex === 0);
+                                    const staffAnnotatorsCount = target ? target.annotators?.filter((a: any) => !a.isCanonical).length : 0;
+                                    if (staffAnnotatorsCount === 2 && comparison.hasConflict && comparison.pendingAdjudicationCount > 0) {
+                                      return "⏳ Đang tính toán";
+                                    }
+                                  }
+                                  return scores.human;
+                                })()} />
+                              </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 {scores.conflict ? (
                                   <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: '800', background: '#fee2e2', color: '#dc2626', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
@@ -1530,7 +1563,7 @@ export const Stage4Labeling: React.FC = () => {
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 <button onClick={e => { e.stopPropagation(); openReviewDetailModal(item); }}
                                   style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#4f46e5' }}>
-                                  View
+                                  Xem
                                 </button>
                               </td>
                             </tr>
@@ -1545,7 +1578,7 @@ export const Stage4Labeling: React.FC = () => {
                 {displayItems.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 18px' }}>
                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
-                      Showing <strong style={{ color: '#1e293b', fontWeight: '700' }}>{(safePage - 1) * itemsPerPage + 1}</strong>–<strong style={{ color: '#1e293b', fontWeight: '700' }}>{Math.min(safePage * itemsPerPage, displayItems.length)}</strong> of <strong style={{ color: '#1e293b', fontWeight: '700' }}>{displayItems.length}</strong>
+                      Hiển thị <strong style={{ color: '#1e293b', fontWeight: '700' }}>{(safePage - 1) * itemsPerPage + 1}</strong>–<strong style={{ color: '#1e293b', fontWeight: '700' }}>{Math.min(safePage * itemsPerPage, displayItems.length)}</strong> / <strong style={{ color: '#1e293b', fontWeight: '700' }}>{displayItems.length}</strong>
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button
@@ -1553,19 +1586,19 @@ export const Stage4Labeling: React.FC = () => {
                         disabled={safePage <= 1}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: safePage <= 1 ? '#f8fafc' : '#fff', color: safePage <= 1 ? '#cbd5e1' : '#475569', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                       >
-                        <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Previous
+                        <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Trước
                       </button>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px', fontSize: '13px', color: '#64748b' }}>
-                        <span>Page</span>
+                        <span>Trang</span>
                         <span style={{ minWidth: '26px', height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px', borderRadius: '8px', background: '#1e293b', color: '#fff', fontWeight: '800' }}>{safePage}</span>
-                        <span>of <strong style={{ color: '#1e293b', fontWeight: '700' }}>{totalPages}</strong></span>
+                        <span>/ <strong style={{ color: '#1e293b', fontWeight: '700' }}>{totalPages}</strong></span>
                       </div>
                       <button
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={safePage >= totalPages}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: safePage >= totalPages ? '#f8fafc' : '#fff', color: safePage >= totalPages ? '#cbd5e1' : '#475569', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                       >
-                        Next <ChevronRight size={14} />
+                        Tiếp <ChevronRight size={14} />
                       </button>
                     </div>
                   </div>
@@ -1573,9 +1606,9 @@ export const Stage4Labeling: React.FC = () => {
 
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(10)}
+                  <button onClick={() => setCurrentSubStep4(9)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Assign Rewrite &rarr;
+                    Tiếp: Giao Viết lại &rarr;
                   </button>
                 </div>
 
@@ -1592,6 +1625,44 @@ export const Stage4Labeling: React.FC = () => {
                     reviewDetailModal.sampleObjectId || reviewDetailModal.id,
                     reviewDetailModal.convId
                   );
+                  
+                  const displayStaffHumanScore = (() => {
+                    const comparison = sampleComparison;
+                    if (comparison) {
+                      const target = comparison.targets?.find((t: any) => t.targetScope === 'sample' && t.messageIndex === 0);
+                      const staffAnnotatorsCount = target ? target.annotators?.filter((a: any) => !a.isCanonical).length : 0;
+                      if (staffAnnotatorsCount === 2 && comparison.hasConflict && comparison.pendingAdjudicationCount > 0) {
+                        return "⏳ Đang tính toán";
+                      }
+                    }
+                    return staffHuman;
+                  })();
+
+                  const annotatorsEvaluations = (() => {
+                    if (!sampleComparison || !Array.isArray(sampleComparison.targets)) return [];
+                    const evalMap = new Map<string, { name: string; email: string; subject?: string; status?: string; quality?: string }>();
+                    
+                    sampleComparison.targets.forEach((target: any) => {
+                      if (target.targetScope === 'sample') {
+                        const idx = Number(target.messageIndex);
+                        target.annotators?.forEach((a: any) => {
+                          const staffId = String(a.annotator?.id || a.annotator?._id || '');
+                          if (!staffId) return;
+                          const current: { name: string; email: string; subject?: string; status?: string; quality?: string } = evalMap.get(staffId) || {
+                            name: a.annotator?.name || a.annotator?.email || (a.isOwner ? 'Owner' : 'Staff'),
+                            email: a.annotator?.email || '',
+                          };
+                          const val = String(a.labels?.[0] || '');
+                          if (idx === 0) current.subject = val;
+                          if (idx === 1) current.status = val;
+                          if (idx === 2) current.quality = val;
+                          evalMap.set(staffId, current);
+                        });
+                      }
+                    });
+                    return Array.from(evalMap.values());
+                  })();
+
                   const scores = { ...baseScores, human: staffHuman };
                   const label = getQualityLabel(reviewDetailModal);
                   const avgAI = getAvgAI(scores);
@@ -1631,7 +1702,7 @@ export const Stage4Labeling: React.FC = () => {
                           )}
                         </div>
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                          <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Evaluation Scores (read-only)</h4>
+                          <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm đánh giá (chỉ xem)</h4>
                           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                             {[{ label: 'OpenRouter', val: scores.openrouter, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.groq, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
                               <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px' }}>
@@ -1646,8 +1717,10 @@ export const Stage4Labeling: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: '22px', fontWeight: '300', alignSelf: 'center' }}>vs</div>
                             <div style={{ background: '#fed7aa', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '2px solid #f97316' : '2px solid transparent' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Staff Rule Score</div>
-                              <div style={{ fontSize: '22px', fontWeight: '900', color: scores.human == null ? '#cbd5e1' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>{scores.human != null ? scores.human.toFixed(1) : '-'}</div>
+                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Điểm luật Staff</div>
+                              <div style={{ fontSize: scores.human == null || typeof displayStaffHumanScore === 'string' ? '14px' : '22px', fontWeight: '900', color: scores.human == null ? '#cbd5e1' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>
+                                {typeof displayStaffHumanScore === 'string' ? displayStaffHumanScore : (scores.human != null ? scores.human.toFixed(1) : '-')}
+                              </div>
                             </div>
                             {diff != null && (
                               <div style={{ background: scores.conflict ? '#fee2e2' : '#f1f5f9', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '1px solid #fca5a5' : '1px solid #e2e8f0' }}>
@@ -1663,26 +1736,84 @@ export const Stage4Labeling: React.FC = () => {
                               <span><strong>Conflict AI vs Staff Rule Score:</strong> The average AI score ({avgAI?.toFixed(1)}) differs from the Stage 3 Staff Rule Score ({scores.human?.toFixed(1)}) by +/-{diff.toFixed(1)} exceeding the threshold of {conflictThreshold}. Requires expert human review.</span>
                             </div>
                           )}
+                          
+                          {annotatorsEvaluations.length > 0 && (
+                            <div style={{ marginTop: '16px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px' }}>
+                              <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Đánh giá chi tiết của Staff</h4>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: '800' }}>
+                                    <th style={{ padding: '6px 8px' }}>Nhân viên (Staff)</th>
+                                    <th style={{ padding: '6px 8px' }}>Môn học</th>
+                                    <th style={{ padding: '6px 8px' }}>Trạng thái</th>
+                                    <th style={{ padding: '6px 8px' }}>Chất lượng</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {annotatorsEvaluations.map((a: any, idx: number) => {
+                                    const statusMap: Record<string, string> = { 'COMPLETED': 'Hoàn thành', 'INCOMPLETE': 'Chưa xong', 'ABANDONED': 'Bỏ dở' };
+                                    const qualityMap: Record<string, string> = { 'GOLD': 'Tốt', 'MEDIUM': 'Cần sửa', 'POOR': 'Chưa đạt', 'BAD': 'Chưa đạt' };
+                                    return (
+                                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                        <td style={{ padding: '8px', fontWeight: '700', color: '#334155' }}>{a.name}</td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{ padding: '2px 8px', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: '600' }}>{a.subject || 'Chưa gán'}</span>
+                                        </td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: a.status === 'COMPLETED' ? '#dcfce7' : '#fee2e2',
+                                            color: a.status === 'COMPLETED' ? '#15803d' : '#991b1b',
+                                            fontSize: '11px', fontWeight: '600'
+                                          }}>{statusMap[a.status] || a.status || 'Chưa gán'}</span>
+                                        </td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: a.quality === 'GOLD' ? '#e0f2fe' : a.quality === 'MEDIUM' ? '#fef3c7' : '#fee2e2',
+                                            color: a.quality === 'GOLD' ? '#0369a1' : a.quality === 'MEDIUM' ? '#b45309' : '#dc2626',
+                                            fontSize: '11px', fontWeight: '600'
+                                          }}>{qualityMap[a.quality] || a.quality || 'Chưa gán'}</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                         <div style={{ padding: '20px 24px' }}>
-                          <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conversation Content</h4>
+                          <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nội dung hội thoại</h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto' }}>
                             {reviewDetailModal.messages.map((msg, idx) => {
                               const messageLabels = getStaffMessageLabels(idx, msg.role);
-                              const isTarget = String(idx) === String(reviewDetailModal.errorMessageIndex);
+                              const isTarget = (reviewDetailModal.errorMessageIndices || []).includes(idx);
                               return (
                                 <div key={idx} 
                                   onClick={() => {
                                     if (msg.role === 'assistant') {
                                       const updatedIndex = idx;
-                                      setReviewDetailModal((prev: any) => prev ? { ...prev, errorMessageIndex: updatedIndex } : prev);
+                                      setReviewDetailModal((prev: any) => {
+                                        if (!prev) return prev;
+                                        const currentIndices = prev.errorMessageIndices || [];
+                                        const nextIndices = currentIndices.includes(updatedIndex)
+                                          ? currentIndices.filter((x: number) => x !== updatedIndex)
+                                          : [...currentIndices, updatedIndex];
+                                        return { ...prev, errorMessageIndices: nextIndices };
+                                      });
                                       setQualityResult((prev: any) => {
                                         if (!prev) return prev;
                                         return {
                                           ...prev,
                                           items: prev.items.map((i: any) => 
                                             (String(i._id) === String(reviewDetailModal._id) || String(i.id) === String(reviewDetailModal.id))
-                                              ? { ...i, errorMessageIndex: updatedIndex }
+                                              ? {
+                                                  ...i,
+                                                  errorMessageIndices: (i.errorMessageIndices || []).includes(updatedIndex)
+                                                    ? (i.errorMessageIndices || []).filter((x: number) => x !== updatedIndex)
+                                                    : [...(i.errorMessageIndices || []), updatedIndex]
+                                                }
                                               : i
                                           )
                                         };
@@ -1713,7 +1844,7 @@ export const Stage4Labeling: React.FC = () => {
                                   <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
-                                      {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target Rewrite)' : 'AI Tutor'}
+                                      {msg.role === 'user' ? 'Học sinh' : isTarget ? 'Trợ giảng AI (Mục tiêu viết lại)' : 'Trợ giảng AI'}
                                     </span>
                                     {msg.role === 'assistant' && (
                                       <span style={{ fontSize: '10px', color: isTarget ? '#d97706' : '#94a3b8', fontWeight: 'bold' }}>
@@ -1726,19 +1857,43 @@ export const Stage4Labeling: React.FC = () => {
                                     <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                       {messageLabels.map((item: any, labelIdx: number) => {
                                         const isIntent = item.kind === 'Intent';
+                                        let bg = isIntent ? '#eef2ff' : '#ecfdf5';
+                                        let fg = isIntent ? '#4338ca' : '#047857';
+                                        let border = `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`;
+                                        let prefix = '';
+
+                                        if (item.source === 'checker') {
+                                          bg = '#f0fdf4';
+                                          fg = '#16a34a';
+                                          border = '1px solid #bbf7d0';
+                                          prefix = '✅ Checker: ';
+                                        } else if (item.source === 'supervisor') {
+                                          bg = '#faf5ff';
+                                          fg = '#7c3aed';
+                                          border = '1px solid #e9d5ff';
+                                          prefix = '👑 Supervisor: ';
+                                        } else if (item.source === 'ai') {
+                                          bg = '#fff7ed';
+                                          fg = '#ea580c';
+                                          border = '1px solid #ffedd5';
+                                          prefix = '🤖 AI: ';
+                                        } else {
+                                          prefix = `👤 ${item.staff}: `;
+                                        }
+
                                         return (
                                           <span
                                             key={`${item.staff}-${item.label}-${labelIdx}`}
                                             title={`${item.kind} • assigned by ${item.staff}`}
                                             style={{
                                               padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: '700',
-                                              background: isIntent ? '#eef2ff' : '#ecfdf5',
-                                              color: isIntent ? '#4338ca' : '#047857',
-                                              border: `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`,
+                                              background: bg,
+                                              color: fg,
+                                              border,
                                               display: 'inline-flex', alignItems: 'center', gap: '4px',
                                             }}
                                           >
-                                            <span style={{ opacity: 0.7, fontWeight: '800' }}>{item.kind}:</span>
+                                            <span style={{ opacity: 0.8, fontWeight: '800' }}>{prefix}</span>
                                             {item.label}
                                           </span>
                                         );
@@ -1751,11 +1906,11 @@ export const Stage4Labeling: React.FC = () => {
                           </div>
                           <div style={{ marginTop: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <Info size={16} style={{ color: '#64748b' }} />
-                            <span style={{ fontSize: '13px', color: '#64748b', marginRight: 'auto' }}>Admin verdict</span>
+                            <span style={{ fontSize: '13px', color: '#64748b', marginRight: 'auto' }}>Quyết định của Supervisor</span>
                             {[
-                              { value: 'Gold', label: 'Mark Gold', bg: '#dcfce7', color: '#15803d' },
-                              { value: 'Rewrite', label: 'Mark Rewrite', bg: '#fef3c7', color: '#92400e' },
-                              { value: 'Reject', label: 'Mark Bad', bg: '#fee2e2', color: '#dc2626' },
+                              { value: 'Gold', label: 'Đánh dấu Tốt', bg: '#dcfce7', color: '#15803d' },
+                              { value: 'Rewrite', label: 'Đánh dấu Viết lại', bg: '#fef3c7', color: '#92400e' },
+                              { value: 'Reject', label: 'Đánh dấu Chưa đạt', bg: '#fee2e2', color: '#dc2626' },
                             ].map(action => (
                               <button key={action.value} onClick={() => handleAdminSetVerdict(reviewDetailModal, action.value as any)}
                                 style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${action.color}55`, background: action.bg, color: action.color, fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
@@ -1772,8 +1927,8 @@ export const Stage4Labeling: React.FC = () => {
             );
           })()}
 
-          {/* ===== STEP 10: ASSIGN REWRITE (BULK ASSIGN) ===== */}
-          {currentSubStep4 === 10 && (() => {
+          {/* ===== STEP 9: ASSIGN REWRITE (BULK ASSIGN) ===== */}
+          {currentSubStep4 === 9 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
             const rewriteAssignTotalPages = Math.max(1, Math.ceil(rewriteItems.length / itemsPerPage));
             const rewriteAssignSafePage = Math.min(rewriteAssignPage, rewriteAssignTotalPages);
@@ -1927,9 +2082,9 @@ export const Stage4Labeling: React.FC = () => {
                         style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         Tiến độ
                       </button>
-                      <button onClick={() => setCurrentSubStep4(11)}
+                      <button onClick={() => setCurrentSubStep4(10)}
                         style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                        Go to Review &rarr;
+                        Đi tới Duyệt &rarr;
                       </button>
                     </div>
                   </div>
@@ -2193,29 +2348,39 @@ export const Stage4Labeling: React.FC = () => {
                       if (!staff || !activeVersionId) return;
                       const staffId = String(staff._id || staff.id);
 
-                      const assignments = selectedRewriteIds.map(id => {
+                      const assignments: any[] = [];
+                      selectedRewriteIds.forEach(id => {
                         const item = rewriteItems.find(x => x.id === id);
-                        const messages = item?.data?.messages || item?.messages || [];
-                        let targetMessageIndex = item?.errorMessageIndex ?? -1;
-                        if (targetMessageIndex < 0) {
-                          for (let i = messages.length - 1; i >= 0; i--) {
-                            if (messages[i]?.role === 'assistant') {
-                              targetMessageIndex = i;
-                              break;
-                            }
-                          }
-                        }
-                        const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
-                        return {
-                          sampleId: String(item.sampleObjectId || item._id || item.id),
-                          assigneeId: staffId,
-                          convId: String(item.convId || item.sampleId || item.id),
-                          subject: item?.subject || '',
-                          reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
-                          originalText,
-                          targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-                          contextMode: 'n-2:n+2'
-                        };
+                        if (!item) return;
+                        const messages = item.data?.messages || item.messages || [];
+                        const targetIndices = item.errorMessageIndices && item.errorMessageIndices.length > 0
+                          ? item.errorMessageIndices
+                          : (() => {
+                              let targetIdx = item.errorMessageIndex ?? -1;
+                              if (targetIdx < 0) {
+                                for (let i = messages.length - 1; i >= 0; i--) {
+                                  if (messages[i]?.role === 'assistant') {
+                                    targetIdx = i;
+                                    break;
+                                  }
+                                }
+                              }
+                              return targetIdx >= 0 ? [targetIdx] : [1];
+                            })();
+
+                        targetIndices.forEach((targetIdx: number) => {
+                          const originalText = targetIdx >= 0 ? String(messages[targetIdx]?.content || messages[targetIdx]?.text || '') : '';
+                          assignments.push({
+                            sampleId: String(item.sampleObjectId || item._id || item.id),
+                            assigneeId: staffId,
+                            convId: String(item.convId || item.sampleId || item.id),
+                            subject: item?.subject || '',
+                            reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
+                            originalText,
+                            targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
+                            contextMode: 'n-2:n+2'
+                          });
+                        });
                       });
 
                       try {
@@ -2238,28 +2403,28 @@ export const Stage4Labeling: React.FC = () => {
                         alert(error?.response?.data?.error || 'Không thể giao task rewrite.');
                       }
                     }} style={{ padding: '10px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.4)' }}>
-                      Assign All
+                      Giao tất cả
                     </button>
                     <button onClick={() => setSelectedRewriteIds([])}
                       style={{ padding: '10px 16px', fontSize: '13px', fontWeight: '600', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
-                      Cancel
+                      Hủy
                     </button>
                   </div>
                 )}
 
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(11)}
+                  <button onClick={() => setCurrentSubStep4(10)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Review Submissions &rarr;
+                    Tiếp: Duyệt bài Viết lại &rarr;
                   </button>
                 </div>
               </div>
             );
           })()}
 
-          {/* ===== STEP 11: STAFF SUBMISSION REVIEW (3b) ===== */}
-          {currentSubStep4 === 11 && (() => {
+          {/* ===== STEP 10: STAFF SUBMISSION REVIEW (3b) ===== */}
+          {currentSubStep4 === 10 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
             const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
             const approvedCount = rewriteAssignments.filter((task: any) => task.status === 'approved').length;
@@ -2286,17 +2451,17 @@ export const Stage4Labeling: React.FC = () => {
                       <Search size={22} />
                     </div>
                     <div>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Review Staff Submissions</h2>
-                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>Compare the original and staff-revised versions. Approve (Gold) or request a redo.</p>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Duyệt bài Viết lại của Staff</h2>
+                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>So sánh bản gốc và bản sửa của Staff. Duyệt (Tốt) hoặc yêu cầu làm lại.</p>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Pending Review</div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Chờ duyệt</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', lineHeight: 1.2 }}>{pendingCount}</div>
                     </div>
                     <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Approved</div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Đã duyệt</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{approvedCount}</div>
                     </div>
                   </div>
@@ -2306,22 +2471,22 @@ export const Stage4Labeling: React.FC = () => {
                 {rewriteItems.length === 0 ? (
                   <div className="empty-state-card">
                     <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
-                    <h3 className="empty-state-title">No submissions pending!</h3>
-                    <p className="empty-state-desc">All staff submissions have been reviewed and approved.</p>
+                    <h3 className="empty-state-title">Không có bài chờ duyệt!</h3>
+                    <p className="empty-state-desc">Tất cả bài viết lại của staff đã được xem xét và duyệt.</p>
                   </div>
                 ) : (
                   <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
                     {/* Submission List Header with Integrated Progress Bar */}
                     <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Submission List</h4>
-                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>({rewriteItems.length} items)</span>
+                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Danh sách bài nộp</h4>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>({rewriteItems.length} mục)</span>
                       </div>
                       
                       {/* Integrated Progress Bar */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '450px', marginLeft: 'auto' }}>
                         <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#64748b', whiteSpace: 'nowrap' }}>
-                          Progress: {approvedCount}/{rewriteItems.length}
+                          Tiến độ: {approvedCount}/{rewriteItems.length}
                         </span>
                         <div style={{ flex: 1, height: '8px', background: '#cbd5e1', borderRadius: '999px', overflow: 'hidden' }}>
                           <div style={{ width: `${Math.min(100, Math.round(rewriteItems.length > 0 ? (approvedCount / rewriteItems.length) * 100 : 0))}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)', borderRadius: '999px', transition: 'width 0.5s ease-out' }} />
@@ -2335,37 +2500,37 @@ export const Stage4Labeling: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                       <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conv ID</th>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subject</th>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Assignee</th>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Issue to Fix</th>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
-                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Actions</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mã hội thoại</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Môn học</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff được giao</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Lỗi cần sửa</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Trạng thái</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Hành động</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rewriteItems.map((item, idx) => {
                           const task = taskBySample.get(String(item.sampleObjectId || item._id || item.id));
-                          const staffName = reassignStaff[item.id] || (task?.assigneeId ? shareUsers.find((u: any) => String(u.id || u._id) === String(task.assigneeId))?.name : '') || 'Unassigned';
+                          const staffName = reassignStaff[item.id] || (task?.assigneeId ? shareUsers.find((u: any) => String(u.id || u._id) === String(task.assigneeId))?.name : '') || 'Chưa giao';
                           const subjStyle = getSubjectStyle(item.subject);
                           
                           let statusLabel = 'Not Assigned';
                           let statusColor = { bg: '#f1f5f9', text: '#64748b' };
                           if (task) {
                             if (task.status === 'approved') {
-                              statusLabel = 'Approved (Gold)';
+                              statusLabel = 'Đã duyệt (Tốt)';
                               statusColor = { bg: '#dcfce7', text: '#15803d' };
                             } else if (task.status === 'submitted') {
-                              statusLabel = 'Pending Review';
+                              statusLabel = 'Chờ duyệt';
                               statusColor = { bg: '#fef9c3', text: '#854d0e' };
                             } else if (task.status === 'redo') {
-                              statusLabel = 'Redo Requested';
+                              statusLabel = 'Yêu cầu làm lại';
                               statusColor = { bg: '#fee2e2', text: '#991b1b' };
                             } else if (task.status === 'rejected') {
-                              statusLabel = 'Rejected';
+                              statusLabel = 'Từ chối';
                               statusColor = { bg: '#fee2e2', text: '#dc2626' };
                             } else if (task.status === 'assigned') {
-                              statusLabel = 'Assigned (In Progress)';
+                              statusLabel = 'Đã giao (Đang làm)';
                               statusColor = { bg: '#e0f2fe', text: '#0369a1' };
                             }
                           } else if (completedRewrites[item.id]) {
@@ -2390,7 +2555,7 @@ export const Stage4Labeling: React.FC = () => {
                                     {staffName}
                                   </div>
                                 ) : (
-                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Unassigned</span>
+                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Chưa giao</span>
                                 )}
                               </td>
                               <td style={{ padding: '14px 18px', fontSize: '13px', color: '#64748b', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.reason || item.issue || 'Quality review requires rewrite'}>
@@ -2407,7 +2572,7 @@ export const Stage4Labeling: React.FC = () => {
                                   setReviewSubmissionModal(item);
                                 }}
                                 style={{ padding: '8px 16px', fontSize: '12.5px', fontWeight: '800', borderRadius: '8px', border: '1px solid #4f46e5', background: '#f5f3ff', color: '#4f46e5', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(79,70,229,0.08)' }}>
-                                  <Search size={13} /> Review &amp; Action
+                                  <Search size={13} /> Xem xét &amp; Xử lý
                                 </button>
                               </td>
                             </tr>
@@ -2420,16 +2585,16 @@ export const Stage4Labeling: React.FC = () => {
 
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(12)}
+                  <button onClick={() => setCurrentSubStep4(11)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Dataset Distribution &rarr;
+                    Tiếp: Phân phối Dataset &rarr;
                   </button>
                 </div>
               </div>
             );
           })()}
-          {/* ===== STEP 12: FINAL DISTRIBUTION DASHBOARD ===== */}
-          {currentSubStep4 === 12 && (() => {
+          {/* ===== STEP 11: FINAL DISTRIBUTION DASHBOARD ===== */}
+          {currentSubStep4 === 11 && (() => {
             const statSummary = statistics?.summary;
             const totalConv = statSummary?.totalSamples ?? displayQualityItems.length;
 
@@ -2908,7 +3073,7 @@ export const Stage4Labeling: React.FC = () => {
                     <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
                     {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
                       <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
-                        <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'AI' : 'Student'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
+                        <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'Trợ giảng AI' : 'Học sinh'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
                         <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
                       </div>
                     ))}
@@ -3018,7 +3183,7 @@ export const Stage4Labeling: React.FC = () => {
 
             const handleReviewInModal = async (task: any, action: 'approved' | 'rejected' | 'redo') => {
               if (!activeVersionId || !task?.id) return;
-              const note = action === 'approved' ? 'Approved by Admin' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+              const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
               if (action !== 'approved' && !note?.trim()) return;
               setReviewingRewriteId(task.id);
               try {
@@ -3134,11 +3299,11 @@ export const Stage4Labeling: React.FC = () => {
                         return (
                           <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error to Fix (Detected by AI Judges)</p>
-                              <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason || activeItem.issue || 'Quality review requires rewrite'}</p>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Lỗi cần sửa (Phát hiện bởi AI)</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason || activeItem.issue || 'Yêu cầu viết lại từ xem xét chất lượng'}</p>
                             </div>
                             <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Rule Score</p>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm luật Staff</p>
                               <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#94a3b8' }}>{activeScores.human != null ? activeScores.human.toFixed(1) : '-'}</p>
                             </div>
                           </div>
@@ -3191,7 +3356,7 @@ export const Stage4Labeling: React.FC = () => {
                               boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
                             }}>
                               <strong style={{ display: 'block', fontSize: '10px', color: isTarget ? '#dc2626' : msg.role === 'user' ? '#64748b' : '#16a34a', textTransform: 'uppercase', marginBottom: '4px' }}>
-                                {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target to Rewrite)' : 'AI Tutor'}
+                                {msg.role === 'user' ? 'Học sinh' : isTarget ? 'Trợ giảng AI (Cần viết lại)' : 'Trợ giảng AI'}
                               </strong>
                               <div style={{ fontSize: '13px', lineHeight: '1.5', color: '#1e293b', whiteSpace: 'pre-wrap' }}>
                                 {msg.text || msg.content}
@@ -3264,7 +3429,7 @@ export const Stage4Labeling: React.FC = () => {
                             gap: '6px' 
                           }}
                         >
-                          {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Approved (Gold)</> : <><Check size={14} /> Approve (Gold)</>}
+                          {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Đã duyệt (Tốt)</> : <><Check size={14} /> Duyệt (Tốt)</>}
                         </button>
                         
                         <button 
@@ -3286,7 +3451,7 @@ export const Stage4Labeling: React.FC = () => {
                             gap: '6px' 
                           }}
                         >
-                          <RotateCcw size={14} /> Request Redo
+                          <RotateCcw size={14} /> Yêu cầu làm lại
                         </button>
 
                         <button 
@@ -3308,7 +3473,7 @@ export const Stage4Labeling: React.FC = () => {
                             gap: '6px' 
                           }}
                         >
-                          <X size={14} /> Reject
+                          <X size={14} /> Từ chối
                         </button>
                       </>
                     ) : (
