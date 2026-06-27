@@ -9,6 +9,7 @@ import { QUALITY_AUTO_REJECT_MARKER } from './quality.constants';
 import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery, ensureLabelAssignmentsForSamples } from '../../../services/labelAssignmentService';
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
 
 export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as const;
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
@@ -436,6 +437,18 @@ export class QualityService {
     }).select('sampleId').lean();
     const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
 
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: version._id,
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
+
     const SUBJECT_LABELS = new Set([
       'MATH',
       'PHYSICAL',
@@ -713,7 +726,9 @@ export class QualityService {
         isClassified = true;
       }
 
-      const pendingAdjudication = pendingAdjudicationSet.has(sid);
+      const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const pendingAdjudication = isOverlapped ? !approvedSampleIds.has(sid) : pendingAdjudicationSet.has(sid);
       const iar = vector.map((value, index) => (
         intentCounts[index] > 0 ? value / intentCounts[index] : null
       ));

@@ -8,6 +8,8 @@ import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../..
 import { QualityService } from './quality.service';
 import { apiKeyService } from '../../../services/apiKeyService';
 import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -618,6 +620,24 @@ export class MultiEvalService {
     const historyMap = new Map();
     rewriteHistories.forEach(h => historyMap.set(String(h.sampleId), h));
 
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
+
+    // Fetch canonical docs to check if sample has been chốt/published
+    const canonicalDocs = await DatasetCanonicalLabel.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId)
+    }).select('sampleId').lean();
+    const canonicalSampleIds = new Set(canonicalDocs.map(c => String(c.sampleId)));
+
     // Fetch pending assignment adjudications (unresolved staff conflicts)
     const pendingAdjudications = await DatasetAssignmentAdjudication.find({
       datasetVersionId: new mongoose.Types.ObjectId(versionId),
@@ -629,7 +649,11 @@ export class MultiEvalService {
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
       const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
-      const pendingAdjudication = pendingAdjudicationSet.has(String(sample?._id));
+      
+      const assigneeCount = sampleAssigneeCount.get(String(sample?._id)) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const hasCanonical = canonicalSampleIds.has(String(sample?._id));
+      const pendingAdjudication = isOverlapped ? !hasCanonical : pendingAdjudicationSet.has(String(sample?._id));
 
       const qualityHasHumanScore = !pendingAdjudication && qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
       const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
