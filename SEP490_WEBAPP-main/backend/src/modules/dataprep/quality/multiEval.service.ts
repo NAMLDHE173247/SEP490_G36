@@ -7,6 +7,7 @@ import { DatasetVersion } from '../../../models/DatasetVersion';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
 import { QualityService } from './quality.service';
 import { apiKeyService } from '../../../services/apiKeyService';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -617,11 +618,20 @@ export class MultiEvalService {
     const historyMap = new Map();
     rewriteHistories.forEach(h => historyMap.set(String(h.sampleId), h));
 
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
+
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
       const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
-      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      const pendingAdjudication = pendingAdjudicationSet.has(String(sample?._id));
+
+      const qualityHasHumanScore = !pendingAdjudication && qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
       const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
         ? Number(qualityItem.humanScore)
         : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
@@ -665,6 +675,7 @@ export class MultiEvalService {
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
         turnPairs: qualityItem?.turnPairs || [],
         staffTargets: qualityItem?.staffTargets || [],
+        pendingAdjudication,
       };
     });
 

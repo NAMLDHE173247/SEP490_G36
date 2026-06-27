@@ -8,6 +8,7 @@ import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 import { QUALITY_AUTO_REJECT_MARKER } from './quality.constants';
 import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery, ensureLabelAssignmentsForSamples } from '../../../services/labelAssignmentService';
 import { LabelAssignment } from '../../../models/LabelAssignment';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
 
 export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as const;
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
@@ -157,6 +158,7 @@ export type QualityItem = {
       harmfulActions: string[];
     }>;
   }>;
+  pendingAdjudication?: boolean;
 };
 
 export type QualityResult = {
@@ -426,6 +428,13 @@ export class QualityService {
       (l) => !hardKeys.has(`${String(l.sampleId)}:${Number(l.messageIndex)}:${l.messageRole}`)
     );
     const labelMap = buildLabelMap([...labels, ...draftFallbackLabels]);
+
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: version._id,
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
 
     const SUBJECT_LABELS = new Set([
       'MATH',
@@ -704,11 +713,12 @@ export class QualityService {
         isClassified = true;
       }
 
+      const pendingAdjudication = pendingAdjudicationSet.has(sid);
       const iar = vector.map((value, index) => (
         intentCounts[index] > 0 ? value / intentCounts[index] : null
       ));
       const score = requiredTurns > 0 ? totalTurnScore / requiredTurns : -1;
-      const humanScore = (requiredTurns > 0 && !hasMissingLabeling) ? toTenPointScore(score) : null;
+      const humanScore = pendingAdjudication ? null : ((requiredTurns > 0 && !hasMissingLabeling) ? toTenPointScore(score) : null);
 
 
       if (isClassified) {
@@ -737,6 +747,7 @@ export class QualityService {
           errorMessageIndex,
           conflictReason,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -774,6 +785,7 @@ export class QualityService {
           errorMessageIndex,
           conflictReason: `Bị gắn cờ lỗi nghiêm trọng từ Stage 3: ${activeErrors.join(', ')}`,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -802,6 +814,7 @@ export class QualityService {
           errorMessageIndex,
           conflictReason,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -829,6 +842,7 @@ export class QualityService {
           errorMessageIndex,
           conflictReason,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -856,6 +870,7 @@ export class QualityService {
         errorMessageIndex,
         conflictReason,
         turnPairs,
+        pendingAdjudication,
       });
     }
 

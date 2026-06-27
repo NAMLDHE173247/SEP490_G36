@@ -614,9 +614,11 @@ export const Stage4Labeling: React.FC = () => {
       const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
       const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
       const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
-      const human = resolveHumanScore(
-        toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
-      );
+      const human = (resMatch.pendingAdjudication || humanItem?.pendingAdjudication)
+        ? null
+        : resolveHumanScore(
+            toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
+          );
       const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
       const avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
       const diff = avgAI != null && human != null ? Math.abs(avgAI - human) : (resMatch.diff || 0);
@@ -625,14 +627,14 @@ export const Stage4Labeling: React.FC = () => {
         deepseek,
         groq,
         human,
-        conflict: Boolean(resMatch.hasConflict) || resMatch.recommendation === 'Conflict' || (human != null && diff >= conflictThreshold),
+        conflict: !resMatch.pendingAdjudication && !humanItem?.pendingAdjudication && (Boolean(resMatch.hasConflict) || resMatch.recommendation === 'Conflict' || (human != null && diff >= conflictThreshold)),
         resultId: resMatch._id,
         finalRecommendation: resMatch.finalRecommendation,
         supervisorAction: resMatch.supervisorAction || resMatch.adjudicationAction,
         supervisorNote: resMatch.supervisorNote || resMatch.adjudicationNote,
       };
     }
-    const human = resolveHumanScore(toTenPointHumanScore(humanItem));
+    const human = humanItem?.pendingAdjudication ? null : resolveHumanScore(toTenPointHumanScore(humanItem));
     return {
       openrouter: null,
       deepseek: null,
@@ -757,8 +759,9 @@ export const Stage4Labeling: React.FC = () => {
       errorMessageIndex: item.errorMessageIndex ?? 1,
       messages: mapBackendMessagesToUiMessages(item.data?.messages || []),
       rawItem: item,
+      pendingAdjudication: Boolean(item.pendingAdjudication || evalMatch?.pendingAdjudication),
     };
-  }) : [];
+  }) as any[] : [];
 
   const stage4TotalSamples = labelingStatus?.totalSamples || qualityResult?.totalSamples || 0;
   const stage4LabeledSamples = labelingStatus?.labeledSamples || 0;
@@ -1532,7 +1535,7 @@ export const Stage4Labeling: React.FC = () => {
                                 {avgAI != null ? <span style={{ fontWeight: '800', color: avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI.toFixed(1)}</span> : <span style={{ color: '#cbd5e1' }}>-</span>}
                               </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
-                                <ScoreCell val={(() => {
+                                <ScoreCell val={(item as any).pendingAdjudication ? "⏳ Đang tính toán" : (() => {
                                   const comparison = sampleComparisons[item.sampleObjectId || item.id];
                                   if (comparison) {
                                     const target = comparison.targets?.find((t: any) => t.targetScope === 'sample' && t.messageIndex === 0);

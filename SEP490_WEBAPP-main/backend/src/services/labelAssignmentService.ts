@@ -816,6 +816,19 @@ export async function getEffectiveSampleLabelsForVersion(
     return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
   }
 
+  // Check overlap counts (active assignments count per sample)
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: versionOid,
+    sampleId: { $in: sampleIds },
+    active: true
+  }).select('sampleId assigneeId').lean();
+
+  const sampleAssigneeCount = new Map<string, number>();
+  assignments.forEach((asg: any) => {
+    const sid = String(asg.sampleId);
+    sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+  });
+
   const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
   const aggregated = await getAggregatedHardSampleLabels(sampleIds);
 
@@ -823,9 +836,20 @@ export async function getEffectiveSampleLabelsForVersion(
     `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
   ));
 
-  const effectiveAggregated = (aggregated as any).filter((a: any) => 
-    !canonicalKeys.has(`${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`)
-  );
+  const effectiveAggregated = (aggregated as any).filter((a: any) => {
+    const key = `${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
+    if (canonicalKeys.has(key)) {
+      return false;
+    }
+    const sid = String(a.sampleId);
+    const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+    // If the sample has 2 or more staff assigned (overlapCount >= 2), we only accept checker (canonical) labels.
+    // If no canonical label is published yet, we do NOT fall back to staff labels.
+    if (assigneeCount >= 2) {
+      return false;
+    }
+    return true;
+  });
 
   return [...canonical, ...effectiveAggregated];
 }
