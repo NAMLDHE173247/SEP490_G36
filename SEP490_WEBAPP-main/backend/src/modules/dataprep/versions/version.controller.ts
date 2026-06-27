@@ -204,7 +204,28 @@ export class DataPrepVersionController {
     try {
       const { id } = req.params;
       const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
-      const data = items.map(item => (item as any).processedData || (item as any).originalData || item.data);
+      const data = items.map(item => {
+        let payload = (item as any).processedData || (item as any).originalData || item.data;
+        if (payload) {
+          try {
+            payload = JSON.parse(JSON.stringify(payload));
+            if (Array.isArray(payload.messages)) {
+              payload.messages = payload.messages.map((msg: any) => {
+                if (msg.role === 'assistant' && msg.action && typeof msg.action === 'string') {
+                  // Inject Assistant Action Control Code
+                  msg.content = `[${msg.action.toUpperCase()}] ${msg.content}`;
+                }
+                if (msg.role === 'user' && msg.intent && typeof msg.intent === 'string') {
+                  // Inject User Intent Control Code
+                  msg.content = `[${msg.intent.toUpperCase()}] ${msg.content}`;
+                }
+                return msg;
+              });
+            }
+          } catch(e) {}
+        }
+        return payload;
+      });
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=version_${id}_labeled.json`);
       res.send(JSON.stringify(data, null, 2));

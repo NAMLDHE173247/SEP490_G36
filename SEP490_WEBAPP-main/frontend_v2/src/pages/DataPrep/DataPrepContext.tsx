@@ -641,7 +641,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: true, deepseek: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');

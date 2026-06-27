@@ -311,12 +311,8 @@ function DataPrepInner() {
 
   React.useEffect(() => {
     if (currentStage === 4) {
-      if (currentSubStep4 < 7 || currentSubStep4 > 10) {
+      if (currentSubStep4 < 7 || currentSubStep4 > 12) {
         setCurrentSubStep4(7);
-      }
-    } else if (currentStage === 5) {
-      if (currentSubStep4 < 11 || currentSubStep4 > 12) {
-        setCurrentSubStep4(11);
       }
     }
   }, [currentStage]);

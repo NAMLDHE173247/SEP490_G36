@@ -121,10 +121,19 @@ export class MultiEvalController {
 
       const { versionId, resultId } = req.params;
       if (role === 'supervisor' || role === 'checker') {
-        const assigned = await DatasetAssignmentSubmission.exists({ datasetVersionId: versionId, supervisor: supervisorId });
-        if (!assigned) {
-          res.status(403).json({ error: 'Conflict này chưa được giao cho Supervisor hoặc Checker hiện tại.' });
-          return;
+        const anySubmission = await DatasetAssignmentSubmission.exists({ datasetVersionId: versionId });
+        if (anySubmission) {
+          const assigned = await DatasetAssignmentSubmission.exists({
+            datasetVersionId: versionId,
+            $or: [
+              { supervisor: supervisorId },
+              { checker: supervisorId }
+            ]
+          });
+          if (!assigned) {
+            res.status(403).json({ error: 'Conflict này chưa được giao cho Supervisor hoặc Checker hiện tại.' });
+            return;
+          }
         }
       }
       const { action, note } = req.body;

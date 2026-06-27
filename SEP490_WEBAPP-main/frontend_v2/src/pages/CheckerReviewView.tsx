@@ -13,7 +13,8 @@ import {
   Eye,
   FileEdit,
   CheckSquare,
-  Clock
+  Clock,
+  X
 } from 'lucide-react';
 import { api, type AssignmentConflictItem } from '../services/api';
 import CheckerConflictDialog from '../components/CheckerConflictDialog';
@@ -49,11 +50,30 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   const [selected, setSelected] = useState<QueueItem | null>(null);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'conflicts' | 'history' | 'logs'>('conflicts');
+  const [activeTab, setActiveTab] = useState<'conflicts' | 'history' | 'logs' | 'rewrites'>('conflicts');
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
   const [logsSortOrder, setLogsSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
+  const [loadingRewrites, setLoadingRewrites] = useState(false);
+  const [reviewingRewrite, setReviewingRewrite] = useState<any | null>(null);
+  const [rewriteReviewNote, setRewriteReviewNote] = useState('');
+  const [isSubmittingRewriteReview, setIsSubmittingRewriteReview] = useState(false);
+
+  const fetchRewriteAssignments = async () => {
+    if (!selectedVersionId) return;
+    setLoadingRewrites(true);
+    try {
+      const res = await api.get(`/dataprep/versions/${selectedVersionId}/quality/rewrite-assignments`);
+      setRewriteTasks(res.data.tasks || []);
+    } catch (e) {
+      console.error('Failed to fetch rewrite tasks', e);
+    } finally {
+      setLoadingRewrites(false);
+    }
+  };
 
   const fetchLogs = async (vId = selectedVersionId, silent = false) => {
     if (!vId) return;
@@ -133,8 +153,9 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     void loadQueue();
     const timer = window.setInterval(() => {
       void loadQueue(true);
-      if (selectedVersionId && activeTab === 'logs') {
-        void fetchLogs(selectedVersionId, true);
+      if (selectedVersionId) {
+        if (activeTab === 'logs') void fetchLogs(selectedVersionId, true);
+        if (activeTab === 'rewrites') void fetchRewriteAssignments();
       }
     }, 10000);
 
@@ -168,6 +189,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   useEffect(() => {
     if (selectedVersionId) {
       void fetchLogs(selectedVersionId);
+      void fetchRewriteAssignments();
     }
   }, [selectedVersionId]);
 
@@ -487,6 +509,15 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               onClick={() => setActiveTab('conflicts')}
             >
               Phân xử bất đồng <span>{selectedProject?.overlapReviews.length}</span>
+            </button>
+            <button
+              className={activeTab === 'rewrites' ? 'active' : ''}
+              onClick={() => {
+                setActiveTab('rewrites');
+                void fetchRewriteAssignments();
+              }}
+            >
+              Duyệt Viết lại <span>{rewriteTasks.filter(t => t.status === 'submitted').length}</span>
             </button>
             <button
               className={activeTab === 'history' ? 'active' : ''}
@@ -845,6 +876,48 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                 )}
               </section>
             )}
+
+            {activeTab === 'rewrites' && (
+              <section className="sv-queue">
+                {loadingRewrites ? (
+                  <div className="sv-skeletons">
+                    {[1, 2].map(i => <div key={i} className="sv-skeleton" />)}
+                  </div>
+                ) : rewriteTasks.filter(t => t.status === 'submitted').length === 0 ? (
+                  <div className="sv-state empty-state">
+                    <CheckCircle2 size={40} className="success-icon" />
+                    <h3>Tuyệt vời!</h3>
+                    <p>Không có task rewrite nào đang chờ bạn kiểm duyệt trong dự án này.</p>
+                  </div>
+                ) : (
+                  <div className="sv-list">
+                    {rewriteTasks.filter(t => t.status === 'submitted').map((task) => (
+                      <article className="sv-overlap-card modern-overlap" key={task.id}>
+                        <div className="sv-overlap-top">
+                          <div>
+                            <span className="sample-number" style={{ background: '#e0e7ff', color: '#4f46e5' }}>Rewrite #{String(task.convId).substring(0, 8)}</span>
+                            <h3>Nhân viên: {task.assigneeName || task.assigneeId?.name || 'Staff'}</h3>
+                            <p className="sample-preview" style={{ color: '#ef4444' }}><strong>Lỗi cần sửa:</strong> {task.reason || 'Yêu cầu viết lại'}</p>
+                            <p className="sample-preview" style={{ marginTop: '8px', color: '#475569' }}>
+                              <strong>Bản viết lại của Staff:</strong> "{String(task.submittedText).substring(0, 100)}{String(task.submittedText).length > 100 ? '...' : ''}"
+                            </p>
+                          </div>
+                          <button
+                            className="sv-open-btn action-btn adjudication-btn"
+                            onClick={() => {
+                              setReviewingRewrite(task);
+                              setRewriteReviewNote('');
+                            }}
+                          >
+                            Kiểm duyệt bản sửa
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         </div>
       )}
@@ -860,6 +933,128 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
             }
           }}
         />
+      )}
+
+      {reviewingRewrite && (
+        <div className="sv-modal-overlay" style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+          padding: '20px'
+        }} onClick={() => setReviewingRewrite(null)}>
+          <div className="sv-modal" style={{
+            backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '800px',
+            maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+            overflow: 'hidden'
+          }} onClick={e => e.stopPropagation()}>
+            <div className="sv-modal-header" style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '16px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>
+                Kiểm duyệt bản viết lại #{String(reviewingRewrite.convId).substring(0, 8)}
+              </h3>
+              <button onClick={() => setReviewingRewrite(null)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', color: '#64748b'
+              }}><X size={20} /></button>
+            </div>
+            
+            <div className="sv-modal-body" style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ padding: '12px 16px', background: '#fef2f2', borderLeft: '4px solid #ef4444', borderRadius: '4px' }}>
+                <strong style={{ color: '#991b1b', fontSize: '13px' }}>Yêu cầu / Lỗi cần viết lại:</strong>
+                <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#7f1d1d' }}>{reviewingRewrite.reason}</p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bản gốc của AI (Original)</h4>
+                  <p style={{ margin: 0, fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>{reviewingRewrite.originalText}</p>
+                </div>
+                <div style={{ padding: '16px', background: '#eef2ff', borderRadius: '8px', border: '1px solid #c7d2fe' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bản viết lại của Staff</h4>
+                  <p style={{ margin: 0, fontSize: '14px', color: '#1e1b4b', whiteSpace: 'pre-wrap', fontWeight: 500 }}>{reviewingRewrite.submittedText}</p>
+                </div>
+              </div>
+
+              <div className="ct-form-group">
+                <label style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '8px', display: 'block' }}>Nhận xét / Ý kiến phản hồi (Bắt buộc nếu Từ chối)</label>
+                <textarea
+                  className="ct-input"
+                  placeholder="Nhập nhận xét kiểm duyệt..."
+                  value={rewriteReviewNote}
+                  onChange={e => setRewriteReviewNote(e.target.value)}
+                  style={{ width: '100%', minHeight: '80px', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px' }}
+                />
+              </div>
+            </div>
+
+            <div className="sv-modal-footer" style={{
+              display: 'flex', justifyContent: 'flex-end', gap: '12px',
+              padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc'
+            }}>
+              <button
+                className="sv-button secondary"
+                onClick={() => setReviewingRewrite(null)}
+                disabled={isSubmittingRewriteReview}
+              >
+                Hủy
+              </button>
+              <button
+                className="sv-button danger-btn"
+                style={{
+                  backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '8px 16px',
+                  borderRadius: '8px', fontWeight: 600, cursor: 'pointer'
+                }}
+                disabled={isSubmittingRewriteReview || !rewriteReviewNote.trim()}
+                onClick={async () => {
+                  if (!rewriteReviewNote.trim()) return;
+                  setIsSubmittingRewriteReview(true);
+                  try {
+                    await api.post(`/dataprep/versions/${selectedVersionId}/quality/rewrite-assignments/${reviewingRewrite.id}/review`, {
+                      action: 'redo',
+                      note: rewriteReviewNote.trim()
+                    });
+                    toast.success('Đã từ chối bản viết lại và yêu cầu Staff làm lại.');
+                    setReviewingRewrite(null);
+                    void fetchRewriteAssignments();
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.error || 'Có lỗi xảy ra');
+                  } finally {
+                    setIsSubmittingRewriteReview(false);
+                  }
+                }}
+              >
+                Từ chối & Giao lại
+              </button>
+              <button
+                className="sv-button primary-btn"
+                style={{
+                  backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 16px',
+                  borderRadius: '8px', fontWeight: 600, cursor: 'pointer'
+                }}
+                disabled={isSubmittingRewriteReview}
+                onClick={async () => {
+                  setIsSubmittingRewriteReview(true);
+                  try {
+                    await api.post(`/dataprep/versions/${selectedVersionId}/quality/rewrite-assignments/${reviewingRewrite.id}/review`, {
+                      action: 'approved',
+                      note: rewriteReviewNote.trim() || 'Checker approved'
+                    });
+                    toast.success('Duyệt thành công! Đã chuyển lên Supervisor.');
+                    setReviewingRewrite(null);
+                    void fetchRewriteAssignments();
+                  } catch (err: any) {
+                    toast.error(err.response?.data?.error || 'Có lỗi xảy ra');
+                  } finally {
+                    setIsSubmittingRewriteReview(false);
+                  }
+                }}
+              >
+                Duyệt & Chuyển lên Supervisor
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

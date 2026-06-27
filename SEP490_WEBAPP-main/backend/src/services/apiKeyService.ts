@@ -6,8 +6,9 @@ import { GeminiProvider } from './providers/GeminiProvider';
 import { OpenAIProvider } from './providers/OpenAIProvider';
 import { DeepseekProvider } from './providers/DeepseekProvider';
 import { GroqProvider } from './providers/GroqProvider';
+import { OpenRouterProvider } from './providers/OpenRouterProvider';
 
-export type ProviderType = 'openai' | 'gemini' | 'deepseek';
+export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'groq';
 
 class ApiKeyService {
   private getEnvKey(provider: ProviderType): string {
@@ -15,6 +16,8 @@ class ApiKeyService {
       case 'openai': return process.env.OPENAI_API_KEY || '';
       case 'gemini': return process.env.GEMINI_API_KEY || '';
       case 'deepseek': return process.env.DEEPSEEK_API_KEY || '';
+      case 'openrouter': return process.env.OPENROUTER_API_KEY || '';
+      case 'groq': return process.env.GROQ_API_KEY || '';
       default: return '';
     }
   }
@@ -85,7 +88,7 @@ class ApiKeyService {
   async getAllPersonalKeys(userId: string): Promise<Record<ProviderType, string>> {
     const user = await User.findById(userId).select('apiKeys').lean();
     const result: Record<string, string> = {
-      openai: '', gemini: '', deepseek: ''
+      openai: '', gemini: '', deepseek: '', openrouter: '', groq: ''
     };
     if (user && user.apiKeys) {
       for (const provider of Object.keys(result) as ProviderType[]) {
@@ -100,7 +103,7 @@ class ApiKeyService {
   async getAllGlobalKeys(): Promise<Record<ProviderType, string>> {
     const config = await GlobalConfig.findOne({ key: 'global_api_keys' }).lean();
     const result: Record<string, string> = {
-      openai: '', gemini: '', deepseek: ''
+      openai: '', gemini: '', deepseek: '', openrouter: '', groq: ''
     };
     if (config && config.value) {
       for (const provider of Object.keys(result) as ProviderType[]) {
@@ -117,13 +120,34 @@ class ApiKeyService {
     
     if (norm.includes('gemini')) {
       const key = await this.getApiKeyForUser(userId, 'gemini');
+      if (key && key.startsWith('AIzaSy')) {
+        return new GeminiProvider(isJson, key);
+      }
+      
+      // Fallback: If the Gemini key is invalid/missing but we have OpenRouter key, use OpenRouter
+      const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
+      if (openRouterKey || process.env.OPENROUTER_API_KEY) {
+        console.log('[ApiKeyService] Gemini key is invalid. Falling back to OpenRouter.');
+        return new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY);
+      }
+      
+      // Secondary fallback to Groq
+      const groqKey = await this.getApiKeyForUser(userId, 'groq').catch(() => '');
+      if (groqKey || process.env.GROQ_API_KEY) {
+        console.log('[ApiKeyService] Gemini key is invalid. Falling back to Groq.');
+        return new GroqProvider(groqKey || process.env.GROQ_API_KEY);
+      }
+
       return new GeminiProvider(isJson, key);
     } else if (norm.includes('deepseek')) {
       const key = await this.getApiKeyForUser(userId, 'deepseek');
       return new DeepseekProvider(key);
     } else if (norm.includes('groq')) {
-      // Groq uses OpenAI SDK, so we can map it to OpenAI key logic if no specific Groq key is managed in DB
-      return new GroqProvider();
+      const key = await this.getApiKeyForUser(userId, 'groq');
+      return new GroqProvider(key);
+    } else if (norm.includes('openrouter')) {
+      const key = await this.getApiKeyForUser(userId, 'openrouter');
+      return new OpenRouterProvider(key);
     } else {
       const key = await this.getApiKeyForUser(userId, 'openai');
       return new OpenAIProvider(key);

@@ -19,6 +19,7 @@ router.post('/rewrite-assignments/admin-submit', (req, res) => controller.adminS
 router.post('/rewrite-assignments/:taskId/submit', (req, res) => controller.submitRewrite(req, res));
 router.post('/rewrite-assignments/:taskId/validate', (req, res) => controller.validateRewrite(req, res));
 router.post('/rewrite-assignments/:taskId/suggest', (req, res) => controller.suggestRewrite(req, res));
+router.post('/suggest-rewrite-generic', (req, res) => controller.suggestRewriteGeneric(req, res));
 router.post('/rewrite-assignments/:taskId/review', (req, res) => controller.reviewRewrite(req, res));
 router.post('/rewrite-assignments/:taskId/remind', (req, res) => controller.remindRewrite(req, res));
 router.get('/notifications', (req, res) => controller.listNotifications(req, res));

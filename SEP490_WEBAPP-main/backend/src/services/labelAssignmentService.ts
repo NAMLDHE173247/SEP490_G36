@@ -1328,8 +1328,19 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
   });
-  const userRows = comparisonAnnotatorIds.length
-    ? await User.find({ _id: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+  const canonicalLabels = await DatasetCanonicalLabel.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).lean();
+
+  const checkerUserIds = canonicalLabels.map(c => String(c.publishedBy)).filter(Boolean);
+  const allUserIdsToLoad = Array.from(new Set([
+    ...comparisonAnnotatorIds,
+    ...checkerUserIds
+  ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const userRows = allUserIdsToLoad.length
+    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
     : [];
   const userMap = new Map(
     userRows.map((user: any) => [
@@ -1429,6 +1440,35 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
 
+    const canonical = canonicalLabels.find((c: any) => 
+      c.targetScope === target.targetScope && 
+      c.messageIndex === msgIdx && 
+      c.messageRole === msgRole
+    );
+
+    const targetAnnotators = annotatorSets.map((item) => ({
+      annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
+      labels: item.labels,
+      displayLabels: item.displayLabels,
+      isOwner: item.annotatorId === ownerId,
+      isCanonical: false,
+    }));
+
+    if (canonical) {
+      const checkerId = String(canonical.publishedBy);
+      const checkerUser = userMap.get(checkerId) || { id: checkerId, name: 'Checker', email: 'checker@system.com' };
+      targetAnnotators.push({
+        annotator: { ...checkerUser, role: 'checker' } as any,
+        labels: canonical.labels,
+        displayLabels: canonical.labels.map(l => {
+          const { display } = resolveStaffLabelName(l, msgRole, target.targetScope);
+          return display || l;
+        }),
+        isOwner: false,
+        isCanonical: true,
+      });
+    }
+
     return {
       targetKey,
       targetScope: target.targetScope,
@@ -1439,12 +1479,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
       labelCounts,
       majorityLabels,
-      annotators: annotatorSets.map((item) => ({
-        annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
-        labels: item.labels,
-        displayLabels: item.displayLabels,
-        isOwner: item.annotatorId === ownerId,
-      })),
+      annotators: targetAnnotators,
     };
   });
 

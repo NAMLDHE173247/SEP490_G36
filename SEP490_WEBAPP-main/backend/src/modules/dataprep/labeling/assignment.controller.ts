@@ -168,7 +168,7 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
       const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
@@ -264,6 +264,7 @@ export class AssignmentController {
             priority: priority || 'medium',
             deadline: parsedDeadline,
             supervisor: assignmentSupervisor,
+            checker: checkerId ? String(checkerId) : undefined,
             labeledCount: 0,
             totalSamples: group.sampleIds.length,
             dataset: datasetName,
@@ -278,6 +279,7 @@ export class AssignmentController {
             datasetVersionId: versionId,
             sampleId: item._id,
             assigneeId: staffId,
+            checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined,
             assignedBy,
             sampleIndex: group.startIndex + i,
             taskType: 'labeling',
@@ -337,7 +339,7 @@ export class AssignmentController {
   async createBatchAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId } = req.body;
+      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId, checkerId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
       const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
@@ -384,7 +386,8 @@ export class AssignmentController {
           totalSamples: sampleCount,
           dataset: datasetName,
           version: version?.versionName || 'v1',
-          supervisor: assignmentSupervisor
+          supervisor: assignmentSupervisor,
+          checker: checkerId ? String(checkerId) : undefined
         });
 
         await submission.save();
@@ -403,6 +406,7 @@ export class AssignmentController {
             datasetVersionId: versionId,
             sampleId: actualItem ? actualItem._id : new mongoose.Types.ObjectId().toHexString(), // fallback if not found
             assigneeId: assigneeId,
+            checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined,
             assignedBy: assignedBy,
             sampleIndex: sampleStartIndex + i,
             taskType: taskType || 'labeling',
@@ -469,6 +473,7 @@ export class AssignmentController {
         datasetVersionId: versionId,
         sampleId: s.sampleId,
         assigneeId: toAssigneeId,
+        checkerId: s.checkerId,
         assignedBy,
         sampleIndex: s.sampleIndex,
         taskType: s.taskType || 'labeling',
@@ -500,6 +505,7 @@ export class AssignmentController {
         priority: src?.priority || 'medium',
         deadline: src?.deadline,
         supervisor: src?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId),
+        checker: src?.checker,
         dataset: src?.dataset || version.projectName,
         version: src?.version || version.versionName,
         totalSamples: src?.totalSamples || fromSamples.length,
@@ -584,8 +590,9 @@ export class AssignmentController {
         datasetVersionId: versionId,
         ...(fromAssigneeId ? { assigneeId: fromAssigneeId } : {}),
         active: { $ne: false },
-      }).select('supervisor').lean();
+      }).select('supervisor checker').lean();
       const assignmentSupervisor = (sourceSubmission as any)?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId);
+      const assignmentChecker = (sourceSubmission as any)?.checker || (req.body as any).checkerId;
 
       let added = 0;
       for (const assigneeId of assigneeIds) {
@@ -594,6 +601,7 @@ export class AssignmentController {
           datasetVersionId: versionId,
           sampleId: s.sampleId,
           assigneeId,
+          checkerId: s.checkerId || (assignmentChecker ? new mongoose.Types.ObjectId(String(assignmentChecker)) : undefined),
           assignedBy,
           sampleIndex: s.sampleIndex,
           taskType: s.taskType || 'labeling',
@@ -613,6 +621,7 @@ export class AssignmentController {
           taskType: 'labeling',
           priority: 'medium',
           supervisor: assignmentSupervisor,
+          checker: assignmentChecker ? String(assignmentChecker) : undefined,
           dataset: version.projectName,
           version: version.versionName,
           totalSamples: sourceSamples.length,
@@ -782,6 +791,7 @@ export class AssignmentController {
             dueDate: sub.deadline || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             status: 'in_progress',
             priority: sub.priority || 'medium',
+            checkerId: sub.checker || undefined,
             batches: []
           };
         }
@@ -1894,6 +1904,42 @@ export class AssignmentController {
     } catch (error: any) {
       console.error('[AssignmentController] toggleAiAssist error:', error);
       return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  async updateBatchChecker(req: Request, res: Response) {
+    try {
+      const { versionId } = req.params;
+      const { batchName, checkerId } = req.body;
+      if (!batchName) {
+        return res.status(400).json({ success: false, error: 'Missing batchName' });
+      }
+      
+      // Update DatasetAssignmentSubmission
+      await DatasetAssignmentSubmission.updateMany(
+        { datasetVersionId: versionId, name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) },
+        { $set: { checker: checkerId || undefined } }
+      );
+      
+      // Fetch submissions to update corresponding sample assignments
+      const subs = await DatasetAssignmentSubmission.find({
+        datasetVersionId: versionId,
+        name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      }).select('_id assigneeId').lean();
+      
+      const assigneeIds = subs.map(s => s.assigneeId);
+      
+      await DatasetSampleAssignment.updateMany(
+        { datasetVersionId: versionId, assigneeId: { $in: assigneeIds } },
+        { $set: { checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined } }
+      );
+      
+      broadcastAssignmentUpdate({ type: 'assignment_updated', versionId, action: 'update_checker' });
+      
+      return res.status(200).json({ success: true, message: 'Updated checker successfully' });
+    } catch (e: any) {
+      console.error('[AssignmentController] updateBatchChecker error:', e);
+      return res.status(500).json({ success: false, error: e.message });
     }
   }
 }

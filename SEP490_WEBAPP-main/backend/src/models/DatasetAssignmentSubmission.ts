@@ -16,6 +16,7 @@ export interface IDatasetAssignmentSubmission extends Document {
   priority: string;
   deadline?: Date;
   supervisor?: string;
+  checker?: string;
   dataset?: string;
   version?: string;
   totalSamples: number;
@@ -71,6 +72,7 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
     priority: { type: String, default: 'medium' },
     deadline: { type: Date },
     supervisor: { type: String },
+    checker: { type: String },
     dataset: { type: String },
     version: { type: String },
     totalSamples: { type: Number, default: 0 },

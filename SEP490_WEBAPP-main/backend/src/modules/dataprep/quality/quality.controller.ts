@@ -10,6 +10,7 @@ import { User } from '../../../models/User';
 import { apiKeyService } from '../../../services/apiKeyService';
 import { sendTransactionalEmail } from '../../../services/emailService';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
 import { AutoLabelV2Service } from '../labeling/autoLabelV2.service';
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetVersion } from '../../../models/DatasetVersion';
@@ -90,6 +91,10 @@ export class QualityController {
       status: task.status,
       staffName: task.assigneeId?.name || task.assigneeId?.email || String(task.assigneeId),
       assigneeId: String(task.assigneeId?._id || task.assigneeId),
+      checkerId: task.checkerId ? String(task.checkerId?._id || task.checkerId) : '',
+      checkerName: task.checkerId?.name || task.checkerId?.email || '',
+      checkerReviewNote: task.checkerReviewNote || '',
+      checkerReviewedAt: task.checkerReviewedAt || null,
       updatedAt: task.updatedAt,
       submittedAt: task.submittedAt,
       reviewedAt: task.reviewedAt,
@@ -359,13 +364,17 @@ export class QualityController {
       }
       const { versionId } = req.params;
       const query: any = { datasetVersionId: new mongoose.Types.ObjectId(versionId) };
-      if (!isManager(req)) {
+      const role = (req as any).user?.role;
+      if (role === 'checker') {
+        query.checkerId = new mongoose.Types.ObjectId(userId);
+      } else if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
       const page = Math.max(1, Number(req.query.page) || 1);
       const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
       const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
         .populate('assigneeId', 'name email')
+        .populate('checkerId', 'name email')
         .populate('sampleId')
         .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
@@ -395,12 +404,16 @@ export class QualityController {
         return;
       }
       const { versionId } = req.params;
-      const { sampleId, assigneeId, convId, subject, reason, originalText } = req.body;
+      const { sampleId, assigneeId, checkerId, convId, subject, reason, originalText } = req.body;
       const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(req.body?.contextMode)
         ? req.body.contextMode
         : 'n-2:n+2';
       if (!mongoose.Types.ObjectId.isValid(sampleId) || !mongoose.Types.ObjectId.isValid(assigneeId)) {
         res.status(400).json({ error: 'Invalid sampleId or assigneeId' });
+        return;
+      }
+      if (checkerId && !mongoose.Types.ObjectId.isValid(checkerId)) {
+        res.status(400).json({ error: 'Invalid checkerId' });
         return;
       }
       const staff = await User.findOne({ _id: assigneeId, role: 'staff', status: 'active' }).lean();
@@ -421,12 +434,26 @@ export class QualityController {
         ? parsedTargetIndex
         : itemMessages.findIndex((message: any) => targetText && String(message?.content || '').trim() === targetText);
       const conversationMessages = this.buildRewriteContextMessages(itemMessages, targetIndex, contextMode);
+      
+      let resolvedCheckerId = checkerId;
+      if (!resolvedCheckerId) {
+        const origAssignment = await DatasetSampleAssignment.findOne({
+          datasetVersionId: versionId,
+          sampleId,
+          active: true
+        }).select('checkerId').lean();
+        if (origAssignment && origAssignment.checkerId) {
+          resolvedCheckerId = String(origAssignment.checkerId);
+        }
+      }
+
       const task = await Stage4RewriteAssignment.findOneAndUpdate(
         { datasetVersionId: versionId, sampleId, targetMessageIndex: targetIndex >= 0 ? targetIndex : null },
         {
           datasetVersionId: new mongoose.Types.ObjectId(versionId),
           sampleId: new mongoose.Types.ObjectId(sampleId),
           assigneeId: new mongoose.Types.ObjectId(assigneeId),
+          ...(resolvedCheckerId ? { checkerId: new mongoose.Types.ObjectId(resolvedCheckerId) } : {}),
           assignedBy: new mongoose.Types.ObjectId(actorId),
           convId: convId || String((item as any).sampleId || sampleId),
           subject: subject || (item.data as any)?.subject || '',
@@ -443,7 +470,7 @@ export class QualityController {
           reviewedAt: undefined,
         },
         { upsert: true, new: true }
-      ).populate('assigneeId', 'name email');
+      ).populate('assigneeId', 'name email').populate('checkerId', 'name email');
       await this.notify({
         versionId,
         actorId,
@@ -485,14 +512,27 @@ export class QualityController {
       }
       const staffIds: string[] = [...new Set<string>(assignments.map((row: any) => String(row.assigneeId)))];
       const sampleIds: string[] = [...new Set<string>(assignments.map((row: any) => String(row.sampleId)))];
-      const [staff, samples] = await Promise.all([
+      const [staff, samples, origAssignments] = await Promise.all([
         User.find({ _id: { $in: staffIds }, role: 'staff', status: 'active' }).select('_id').lean(),
         ProcessedDatasetItem.find({ _id: { $in: sampleIds }, datasetVersionId: versionId }).lean(),
+        DatasetSampleAssignment.find({
+          datasetVersionId: versionId,
+          sampleId: { $in: sampleIds },
+          active: true
+        }).select('sampleId checkerId').lean()
       ]);
       if (staff.length !== staffIds.length || samples.length !== sampleIds.length) {
         res.status(400).json({ error: 'Batch contains inactive Staff or samples outside this dataset version.' });
         return;
       }
+      
+      const sampleCheckerMap = new Map<string, string>();
+      origAssignments.forEach((assign: any) => {
+        if (assign.checkerId) {
+          sampleCheckerMap.set(String(assign.sampleId), String(assign.checkerId));
+        }
+      });
+
       await this.ensureRewriteAssignmentIndexes();
       const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
       const operations = assignments.map((row: any) => {
@@ -502,7 +542,46 @@ export class QualityController {
         const targetIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : null;
         const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(row.contextMode) ? row.contextMode : 'n-2:n+2';
         const originalText = String(row.originalText || (targetIndex !== null ? messages[targetIndex]?.content : '') || '');
-        return { updateOne: { filter: { datasetVersionId: new mongoose.Types.ObjectId(versionId), sampleId: new mongoose.Types.ObjectId(row.sampleId), targetMessageIndex: targetIndex }, update: { $set: { assigneeId: new mongoose.Types.ObjectId(row.assigneeId), assignedBy: new mongoose.Types.ObjectId(actorId), convId: String(row.convId || sample.sampleId || row.sampleId), subject: String(row.subject || sample?.data?.subject || ''), reason: String(row.reason || 'None'), originalText, targetMessageIndex: targetIndex, contextMode, conversationMessages: this.buildRewriteContextMessages(messages, targetIndex ?? -1, contextMode), submittedText: '', status: 'assigned', reviewNote: '' }, $unset: { reviewedBy: '', submittedAt: '', reviewedAt: '' }, $setOnInsert: { datasetVersionId: new mongoose.Types.ObjectId(versionId), sampleId: new mongoose.Types.ObjectId(row.sampleId) } }, upsert: true } };
+        
+        const updateFields: any = {
+          assigneeId: new mongoose.Types.ObjectId(row.assigneeId),
+          assignedBy: new mongoose.Types.ObjectId(actorId),
+          convId: String(row.convId || sample.sampleId || row.sampleId),
+          subject: String(row.subject || sample?.data?.subject || ''),
+          reason: String(row.reason || 'None'),
+          originalText,
+          targetMessageIndex: targetIndex,
+          contextMode,
+          conversationMessages: this.buildRewriteContextMessages(messages, targetIndex ?? -1, contextMode),
+          submittedText: '',
+          status: 'assigned',
+          reviewNote: '',
+          checkerReviewNote: ''
+        };
+        
+        const resolvedCheckerId = row.checkerId || sampleCheckerMap.get(String(row.sampleId));
+        if (resolvedCheckerId && mongoose.Types.ObjectId.isValid(resolvedCheckerId)) {
+          updateFields.checkerId = new mongoose.Types.ObjectId(resolvedCheckerId);
+        }
+
+        return {
+          updateOne: {
+            filter: {
+              datasetVersionId: new mongoose.Types.ObjectId(versionId),
+              sampleId: new mongoose.Types.ObjectId(row.sampleId),
+              targetMessageIndex: targetIndex
+            },
+            update: {
+              $set: updateFields,
+              $unset: { reviewedBy: '', submittedAt: '', reviewedAt: '', checkerReviewedAt: '' },
+              $setOnInsert: {
+                datasetVersionId: new mongoose.Types.ObjectId(versionId),
+                sampleId: new mongoose.Types.ObjectId(row.sampleId)
+              }
+            },
+            upsert: true
+          }
+        };
       });
       await Stage4RewriteAssignment.bulkWrite(operations, { ordered: true });
       await Promise.all(staffIds.map((recipientId) => this.notify({ versionId, actorId, recipientId, type: 'info', message: `You received rewrite tasks in a batch of ${assignments.length} items.` })));
@@ -521,13 +600,17 @@ export class QualityController {
         return;
       }
       const query: any = {};
-      if (!isManager(req)) {
+      const role = (req as any).user?.role;
+      if (role === 'checker') {
+        query.checkerId = new mongoose.Types.ObjectId(userId);
+      } else if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
       const page = Math.max(1, Number(req.query.page) || 1);
       const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
       const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
         .populate('assigneeId', 'name email')
+        .populate('checkerId', 'name email')
         .populate('sampleId')
         .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
@@ -637,6 +720,23 @@ export class QualityController {
       task.submittedAt = new Date();
       await task.save();
       if (!wasSubmitted) {
+        if (task.checkerId) {
+          await this.notify({
+            versionId,
+            actorId: userId,
+            recipientId: String(task.checkerId),
+            type: 'success',
+            message: `${(task.assigneeId as any)?.name || 'Staff'} đã nộp bài viết lại. Vui lòng kiểm duyệt.`,
+          });
+        } else {
+          await this.notify({
+            versionId,
+            actorId: userId,
+            recipientRole: 'checker',
+            type: 'success',
+            message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
+          });
+        }
         await this.notify({
           versionId,
           actorId: userId,
@@ -648,13 +748,6 @@ export class QualityController {
           versionId,
           actorId: userId,
           recipientRole: 'supervisor',
-          type: 'success',
-          message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
-        });
-        await this.notify({
-          versionId,
-          actorId: userId,
-          recipientRole: 'checker',
           type: 'success',
           message: `${(task.assigneeId as any)?.name || 'Staff'} submitted rewrite work. Open Assignment Review to see pending items.`,
         });
@@ -940,6 +1033,59 @@ export class QualityController {
     }
   }
 
+  async suggestRewriteGeneric(req: Request, res: Response): Promise<void> {
+    try {
+      const userId = getAuthUserId(req);
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+      const { originalText, targetMessageIndex, messages, reason } = req.body;
+      const context = Array.isArray(messages) && messages.length
+        ? messages
+        : [{ role: 'assistant', content: originalText, isTarget: true }];
+      
+      const prompt = {
+        task: 'Rewrite only the target AI tutor response. Do not rewrite student messages or non-target assistant turns.',
+        reason: reason || 'Improve educational quality.',
+        targetMessageIndex: targetMessageIndex ?? 0,
+        originalTargetResponse: originalText,
+        conversationContext: context,
+        requirements: [
+          'Return a helpful tutor response in Vietnamese unless the original context is in another language.',
+          'Prefer Socratic guidance, hints, and step-by-step scaffolding over giving the final answer too early.',
+          'Keep the replacement concise, factual, and aligned with the conversation context.',
+          'Return JSON only: {"suggestedText":"..."}',
+        ],
+      };
+
+      const provider = await apiKeyService.createProvider(userId, 'gemini', true);
+      const raw = await provider.generateContent(
+        JSON.stringify(prompt, null, 2),
+        undefined,
+        'You are an educational QA assistant. Return only valid JSON with a single string field suggestedText.'
+      );
+      const first = raw.indexOf('{');
+      const last = raw.lastIndexOf('}');
+      const jsonText = first >= 0 && last > first ? raw.slice(first, last + 1) : raw;
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        parsed = { suggestedText: raw };
+      }
+      const suggestedText = String(parsed?.suggestedText || '').trim();
+      if (!suggestedText) {
+        res.status(502).json({ error: 'AI did not return a rewrite suggestion.' });
+        return;
+      }
+      res.json({ suggestedText });
+    } catch (error: any) {
+      console.error('Suggest rewrite generic error:', error);
+      res.status(error.statusCode || 500).json({ error: error.message || 'Failed to generate generic rewrite suggestion' });
+    }
+  }
+
   async reviewRewrite(req: Request, res: Response): Promise<void> {
     try {
       const actorId = getAuthUserId(req);
@@ -967,25 +1113,87 @@ export class QualityController {
         res.status(400).json({ error: 'A review note is required for redo or rejection.' });
         return;
       }
-      task.status = action;
-      task.reviewedBy = new mongoose.Types.ObjectId(actorId);
-      task.reviewNote = note || '';
-      task.reviewedAt = new Date();
-      await task.save();
-      if (action === 'approved') {
-        await ConversationRewriteHistory.findOneAndUpdate(
-          { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0 },
-          { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0, originalText: task.originalText, proposedText: task.submittedText, approvedText: task.submittedText, editorId: (task.assigneeId as any)?._id || task.assigneeId, editReason: task.reason || note || 'Approved rewrite', editType: 'manual' },
-          { upsert: true, new: true }
-        );
+
+      const role = (req as any).user?.role;
+      const isActorChecker = String(task.checkerId) === String(actorId) || role === 'checker';
+      const isActorSupervisorOrAdmin = role === 'supervisor' || role === 'admin';
+
+      if (isActorChecker && task.status === 'submitted') {
+        // Checker level review
+        if (action === 'approved') {
+          task.status = 'checker_approved';
+          task.checkerReviewedAt = new Date();
+          task.checkerReviewNote = note || 'Checker approved';
+          await task.save();
+
+          await this.notify({
+            versionId,
+            actorId,
+            recipientRole: 'supervisor',
+            type: 'info',
+            message: `Rewrite task for ${task.convId} was checked and approved by Checker. Needs final Supervisor approval.`,
+          });
+        } else {
+          task.status = action; // 'redo' or 'rejected'
+          task.checkerReviewedAt = new Date();
+          task.checkerReviewNote = note || '';
+          await task.save();
+
+          await this.notify({
+            versionId,
+            actorId,
+            recipientId: String((task.assigneeId as any)?._id || task.assigneeId),
+            type: 'warning',
+            message: `Rewrite for ${task.convId} was rejected by Checker. Note: ${note}`,
+          });
+        }
+      } else if (isActorSupervisorOrAdmin) {
+        // Supervisor level review
+        if (task.status !== 'checker_approved' && task.status !== 'submitted' && task.status !== 'redo') {
+          res.status(400).json({ error: `Không thể review task ở trạng thái: ${task.status}` });
+          return;
+        }
+
+        if (action === 'approved') {
+          task.status = 'approved';
+          task.reviewedBy = new mongoose.Types.ObjectId(actorId);
+          task.reviewNote = note || 'Supervisor approved';
+          task.reviewedAt = new Date();
+          await task.save();
+
+          await ConversationRewriteHistory.findOneAndUpdate(
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0 },
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0, originalText: task.originalText, proposedText: task.submittedText, approvedText: task.submittedText, editorId: (task.assigneeId as any)?._id || task.assigneeId, editReason: task.reason || note || 'Approved rewrite', editType: 'manual' },
+            { upsert: true, new: true }
+          );
+
+          await this.notify({
+            versionId,
+            actorId,
+            recipientId: String((task.assigneeId as any)?._id || task.assigneeId),
+            type: 'success',
+            message: `Rewrite for ${task.convId} was final approved by Supervisor.`,
+          });
+        } else {
+          task.status = action; // 'redo' or 'rejected'
+          task.reviewedBy = new mongoose.Types.ObjectId(actorId);
+          task.reviewNote = note || '';
+          task.reviewedAt = new Date();
+          await task.save();
+
+          await this.notify({
+            versionId,
+            actorId,
+            recipientId: String((task.assigneeId as any)?._id || task.assigneeId),
+            type: 'warning',
+            message: `Rewrite for ${task.convId} was rejected by Supervisor. Note: ${note}`,
+          });
+        }
+      } else {
+        res.status(403).json({ error: 'Bạn không có quyền thực hiện thao tác kiểm duyệt này.' });
+        return;
       }
-      await this.notify({
-        versionId,
-        actorId,
-        recipientId: String((task.assigneeId as any)?._id || task.assigneeId),
-        type: action === 'approved' ? 'success' : 'warning',
-        message: `Rewrite for ${task.convId} was ${action}.`,
-      });
+
       res.json({ task: this.serializeRewriteTask(task) });
     } catch (error: any) {
       console.error('Review rewrite error:', error);

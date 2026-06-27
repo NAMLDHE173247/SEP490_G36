@@ -135,6 +135,49 @@ export class MultiEvalService {
         job.progress.processing = 1;
         await job.save();
 
+        // Check if sample has severe error flag from Stage 3
+        const qualityItem = qualityResult.items.find((i: any) => String(i._id) === String(sample._id));
+        const isSevereError = qualityItem && qualityItem.bucket === 'Reject' && 
+          String(qualityItem.conflictReason || '').startsWith('Bị gắn cờ lỗi nghiêm trọng từ Stage 3:');
+
+        if (isSevereError) {
+          const modelScores = new Map<string, any>();
+          models.forEach((modelName) => {
+            modelScores.set(modelName, {
+              status: 'success',
+              socratic: null,
+              encouragement: null,
+              factuality: null,
+              languageQuality: null,
+              consistency: null,
+              completeness: null,
+              readiness: null,
+              overall: 0,
+              reason: 'Tự động loại bỏ (Reject) do mẫu bị gắn cờ lỗi nghiêm trọng từ Stage 3 bởi con người.',
+              recommendation: 'Reject',
+            });
+          });
+
+          await MultiModelEvaluationResult.create({
+            jobId,
+            datasetVersionId: versionId,
+            sampleId: sample._id,
+            modelScores,
+            averageOverall: 0,
+            humanScore: 0,
+            finalRecommendation: 'Reject',
+            hasConflict: false,
+            targetIdx: 0,
+            contextSize: 0,
+            autoRefined: false,
+          });
+
+          evaluatedCount += 1;
+          job.progress.evaluated = evaluatedCount + failedCount;
+          await job.save();
+          continue; // Skip AI model calls entirely
+        }
+
         // 1. Identify which message index to evaluate.
         const rewriteHistories = await ConversationRewriteHistory.find({
           datasetVersionId: versionId,

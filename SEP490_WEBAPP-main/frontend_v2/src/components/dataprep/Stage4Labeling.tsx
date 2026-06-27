@@ -95,8 +95,10 @@ export const Stage4Labeling: React.FC = () => {
   const [showRewriteStaffPicker, setShowRewriteStaffPicker] = useState(false);
   const [showRewriteProgress, setShowRewriteProgress] = useState(false);
   const [adminRewriteModal, setAdminRewriteModal] = useState<any>(null);
+  const [reviewSubmissionModal, setReviewSubmissionModal] = useState<any>(null);
   const [adminRewriteDraft, setAdminRewriteDraft] = useState('');
   const [isSavingAdminRewrite, setIsSavingAdminRewrite] = useState(false);
+  const [isSuggestingAI, setIsSuggestingAI] = useState(false);
   const rewriteReasonOptions = [
     'None',
     'Direct answer too early',
@@ -1001,9 +1003,9 @@ export const Stage4Labeling: React.FC = () => {
               onClick={() => goToStage4Step(step.num)}
             >
               <div className="sub-step-circle">
-                {step.num < currentSubStep4 ? <Check size={14} /> : idx + 7}
+                {step.num < currentSubStep4 ? <Check size={14} /> : idx + 1}
               </div>
-              <div className="sub-step-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{step.label}{step.num === 11 && rewriteAssignments.filter((task: any) => task.status === 'submitted').length > 0 && <span style={{ minWidth: '20px', height: '20px', padding: '0 6px', borderRadius: '999px', background: '#ea580c', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>{rewriteAssignments.filter((task: any) => task.status === 'submitted').length}</span>}</div>
+              <div className="sub-step-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{step.label}</div>
             </div>
             {idx < visibleSteps.length - 1 && <div className="sub-step-connector" />}
           </React.Fragment>
@@ -1075,7 +1077,7 @@ export const Stage4Labeling: React.FC = () => {
               {/* Hero card - Light Theme */}
               <div style={{ background: 'linear-gradient(135deg, #f8fafc, #eff6ff)', border: '1px solid #dbeafe', borderRadius: '12px', padding: '32px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap', boxShadow: '0 4px 12px rgba(37,99,235,0.03)' }}>
                 <div style={{ flex: '1', minWidth: '240px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>STEP 7 · LIVE REVIEW</div>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>SUB-STEP 1 · LIVE REVIEW</div>
                   <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '900', color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Quality Review</h2>
                   <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: '1.6' }}>
                     Admin có thể theo dõi nhãn và chất lượng ngay khi Staff đang làm. AI scoring và xuất kết quả cuối chỉ mở sau khi dữ liệu đủ điều kiện.
@@ -2244,74 +2246,7 @@ export const Stage4Labeling: React.FC = () => {
                     </button>
                   </div>
                 )}
-                {adminRewriteModal && (
-                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.48)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => !isSavingAdminRewrite && setAdminRewriteModal(null)}>
-                    <div style={{ width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Admin tự rewrite</h3>
-                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{adminRewriteModal.item?.convId || adminRewriteModal.item?.sampleId || 'Conversation'} - lưu xong sẽ được duyệt thẳng vào bản export.</p>
-                        </div>
-                        <button onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
-                      </div>
-                      <div style={{ padding: 20, display: 'grid', gap: 14 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                          <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, background: '#f8fafc' }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Câu AI gốc cần sửa</div>
-                            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#0f172a' }}>{adminRewriteModal.originalText || '(Không tìm thấy câu AI mục tiêu)'}</div>
-                          </section>
-                          <section style={{ border: '1px solid #bae6fd', borderRadius: 10, padding: 14, background: '#f0f9ff' }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: 8 }}>Bản sửa sẽ dùng trong export</div>
-                            <textarea value={adminRewriteDraft} onChange={(e) => setAdminRewriteDraft(e.target.value)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ width: '100%', minHeight: 220, resize: 'vertical', border: '1px solid #7dd3fc', borderRadius: 8, padding: 12, fontSize: 14, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
-                              placeholder="Nhập câu trả lời AI đã sửa ở đây..." />
-                          </section>
-                        </div>
-                        <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#fff' }}>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
-                          {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
-                            <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
-                              <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'AI' : 'Student'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
-                              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                          <button type="button" onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite}
-                            style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 800, cursor: 'pointer' }}>Hủy</button>
-                          <button type="button" disabled={isSavingAdminRewrite || !adminRewriteDraft.trim()} onClick={async () => {
-                            if (!activeVersionId) return alert('Missing dataset version.');
-                            const sampleId = String(adminRewriteModal.item?.sampleObjectId || adminRewriteModal.item?._id || adminRewriteModal.item?.id || '');
-                            setIsSavingAdminRewrite(true);
-                            try {
-                              const response = await stage4Api.adminSubmitRewrite(activeVersionId, {
-                                sampleId,
-                                submittedText: adminRewriteDraft.trim(),
-                                reason: adminRewriteModal.item?.issue || 'Admin self rewrite',
-                                targetMessageIndex: adminRewriteModal.targetIndex,
-                              });
-                              setRewriteAssignments((prev) => {
-                                const next = prev.filter((task: any) => task.id !== response.task.id && String(task.sampleId) !== String(response.task.sampleId));
-                                return [...next, response.task];
-                              });
-                              setCompletedRewrites((prev: any) => ({ ...prev, [sampleId]: true, [String(adminRewriteModal.item?.id)]: true }));
-                              setAdminRewriteModal(null);
-                              setAdminRewriteDraft('');
-                            } catch (error: any) {
-                              alert(error?.response?.data?.error || 'Không thể lưu bản admin rewrite.');
-                            } finally {
-                              setIsSavingAdminRewrite(false);
-                            }
-                          }}
-                            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#0369a1', color: '#fff', fontWeight: 900, cursor: isSavingAdminRewrite ? 'wait' : 'pointer' }}>
-                            {isSavingAdminRewrite ? 'Đang lưu...' : 'Lưu và duyệt thẳng'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                   <button onClick={() => setCurrentSubStep4(11)}
@@ -2326,35 +2261,9 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 11: STAFF SUBMISSION REVIEW (3b) ===== */}
           {currentSubStep4 === 11 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
-            const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
             const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
-            const activeRewriteTask: any = activeItem ? taskBySample.get(String(activeItem.sampleObjectId || activeItem._id || activeItem.id)) : null;
             const approvedCount = rewriteAssignments.filter((task: any) => task.status === 'approved').length;
             const pendingCount = rewriteAssignments.filter((task: any) => task.status === 'submitted').length;
-            const getAdminRewriteTarget = (item: any) => {
-              const messages = item?.sampleData?.messages || item?.data?.messages || item?.messages || [];
-              let targetIndex = Number(item?.errorMessageIndex);
-              if (!Number.isInteger(targetIndex) || targetIndex < 0 || !messages[targetIndex]) {
-                targetIndex = -1;
-                for (let i = messages.length - 1; i >= 0; i -= 1) {
-                  if (messages[i]?.role === 'assistant') {
-                    targetIndex = i;
-                    break;
-                  }
-                }
-              }
-              const targetMessage = targetIndex >= 0 ? messages[targetIndex] : null;
-              return {
-                targetIndex,
-                originalText: String(targetMessage?.content || targetMessage?.text || ''),
-                messages,
-              };
-            };
-            const openAdminRewrite = (item: any) => {
-              const target = getAdminRewriteTarget(item);
-              setAdminRewriteModal({ item, ...target });
-              setAdminRewriteDraft(activeRewriteTask?.submittedText || target.originalText || '');
-            };
 
             const subjectColors = {
               'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
@@ -2366,7 +2275,7 @@ export const Stage4Labeling: React.FC = () => {
               'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
               'MATH': { bg: '#e0e7ff', color: '#4338ca' },
             };
-            const getSubjectStyle = (s) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
+            const getSubjectStyle = (s: string) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
 
             return (
               <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2390,14 +2299,10 @@ export const Stage4Labeling: React.FC = () => {
                       <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Approved</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{approvedCount}</div>
                     </div>
-                    <button onClick={() => setCurrentSubStep4(12)}
-                      style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                      Dataset Distribution &rarr;
-                    </button>
                   </div>
                 </div>
 
-                {/* 2-col layout */}
+                {/* Table View */}
                 {rewriteItems.length === 0 ? (
                   <div className="empty-state-card">
                     <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
@@ -2405,197 +2310,114 @@ export const Stage4Labeling: React.FC = () => {
                     <p className="empty-state-desc">All staff submissions have been reviewed and approved.</p>
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '16px', alignItems: 'flex-start' }}>
-                    {/* Left sidebar */}
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                      <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Submission List</h4>
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>{rewriteItems.length} items</span>
+                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                    {/* Submission List Header with Integrated Progress Bar */}
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Submission List</h4>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>({rewriteItems.length} items)</span>
                       </div>
-                      <div style={{ maxHeight: '540px', overflowY: 'auto' }}>
-                        {rewriteItems.map((item, idx) => {
-                          const isSelected = activeItem?.id === item.id;
-                          const isDone = completedRewrites[item.id];
-                          const staffName = reassignStaff[item.id];
-                          const subjStyle = getSubjectStyle(item.subject);
-                          return (
-                            <div key={item.id} className="premium-table-row"
-                              onClick={() => { setRewriteConvIdx(idx); setRewriteTextContent(''); }}
-                              style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: isSelected ? '#f5f3ff' : '#fff', borderLeft: isSelected ? '3px solid #4f46e5' : '3px solid transparent' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: '800', color: '#1e293b', fontFamily: 'monospace' }}>{item.convId}</span>
-                                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: isDone ? '#dcfce7' : staffName ? '#fef9c3' : '#f1f5f9', color: isDone ? '#15803d' : staffName ? '#854d0e' : '#94a3b8', letterSpacing: '0.3px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                  {isDone ? <><Check size={10} /> Approved</> : staffName ? <><RotateCcw size={10} /> Pending Review</> : 'Not Submitted'}
-                                </span>
-                              </div>
-                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', background: subjStyle.bg, color: subjStyle.color }}>{item.subject}</span>
-                              {staffName && <div style={{ fontSize: '11px', color: '#4f46e5', marginTop: '5px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {staffName}</div>}
-                            </div>
-                          );
-                        })}
+                      
+                      {/* Integrated Progress Bar */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '450px', marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#64748b', whiteSpace: 'nowrap' }}>
+                          Progress: {approvedCount}/{rewriteItems.length}
+                        </span>
+                        <div style={{ flex: 1, height: '8px', background: '#cbd5e1', borderRadius: '999px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, Math.round(rewriteItems.length > 0 ? (approvedCount / rewriteItems.length) * 100 : 0))}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)', borderRadius: '999px', transition: 'width 0.5s ease-out' }} />
+                        </div>
+                        <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#16a34a', minWidth: '40px', textAlign: 'right' }}>
+                          {Math.round(rewriteItems.length > 0 ? (approvedCount / rewriteItems.length) * 100 : 0)}%
+                        </span>
                       </div>
                     </div>
 
-                    {/* Right review panel */}
-                    {activeItem ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {/* Conv header */}
-                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ width: '42px', height: '42px', borderRadius: '8px', background: getSubjectStyle(activeItem.subject).bg, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${getSubjectStyle(activeItem.subject).color}30` }}>
-                              <span style={{ fontSize: '10px', fontWeight: '900', color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject.slice(0, 3)}</span>
-                            </div>
-                            <div>
-                              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a', fontFamily: 'monospace' }}>{activeItem.convId}</h3>
-                              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                                Subject: <strong style={{ color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject}</strong>
-                                {reassignStaff[activeItem.id] && <> &middot; Assigned to: <strong style={{ color: '#4f46e5' }}>{reassignStaff[activeItem.id]}</strong></>}
-                                {rewriteReasons[activeItem.id] && rewriteReasons[activeItem.id] !== 'None' && <> &middot; Reason: <strong style={{ color: '#d97706' }}>{rewriteReasons[activeItem.id]}</strong></>}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conv ID</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Subject</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Assignee</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Issue to Fix</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rewriteItems.map((item, idx) => {
+                          const task = taskBySample.get(String(item.sampleObjectId || item._id || item.id));
+                          const staffName = reassignStaff[item.id] || (task?.assigneeId ? shareUsers.find((u: any) => String(u.id || u._id) === String(task.assigneeId))?.name : '') || 'Unassigned';
+                          const subjStyle = getSubjectStyle(item.subject);
+                          
+                          let statusLabel = 'Not Assigned';
+                          let statusColor = { bg: '#f1f5f9', text: '#64748b' };
+                          if (task) {
+                            if (task.status === 'approved') {
+                              statusLabel = 'Approved (Gold)';
+                              statusColor = { bg: '#dcfce7', text: '#15803d' };
+                            } else if (task.status === 'submitted') {
+                              statusLabel = 'Pending Review';
+                              statusColor = { bg: '#fef9c3', text: '#854d0e' };
+                            } else if (task.status === 'redo') {
+                              statusLabel = 'Redo Requested';
+                              statusColor = { bg: '#fee2e2', text: '#991b1b' };
+                            } else if (task.status === 'rejected') {
+                              statusLabel = 'Rejected';
+                              statusColor = { bg: '#fee2e2', text: '#dc2626' };
+                            } else if (task.status === 'assigned') {
+                              statusLabel = 'Assigned (In Progress)';
+                              statusColor = { bg: '#e0f2fe', text: '#0369a1' };
+                            }
+                          } else if (completedRewrites[item.id]) {
+                            statusLabel = 'Approved (Gold)';
+                            statusColor = { bg: '#dcfce7', text: '#15803d' };
+                          }
 
-                        {/* Error context banner */}
-                        <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '14px', alignItems: 'center' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
-                            <AlertTriangle size={14} />
-                          </div>
-                          {(() => {
-                            const activeScores = getScoresForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId);
-                            return (
-                              <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error to Fix (Detected by AI Judges)</p>
-                                  <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason}</p>
-                                </div>
-                                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                  <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Rule Score</p>
-                                  <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#94a3b8' }}>{activeScores.human != null ? activeScores.human.toFixed(1) : '-'}</p>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Comparison: Original vs Rewrite */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                          <div style={{ background: '#fff', border: '1.5px solid #fca5a5', borderRadius: '12px', overflow: 'hidden' }}>
-                            <div style={{ padding: '12px 16px', background: '#fff1f2', borderBottom: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Original Response (Has Error)</span>
-                              <span style={{ fontSize: '11px', color: '#ef4444', marginLeft: 'auto' }}>Turn #{(activeItem.errorMessageIndex || 1) + 1}</span>
-                            </div>
-                            <div style={{ padding: '16px', fontSize: '14px', color: '#374151', lineHeight: '1.7', minHeight: '100px', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                              {(() => {
-                                const sampleComparison = sampleComparisons[activeItem.sampleObjectId || activeItem.id];
-                                const step11TurnPairs = getTurnPairsForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId, activeItem);
-                                const messageLevelTargets = Array.isArray(sampleComparison?.targets)
-                                  ? sampleComparison.targets.filter((target: any) =>
-                                    target.targetScope === 'message' &&
-                                    Array.isArray(target.annotators) &&
-                                    target.annotators.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
-                                  )
-                                  : [];
-                                const getStep11MessageLabels = (messageIndex: number, role: string) =>
-                                  buildStaffMessageLabels(messageIndex, role, step11TurnPairs, messageLevelTargets);
-
-                                return (activeItem.sampleData?.messages || activeItem.messages || []).map((msg: any, idx: number) => {
-                                  const isTarget = String(idx) === String(activeItem.errorMessageIndex || 1);
-                                  const messageLabels = getStep11MessageLabels(idx, msg.role);
-                                  return (
-                                    <div key={idx} style={{ padding: '12px 16px', borderRadius: '8px', background: isTarget ? '#fee2e2' : msg.role === 'user' ? '#f8fafc' : '#f0fdf4', border: isTarget ? '1px solid #fca5a5' : '1px solid #e2e8f0', alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end', maxWidth: '90%' }}>
-                                      <div style={{ fontSize: '11px', fontWeight: '800', color: isTarget ? '#dc2626' : msg.role === 'user' ? '#64748b' : '#16a34a', textTransform: 'uppercase', marginBottom: '6px' }}>
-                                        {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target to Rewrite)' : 'AI Tutor'}
-                                      </div>
-                                      <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#1e293b', whiteSpace: 'pre-wrap' }}>
-                                        {msg.text || msg.content}
-                                      </div>
-                                      {messageLabels.length > 0 && (
-                                        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                          {messageLabels.map((item: any, labelIdx: number) => {
-                                            const isIntent = item.kind === 'Intent';
-                                            return (
-                                              <span
-                                                key={labelIdx}
-                                                title={`${item.kind} • assigned by ${item.staff}`}
-                                                style={{
-                                                  padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: '700',
-                                                  background: isIntent ? '#eef2ff' : '#ecfdf5',
-                                                  color: isIntent ? '#4338ca' : '#047857',
-                                                  border: `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`,
-                                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                                }}
-                                              >
-                                                <span style={{ opacity: 0.7, fontWeight: '800' }}>{item.kind}:</span>
-                                                {item.label}
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                });
-                              })()}
-                            </div>
-                          </div>
-                          <div style={{ background: '#fff', border: `1.5px solid ${activeRewriteTask?.submittedText ? '#86efac' : '#e2e8f0'}`, borderRadius: '12px', overflow: 'hidden' }}>
-                            <div style={{ padding: '12px 16px', background: activeRewriteTask?.submittedText ? '#f0fdf4' : '#f8fafc', borderBottom: `1px solid ${activeRewriteTask?.submittedText ? '#86efac' : '#e2e8f0'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: activeRewriteTask?.submittedText ? '#16a34a' : '#94a3b8' }} />
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: activeRewriteTask?.submittedText ? '#15803d' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Submission</span>
-                              {reassignStaff[activeItem.id] && <span style={{ fontSize: '11px', color: '#4f46e5', marginLeft: 'auto', fontWeight: '600' }}>by {reassignStaff[activeItem.id]}</span>}
-                            </div>
-                            <div style={{ padding: '16px', fontSize: '14px', color: activeRewriteTask?.submittedText ? '#15803d' : '#94a3b8', lineHeight: '1.7', minHeight: '100px', fontStyle: activeRewriteTask?.submittedText ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
-                              {activeRewriteTask?.submittedText || 'Staff has not submitted a rewrite yet.'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Admin action bar */}
-                        {activeRewriteTask?.submittedText ? (
-                          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569', flex: 1 }}>Admin Decision:</span>
-                            <button onClick={() => openAdminRewrite(activeItem)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: '1.5px solid #bae6fd', background: '#f0f9ff', color: '#0369a1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Pencil size={14} /> Admin tự sửa
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'approved')} disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: activeRewriteTask.status === 'approved' ? '#e2e8f0' : 'linear-gradient(135deg, #16a34a, #15803d)', color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Approved</> : <><Check size={14} /> Approve</>}
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'redo')}
-                              disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <RotateCcw size={14} /> Request Redo
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'rejected')} disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid #fca5a5', background: '#fff1f2', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <X size={14} /> Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px', padding: '28px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', color: '#cbd5e1' }}><Inbox size={32} /></div>
-                            <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Staff has not submitted a rewrite yet.</p>
-                            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>Waiting for the rewrite submission workflow to provide revised text.</p>
-                            <button onClick={() => openAdminRewrite(activeItem)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ marginTop: '14px', padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: '#0369a1', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <Pencil size={14} /> Admin tự rewrite
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ padding: '60px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px', color: '#cbd5e1' }}><MousePointer2 size={40} /></div>
-                        <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Select a conversation on the left to review it.</p>
-                      </div>
-                    )}
+                          return (
+                            <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-slate-50 transition-colors">
+                              <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '700', color: '#1e293b', fontFamily: 'monospace' }}>
+                                {item.convId}
+                              </td>
+                              <td style={{ padding: '14px 18px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '999px', background: subjStyle.bg, color: subjStyle.color }}>
+                                  {item.subject}
+                                </span>
+                              </td>
+                              <td style={{ padding: '14px 18px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>
+                                {staffName !== 'Unassigned' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#4f46e5' }}>
+                                    <User size={13} />
+                                    {staffName}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Unassigned</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '14px 18px', fontSize: '13px', color: '#64748b', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.reason || item.issue || 'Quality review requires rewrite'}>
+                                {item.reason || item.issue || 'Quality review requires rewrite'}
+                              </td>
+                              <td style={{ padding: '14px 18px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '999px', background: statusColor.bg, color: statusColor.text, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                                <button onClick={() => {
+                                  setRewriteConvIdx(idx);
+                                  setReviewSubmissionModal(item);
+                                }}
+                                style={{ padding: '8px 16px', fontSize: '12.5px', fontWeight: '800', borderRadius: '8px', border: '1px solid #4f46e5', background: '#f5f3ff', color: '#4f46e5', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(79,70,229,0.08)' }}>
+                                  <Search size={13} /> Review &amp; Action
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                   <button onClick={() => setCurrentSubStep4(12)}
@@ -2606,7 +2428,6 @@ export const Stage4Labeling: React.FC = () => {
               </div>
             );
           })()}
-
           {/* ===== STEP 12: FINAL DISTRIBUTION DASHBOARD ===== */}
           {currentSubStep4 === 12 && (() => {
             const statSummary = statistics?.summary;
@@ -3026,6 +2847,493 @@ export const Stage4Labeling: React.FC = () => {
                   </button>
                 </div>
 
+              </div>
+            );
+          })()}
+          {adminRewriteModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.48)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => !isSavingAdminRewrite && setAdminRewriteModal(null)}>
+              <div style={{ width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Admin tự rewrite</h3>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{adminRewriteModal.item?.convId || adminRewriteModal.item?.sampleId || 'Conversation'} - lưu xong sẽ được duyệt thẳng vào bản export.</p>
+                  </div>
+                  <button onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
+                </div>
+                <div style={{ padding: 20, display: 'grid', gap: 14 }}>
+                  {/* Table Comparison for admin rewrite */}
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#b91c1c', background: '#fff1f2', borderRight: '1px solid #e2e8f0', textAlign: 'left' }}>
+                            Câu AI gốc cần sửa (Original AI Message)
+                          </th>
+                          <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#0369a1', background: '#f0f9ff', textAlign: 'left' }}>
+                            Bản sửa sẽ dùng trong export (Your Revision)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', background: '#fff5f5', whiteSpace: 'pre-wrap' }}>
+                            {adminRewriteModal.originalText || '(Không tìm thấy câu AI mục tiêu)'}
+                          </td>
+                          <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', background: '#fcfdff', boxSizing: 'border-box' }}>
+                            <textarea 
+                              value={adminRewriteDraft} 
+                              onChange={(e) => setAdminRewriteDraft(e.target.value)}
+                              disabled={isSavingAdminRewrite}
+                              style={{ 
+                                width: '100%', 
+                                minHeight: '220px', 
+                                resize: 'vertical', 
+                                border: '1px solid #7dd3fc', 
+                                borderRadius: '8px', 
+                                padding: '12px', 
+                                fontSize: '14px', 
+                                lineHeight: '1.6', 
+                                outline: 'none', 
+                                boxSizing: 'border-box',
+                                background: '#fff'
+                              }}
+                              placeholder="Nhập câu trả lời AI đã sửa ở đây..." 
+                            />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#fff' }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
+                    {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
+                      <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
+                        <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'AI' : 'Student'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
+                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button type="button" onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite}
+                      style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 800, cursor: 'pointer' }}>Hủy</button>
+                    
+                    <button
+                      type="button"
+                      disabled={isSuggestingAI || isSavingAdminRewrite}
+                      onClick={async () => {
+                        if (!activeVersionId) return alert('Missing dataset version.');
+                        setIsSuggestingAI(true);
+                        try {
+                          const res = await stage4Api.suggestRewriteGeneric(activeVersionId, {
+                            originalText: adminRewriteModal.originalText,
+                            targetMessageIndex: adminRewriteModal.targetIndex,
+                            messages: adminRewriteModal.messages,
+                            reason: adminRewriteModal.item?.reason || adminRewriteModal.item?.issue || '',
+                          });
+                          setAdminRewriteDraft(res.suggestedText);
+                        } catch (err: any) {
+                          alert('Không thể tạo gợi ý từ AI: ' + (err?.response?.data?.error || err.message));
+                        } finally {
+                          setIsSuggestingAI(false);
+                        }
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        borderRadius: 8,
+                        border: '1px solid #10b981',
+                        background: '#ecfdf5',
+                        color: '#047857',
+                        fontWeight: 800,
+                        cursor: isSuggestingAI ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Sparkles size={14} />
+                      {isSuggestingAI ? 'AI đang sửa...' : 'Tự sửa bằng AI'}
+                    </button>
+
+                    <button type="button" disabled={isSavingAdminRewrite || !adminRewriteDraft.trim()} onClick={async () => {
+                      if (!activeVersionId) return alert('Missing dataset version.');
+                      const sampleId = String(adminRewriteModal.item?.sampleObjectId || adminRewriteModal.item?._id || adminRewriteModal.item?.id || '');
+                      setIsSavingAdminRewrite(true);
+                      try {
+                        const response = await stage4Api.adminSubmitRewrite(activeVersionId, {
+                          sampleId,
+                          submittedText: adminRewriteDraft.trim(),
+                          reason: adminRewriteModal.item?.issue || 'Admin self rewrite',
+                          targetMessageIndex: adminRewriteModal.targetIndex,
+                        });
+                        setRewriteAssignments((prev) => {
+                          const next = prev.filter((task: any) => task.id !== response.task.id && String(task.sampleId) !== String(response.task.sampleId));
+                          return [...next, response.task];
+                        });
+                        setCompletedRewrites((prev: any) => ({ ...prev, [sampleId]: true, [String(adminRewriteModal.item?.id)]: true }));
+                        setAdminRewriteModal(null);
+                        setAdminRewriteDraft('');
+                      } catch (error: any) {
+                        alert(error?.response?.data?.error || 'Không thể lưu bản admin rewrite.');
+                      } finally {
+                        setIsSavingAdminRewrite(false);
+                      }
+                    }}
+                      style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#0369a1', color: '#fff', fontWeight: 900, cursor: isSavingAdminRewrite ? 'wait' : 'pointer' }}>
+                      {isSavingAdminRewrite ? 'Đang lưu...' : 'Lưu và duyệt thẳng'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {reviewSubmissionModal && (() => {
+            const activeItem = reviewSubmissionModal;
+            const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
+            const activeRewriteTask: any = activeItem ? taskBySample.get(String(activeItem.sampleObjectId || activeItem._id || activeItem.id)) : null;
+            
+            const getAdminRewriteTarget = (item: any) => {
+              const messages = item?.sampleData?.messages || item?.data?.messages || item?.messages || [];
+              let targetIndex = Number(item?.errorMessageIndex);
+              if (!Number.isInteger(targetIndex) || targetIndex < 0 || !messages[targetIndex]) {
+                targetIndex = -1;
+                for (let i = messages.length - 1; i >= 0; i -= 1) {
+                  if (messages[i]?.role === 'assistant') {
+                    targetIndex = i;
+                    break;
+                  }
+                }
+              }
+              const targetMessage = targetIndex >= 0 ? messages[targetIndex] : null;
+              return {
+                targetIndex,
+                originalText: String(targetMessage?.content || targetMessage?.text || ''),
+                messages,
+              };
+            };
+
+            const target = getAdminRewriteTarget(activeItem);
+            const originalText = target.originalText;
+            const submittedText = activeRewriteTask?.submittedText || '';
+
+            const handleReviewInModal = async (task: any, action: 'approved' | 'rejected' | 'redo') => {
+              if (!activeVersionId || !task?.id) return;
+              const note = action === 'approved' ? 'Approved by Admin' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+              if (action !== 'approved' && !note?.trim()) return;
+              setReviewingRewriteId(task.id);
+              try {
+                const response = await stage4Api.reviewRewrite(activeVersionId, task.id, action, note || '');
+                setRewriteAssignments(prev => prev.map(item => item.id === task.id ? response.task : item));
+                if (action === 'approved') setCompletedRewrites(prev => ({ ...prev, [String(task.sampleId)]: true }));
+                setReviewSubmissionModal(null);
+              } catch (error: any) {
+                alert(error?.response?.data?.error || 'Không thể lưu quyết định review.');
+              } finally { setReviewingRewriteId(null); }
+            };
+
+            const openAdminRewriteFromModal = (item: any) => {
+              const target = getAdminRewriteTarget(item);
+              setAdminRewriteModal({ item, ...target });
+              setAdminRewriteDraft(activeRewriteTask?.submittedText || target.originalText || '');
+            };
+
+            const subjectColors = {
+              'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
+              'Chemistry': { bg: '#d1fae5', color: '#065f46' }, 'Biology': { bg: '#fef3c7', color: '#92400e' },
+              'History': { bg: '#ede9fe', color: '#6d28d9' }, 'Geography': { bg: '#fee2e2', color: '#b91c1c' },
+              'Literature': { bg: '#fce7f3', color: '#9d174d' }, 'English': { bg: '#fff7ed', color: '#9a3412' },
+              'PHYSICAL': { bg: '#cffafe', color: '#0e7490' }, 'CHEMISTRY': { bg: '#d1fae5', color: '#065f46' },
+              'BIOLOGY': { bg: '#fef3c7', color: '#92400e' }, 'HISTORY': { bg: '#ede9fe', color: '#6d28d9' },
+              'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
+              'MATH': { bg: '#e0e7ff', color: '#4338ca' },
+            };
+            const getSubjectStyle = (s: string) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
+            const activeSubjStyle = getSubjectStyle(activeItem.subject);
+
+            return (
+              <div 
+                style={{ 
+                  position: 'fixed', 
+                  inset: 0, 
+                  background: 'rgba(15, 23, 42, 0.65)', 
+                  backdropFilter: 'blur(4px)', 
+                  WebkitBackdropFilter: 'blur(4px)', 
+                  zIndex: 2000, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  padding: '24px'
+                }} 
+                onClick={() => setReviewSubmissionModal(null)}
+              >
+                <div 
+                  style={{ 
+                    width: 'min(1100px, 96vw)', 
+                    maxHeight: '92vh', 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#fff', 
+                    borderRadius: '16px', 
+                    boxShadow: '0 24px 80px rgba(15, 23, 42, 0.25)', 
+                    border: '1px solid #e2e8f0',
+                    overflow: 'hidden'
+                  }} 
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div 
+                    style={{ 
+                      padding: '20px 24px', 
+                      background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      gap: '12px',
+                      borderBottom: '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Search size={20} style={{ color: '#fff' }} />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#fff', letterSpacing: '0.3px' }}>Review Staff Submission</h3>
+                        <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#e0e7ff' }}>
+                          Conv ID: <span style={{ fontFamily: 'monospace', fontWeight: '700', background: 'rgba(255,255,255,0.15)', padding: '2px 6px', borderRadius: '4px' }}>{activeItem.convId}</span>
+                          {activeItem.subject && <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', background: activeSubjStyle.bg, color: activeSubjStyle.color }}>{activeItem.subject}</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setReviewSubmissionModal(null)} 
+                      style={{ 
+                        border: 0, 
+                        background: 'rgba(255,255,255,0.15)', 
+                        color: '#fff',
+                        borderRadius: '8px', 
+                        padding: '8px 14px', 
+                        cursor: 'pointer', 
+                        fontWeight: '800',
+                        fontSize: '13px'
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {/* Content Area */}
+                  <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+                    
+                    {/* Error context banner */}
+                    <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '14px', alignItems: 'center' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+                        <AlertTriangle size={14} />
+                      </div>
+                      {(() => {
+                        const activeScores = getScoresForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId);
+                        return (
+                          <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error to Fix (Detected by AI Judges)</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason || activeItem.issue || 'Quality review requires rewrite'}</p>
+                            </div>
+                            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Rule Score</p>
+                              <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#94a3b8' }}>{activeScores.human != null ? activeScores.human.toFixed(1) : '-'}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Comparison Table */}
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#b91c1c', background: '#fff1f2', borderRight: '1px solid #e2e8f0', textAlign: 'left' }}>
+                              Original AI Message (Bản gốc lỗi)
+                            </th>
+                            <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#15803d', background: '#f0fdf4', textAlign: 'left' }}>
+                              Staff Revised Message (Bản Staff sửa)
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', background: '#fff5f5', whiteSpace: 'pre-wrap' }}>
+                              {originalText || '(Không tìm thấy câu AI gốc)'}
+                            </td>
+                            <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', background: submittedText ? '#fafdff' : '#fafafa', whiteSpace: 'pre-wrap', fontStyle: submittedText ? 'normal' : 'italic' }}>
+                              {submittedText || '(Staff chưa nộp bài sửa)'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Collapsible Conversation Context */}
+                    <details style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '8px' }}>
+                      <summary style={{ padding: '12px 16px', fontWeight: '800', color: '#475569', cursor: 'pointer', fontSize: '13px', userSelect: 'none' }}>
+                        👀 Xem bối cảnh hội thoại (Conversation Context)
+                      </summary>
+                      <div style={{ padding: '0 16px 16px 16px', maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {target.messages.map((msg: any, idx: number) => {
+                          const isTarget = idx === target.targetIndex;
+                          return (
+                            <div key={idx} style={{
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              background: isTarget ? '#fee2e2' : msg.role === 'user' ? '#fff' : '#f0fdf4',
+                              border: isTarget ? '1px solid #fca5a5' : '1px solid #e2e8f0',
+                              alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end',
+                              maxWidth: '85%',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                            }}>
+                              <strong style={{ display: 'block', fontSize: '10px', color: isTarget ? '#dc2626' : msg.role === 'user' ? '#64748b' : '#16a34a', textTransform: 'uppercase', marginBottom: '4px' }}>
+                                {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target to Rewrite)' : 'AI Tutor'}
+                              </strong>
+                              <div style={{ fontSize: '13px', lineHeight: '1.5', color: '#1e293b', whiteSpace: 'pre-wrap' }}>
+                                {msg.text || msg.content}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </div>
+
+                  {/* Action Bar / Footer */}
+                  <div 
+                    style={{ 
+                      padding: '16px 24px', 
+                      background: '#f8fafc', 
+                      borderTop: '1px solid #e2e8f0', 
+                      display: 'flex', 
+                      justifyContent: 'flex-end', 
+                      alignItems: 'center', 
+                      gap: '12px' 
+                    }}
+                  >
+                    <div style={{ marginRight: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#64748b' }}>Decision:</span>
+                    </div>
+                    
+                    <button 
+                      onClick={() => {
+                        openAdminRewriteFromModal(activeItem);
+                        setReviewSubmissionModal(null);
+                      }}
+                      disabled={isSavingAdminRewrite}
+                      style={{ 
+                        padding: '10px 18px', 
+                        fontSize: '13.5px', 
+                        fontWeight: '800', 
+                        borderRadius: '8px', 
+                        border: '1px solid #bae6fd', 
+                        background: '#f0f9ff', 
+                        color: '#0284c7', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px' 
+                      }}
+                    >
+                      <Pencil size={14} /> Admin tự sửa
+                    </button>
+
+                    {activeRewriteTask?.submittedText ? (
+                      <>
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'approved');
+                          }} 
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 20px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '800', 
+                            borderRadius: '8px', 
+                            border: 'none', 
+                            background: activeRewriteTask.status === 'approved' ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a, #15803d)', 
+                            color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', 
+                            cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', 
+                            boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.25)', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Approved (Gold)</> : <><Check size={14} /> Approve (Gold)</>}
+                        </button>
+                        
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'redo');
+                          }}
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 18px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '700', 
+                            borderRadius: '8px', 
+                            border: '1px solid #cbd5e1', 
+                            background: '#fff', 
+                            color: '#475569', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          <RotateCcw size={14} /> Request Redo
+                        </button>
+
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'rejected');
+                          }} 
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 18px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '700', 
+                            borderRadius: '8px', 
+                            border: '1px solid #fca5a5', 
+                            background: '#fff1f2', 
+                            color: '#dc2626', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          <X size={14} /> Reject
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', marginRight: '8px' }}>
+                        (Waiting for staff submission)
+                      </span>
+                    )}
+                    
+                    <button 
+                      onClick={() => setReviewSubmissionModal(null)} 
+                      style={{ 
+                        padding: '10px 16px', 
+                        fontSize: '13.5px', 
+                        fontWeight: '700', 
+                        borderRadius: '8px', 
+                        border: '1px solid #cbd5e1', 
+                        background: '#fff', 
+                        color: '#64748b', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })()}
