@@ -446,13 +446,13 @@ export async function getAggregatedLabelsForSample(
   );
   const users = contributorIds.length
     ? await User.find({ _id: { $in: contributorIds.map((id) => new mongoose.Types.ObjectId(id)) } })
-        .select('_id name email')
+        .select('_id name email role')
         .lean()
     : [];
   const userMap = new Map(
     users.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -864,11 +864,34 @@ export async function getEffectiveSampleLabelsForVersion(
         });
       });
     } else {
-      // If no checker label yet, but overlapCount < 2 (only 1 staff), we can fall back to staff labels.
-      // If assigneeCount >= 2, we return empty (waiting for checker to label).
-      if (assigneeCount < 2) {
+      // No checker label yet. Check if staff annotators agreed, or if assigneeCount < 2
+      const staffDocs = docs.filter(d => !checkerDocs.includes(d));
+      const userLabelsMap = new Map<string, string[]>();
+      staffDocs.forEach((d) => {
+        const userId = String(d.createdBy);
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = userLabelsMap.get(userId) || [];
+          if (!list.includes(name)) list.push(name);
+          userLabelsMap.set(userId, list);
+        }
+      });
+
+      const uniqueStaffCount = userLabelsMap.size;
+      let staffAgreed = false;
+      if (uniqueStaffCount > 0) {
+        const lists = Array.from(userLabelsMap.values());
+        const firstList = lists[0].slice().sort();
+        staffAgreed = lists.every(list => {
+          if (list.length !== firstList.length) return false;
+          const sorted = list.slice().sort();
+          return sorted.every((val, index) => val === firstList[index]);
+        });
+      }
+
+      if (staffAgreed || assigneeCount < 2) {
         const counts = new Map<string, Set<string>>();
-        docs.forEach((d) => {
+        staffDocs.forEach((d) => {
           const name = String(d.name || '').trim().toUpperCase();
           if (name) {
             const list = counts.get(name) || new Set<string>();
@@ -1404,12 +1427,12 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
 
   const userRows = allUserIdsToLoad.length
-    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email role').lean()
     : [];
   const userMap = new Map(
     userRows.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 

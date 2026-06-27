@@ -500,7 +500,8 @@ export const Stage4Labeling: React.FC = () => {
   // Rule-based score (mirrors backend quality.service intent/action matching) so the
   // Staff Rule Score can be derived directly from the message-scope comparison targets.
   const RULE_VALID_ACTIONS: Record<string, string[]> = {
-    CORRECT: ['PRAISING'],
+    ANSWER_ATTEMPT: ['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING'],
+    CORRECT: ['PRAISING', 'CONFIRM_CORRECT_ANSWER'],
     INCORRECT: ['SCAFFOLDING'],
     REQUEST_HINT: ['HINTING', 'SCAFFOLDING'],
     ASK_THEORY: ['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN'],
@@ -512,11 +513,16 @@ export const Stage4Labeling: React.FC = () => {
     NEXT_SECTION: ['TRANSITIONING', 'NAVIGATING'],
   };
   const RULE_HARMFUL_ACTIONS: Record<string, string[]> = {
+    ANSWER_ATTEMPT: ['DIRECT_ANSWER'],
     INCORRECT: ['PRAISING'],
     REQUEST_HINT: ['LOGIC_BREAKDOWN'],
   };
   const RULE_USER_INTENTS = new Set(Object.keys(RULE_VALID_ACTIONS));
-  const RULE_ASSISTANT_ACTIONS = new Set(Object.values(RULE_VALID_ACTIONS).flat());
+  const RULE_ASSISTANT_ACTIONS = new Set([
+    ...Object.values(RULE_VALID_ACTIONS).flat(),
+    'WAITING',
+    'DIRECT_ANSWER',
+  ]);
 
   const DRAFT_INTENT_MAP: Record<string, string> = {
     'Ask Explanation': 'REQUEST_EXPLANATION',
@@ -543,20 +549,56 @@ export const Stage4Labeling: React.FC = () => {
     Other: 'WAITING',
   };
 
+  const FRONTEND_STAGE3_TO_BACKEND_MAP: Record<string, string> = {
+    'ANS': 'ANSWER_ATTEMPT',
+    'HINT': 'REQUEST_HINT',
+    'THEO': 'ASK_THEORY',
+    'WHY': 'REQUEST_EXPLANATION',
+    'EASY': 'REQUEST_SIMPLER',
+    'SKIP': 'SKIP_EXERCISE',
+    'DIS': 'ENCOURAGE',
+    'OFF': 'OFF_TOPIC',
+    'RDY': 'NEXT_SECTION',
+    'CFM': 'NEXT_SECTION',
+    'CONFIRM_UNDERSTANDING': 'NEXT_SECTION',
+    'CONFIRM': 'NEXT_SECTION',
+    'UNDERSTOOD': 'NEXT_SECTION',
+
+    'CONF': 'CONFIRM_CORRECT_ANSWER',
+    'WRONG': 'IDENTIFY_INCORRECT_ANSWER',
+    'FIX': 'CORRECT_MISTAKE',
+    'SCAF': 'SCAFFOLDING',
+    'CLR': 'CONCEPT_CLARIFY',
+    'LOG': 'LOGIC_BREAKDOWN',
+    'SIMP': 'SIMPLIFYING',
+    'PR': 'PRAISING',
+    'MOT': 'MOTIVATING',
+    'REDIR': 'REDIRECTING',
+    'TRAN': 'TRANSITIONING',
+    'DIR': 'DIRECT_ANSWER',
+    'WAIT': 'WAITING',
+    'WAITING': 'WAITING',
+    'DIRECT_ANSWER': 'DIRECT_ANSWER'
+  };
+
   const normalizeStaffLabelCode = (raw: string, role: string): string => {
     const trimmed = String(raw || '').trim();
     if (!trimmed) return '';
+    const upper = trimmed.toUpperCase();
+    if (FRONTEND_STAGE3_TO_BACKEND_MAP[upper]) {
+      return FRONTEND_STAGE3_TO_BACKEND_MAP[upper];
+    }
     if (role === 'user') {
       if (DRAFT_INTENT_MAP[trimmed]) return DRAFT_INTENT_MAP[trimmed];
-      const upper = trimmed.toUpperCase();
-      return RULE_USER_INTENTS.has(upper) ? upper : upper;
+      if (DRAFT_INTENT_MAP[upper]) return DRAFT_INTENT_MAP[upper];
+      return upper;
     }
     if (role === 'assistant') {
       if (DRAFT_ACTION_MAP[trimmed]) return DRAFT_ACTION_MAP[trimmed];
-      const upper = trimmed.toUpperCase();
-      return RULE_ASSISTANT_ACTIONS.has(upper) ? upper : upper;
+      if (DRAFT_ACTION_MAP[upper]) return DRAFT_ACTION_MAP[upper];
+      return upper;
     }
-    return trimmed.toUpperCase();
+    return upper;
   };
 
   const displayStaffLabel = (raw: string, role: string, displayLabel?: string): string => {
@@ -612,17 +654,65 @@ export const Stage4Labeling: React.FC = () => {
     return mapBackendMessagesToUiMessages(humanItem?.data?.messages || []);
   };
 
-  // Build messageIndex -> { user:[labels], assistant:[labels] } from comparison targets
   const buildMessageLabelIndex = (comparison: any) => {
     const map = new Map<number, { user: string[]; assistant: string[] }>();
     if (!Array.isArray(comparison?.targets)) return map;
+
     comparison.targets.forEach((t: any) => {
       if (t.targetScope !== 'message') return;
       const idx = Number(t.messageIndex);
       const role = t.messageRole === 'assistant' ? 'assistant' : 'user';
       if (!Number.isInteger(idx) || !Array.isArray(t.annotators)) return;
+
+      // Partition annotators for this specific target
+      const checkerAnn = t.annotators.filter((a: any) =>
+        a.isCanonical || a.annotator?.role === 'checker' ||
+        a.annotator?.role === 'supervisor' || a.annotator?.role === 'admin' || a.isOwner
+      );
+      
+      let relevantAnnotators: any[] = [];
+      if (checkerAnn.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)) {
+        relevantAnnotators = checkerAnn;
+      } else {
+        // No checker labels on this target. Check staff.
+        const staffAnn = t.annotators.filter((a: any) => !checkerAnn.includes(a));
+        const staffWithLabels = staffAnn.filter((a: any) => Array.isArray(a.labels) && a.labels.length > 0);
+        
+        if (staffWithLabels.length < 2) {
+          relevantAnnotators = staffWithLabels;
+        } else {
+          // Check if all staff agree on their labels for this target
+          const userLabelsMap = new Map<string, string[]>();
+          staffWithLabels.forEach((a: any) => {
+            const userId = String(a.annotator?.id || a.annotator?._id || '');
+            const codes = (a.labels || []).map((l: string) => normalizeStaffLabelCode(l, role));
+            if (userId && codes.length > 0) {
+              userLabelsMap.set(userId, codes);
+            }
+          });
+          
+          let staffAgreed = false;
+          if (userLabelsMap.size > 0) {
+            const lists = Array.from(userLabelsMap.values());
+            const firstList = lists[0].slice().sort();
+            staffAgreed = lists.every(list => {
+              if (list.length !== firstList.length) return false;
+              const sorted = list.slice().sort();
+              return sorted.every((val, index) => val === firstList[index]);
+            });
+          }
+          
+          if (staffAgreed) {
+            relevantAnnotators = staffWithLabels;
+          } else {
+            // Disagree and no checker resolved yet → no labels
+            relevantAnnotators = [];
+          }
+        }
+      }
+
       const labels = Array.from(new Set(
-        t.annotators.flatMap((a: any) => {
+        relevantAnnotators.flatMap((a: any) => {
           const codes = Array.isArray(a.labels) ? a.labels : [];
           return codes.map((l: string) => normalizeStaffLabelCode(l, role));
         })
@@ -798,16 +888,13 @@ export const Stage4Labeling: React.FC = () => {
       );
 
     if (allLabels.length > 0) {
-      // Filter to only show the final level of labeling
-      const hasSupervisor = allLabels.some(l => l.source === 'supervisor');
-      const hasChecker = allLabels.some(l => l.source === 'checker');
+      // Filter to only show the final level of labeling for this message
+      const supervisorLabels = allLabels.filter(l => l.source === 'supervisor');
+      if (supervisorLabels.length > 0) return supervisorLabels;
 
-      if (hasSupervisor) {
-        return allLabels.filter(l => l.source === 'supervisor');
-      }
-      if (hasChecker) {
-        return allLabels.filter(l => l.source === 'checker');
-      }
+      const checkerLabels = allLabels.filter(l => l.source === 'checker');
+      if (checkerLabels.length > 0) return checkerLabels;
+
       return allLabels;
     }
 
@@ -1520,10 +1607,10 @@ export const Stage4Labeling: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     {[
-                      { bg: '#dcfce7', clr: '#15803d', lbl: 'Gold', cnt: goldItems.length },
-                      { bg: '#fef3c7', clr: '#92400e', lbl: 'Rewrite', cnt: rewriteItems.length },
-                      { bg: '#fee2e2', clr: '#dc2626', lbl: 'Bad', cnt: badItems.length },
-                      { bg: '#fff1f2', clr: '#9333ea', lbl: 'Conflict', cnt: conflictItems.length },
+                      { bg: '#dcfce7', clr: '#15803d', lbl: 'Tốt (Gold)', cnt: goldItems.length },
+                      { bg: '#fef3c7', clr: '#92400e', lbl: 'Cần sửa (Rewrite)', cnt: rewriteItems.length },
+                      { bg: '#fee2e2', clr: '#dc2626', lbl: 'Loại (Bad)', cnt: badItems.length },
+                      { bg: '#fff1f2', clr: '#9333ea', lbl: 'Xung đột', cnt: conflictItems.length },
                     ].map(({ bg, clr, lbl, cnt }) => (
                       <div key={lbl} style={{ background: bg, borderRadius: '12px', padding: '8px 14px', textAlign: 'center' }}>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: clr }}>{lbl}</div>
@@ -1581,11 +1668,11 @@ export const Stage4Labeling: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {[
-                      { key: 'all', label: 'All', count: allItems.length, color: '#475569' },
-                      { key: 'gold', label: 'Gold', count: goldItems.length, color: '#15803d' },
-                      { key: 'rewrite', label: 'Rewrite', count: rewriteItems.length, color: '#92400e' },
-                      { key: 'bad', label: 'Bad', count: badItems.length, color: '#dc2626' },
-                      { key: 'conflict', label: 'Conflict', count: conflictItems.length, color: '#9333ea' },
+                      { key: 'all', label: 'Tất cả', count: allItems.length, color: '#475569' },
+                      { key: 'gold', label: 'Tốt', count: goldItems.length, color: '#15803d' },
+                      { key: 'rewrite', label: 'Cần viết lại', count: rewriteItems.length, color: '#92400e' },
+                      { key: 'bad', label: 'Chưa đạt', count: badItems.length, color: '#dc2626' },
+                      { key: 'conflict', label: 'Xung đột', count: conflictItems.length, color: '#9333ea' },
                     ].map(({ key, label, count, color }) => (
                       <button key={key} onClick={() => { setQualityTab(key); setCurrentPage(1); }} style={{
                         padding: '8px 16px', fontSize: '13px', fontWeight: '700', borderRadius: '999px', border: '1px solid',
@@ -1680,7 +1767,7 @@ export const Stage4Labeling: React.FC = () => {
                                   padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '700',
                                   background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2',
                                   color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626'
-                                }}>{label}</span>
+                                }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                               </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 <button onClick={e => { e.stopPropagation(); openReviewDetailModal(item); }}
@@ -1811,7 +1898,7 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ background: '#1e293b', padding: '20px 24px', borderRadius: '12px 12px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#f8fafc' }}>{reviewDetailModal.convId}</h3>
-                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{label}</span>
+                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                             {scores.conflict && <span style={{ padding: '4px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={12} /> CONFLICT</span>}
                           </div>
                           <button onClick={() => setReviewDetailModal(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '22px', cursor: 'pointer' }}>&#x2715;</button>
@@ -1856,7 +1943,7 @@ export const Stage4Labeling: React.FC = () => {
                           {scores.conflict && diff != null && (
                             <div style={{ marginTop: '14px', background: '#fff7f7', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#b91c1c', display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <AlertTriangle size={16} />
-                              <span><strong>Conflict AI vs Staff Rule Score:</strong> The average AI score ({avgAI?.toFixed(1)}) differs from the Stage 3 Staff Rule Score ({scores.human?.toFixed(1)}) by +/-{diff.toFixed(1)} exceeding the threshold of {conflictThreshold}. Requires expert human review.</span>
+                              <span><strong>Xung đột giữa điểm AI và điểm Luật Staff:</strong> Điểm AI trung bình ({avgAI?.toFixed(1)}) lệch so với điểm Luật Staff ({scores.human?.toFixed(1)}) khoảng +/-{diff.toFixed(1)}, vượt quá ngưỡng cho phép là {conflictThreshold}. Cần người có chuyên môn xem xét và phân xử.</span>
                             </div>
                           )}
                           
