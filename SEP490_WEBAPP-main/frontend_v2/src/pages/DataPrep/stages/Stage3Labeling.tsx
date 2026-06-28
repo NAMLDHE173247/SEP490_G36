@@ -268,6 +268,7 @@ export const Stage3Labeling: React.FC = () => {
     iaMessages, setIaMessages,
     clusterRan,
     setCurrentStage,
+    setCurrentSubStep,
     setCurrentSubStep4,
     setConversationsList
   } = dataPrep;
@@ -290,6 +291,8 @@ export const Stage3Labeling: React.FC = () => {
   const [assignmentDashboard, setAssignmentDashboard] = React.useState<any>(null);
   const [shareUsers, setShareUsers] = React.useState<any[]>([]);
   const [supervisors, setSupervisors] = React.useState<any[]>([]);
+  const [checkers, setCheckers] = React.useState<any[]>([]);
+  const [assignedCheckerId, setAssignedCheckerId] = React.useState('');
   const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
   const [isAssigning, setIsAssigning] = React.useState(false);
 
@@ -437,10 +440,20 @@ export const Stage3Labeling: React.FC = () => {
             const activeSupervisors = usersRes.users.filter((u: any) => u.role === 'supervisor' && u.status === 'active');
             let sups = activeSupervisors.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
 
+            const activeCheckers = usersRes.users.filter((u: any) => u.role === 'checker' && u.status === 'active');
+            let chks = activeCheckers.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+
             setShareUsers(users);
             setSupervisors(sups);
+            setCheckers(chks);
             if (users.length > 0) {
               setTaskAssigneeId(users[0]._id);
+            }
+            if (sups.length > 0) {
+              setAssignedSupervisorId(sups[0]._id);
+            }
+            if (chks.length > 0) {
+              setAssignedCheckerId(chks[0]._id);
             }
           }
         } catch (err) {
@@ -836,6 +849,16 @@ export const Stage3Labeling: React.FC = () => {
         const activeSupervisors = usersRes.users.filter((u: any) => u.role === 'supervisor' && u.status === 'active');
         const sups = activeSupervisors.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
         setSupervisors(sups);
+        if (sups.length > 0) {
+          setAssignedSupervisorId(sups[0]._id);
+        }
+
+        const activeCheckers = usersRes.users.filter((u: any) => u.role === 'checker' && u.status === 'active');
+        const chks = activeCheckers.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
+        setCheckers(chks);
+        if (chks.length > 0) {
+          setAssignedCheckerId(chks[0]._id);
+        }
 
         // Also try to load samples if versionId exists
         const versionId = localStorage.getItem('current_version_id');
@@ -878,8 +901,7 @@ export const Stage3Labeling: React.FC = () => {
         assigneeId: taskAssigneeId,
         startIndex: startIndex,
         count: Number(taskBatchSize),
-        similarityThreshold: conflictThreshold,
-        supervisorId: assignedSupervisorId || undefined
+        similarityThreshold: conflictThreshold
       });
       // Refresh dashboard
       const [dash, assign] = await Promise.all([
@@ -1017,7 +1039,7 @@ export const Stage3Labeling: React.FC = () => {
               batchName: finalBatchName,
               priority: taskPriority,
               similarityThreshold: conflictThreshold,
-              supervisorId: assignedSupervisorId || undefined
+              checkerId: (overlapCount >= 2 || assignees.length >= 2) ? (assignedCheckerId || undefined) : undefined
             });
           }
         }
@@ -2716,6 +2738,7 @@ export const Stage3Labeling: React.FC = () => {
             setCurrentSubStep3(currentSubStep3 - 1);
           } else {
             setCurrentStage(2);
+            setCurrentSubStep(4);
           }
         }}>
           Back
@@ -3109,23 +3132,31 @@ export const Stage3Labeling: React.FC = () => {
 
                     {/* Cột phải của Hàng 1 (Supervisor & Threshold) */}
                     <div style={{ padding: 14, border: '1px solid #e2e8f0', borderRadius: 12, background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div className="ct-form-group" style={{ marginBottom: 0 }}>
-                        <label>Người xử lý Conflict</label>
-                        <select className="ct-select" value={assignedSupervisorId} onChange={(e) => setAssignedSupervisorId(e.target.value)}>
-                          <option value="">Admin tự review và xử lý</option>
-                          {supervisors.map((supervisor: any) => (
-                            <option key={supervisor._id} value={supervisor._id}>{supervisor.name || supervisor.email} (Supervisor)</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="ct-form-group" style={{ marginBottom: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label>Ngưỡng xác định xung đột giữa Staff</label>
-                          <strong style={{ color: '#4f46e5' }}>{Math.round(conflictThreshold * 100)}%</strong>
+                      {overlapCount >= 2 ? (
+                        <>
+                          <div className="ct-form-group" style={{ marginBottom: 0 }}>
+                            <label>Người xử lý Conflict</label>
+                            <select className="ct-select" value={assignedCheckerId} onChange={(e) => setAssignedCheckerId(e.target.value)}>
+                              <option value="">Admin/Supervisor tự review và xử lý</option>
+                              {checkers.map((checker: any) => (
+                                <option key={checker._id} value={checker._id}>{checker.name || checker.email} (Checker)</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="ct-form-group" style={{ marginBottom: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <label>Ngưỡng xác định xung đột giữa Staff</label>
+                              <strong style={{ color: '#4f46e5' }}>{Math.round(conflictThreshold * 100)}%</strong>
+                            </div>
+                            <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={(e) => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
+                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: '#64748b', lineHeight: 1.5, padding: '4px 2px' }}>
+                          ℹ️ Giao việc cho 1 nhân viên (không trùng lặp) sẽ chuyển kết quả thẳng lên Supervisor duyệt và không cần Checker xử lý xung đột.
                         </div>
-                        <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={(e) => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -3350,7 +3381,7 @@ export const Stage3Labeling: React.FC = () => {
                           priority: taskPriority,
                           deadline: deadlineDate.toISOString(),
                           overlapCount,
-                          supervisorId: assignedSupervisorId || undefined
+                          checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined
                         });
 
                         // Refresh dashboard

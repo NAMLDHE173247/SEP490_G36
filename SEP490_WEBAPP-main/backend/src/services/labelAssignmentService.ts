@@ -446,13 +446,13 @@ export async function getAggregatedLabelsForSample(
   );
   const users = contributorIds.length
     ? await User.find({ _id: { $in: contributorIds.map((id) => new mongoose.Types.ObjectId(id)) } })
-        .select('_id name email')
+        .select('_id name email role')
         .lean()
     : [];
   const userMap = new Map(
     users.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -737,36 +737,6 @@ export async function getAggregatedSampleLabels(sampleIds: mongoose.Types.Object
   ]);
 }
 
-async function getAggregatedHardSampleLabels(sampleIds: mongoose.Types.ObjectId[]) {
-  await ensureLabelAssignmentsForSamples(sampleIds.map((id) => String(id)));
-  return LabelAssignment.aggregate([
-    { $match: { sampleId: { $in: sampleIds }, type: 'hard' } },
-    {
-      $group: {
-        _id: {
-          sampleId: '$sampleId',
-          name: '$name',
-          type: '$type',
-          targetScope: '$targetScope',
-          messageIndex: '$messageIndex',
-          messageRole: '$messageRole',
-        },
-        contributors: { $addToSet: '$createdBy' },
-      },
-    },
-    {
-      $project: {
-        sampleId: '$_id.sampleId',
-        name: '$_id.name',
-        type: '$_id.type',
-        targetScope: '$_id.targetScope',
-        messageIndex: '$_id.messageIndex',
-        messageRole: '$_id.messageRole',
-        assignedUserCount: { $size: '$contributors' },
-      },
-    },
-  ]);
-}
 
 export async function getCanonicalSampleLabelsForVersion(
   datasetVersionId: string | mongoose.Types.ObjectId,
@@ -808,26 +778,143 @@ export async function getEffectiveSampleLabelsForVersion(
   const versionOid = typeof datasetVersionId === 'string'
     ? new mongoose.Types.ObjectId(datasetVersionId)
     : datasetVersionId;
-  const hasAssignments = Boolean(
-    await DatasetSampleAssignment.exists({ datasetVersionId: versionOid })
-  );
 
-  if (!hasAssignments) {
-    return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
-  }
-
+  // 1. Get all canonical/published labels
   const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
-  const aggregated = await getAggregatedHardSampleLabels(sampleIds);
 
+  // 2. Load all raw hard label assignments
+  await ensureLabelAssignmentsForSamples(sampleIds.map(id => String(id)));
+  const hardAssignments = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'hard'
+  }).lean();
+
+  // 3. Find unique creators and get their roles
+  const creatorIds = Array.from(new Set(hardAssignments.map(a => String(a.createdBy))));
+  const creators = creatorIds.length
+    ? await User.find({ _id: { $in: creatorIds } }).select('_id role').lean()
+    : [];
+  const creatorRoleMap = new Map<string, string>(creators.map((c: any) => [String(c._id), c.role || 'staff']));
+
+  // 4. Load assignee count per sample to know if it's overlap/multi-staff
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: versionOid,
+    sampleId: { $in: sampleIds },
+    active: true
+  }).select('sampleId assigneeId').lean();
+
+  const sampleAssigneeCount = new Map<string, number>();
+  assignments.forEach((asg: any) => {
+    const sid = String(asg.sampleId);
+    sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+  });
+
+  // 5. Group hard assignments by sample + target key
+  // Target key: targetScope:messageIndex:messageRole
+  const groupedHard = new Map<string, any[]>();
+  hardAssignments.forEach((a: any) => {
+    const targetKey = `${String(a.sampleId)}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
+    const list = groupedHard.get(targetKey) || [];
+    list.push(a);
+    groupedHard.set(targetKey, list);
+  });
+
+  // 6. For each group, determine the effective labels
   const canonicalKeys = new Set(canonical.map(c => 
     `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
   ));
 
-  const effectiveAggregated = (aggregated as any).filter((a: any) => 
-    !canonicalKeys.has(`${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`)
-  );
+  const effectiveHard: EffectiveLabelAggregate[] = [];
+  
+  groupedHard.forEach((docs, targetKey) => {
+    // If it's already in canonical, discard hard assignments
+    if (canonicalKeys.has(targetKey)) {
+      return;
+    }
 
-  return [...canonical, ...effectiveAggregated];
+    // Partition docs by role
+    const checkerDocs = docs.filter(d => {
+      const role = creatorRoleMap.get(String(d.createdBy));
+      return role === 'checker' || role === 'supervisor' || role === 'admin';
+    });
+
+    const sid = String(docs[0].sampleId);
+    const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+
+    if (checkerDocs.length > 0) {
+      // If checker/supervisor/admin has labeled, use their labels ONLY!
+      const counts = new Map<string, Set<string>>();
+      checkerDocs.forEach((d) => {
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = counts.get(name) || new Set<string>();
+          list.add(String(d.createdBy));
+          counts.set(name, list);
+        }
+      });
+      counts.forEach((contributors, name) => {
+        effectiveHard.push({
+          sampleId: docs[0].sampleId,
+          name,
+          type: 'hard',
+          targetScope: docs[0].targetScope,
+          messageIndex: docs[0].messageIndex,
+          messageRole: docs[0].messageRole,
+          assignedUserCount: contributors.size
+        });
+      });
+    } else {
+      // No checker label yet. Check if staff annotators agreed, or if assigneeCount < 2
+      const staffDocs = docs.filter(d => !checkerDocs.includes(d));
+      const userLabelsMap = new Map<string, string[]>();
+      staffDocs.forEach((d) => {
+        const userId = String(d.createdBy);
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = userLabelsMap.get(userId) || [];
+          if (!list.includes(name)) list.push(name);
+          userLabelsMap.set(userId, list);
+        }
+      });
+
+      const uniqueStaffCount = userLabelsMap.size;
+      let staffAgreed = false;
+      if (uniqueStaffCount > 0) {
+        const lists = Array.from(userLabelsMap.values());
+        const firstList = lists[0].slice().sort();
+        staffAgreed = lists.every(list => {
+          if (list.length !== firstList.length) return false;
+          const sorted = list.slice().sort();
+          return sorted.every((val, index) => val === firstList[index]);
+        });
+      }
+
+      if (staffAgreed || assigneeCount < 2) {
+        const counts = new Map<string, Set<string>>();
+        staffDocs.forEach((d) => {
+          const name = String(d.name || '').trim().toUpperCase();
+          if (name) {
+            const list = counts.get(name) || new Set<string>();
+            list.add(String(d.createdBy));
+            counts.set(name, list);
+          }
+        });
+        counts.forEach((contributors, name) => {
+          effectiveHard.push({
+            sampleId: docs[0].sampleId,
+            name,
+            type: 'hard',
+            targetScope: docs[0].targetScope,
+            messageIndex: docs[0].messageIndex,
+            messageRole: docs[0].messageRole,
+            assignedUserCount: contributors.size
+          });
+        });
+      }
+    }
+  });
+
+  return [...canonical, ...effectiveHard];
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
@@ -1328,13 +1415,24 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
   });
-  const userRows = comparisonAnnotatorIds.length
-    ? await User.find({ _id: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+  const canonicalLabels = await DatasetCanonicalLabel.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).lean();
+
+  const checkerUserIds = canonicalLabels.map(c => String(c.publishedBy)).filter(Boolean);
+  const allUserIdsToLoad = Array.from(new Set([
+    ...comparisonAnnotatorIds,
+    ...checkerUserIds
+  ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const userRows = allUserIdsToLoad.length
+    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email role').lean()
     : [];
   const userMap = new Map(
     userRows.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -1429,6 +1527,35 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
 
+    const canonical = canonicalLabels.find((c: any) => 
+      c.targetScope === target.targetScope && 
+      c.messageIndex === msgIdx && 
+      c.messageRole === msgRole
+    );
+
+    const targetAnnotators = annotatorSets.map((item) => ({
+      annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
+      labels: item.labels,
+      displayLabels: item.displayLabels,
+      isOwner: item.annotatorId === ownerId,
+      isCanonical: false,
+    }));
+
+    if (canonical) {
+      const checkerId = String(canonical.publishedBy);
+      const checkerUser = userMap.get(checkerId) || { id: checkerId, name: 'Checker', email: 'checker@system.com' };
+      targetAnnotators.push({
+        annotator: { ...checkerUser, role: 'checker' } as any,
+        labels: canonical.labels,
+        displayLabels: canonical.labels.map(l => {
+          const { display } = resolveStaffLabelName(l, msgRole, target.targetScope);
+          return display || l;
+        }),
+        isOwner: false,
+        isCanonical: true,
+      });
+    }
+
     return {
       targetKey,
       targetScope: target.targetScope,
@@ -1439,12 +1566,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
       labelCounts,
       majorityLabels,
-      annotators: annotatorSets.map((item) => ({
-        annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
-        labels: item.labels,
-        displayLabels: item.displayLabels,
-        isOwner: item.annotatorId === ownerId,
-      })),
+      annotators: targetAnnotators,
     };
   });
 

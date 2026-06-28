@@ -400,7 +400,7 @@ export const apiService = {
 
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string; checkerId?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
     const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
       assigneeIds: [payload.assigneeId],
@@ -410,7 +410,8 @@ export const apiService = {
       priority: payload.priority || 'medium',
       batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`,
       similarityThreshold: payload.similarityThreshold,
-      supervisorId: payload.supervisorId
+      supervisorId: payload.supervisorId,
+      checkerId: payload.checkerId
     });
     return response.data;
   },

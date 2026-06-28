@@ -309,6 +309,7 @@ export const stage4Api = {
   assignRewrite: async (versionId: string, payload: {
     sampleId: string;
     assigneeId: string;
+    checkerId?: string;
     convId: string;
     subject?: string;
     reason?: string;
@@ -325,8 +326,8 @@ export const stage4Api = {
     return res.data;
   },
 
-  submitRewrite: async (versionId: string, taskId: string, submittedText: string, expectedUpdatedAt?: string): Promise<{ task: any }> => {
-    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/submit`, { submittedText, expectedUpdatedAt });
+  submitRewrite: async (versionId: string, taskId: string, submittedText: string, expectedUpdatedAt?: string, status?: string): Promise<{ task: any }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/submit`, { submittedText, expectedUpdatedAt, status });
     return res.data;
   },
 
@@ -347,6 +348,16 @@ export const stage4Api = {
 
   suggestRewrite: async (versionId: string, taskId: string): Promise<{ suggestedText: string }> => {
     const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/suggest`);
+    return res.data;
+  },
+
+  suggestRewriteGeneric: async (versionId: string, payload: {
+    originalText: string;
+    targetMessageIndex: number | null;
+    messages: any[];
+    reason?: string;
+  }): Promise<{ suggestedText: string }> => {
+    const res = await api.post(`/dataprep/versions/${versionId}/quality/suggest-rewrite-generic`, payload);
     return res.data;
   },
 

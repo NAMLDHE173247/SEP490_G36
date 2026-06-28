@@ -7,6 +7,9 @@ import { DatasetVersion } from '../../../models/DatasetVersion';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
 import { QualityService } from './quality.service';
 import { apiKeyService } from '../../../services/apiKeyService';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -134,6 +137,49 @@ export class MultiEvalService {
         // Mark sample as processing in job progress
         job.progress.processing = 1;
         await job.save();
+
+        // Check if sample has severe error flag from Stage 3
+        const qualityItem = qualityResult.items.find((i: any) => String(i._id) === String(sample._id));
+        const isSevereError = qualityItem && qualityItem.bucket === 'Reject' && 
+          String(qualityItem.conflictReason || '').startsWith('Bị gắn cờ lỗi nghiêm trọng từ Stage 3:');
+
+        if (isSevereError) {
+          const modelScores = new Map<string, any>();
+          models.forEach((modelName) => {
+            modelScores.set(modelName, {
+              status: 'success',
+              socratic: null,
+              encouragement: null,
+              factuality: null,
+              languageQuality: null,
+              consistency: null,
+              completeness: null,
+              readiness: null,
+              overall: 0,
+              reason: 'Tự động loại bỏ (Reject) do mẫu bị gắn cờ lỗi nghiêm trọng từ Stage 3 bởi con người.',
+              recommendation: 'Reject',
+            });
+          });
+
+          await MultiModelEvaluationResult.create({
+            jobId,
+            datasetVersionId: versionId,
+            sampleId: sample._id,
+            modelScores,
+            averageOverall: 0,
+            humanScore: 0,
+            finalRecommendation: 'Reject',
+            hasConflict: false,
+            targetIdx: 0,
+            contextSize: 0,
+            autoRefined: false,
+          });
+
+          evaluatedCount += 1;
+          job.progress.evaluated = evaluatedCount + failedCount;
+          await job.save();
+          continue; // Skip AI model calls entirely
+        }
 
         // 1. Identify which message index to evaluate.
         const rewriteHistories = await ConversationRewriteHistory.find({
@@ -574,11 +620,42 @@ export class MultiEvalService {
     const historyMap = new Map();
     rewriteHistories.forEach(h => historyMap.set(String(h.sampleId), h));
 
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
+
+    // Fetch canonical docs to check if sample has been chốt/published
+    const canonicalDocs = await DatasetCanonicalLabel.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId)
+    }).select('sampleId').lean();
+    const canonicalSampleIds = new Set(canonicalDocs.map(c => String(c.sampleId)));
+
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
+
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
       const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
-      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      
+      const assigneeCount = sampleAssigneeCount.get(String(sample?._id)) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const hasCanonical = canonicalSampleIds.has(String(sample?._id));
+      const pendingAdjudication = isOverlapped ? !hasCanonical : pendingAdjudicationSet.has(String(sample?._id));
+
+      const qualityHasHumanScore = !pendingAdjudication && qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
       const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
         ? Number(qualityItem.humanScore)
         : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
@@ -622,6 +699,7 @@ export class MultiEvalService {
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
         turnPairs: qualityItem?.turnPairs || [],
         staffTargets: qualityItem?.staffTargets || [],
+        pendingAdjudication,
       };
     });
 

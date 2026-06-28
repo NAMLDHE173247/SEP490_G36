@@ -137,11 +137,9 @@ export const getMe = async (req: Request, res: Response) => {
   }
 };
 
-export const listUsers = async (req: Request, res: Response) => {
+export const listUsers = async (_req: Request, res: Response) => {
   try {
-    const currentUserId = String((req as any).user?.userId || (req as any).user?.id || '');
-    const query = currentUserId ? { _id: { $ne: currentUserId } } : {};
-    const users = await User.find(query)
+    const users = await User.find({})
       .select('_id name email role status createdAt lastLogin')
       .sort({ name: 1, email: 1 })
       .lean();

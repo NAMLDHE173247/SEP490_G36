@@ -40,17 +40,36 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [supervisors, setSupervisors] = useState<any[]>([]);
-  const [updatingSupervisor, setUpdatingSupervisor] = useState<string | null>(null);
+  const [checkers, setCheckers] = useState<any[]>([]);
+  const [updatingChecker, setUpdatingChecker] = useState<string | null>(null);
 
-  const handleSupervisorChange = async (e: any, task: any) => {
-    // Add logic here to handle supervisor change
-    setUpdatingSupervisor(task.id);
+  const handleCheckerChange = async (e: any, task: any) => {
+    const selectedCheckerId = e.target.value;
+    setUpdatingChecker(task.id);
     try {
-      // Dummy logic for now
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const versionId = String(task.id || '').split('_')[0];
+      await api.patch(`/dataprep/versions/${versionId}/assignments/checker`, {
+        batchName: task.name,
+        checkerId: selectedCheckerId || undefined
+      });
+      task.checkerId = selectedCheckerId;
+      setShowToast('Đã cập nhật Checker phụ trách!');
+    } catch (err: any) {
+      console.error('Failed to update checker', err);
+      alert(err.response?.data?.error || 'Không thể cập nhật Checker');
     } finally {
-      setUpdatingSupervisor(null);
+      setUpdatingChecker(null);
+      setTimeout(() => setShowToast(null), 3000);
+    }
+  };
+
+  const fetchCheckers = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      const list = (res.data.users || []).filter((u: any) => u.role === 'checker' && (!u.status || u.status === 'active'));
+      setCheckers(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
+    } catch (e) {
+      console.error('Failed to fetch checkers', e);
     }
   };
 
@@ -86,6 +105,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
   React.useEffect(() => {
     fetchTasks();
+    fetchCheckers();
   }, []);
 
   const toggleProject = (projectId: string) => {
@@ -348,6 +368,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <span className="al-task-desc">
               {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
             </span>
+            <div onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
+              <UserCheck size={14} />
+              <select
+                value={task.checkerId || ''}
+                onChange={(e) => handleCheckerChange(e, task)}
+                disabled={updatingChecker === task.id}
+                aria-label={`Checker của ${task.name}`}
+                style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px', background: '#fff', color: '#334155', maxWidth: 220 }}
+              >
+                <option value="">-- Chọn Checker phụ trách --</option>
+                {checkers.map((checker: any) => (
+                  <option key={checker.id} value={checker.id}>
+                    {checker.name} ({checker.email})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>
@@ -709,16 +746,16 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                   <label onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
                     <UserCheck size={14} />
                     <select
-                      value={task.supervisorId || ''}
-                      onChange={(e) => handleSupervisorChange(e, task)}
-                      disabled={updatingSupervisor === task.id}
-                      aria-label={`Supervisor của ${task.name}`}
+                      value={task.checkerId || ''}
+                      onChange={(e) => handleCheckerChange(e, task)}
+                      disabled={updatingChecker === task.id}
+                      aria-label={`Checker của ${task.name}`}
                       style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px', background: '#fff', color: '#334155', maxWidth: 220 }}
                     >
-                      <option value="">Admin xử lý conflict</option>
-                      {supervisors.map((supervisor: any) => (
-                        <option key={supervisor.id || supervisor._id} value={supervisor.id || supervisor._id}>
-                          {supervisor.name} ({supervisor.email})
+                      <option value="">-- Chọn Checker phụ trách --</option>
+                      {checkers.map((checker: any) => (
+                        <option key={checker.id} value={checker.id}>
+                          {checker.name} ({checker.email})
                         </option>
                       ))}
                     </select>

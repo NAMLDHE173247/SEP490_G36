@@ -385,8 +385,9 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
     setError('');
 
     try {
-      for (const t of targetsToSubmit) {
+      const promises = targetsToSubmit.map(async (t) => {
         const draft = drafts[t.targetKey];
+        if (!draft) return;
         const payload:any = { targetScope: t.targetScope, finalLabels: draft.labels, note: draft.note?.trim() || '' };
         if (Number.isInteger(Number(t.messageIndex))) {
           payload.messageIndex = t.messageIndex;
@@ -401,7 +402,8 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
         if (publish) {
           await api.post(`/dataprep/versions/${item.versionId}/assignments/samples/${item.sampleId}/adjudications/publish`, payload);
         }
-      }
+      });
+      await Promise.all(promises);
       await load();
       onCompleted();
       if (publish) {

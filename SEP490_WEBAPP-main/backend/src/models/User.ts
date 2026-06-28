@@ -14,6 +14,7 @@ export interface IUser extends Document {
     anthropic?: string;
     openrouter?: string;
     deepseek?: string;
+    groq?: string;
   };
 }
 
@@ -31,6 +32,7 @@ const UserSchema: Schema = new Schema({
     anthropic: { type: String, default: '' },
     openrouter: { type: String, default: '' },
     deepseek: { type: String, default: '' },
+    groq: { type: String, default: '' },
   },
 });
 

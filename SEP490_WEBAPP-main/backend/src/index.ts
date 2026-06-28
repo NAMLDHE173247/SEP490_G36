@@ -11,6 +11,7 @@ console.log('=== APP STARTING ===');
 console.log('PORT:', process.env.PORT);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('MONGO_URI exists:', !!process.env.MONGO_URI);
+// Force reload
 
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
@@ -60,6 +61,20 @@ mongoose
     await seedDefaultStage4Data();
     await seedModelRegistryData();
     await seedTrainingHistoryData();
+
+    try {
+      // Reset any stuck running multi-eval jobs to failed
+      const { MultiModelEvaluationJob } = require('./models/MultiModelEvaluationJob');
+      const result = await MultiModelEvaluationJob.updateMany(
+        { status: 'running' },
+        { $set: { status: 'failed', error: 'Server restarted during job execution.' } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`🧹 Cleaned up ${result.modifiedCount} stuck running multi-eval jobs.`);
+      }
+    } catch (err: any) {
+      console.error('❌ Stuck jobs cleanup error:', err.message);
+    }
   })
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 

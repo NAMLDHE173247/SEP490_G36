@@ -1348,6 +1348,7 @@ export const Stage2Preprocessing = () => {
               setCurrentSubStep(currentSubStep + 1);
             } else {
               setCurrentStage(3);
+              setCurrentSubStep3(5);
             }
           }}>
             Next

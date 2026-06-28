@@ -130,6 +130,15 @@ const normalizeRole = (role: unknown) => {
 };
 
 function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
+  if (!task) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', background: '#f1f5f9', minHeight: '100vh' }}>
+        <h2>Không tìm thấy dữ liệu dự án. Đang quay lại...</h2>
+        <button onClick={onBack} style={{ marginTop: '20px', padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#4f46e5', color: 'white', cursor: 'pointer' }}>Quay lại</button>
+      </div>
+    );
+  }
+
   const [tablePage, setTablePage] = useState(1);
   const [tableSearch, setTableSearch] = useState('');
   const debouncedSearch = useDebounce(tableSearch, 300);
@@ -470,6 +479,13 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     setDrawerSampleId(null);
   };
 
+  const handleBack = async () => {
+    if (drawerSampleId) {
+      await handleSaveSampleDraft(drawerSampleId);
+    }
+    onBack();
+  };
+
   const handleEscapeKey = React.useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape' && drawerSampleId) handleCloseDrawer();
   }, [drawerSampleId]);
@@ -562,23 +578,27 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
           {/* Top bar */}
           <div className="sl-topbar">
             <div className="sl-topbar-left">
-              <button className="sl-back-btn" onClick={onBack}><ArrowLeft size={18} /><span>Quay lại</span></button>
+              <button className="sl-back-btn" onClick={handleBack}><ArrowLeft size={18} /><span>Quay lại</span></button>
               <div className="sl-topbar-info">
-                <h2>{taskName}</h2>
-                <span className="sl-topbar-dataset">{task?.dataset || 'Toan_11'} - {task?.version || 'v3'}</span>
+                <h2>
+                  {taskName}
+                  <span className="sl-topbar-dataset">
+                    ({task?.dataset || 'Toan_11'} - {task?.version || 'v3'})
+                  </span>
+                </h2>
               </div>
             </div>
             <div className="sl-topbar-right">
               {task?.guideline && <button className="sl-guide-btn" onClick={() => setShowGuideline(!showGuideline)}><FileText size={14} /> Hướng dẫn</button>}
-              <button className="sl-save-btn" onClick={handleSaveDraft} disabled={isSaving || submitted || isLocked}><Save size={16} />{isSaving ? 'Đang lưu...' : 'Lưu nháp'}</button>
               {(() => {
                 // Các câu đã hoàn chỉnh nhưng chưa nộp (status labeling/rejected)
                 const submittable = samples.filter((s: any) => isSampleComplete(s.id) && ['labeling', 'rejected'].includes(s.reviewStatus || 'labeling'));
+                if (submittable.length === 0) return null;
                 return (
                   <button
-                    className="sl-submit-btn"
-                    onClick={() => submittable.length && handleSubmitSamples(submittable.map((s: any) => s.id))}
-                    disabled={isSubmitting || isLocked || submittable.length === 0}
+                    className="sl-submit-btn sl-submit-active"
+                    onClick={() => handleSubmitSamples(submittable.map((s: any) => s.id))}
+                    disabled={isSubmitting || isLocked}
                     title="Nộp tất cả câu đã hoàn chỉnh (không cần xong cả lô)"
                   >
                     <Send size={16} /> {isSubmitting ? 'Đang nộp...' : `Nộp ${submittable.length} câu đã xong`}
@@ -743,6 +763,34 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                       <span>{chatFontSize}px</span>
                       <button onClick={() => setChatFontSize(f => Math.min(24, f + 1))}>A+</button>
                     </div>
+                    {!isSampleLocked(drawerSample.id) && (
+                      <button
+                        className="sl-drawer-next-btn"
+                        style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff' }}
+                        onClick={() => handleSubmitSamples([drawerSample.id])}
+                        disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
+                        title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần gán đủ nhãn tổng hội thoại hoặc nhãn từng tin nhắn trước khi nộp'}
+                      >
+                        <Send size={14} /> Nộp câu #{drawerSample.id}
+                      </button>
+                    )}
+                    {(() => {
+                      const recentComplete = recentlyEdited.filter(id => isSampleComplete(id) && ['labeling','rejected'].includes(reviewOf(id)));
+                      const isOnlyCurrentSample = recentComplete.length === 1 && String(recentComplete[0]) === String(drawerSample.id);
+                      if (recentComplete.length < 2 || isOnlyCurrentSample) return null;
+                      return (
+                        <button
+                          className="sl-drawer-next-btn"
+                          style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff' }}
+                          onClick={() => handleSubmitSamples(recentComplete)}
+                          disabled={isSubmitting}
+                          title={`Nộp ${recentComplete.length} câu vừa sửa gần nhất`}
+                        >
+                          <Send size={14} /> Nộp {recentComplete.length} câu vừa sửa
+                        </button>
+                      );
+                    })()}
+                    <button className="sl-drawer-next-btn" onClick={handleNextUnlabeled}>Lưu & Tới câu kế <ChevronRight size={16} /></button>
                     <button className="sl-drawer-close-btn" onClick={handleCloseDrawer}><X size={20} /></button>
                   </div>
                 </div>
@@ -858,37 +906,6 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         </div>
                       );
                     })()}
-                    {/* Action buttons pinned to bottom of label panel */}
-                    <div className="sl-label-panel-footer">
-                      {!isSampleLocked(drawerSample.id) && (
-                        <button
-                          className="sl-panel-action-btn sl-btn-submit"
-                          onClick={() => handleSubmitSamples([drawerSample.id])}
-                          disabled={isSubmitting || !isSampleComplete(drawerSample.id)}
-                          title={isSampleComplete(drawerSample.id) ? 'Nộp câu này để giám sát duyệt' : 'Cần gán đủ nhãn tổng hội thoại hoặc nhãn từng tin nhắn trước khi nộp'}
-                        >
-                          <Send size={14} /> Nộp câu #{drawerSample.id}
-                        </button>
-                      )}
-                      {(() => {
-                        const recentComplete = recentlyEdited.filter(id => isSampleComplete(id) && ['labeling','rejected'].includes(reviewOf(id)));
-                        const isOnlyCurrentSample = recentComplete.length === 1 && String(recentComplete[0]) === String(drawerSample.id);
-                        if (recentComplete.length < 2 || isOnlyCurrentSample) return null;
-                        return (
-                          <button
-                            className="sl-panel-action-btn sl-btn-submit-multi"
-                            onClick={() => handleSubmitSamples(recentComplete)}
-                            disabled={isSubmitting}
-                            title={`Nộp ${recentComplete.length} câu vừa sửa gần nhất`}
-                          >
-                            <Send size={14} /> Nộp {recentComplete.length} câu vừa sửa
-                          </button>
-                        );
-                      })()}
-                      <button className="sl-panel-action-btn sl-btn-next" onClick={handleNextUnlabeled}>
-                        Lưu & Tới câu kế <ChevronRight size={16} />
-                      </button>
-                    </div>
                   </div>
 
                   {/* RIGHT: Chat Messages */}
@@ -919,7 +936,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                             </span>
                           )}
                         </div>
-                        <div className={`sl-msg-bubble ${msgRole}`} style={{ fontSize: `${chatFontSize}px` }}><textarea key={`${drawerSample.id}-${mIdx}`} className="sl-message-editor" defaultValue={getEditedMessageContent(drawerSample.id, mIdx, msg.content || '')} onBlur={(e) => setEditedMessageContent(drawerSample.id, mIdx, e.currentTarget.value)} disabled={isSampleLocked(drawerSample.id)} ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }} onInput={(e) => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }} /></div>
+                        <div className={`sl-msg-bubble ${msgRole}`} style={{ fontSize: `${chatFontSize}px` }}><textarea key={`${drawerSample.id}-${mIdx}`} className="sl-message-editor" defaultValue={getEditedMessageContent(drawerSample.id, mIdx, msg.content || '')} onBlur={(e) => setEditedMessageContent(drawerSample.id, mIdx, e.currentTarget.value)} disabled={isSampleLocked(drawerSample.id)} /></div>
                         {!badOk && meta?.pedagogy_note && (
                           <div style={{ margin: '2px 8px 4px', padding: '4px 10px', borderRadius: 6, background: '#fef2f2', color: '#b91c1c', fontSize: 11, fontStyle: 'italic' }}>
                             {meta.pedagogy_note}

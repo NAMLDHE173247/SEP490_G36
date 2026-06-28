@@ -9,10 +9,10 @@ export class GroqProvider implements ILlmProvider {
   private readonly baseUrl: string;
   private readonly defaultModel: string;
 
-  constructor() {
-    this.apiKey = process.env.GROQ_API_KEY || '';
+  constructor(customApiKey?: string) {
+    this.apiKey = customApiKey || process.env.GROQ_API_KEY || '';
     this.baseUrl = 'https://api.groq.com/openai/v1';
-    this.defaultModel = 'llama-3.3-70b-versatile';
+    this.defaultModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
     if (!this.apiKey) {
       console.warn('GROQ_API_KEY is missing. Evaluation using Groq will fail.');
@@ -39,6 +39,7 @@ export class GroqProvider implements ILlmProvider {
           ],
           temperature: 0.1,
           max_tokens: 8192,
+          response_format: { type: 'json_object' }
         },
         {
           headers: {

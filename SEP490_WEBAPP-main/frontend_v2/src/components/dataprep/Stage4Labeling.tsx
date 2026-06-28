@@ -5,6 +5,112 @@ import { useStage4Data } from '../../hooks/useStage4Data';
 import { apiService } from '../../services/api';
 import { stage4Api } from '../../services/stage4Api';
 
+const TRANSLATED_LABEL_MAP: Record<string, string> = {
+  // Quality & Status
+  'Completed': 'Hoàn thành',
+  'Incomplete': 'Chưa hoàn thành',
+  'Abandoned': 'Bỏ dở',
+  'Gold': 'Tốt',
+  'Rewrite': 'Cần viết lại',
+  'Bad': 'Chưa đạt',
+  'Chua ro': 'Chưa rõ',
+  'spam': 'Spam',
+  'toxic': 'Độc hại',
+
+  // Domains
+  'MATH': 'Toán',
+  'Math': 'Toán',
+  'Toan': 'Toán',
+  'PHYSICAL': 'Vật lý',
+  'Physical': 'Vật lý',
+  'PHYSICS': 'Vật lý',
+  'Physics': 'Vật lý',
+  'Vat ly': 'Vật lý',
+  'CHEMISTRY': 'Hóa học',
+  'Chemistry': 'Hóa học',
+  'Hoa hoc': 'Hóa học',
+  'BIOLOGY': 'Sinh học',
+  'Biology': 'Sinh học',
+  'Sinh hoc': 'Sinh học',
+  'LITERATURE': 'Ngữ văn',
+  'Literature': 'Ngữ văn',
+  'Van hoc': 'Ngữ văn',
+  'ENGLISH': 'Tiếng Anh',
+  'English': 'Tiếng Anh',
+  'Tieng Anh': 'Tiếng Anh',
+  'HISTORY': 'Lịch sử',
+  'History': 'Lịch sử',
+  'Lich su': 'Lịch sử',
+  'GEOGRAPHY': 'Địa lý',
+  'Geography': 'Địa lý',
+  'Dia ly': 'Địa lý',
+  'CODING': 'Tin học',
+  'Coding': 'Tin học',
+  'IT': 'Tin học',
+  'Tin hoc': 'Tin học',
+  'GDCD': 'GDCD',
+  'Civics': 'GDCD',
+  'Lien mon': 'Liên môn',
+  'Multi-subject': 'Liên môn',
+  'Unclear': 'Chưa rõ',
+  'OTHER': 'Khác',
+  'Other': 'Khác',
+
+  // DB Hard Labels (User)
+  'ANSWER_ATTEMPT': 'Học sinh trả lời/thử làm bài',
+  'REQUEST_HINT': 'Xin gợi ý',
+  'ASK_THEORY': 'Hỏi lý thuyết',
+  'REQUEST_EXPLANATION': 'Yêu cầu giải thích',
+  'REQUEST_SIMPLER': 'Muốn giải thích đơn giản hơn',
+  'SKIP_EXERCISE': 'Bỏ qua bài',
+  'DISCOURAGED': 'Chán nản',
+  'OFF_TOPIC': 'Ngoài phạm vi',
+  'READY_NEXT': 'Muốn học tiếp/chuyển câu',
+  'CONFIRM_UNDERSTANDING': 'Xác nhận đã hiểu',
+
+  // DB Hard Labels (Assistant)
+  'CONFIRM_CORRECT_ANSWER': 'Xác nhận câu trả lời đúng',
+  'IDENTIFY_INCORRECT_ANSWER': 'Chỉ ra câu trả lời sai',
+  'CORRECT_MISTAKE': 'Sửa lỗi sai',
+  'PRAISING': 'Khen ngợi',
+  'SCAFFOLDING': 'Dẫn dắt từng bước',
+  'HINTING': 'Đưa gợi ý',
+  'CONCEPT_CLARIFY': 'Làm rõ khái niệm',
+  'LOGIC_BREAKDOWN': 'Phân tích lập luận',
+  'SIMPLIFYING': 'Diễn giải đơn giản',
+  'MOTIVATING': 'Động viên',
+  'REDIRECTING': 'Kéo về đúng chủ đề',
+  'TRANSITIONING': 'Chuyển bước/chủ đề',
+  'DIRECT_ANSWER': 'Đưa đáp án trực tiếp',
+  'WAITING': 'Chờ học sinh phản hồi',
+
+  // Legacy/Fallback aliases (supporting alternative db values)
+  'CORRECT': 'Xác nhận câu trả lời đúng',
+  'INCORRECT': 'Chỉ ra câu trả lời sai',
+  'WAIT_READY': 'Chờ học sinh phản hồi',
+  'NEXT_SECTION': 'Muốn học tiếp/chuyển câu',
+  'ENCOURAGE': 'Động viên',
+  'OFFTOPIC': 'Ngoài phạm vi',
+  'Guide Step-by-step': 'Dẫn dắt từng bước',
+  'Give Hint': 'Đưa gợi ý',
+  'Ask Probing Question': 'Phân tích lập luận',
+  'Provide Formula': 'Làm rõ khái niệm',
+  'Correct Error': 'Sửa lỗi sai',
+  'Summarize': 'Chuyển bước/chủ đề',
+  'Ask Explanation': 'Yêu cầu giải thích',
+  'Solve Exercise': 'Chỉ ra câu trả lời sai',
+  'Request Formula': 'Hỏi lý thuyết',
+  'Confirm Understanding': 'Xác nhận đã hiểu',
+  'Ask Example': 'Muốn giải thích đơn giản hơn',
+  'Hint': 'Đưa gợi ý',
+  'Ques': 'Câu hỏi',
+  'Ques/Hint': 'Hỏi/Gợi ý',
+  'QA': 'Hỏi đáp',
+  'Factual Error': 'Sai kiến thức',
+  'Direct Answer': 'Lộ đáp án trực tiếp',
+  'Language Issue': 'Lỗi ngôn ngữ',
+};
+
 export const Stage4Labeling: React.FC = () => {
   const [activeVersionId, setActiveVersionId] = useState<string | null>(() => localStorage.getItem('current_version_id'));
   const sampleComparisonsRef = useRef<Record<string, any>>({});
@@ -95,8 +201,10 @@ export const Stage4Labeling: React.FC = () => {
   const [showRewriteStaffPicker, setShowRewriteStaffPicker] = useState(false);
   const [showRewriteProgress, setShowRewriteProgress] = useState(false);
   const [adminRewriteModal, setAdminRewriteModal] = useState<any>(null);
+  const [reviewSubmissionModal, setReviewSubmissionModal] = useState<any>(null);
   const [adminRewriteDraft, setAdminRewriteDraft] = useState('');
   const [isSavingAdminRewrite, setIsSavingAdminRewrite] = useState(false);
+  const [isSuggestingAI, setIsSuggestingAI] = useState(false);
   const rewriteReasonOptions = [
     'None',
     'Direct answer too early',
@@ -108,14 +216,13 @@ export const Stage4Labeling: React.FC = () => {
   ];
 
   useEffect(() => {
-    // Step 8 is now an embedded AI cross-check action inside Step 7.
-    // Migrate stale browser state so users cannot land on the old standalone screen.
-    if (currentSubStep4 === 8) setCurrentSubStep4(7);
+    // Step 7 no longer exists; redirect to 8 (the new lobby gate).
+    if (currentSubStep4 === 7) setCurrentSubStep4(8);
   }, [currentSubStep4, setCurrentSubStep4]);
 
   const reviewRewriteTask = async (task: any, action: 'approved' | 'redo' | 'rejected') => {
     if (!activeVersionId || !task?.id) return;
-    const note = action === 'approved' ? 'Approved by Admin' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+    const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
     if (action !== 'approved' && !note?.trim()) return;
     setReviewingRewriteId(task.id);
     try {
@@ -128,7 +235,7 @@ export const Stage4Labeling: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!activeVersionId || ![10, 11].includes(currentSubStep4)) return;
+    if (!activeVersionId || ![10, 11].includes(currentSubStep4)) return; // step 10=Rewrite Assignment, 11=Assignment Review
     let cancelled = false;
     const loadRewriteProgress = () => stage4Api.listRewriteAssignments(activeVersionId)
       .then((response) => { if (!cancelled) setRewriteAssignments(response.tasks || []); })
@@ -139,7 +246,7 @@ export const Stage4Labeling: React.FC = () => {
   }, [activeVersionId, currentSubStep4]);
 
   useEffect(() => {
-    if (!(currentSubStep4 === 7 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
+    if (!(currentSubStep4 === 8 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
 
     let cancelled = false;
     const refreshAssignmentDashboard = () => {
@@ -179,7 +286,7 @@ export const Stage4Labeling: React.FC = () => {
     };
 
     refreshAssignmentDashboard();
-    const intervalId = window.setInterval(refreshAssignmentDashboard, currentSubStep4 === 7 ? 5000 : 15000);
+    const intervalId = window.setInterval(refreshAssignmentDashboard, currentSubStep4 === 8 ? 5000 : 15000);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
@@ -209,12 +316,12 @@ export const Stage4Labeling: React.FC = () => {
     if (reviewDetailModal) {
       sampleIds.add(String(reviewDetailModal.sampleObjectId || reviewDetailModal.id));
     }
-    if (currentSubStep4 === 11) {
+    if (currentSubStep4 === 10) {
       const rewriteItems = (qualityResult?.items || []).filter((i: any) => ['Rewrite', 'Reject', 'Bad'].includes(i.bucket));
       const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
       if (activeItem?._id) sampleIds.add(String(activeItem._id));
     }
-    if (currentSubStep4 === 9 && qualityResult?.items?.length) {
+    if (currentSubStep4 === 8 && qualityResult?.items?.length) {
       const start = (currentPage - 1) * itemsPerPage;
       qualityResult.items.slice(start, start + itemsPerPage).forEach((item: any) => {
         if (item?._id) sampleIds.add(String(item._id));
@@ -238,24 +345,23 @@ export const Stage4Labeling: React.FC = () => {
   ]);
 
   const SUB_STEPS_STAGE4 = [
-    { num: 7, label: 'Quality Review' },
-    { num: 9, label: 'Quality Review' },
-    { num: 10, label: 'Rewrite Assignment' },
-    { num: 11, label: 'Assignment Review' },
-    { num: 12, label: 'Dataset Distribution' },
+    { num: 8, label: 'Xem xét Chất lượng' },
+    { num: 9, label: 'Giao task Viết lại' },
+    { num: 10, label: 'Duyệt bài Viết lại' },
+    { num: 11, label: 'Phân phối Dataset' },
   ];
 
   const handleStartScoring = async () => {
     const selectedModels = Object.keys(judgeModels).filter(k => judgeModels[k]);
     if (selectedModels.length === 0) {
-      alert('Please select at least 1 AI Judge model.');
+      alert('Vui lòng chọn ít nhất 1 mô hình AI Judge.');
       return;
     }
     try {
       setSepRunningEval(true);
       await runMultiEval(selectedModels, 'No Context');
     } catch (err: any) {
-      alert(err.message || 'Failed to start scoring');
+      alert(err.message || 'Không thể bắt đầu chấm điểm');
     } finally {
       setSepRunningEval(false);
     }
@@ -271,15 +377,15 @@ export const Stage4Labeling: React.FC = () => {
 
   const handleAdminSetVerdict = async (item: any, finalClassification: 'Gold' | 'Rewrite' | 'Reject') => {
     try {
-      await handleAdjudicateQuality(item.sampleObjectId || item.id, finalClassification, `Admin set verdict to ${finalClassification} in Stage 4 review.`);
+      await handleAdjudicateQuality(item.sampleObjectId || item.id, finalClassification, `Supervisor đã đặt kết quả ${finalClassification} trong Stage 4.`);
       setSepQualityLabels((prev: any) => ({ ...prev, [item.id]: finalClassification }));
       if (item.scores?.resultId) {
         const action = finalClassification === 'Gold' ? 'approve' : finalClassification === 'Rewrite' ? 'rewrite' : 'reject';
-        await adjudicateMultiEvalResult(item.scores.resultId, action as any, `Admin set verdict to ${finalClassification} in Stage 4 review.`);
+        await adjudicateMultiEvalResult(item.scores.resultId, action as any, `Supervisor đã đặt kết quả ${finalClassification} trong Stage 4.`);
       }
       setReviewDetailModal((prev: any) => prev ? { ...prev, bucket: finalClassification } : prev);
     } catch (err: any) {
-      alert(err.message || 'Failed to update verdict');
+      alert(err.message || 'Không thể cập nhật kết luận');
     }
   };
 
@@ -292,28 +398,37 @@ export const Stage4Labeling: React.FC = () => {
     if (!item) return;
 
     const messages = item.data?.messages || item.messages || [];
-    let targetMessageIndex = item.errorMessageIndex ?? -1;
-    if (targetMessageIndex < 0) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i]?.role === 'assistant') {
-          targetMessageIndex = i;
-          break;
-        }
-      }
-    }
-    const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
+    
+    // Support multiple message indices selected
+    const targetIndices = item.errorMessageIndices && item.errorMessageIndices.length > 0
+      ? item.errorMessageIndices
+      : (() => {
+          let targetIdx = item.errorMessageIndex ?? -1;
+          if (targetIdx < 0) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              if (messages[i]?.role === 'assistant') {
+                targetIdx = i;
+                break;
+              }
+            }
+          }
+          return targetIdx >= 0 ? [targetIdx] : [1];
+        })();
 
     try {
-      await stage4Api.assignRewrite(activeVersionId, {
-        sampleId: String(item.sampleObjectId || item._id || item.id),
-        assigneeId: staffId,
-        convId: String(item.convId || item.sampleId || item.id),
-        subject: item.subject || '',
-        reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
-        originalText,
-        targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-        contextMode: 'n-2:n+2'
-      });
+      for (const targetIdx of targetIndices) {
+        const originalText = targetIdx >= 0 ? String(messages[targetIdx]?.content || messages[targetIdx]?.text || '') : '';
+        await stage4Api.assignRewrite(activeVersionId, {
+          sampleId: String(item.sampleObjectId || item._id || item.id),
+          assigneeId: staffId,
+          convId: String(item.convId || item.sampleId || item.id),
+          subject: item.subject || '',
+          reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
+          originalText,
+          targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
+          contextMode: 'n-2:n+2'
+        });
+      }
       setReassignStaff((prev: any) => ({ ...prev, [item.id]: staffName }));
       const refreshed = await stage4Api.listRewriteAssignments(activeVersionId);
       setRewriteAssignments(refreshed.tasks || []);
@@ -385,7 +500,8 @@ export const Stage4Labeling: React.FC = () => {
   // Rule-based score (mirrors backend quality.service intent/action matching) so the
   // Staff Rule Score can be derived directly from the message-scope comparison targets.
   const RULE_VALID_ACTIONS: Record<string, string[]> = {
-    CORRECT: ['PRAISING'],
+    ANSWER_ATTEMPT: ['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING'],
+    CORRECT: ['PRAISING', 'CONFIRM_CORRECT_ANSWER'],
     INCORRECT: ['SCAFFOLDING'],
     REQUEST_HINT: ['HINTING', 'SCAFFOLDING'],
     ASK_THEORY: ['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN'],
@@ -397,11 +513,16 @@ export const Stage4Labeling: React.FC = () => {
     NEXT_SECTION: ['TRANSITIONING', 'NAVIGATING'],
   };
   const RULE_HARMFUL_ACTIONS: Record<string, string[]> = {
+    ANSWER_ATTEMPT: ['DIRECT_ANSWER'],
     INCORRECT: ['PRAISING'],
     REQUEST_HINT: ['LOGIC_BREAKDOWN'],
   };
   const RULE_USER_INTENTS = new Set(Object.keys(RULE_VALID_ACTIONS));
-  const RULE_ASSISTANT_ACTIONS = new Set(Object.values(RULE_VALID_ACTIONS).flat());
+  const RULE_ASSISTANT_ACTIONS = new Set([
+    ...Object.values(RULE_VALID_ACTIONS).flat(),
+    'WAITING',
+    'DIRECT_ANSWER',
+  ]);
 
   const DRAFT_INTENT_MAP: Record<string, string> = {
     'Ask Explanation': 'REQUEST_EXPLANATION',
@@ -428,20 +549,56 @@ export const Stage4Labeling: React.FC = () => {
     Other: 'WAITING',
   };
 
+  const FRONTEND_STAGE3_TO_BACKEND_MAP: Record<string, string> = {
+    'ANS': 'ANSWER_ATTEMPT',
+    'HINT': 'REQUEST_HINT',
+    'THEO': 'ASK_THEORY',
+    'WHY': 'REQUEST_EXPLANATION',
+    'EASY': 'REQUEST_SIMPLER',
+    'SKIP': 'SKIP_EXERCISE',
+    'DIS': 'ENCOURAGE',
+    'OFF': 'OFF_TOPIC',
+    'RDY': 'NEXT_SECTION',
+    'CFM': 'NEXT_SECTION',
+    'CONFIRM_UNDERSTANDING': 'NEXT_SECTION',
+    'CONFIRM': 'NEXT_SECTION',
+    'UNDERSTOOD': 'NEXT_SECTION',
+
+    'CONF': 'CONFIRM_CORRECT_ANSWER',
+    'WRONG': 'IDENTIFY_INCORRECT_ANSWER',
+    'FIX': 'CORRECT_MISTAKE',
+    'SCAF': 'SCAFFOLDING',
+    'CLR': 'CONCEPT_CLARIFY',
+    'LOG': 'LOGIC_BREAKDOWN',
+    'SIMP': 'SIMPLIFYING',
+    'PR': 'PRAISING',
+    'MOT': 'MOTIVATING',
+    'REDIR': 'REDIRECTING',
+    'TRAN': 'TRANSITIONING',
+    'DIR': 'DIRECT_ANSWER',
+    'WAIT': 'WAITING',
+    'WAITING': 'WAITING',
+    'DIRECT_ANSWER': 'DIRECT_ANSWER'
+  };
+
   const normalizeStaffLabelCode = (raw: string, role: string): string => {
     const trimmed = String(raw || '').trim();
     if (!trimmed) return '';
+    const upper = trimmed.toUpperCase();
+    if (FRONTEND_STAGE3_TO_BACKEND_MAP[upper]) {
+      return FRONTEND_STAGE3_TO_BACKEND_MAP[upper];
+    }
     if (role === 'user') {
       if (DRAFT_INTENT_MAP[trimmed]) return DRAFT_INTENT_MAP[trimmed];
-      const upper = trimmed.toUpperCase();
-      return RULE_USER_INTENTS.has(upper) ? upper : upper;
+      if (DRAFT_INTENT_MAP[upper]) return DRAFT_INTENT_MAP[upper];
+      return upper;
     }
     if (role === 'assistant') {
       if (DRAFT_ACTION_MAP[trimmed]) return DRAFT_ACTION_MAP[trimmed];
-      const upper = trimmed.toUpperCase();
-      return RULE_ASSISTANT_ACTIONS.has(upper) ? upper : upper;
+      if (DRAFT_ACTION_MAP[upper]) return DRAFT_ACTION_MAP[upper];
+      return upper;
     }
-    return trimmed.toUpperCase();
+    return upper;
   };
 
   const displayStaffLabel = (raw: string, role: string, displayLabel?: string): string => {
@@ -497,17 +654,65 @@ export const Stage4Labeling: React.FC = () => {
     return mapBackendMessagesToUiMessages(humanItem?.data?.messages || []);
   };
 
-  // Build messageIndex -> { user:[labels], assistant:[labels] } from comparison targets
   const buildMessageLabelIndex = (comparison: any) => {
     const map = new Map<number, { user: string[]; assistant: string[] }>();
     if (!Array.isArray(comparison?.targets)) return map;
+
     comparison.targets.forEach((t: any) => {
       if (t.targetScope !== 'message') return;
       const idx = Number(t.messageIndex);
       const role = t.messageRole === 'assistant' ? 'assistant' : 'user';
       if (!Number.isInteger(idx) || !Array.isArray(t.annotators)) return;
+
+      // Partition annotators for this specific target
+      const checkerAnn = t.annotators.filter((a: any) =>
+        a.isCanonical || a.annotator?.role === 'checker' ||
+        a.annotator?.role === 'supervisor' || a.annotator?.role === 'admin' || a.isOwner
+      );
+      
+      let relevantAnnotators: any[] = [];
+      if (checkerAnn.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)) {
+        relevantAnnotators = checkerAnn;
+      } else {
+        // No checker labels on this target. Check staff.
+        const staffAnn = t.annotators.filter((a: any) => !checkerAnn.includes(a));
+        const staffWithLabels = staffAnn.filter((a: any) => Array.isArray(a.labels) && a.labels.length > 0);
+        
+        if (staffWithLabels.length < 2) {
+          relevantAnnotators = staffWithLabels;
+        } else {
+          // Check if all staff agree on their labels for this target
+          const userLabelsMap = new Map<string, string[]>();
+          staffWithLabels.forEach((a: any) => {
+            const userId = String(a.annotator?.id || a.annotator?._id || '');
+            const codes = (a.labels || []).map((l: string) => normalizeStaffLabelCode(l, role));
+            if (userId && codes.length > 0) {
+              userLabelsMap.set(userId, codes);
+            }
+          });
+          
+          let staffAgreed = false;
+          if (userLabelsMap.size > 0) {
+            const lists = Array.from(userLabelsMap.values());
+            const firstList = lists[0].slice().sort();
+            staffAgreed = lists.every(list => {
+              if (list.length !== firstList.length) return false;
+              const sorted = list.slice().sort();
+              return sorted.every((val, index) => val === firstList[index]);
+            });
+          }
+          
+          if (staffAgreed) {
+            relevantAnnotators = staffWithLabels;
+          } else {
+            // Disagree and no checker resolved yet → no labels
+            relevantAnnotators = [];
+          }
+        }
+      }
+
       const labels = Array.from(new Set(
-        t.annotators.flatMap((a: any) => {
+        relevantAnnotators.flatMap((a: any) => {
           const codes = Array.isArray(a.labels) ? a.labels : [];
           return codes.map((l: string) => normalizeStaffLabelCode(l, role));
         })
@@ -605,9 +810,11 @@ export const Stage4Labeling: React.FC = () => {
       const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
       const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
       const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
-      const human = resolveHumanScore(
-        toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
-      );
+      const human = (resMatch.pendingAdjudication || humanItem?.pendingAdjudication)
+        ? null
+        : resolveHumanScore(
+            toTenPointHumanScore(humanItem) ?? resMatch.scores?.human ?? resMatch.scores?.Human
+          );
       const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
       const avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
       const diff = avgAI != null && human != null ? Math.abs(avgAI - human) : (resMatch.diff || 0);
@@ -616,14 +823,14 @@ export const Stage4Labeling: React.FC = () => {
         deepseek,
         groq,
         human,
-        conflict: Boolean(resMatch.hasConflict) || resMatch.recommendation === 'Conflict' || (human != null && diff >= conflictThreshold),
+        conflict: !resMatch.pendingAdjudication && !humanItem?.pendingAdjudication && (Boolean(resMatch.hasConflict) || resMatch.recommendation === 'Conflict' || (human != null && diff >= conflictThreshold)),
         resultId: resMatch._id,
         finalRecommendation: resMatch.finalRecommendation,
         supervisorAction: resMatch.supervisorAction || resMatch.adjudicationAction,
         supervisorNote: resMatch.supervisorNote || resMatch.adjudicationNote,
       };
     }
-    const human = resolveHumanScore(toTenPointHumanScore(humanItem));
+    const human = humanItem?.pendingAdjudication ? null : resolveHumanScore(toTenPointHumanScore(humanItem));
     return {
       openrouter: null,
       deepseek: null,
@@ -654,34 +861,54 @@ export const Stage4Labeling: React.FC = () => {
     messageLevelTargets: any[],
   ) => {
     const kindForRole = (r: string): 'Intent' | 'Action' => (r === 'user' ? 'Intent' : 'Action');
-    const turn = turnPairs.find((t: any) =>
-      t.userMessageIndex === messageIndex || t.assistantMessageIndex === messageIndex
-    );
-    const turnLabels: string[] = role === 'user' ? (turn?.userLabels || []) : (turn?.assistantLabels || []);
-    if (turnLabels.length > 0) {
-      return turnLabels.map((label: string) => ({
-        label: displayStaffLabel(label, role),
-        kind: kindForRole(role),
-        staff: 'Staff',
-        isOwner: false,
-      }));
-    }
 
-    return messageLevelTargets
+    const allLabels = messageLevelTargets
       .filter((target: any) => Number(target.messageIndex) === messageIndex && target.messageRole === role)
       .flatMap((target: any) => target.annotators
         .filter((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
         .flatMap((a: any) => {
           const codes = Array.isArray(a.labels) ? a.labels : [];
           const displays = Array.isArray(a.displayLabels) ? a.displayLabels : codes;
+          
+          let source: 'staff' | 'checker' | 'supervisor' | 'ai' = 'staff';
+          if (a.isCanonical || a.annotator?.role === 'checker') {
+            source = 'checker';
+          } else if (a.isOwner || a.annotator?.role === 'supervisor' || a.annotator?.role === 'admin') {
+            source = 'supervisor';
+          }
+
           return codes.map((lbl: string, labelIndex: number) => ({
             label: displayStaffLabel(lbl, role, displays[labelIndex]),
             kind: kindForRole(role),
             staff: a.annotator?.name || a.annotator?.email || (a.isOwner ? 'Owner' : 'Staff'),
             isOwner: Boolean(a.isOwner),
+            source,
           }));
         })
       );
+
+    if (allLabels.length > 0) {
+      // Filter to only show the final level of labeling for this message
+      const supervisorLabels = allLabels.filter(l => l.source === 'supervisor');
+      if (supervisorLabels.length > 0) return supervisorLabels;
+
+      const checkerLabels = allLabels.filter(l => l.source === 'checker');
+      if (checkerLabels.length > 0) return checkerLabels;
+
+      return allLabels;
+    }
+
+    const turn = turnPairs.find((t: any) =>
+      t.userMessageIndex === messageIndex || t.assistantMessageIndex === messageIndex
+    );
+    const turnLabels: string[] = role === 'user' ? (turn?.userLabels || []) : (turn?.assistantLabels || []);
+    return turnLabels.map((label: string) => ({
+      label: displayStaffLabel(label, role),
+      kind: kindForRole(role),
+      staff: 'Staff',
+      isOwner: false,
+      source: 'staff' as const,
+    }));
   };
 
   const openReviewDetailModal = (item: any) => {
@@ -734,11 +961,13 @@ export const Stage4Labeling: React.FC = () => {
       issue: item.conflict ? 'Conflict' : 'None',
       issueKey: item.conflict ? 'conflict' : 'none',
       reason: item.note || 'No special issues flagged.',
-      errorMessageIndex: 1,
+      errorMessageIndices: item.errorMessageIndices ?? (item.errorMessageIndex != null ? [item.errorMessageIndex] : [1]),
+      errorMessageIndex: item.errorMessageIndex ?? 1,
       messages: mapBackendMessagesToUiMessages(item.data?.messages || []),
       rawItem: item,
+      pendingAdjudication: Boolean(item.pendingAdjudication || evalMatch?.pendingAdjudication),
     };
-  }) : [];
+  }) as any[] : [];
 
   const stage4TotalSamples = labelingStatus?.totalSamples || qualityResult?.totalSamples || 0;
   const stage4LabeledSamples = labelingStatus?.labeledSamples || 0;
@@ -789,17 +1018,16 @@ export const Stage4Labeling: React.FC = () => {
     : stage4UnlabeledSamples;
 
   const canNavigateToStage4Step = (targetStep: number) => {
-    if (currentSubStep4 === 7 && stage4CanScore && targetStep === 10) return true;
+    if (currentSubStep4 === 8 && stage4CanScore && targetStep === 9) return true;
     if (targetStep <= currentSubStep4) return true;
     if (targetStep !== currentSubStep4 + 1) return false;
-    if (currentSubStep4 === 7) return stage4CanScore;
-    if (currentSubStep4 === 8) return false;
+    if (currentSubStep4 === 8) return stage4CanScore;
     return currentSubStep4 >= 9;
   };
 
   const goToStage4Step = (targetStep: number) => {
-    if (targetStep === 7) {
-      setCurrentSubStep4(7);
+    if (targetStep === 8) {
+      setCurrentSubStep4(8);
       return;
     }
     if (canNavigateToStage4Step(targetStep)) {
@@ -994,18 +1222,18 @@ export const Stage4Labeling: React.FC = () => {
   return (
     <div className="dataprep-stage2 sep490-stage">
       <div className="sub-stepper">
-        {SUB_STEPS_STAGE4.filter(step => step.num !== 8 && step.num !== 9).map((step, idx, visibleSteps) => (
+        {SUB_STEPS_STAGE4.map((step, idx) => (
           <React.Fragment key={step.num}>
             <div
-              className={`sub-step ${(step.num === currentSubStep4 || (step.num === 7 && currentSubStep4 === 9)) ? 'active' : ''} ${step.num < currentSubStep4 && !(step.num === 7 && currentSubStep4 === 9) ? 'completed' : ''}`}
+              className={`sub-step ${step.num === currentSubStep4 ? 'active' : ''} ${step.num < currentSubStep4 ? 'completed' : ''}`}
               onClick={() => goToStage4Step(step.num)}
             >
               <div className="sub-step-circle">
-                {step.num < currentSubStep4 ? <Check size={14} /> : idx + 7}
+                {step.num < currentSubStep4 ? <Check size={14} /> : step.num}
               </div>
-              <div className="sub-step-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{step.label}{step.num === 11 && rewriteAssignments.filter((task: any) => task.status === 'submitted').length > 0 && <span style={{ minWidth: '20px', height: '20px', padding: '0 6px', borderRadius: '999px', background: '#ea580c', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: '900' }}>{rewriteAssignments.filter((task: any) => task.status === 'submitted').length}</span>}</div>
+              <div className="sub-step-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{step.label}</div>
             </div>
-            {idx < visibleSteps.length - 1 && <div className="sub-step-connector" />}
+            {idx < SUB_STEPS_STAGE4.length - 1 && <div className="sub-step-connector" />}
           </React.Fragment>
         ))}
       </div>
@@ -1070,15 +1298,15 @@ export const Stage4Labeling: React.FC = () => {
       {!isStage4Loading && !stage4Error && (
         <>
           {/* ===== STEP 7: LOBBY GATE ===== */}
-          {currentSubStep4 === 7 && !stage4CanScore && (
+          {currentSubStep4 === 8 && !stage4CanScore && (
             <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Hero card - Light Theme */}
               <div style={{ background: 'linear-gradient(135deg, #f8fafc, #eff6ff)', border: '1px solid #dbeafe', borderRadius: '12px', padding: '32px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '32px', flexWrap: 'wrap', boxShadow: '0 4px 12px rgba(37,99,235,0.03)' }}>
                 <div style={{ flex: '1', minWidth: '240px' }}>
-                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>STEP 7 · LIVE REVIEW</div>
-                  <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '900', color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Quality Review</h2>
+                  <div style={{ fontSize: '12px', fontWeight: '800', color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>BƯỚC 8 · THEO DÕI TRỰC TIẾP</div>
+                  <h2 style={{ margin: '0 0 8px 0', fontSize: '22px', fontWeight: '900', color: '#0f172a', fontFamily: 'Outfit, sans-serif' }}>Xem xét Chất lượng</h2>
                   <p style={{ margin: 0, fontSize: '14px', color: '#475569', lineHeight: '1.6' }}>
-                    Admin có thể theo dõi nhãn và chất lượng ngay khi Staff đang làm. AI scoring và xuất kết quả cuối chỉ mở sau khi dữ liệu đủ điều kiện.
+                    Supervisor có thể theo dõi nhãn và chất lượng ngay khi Staff đang làm. AI scoring và xuất kết quả cuối chỉ mở sau khi dữ liệu đủ điều kiện.
                   </p>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
@@ -1091,11 +1319,11 @@ export const Stage4Labeling: React.FC = () => {
                     </svg>
                     <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                       <span style={{ fontSize: '22px', fontWeight: '900', color: '#1e293b' }}>{step7DisplayPct}%</span>
-                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>labeled</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '600' }}>đã gán nhãn</span>
                     </div>
                   </div>
                   <span style={{ fontSize: '12px', color: '#475569', fontWeight: '600' }}>
-                    {stage4CanScore ? 'Ready for scoring' : `${pendingStaffCount} staff pending`}
+                    {stage4CanScore ? 'Sẵn sàng chấm điểm' : `${pendingStaffCount} staff đang chờ`}
                   </span>
                 </div>
               </div>
@@ -1103,9 +1331,9 @@ export const Stage4Labeling: React.FC = () => {
               {/* Staff Status Board */}
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Staff Status Board</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1e293b' }}>Bảng trạng thái Staff</h3>
                   <span style={{ fontSize: '13px', color: '#64748b' }}>
-                    Auto-refreshing every 5s · {step7DisplayLabeled}/{step7DisplayTotal} samples labeled
+                    Tự cập nhật mỗi 5 giây · {step7DisplayLabeled}/{step7DisplayTotal} mẫu đã gán nhãn
                   </span>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1113,11 +1341,11 @@ export const Stage4Labeling: React.FC = () => {
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
                         <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Staff</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Assigned Subject</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Labeled / Assigned</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase', minWidth: '150px' }}>Progress</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Status</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Action</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Môn được giao</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Đã gán / Tổng</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase', minWidth: '150px' }}>Tiến độ</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Trạng thái</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '12px', textTransform: 'uppercase' }}>Hành động</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1200,7 +1428,7 @@ export const Stage4Labeling: React.FC = () => {
                                       e.currentTarget.style.boxShadow = '0 2px 4px rgba(79, 70, 229, 0.05)';
                                     }}
                                   >
-                                    Remind
+                                    Nhắc việc
                                   </button>
                                 )}
                               </td>
@@ -1225,7 +1453,7 @@ export const Stage4Labeling: React.FC = () => {
                   onClick={() => {
                     if (!stage4CanScore) return;
                     setStage4StaffReady(true);
-                    setCurrentSubStep4(7);
+                    setCurrentSubStep4(8);
                   }}
                   disabled={!stage4CanScore}
                   style={{ padding: '14px 28px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: stage4CanScore ? '#1e293b' : '#e2e8f0', color: stage4CanScore ? '#fff' : '#94a3b8', cursor: stage4CanScore ? 'pointer' : 'not-allowed' }}
@@ -1239,9 +1467,9 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 8: AUTOMATED AI SCORING ===== */}
           {false && currentSubStep4 === 8 && (() => {
             const aiModels = [
-              { key: 'openrouter', label: 'OpenRouter Model', desc: 'Custom OpenRouter endpoint', color: '#4f46e5', badge: 'Recommended' },
-              { key: 'groq', label: 'Groq Llama', desc: 'Fast inference via Groq', color: '#059669', badge: '' },
+              { key: 'gemini', label: 'Gemini Model', desc: 'Default Gemini model (gemini-2.0-flash)', color: '#4f46e5', badge: 'Recommended' },
               { key: 'deepseek', label: 'Deepseek R1/V3', desc: 'Advanced pedagogical logic, free', color: '#0891b2', badge: 'Free' },
+              { key: 'openai', label: 'OpenAI GPT', desc: 'GPT-4o-mini via OpenAI', color: '#059669', badge: '' },
             ];
             const selectedCount = Object.values(judgeModels).filter(Boolean).length;
 
@@ -1334,9 +1562,9 @@ export const Stage4Labeling: React.FC = () => {
                         </div>
                       </div>
                     )}
-                    <button onClick={() => setCurrentSubStep4(9)}
+                    <button onClick={() => setCurrentSubStep4(8)}
                       style={{ width: '100%', padding: '14px', fontSize: '15px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                      Next: Quality Management &rarr;
+                      Tiếp: Xem xét Chất lượng &rarr;
                     </button>
                   </div>
                 </div>
@@ -1344,8 +1572,8 @@ export const Stage4Labeling: React.FC = () => {
             );
           })()}
 
-          {/* ===== STEP 9: QUALITY REVIEW (read-only) ===== */}
-          {(currentSubStep4 === 9 || currentSubStep4 === 7) && (() => {
+          {/* ===== STEP 8: QUALITY REVIEW (read-only) ===== */}
+          {currentSubStep4 === 8 && (() => {
             const rewriteItems = displayQualityItems.filter(i => i.bucket === 'Rewrite');
             const badItems = displayQualityItems.filter(i => i.bucket === 'Reject' || i.bucket === 'Bad' || getQualityLabel(i) === 'Bad');
             const goldItems = displayQualityItems.filter(i => i.bucket === 'Gold');
@@ -1361,24 +1589,28 @@ export const Stage4Labeling: React.FC = () => {
             const safePage = Math.min(currentPage, totalPages);
             const paginatedItems = displayItems.slice((safePage - 1) * itemsPerPage, safePage * itemsPerPage);
 
-            const ScoreCell = ({ val }) => val != null
-              ? <span style={{ fontWeight: '700', color: val >= 7 ? '#16a34a' : val >= 5 ? '#d97706' : '#dc2626' }}>{val.toFixed(1)}</span>
-              : <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>;
+            const ScoreCell = ({ val }) => {
+              if (val == null) return <span style={{ color: '#cbd5e1', fontSize: '12px' }}>-</span>;
+              if (typeof val === 'string') {
+                return <span style={{ fontWeight: '700', color: '#ea580c', fontSize: '12.5px' }}>{val}</span>;
+              }
+              return <span style={{ fontWeight: '700', color: val >= 7 ? '#16a34a' : val >= 5 ? '#d97706' : '#dc2626' }}>{val.toFixed(1)}</span>;
+            };
 
             return (
               <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {/* Header read-only */}
                 <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Quality Review (read-only)</h2>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>Read AI judge scores and the Stage 3 Staff Rule Score. Human review decisions are created from the review/adjudication actions.</p>
+                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#1e293b' }}>Xem xét Chất lượng (chỉ xem)</h2>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748b' }}>Xem điểm AI và Điểm luật Staff từ Stage 3. Quyết định được tạo từ các hành động xem xét/phân xử.</p>
                   </div>
                   <div style={{ display: 'flex', gap: '10px' }}>
                     {[
-                      { bg: '#dcfce7', clr: '#15803d', lbl: 'Gold', cnt: goldItems.length },
-                      { bg: '#fef3c7', clr: '#92400e', lbl: 'Rewrite', cnt: rewriteItems.length },
-                      { bg: '#fee2e2', clr: '#dc2626', lbl: 'Bad', cnt: badItems.length },
-                      { bg: '#fff1f2', clr: '#9333ea', lbl: 'Conflict', cnt: conflictItems.length },
+                      { bg: '#dcfce7', clr: '#15803d', lbl: 'Tốt (Gold)', cnt: goldItems.length },
+                      { bg: '#fef3c7', clr: '#92400e', lbl: 'Cần sửa (Rewrite)', cnt: rewriteItems.length },
+                      { bg: '#fee2e2', clr: '#dc2626', lbl: 'Loại (Bad)', cnt: badItems.length },
+                      { bg: '#fff1f2', clr: '#9333ea', lbl: 'Xung đột', cnt: conflictItems.length },
                     ].map(({ bg, clr, lbl, cnt }) => (
                       <div key={lbl} style={{ background: bg, borderRadius: '12px', padding: '8px 14px', textAlign: 'center' }}>
                         <div style={{ fontSize: '11px', fontWeight: '700', color: clr }}>{lbl}</div>
@@ -1436,11 +1668,11 @@ export const Stage4Labeling: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {[
-                      { key: 'all', label: 'All', count: allItems.length, color: '#475569' },
-                      { key: 'gold', label: 'Gold', count: goldItems.length, color: '#15803d' },
-                      { key: 'rewrite', label: 'Rewrite', count: rewriteItems.length, color: '#92400e' },
-                      { key: 'bad', label: 'Bad', count: badItems.length, color: '#dc2626' },
-                      { key: 'conflict', label: 'Conflict', count: conflictItems.length, color: '#9333ea' },
+                      { key: 'all', label: 'Tất cả', count: allItems.length, color: '#475569' },
+                      { key: 'gold', label: 'Tốt', count: goldItems.length, color: '#15803d' },
+                      { key: 'rewrite', label: 'Cần viết lại', count: rewriteItems.length, color: '#92400e' },
+                      { key: 'bad', label: 'Chưa đạt', count: badItems.length, color: '#dc2626' },
+                      { key: 'conflict', label: 'Xung đột', count: conflictItems.length, color: '#9333ea' },
                     ].map(({ key, label, count, color }) => (
                       <button key={key} onClick={() => { setQualityTab(key); setCurrentPage(1); }} style={{
                         padding: '8px 16px', fontSize: '13px', fontWeight: '700', borderRadius: '999px', border: '1px solid',
@@ -1453,9 +1685,9 @@ export const Stage4Labeling: React.FC = () => {
                     ))}
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                    <button onClick={() => setCurrentSubStep4(10)}
+                    <button onClick={() => setCurrentSubStep4(9)}
                       style={{ padding: '12px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer' }}>
-                      Go to Assign Rewrite &rarr;
+                      Tiếp: Giao Viết lại &rarr;
                     </button>
                   </div>
                 </div>
@@ -1465,24 +1697,24 @@ export const Stage4Labeling: React.FC = () => {
                   {displayItems.length === 0 ? (
                     <div className="empty-state-card">
                       <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
-                      <h3 className="empty-state-title">{allItems.length === 0 ? 'No quality results yet' : 'All clear!'}</h3>
-                      <p className="empty-state-desc">{allItems.length === 0 ? 'Run AI scoring in Step 8 after Step 7 is ready. This screen no longer shows demo samples.' : 'No items found in this category. Everything looks great so far.'}</p>
+                      <h3 className="empty-state-title">{allItems.length === 0 ? 'Chưa có kết quả chất lượng' : 'Mọi thứ đã ổn!'}</h3>
+                      <p className="empty-state-desc">{allItems.length === 0 ? 'Hãy chạy AI Scoring trong Bước 8 sau khi Bước 7 sẵn sàng.' : 'Không tìm thấy mục nào trong danh mục này.'}</p>
                     </div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', minWidth: '900px' }}>
                       <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Conv ID</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Subject</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Issue</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Mã hội thoại</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Môn học</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Vấn đề</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>OpenRouter</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#0891b2', fontSize: '11px', textTransform: 'uppercase', background: '#ecfeff' }}>Deepseek</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>Groq</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Avg AI</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Staff Rule Score</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Conflict</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Verdict</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Details</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Trung bình AI</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Điểm luật Staff</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Xung đột</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Kết luận</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Chi tiết</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1508,7 +1740,19 @@ export const Stage4Labeling: React.FC = () => {
                               <td style={{ padding: '10px 14px', textAlign: 'center', background: '#f5f3ff' }}>
                                 {avgAI != null ? <span style={{ fontWeight: '800', color: avgAI >= 7 ? '#7c3aed' : avgAI >= 5 ? '#d97706' : '#dc2626' }}>{avgAI.toFixed(1)}</span> : <span style={{ color: '#cbd5e1' }}>-</span>}
                               </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'center' }}><ScoreCell val={scores.human} /></td>
+                              <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                                <ScoreCell val={(item as any).pendingAdjudication ? "⏳ Đang tính toán" : (() => {
+                                  const comparison = sampleComparisons[item.sampleObjectId || item.id];
+                                  if (comparison) {
+                                    const target = comparison.targets?.find((t: any) => t.targetScope === 'sample' && t.messageIndex === 0);
+                                    const staffAnnotatorsCount = target ? target.annotators?.filter((a: any) => !a.isCanonical).length : 0;
+                                    if (staffAnnotatorsCount === 2 && comparison.hasConflict && comparison.pendingAdjudicationCount > 0) {
+                                      return "⏳ Đang tính toán";
+                                    }
+                                  }
+                                  return scores.human ?? "⏳ Đang tính toán";
+                                })()} />
+                              </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 {scores.conflict ? (
                                   <span style={{ padding: '4px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: '800', background: '#fee2e2', color: '#dc2626', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
@@ -1523,12 +1767,12 @@ export const Stage4Labeling: React.FC = () => {
                                   padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '700',
                                   background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2',
                                   color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626'
-                                }}>{label}</span>
+                                }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                               </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 <button onClick={e => { e.stopPropagation(); openReviewDetailModal(item); }}
                                   style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', color: '#4f46e5' }}>
-                                  View
+                                  Xem
                                 </button>
                               </td>
                             </tr>
@@ -1543,7 +1787,7 @@ export const Stage4Labeling: React.FC = () => {
                 {displayItems.length > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px 18px' }}>
                     <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '500' }}>
-                      Showing <strong style={{ color: '#1e293b', fontWeight: '700' }}>{(safePage - 1) * itemsPerPage + 1}</strong>–<strong style={{ color: '#1e293b', fontWeight: '700' }}>{Math.min(safePage * itemsPerPage, displayItems.length)}</strong> of <strong style={{ color: '#1e293b', fontWeight: '700' }}>{displayItems.length}</strong>
+                      Hiển thị <strong style={{ color: '#1e293b', fontWeight: '700' }}>{(safePage - 1) * itemsPerPage + 1}</strong>–<strong style={{ color: '#1e293b', fontWeight: '700' }}>{Math.min(safePage * itemsPerPage, displayItems.length)}</strong> / <strong style={{ color: '#1e293b', fontWeight: '700' }}>{displayItems.length}</strong>
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button
@@ -1551,19 +1795,19 @@ export const Stage4Labeling: React.FC = () => {
                         disabled={safePage <= 1}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: safePage <= 1 ? '#f8fafc' : '#fff', color: safePage <= 1 ? '#cbd5e1' : '#475569', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                       >
-                        <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Previous
+                        <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Trước
                       </button>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '0 6px', fontSize: '13px', color: '#64748b' }}>
-                        <span>Page</span>
+                        <span>Trang</span>
                         <span style={{ minWidth: '26px', height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px', borderRadius: '8px', background: '#1e293b', color: '#fff', fontWeight: '800' }}>{safePage}</span>
-                        <span>of <strong style={{ color: '#1e293b', fontWeight: '700' }}>{totalPages}</strong></span>
+                        <span>/ <strong style={{ color: '#1e293b', fontWeight: '700' }}>{totalPages}</strong></span>
                       </div>
                       <button
                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                         disabled={safePage >= totalPages}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #e2e8f0', background: safePage >= totalPages ? '#f8fafc' : '#fff', color: safePage >= totalPages ? '#cbd5e1' : '#475569', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', transition: 'all 0.15s' }}
                       >
-                        Next <ChevronRight size={14} />
+                        Tiếp <ChevronRight size={14} />
                       </button>
                     </div>
                   </div>
@@ -1571,9 +1815,9 @@ export const Stage4Labeling: React.FC = () => {
 
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(10)}
+                  <button onClick={() => setCurrentSubStep4(9)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Assign Rewrite &rarr;
+                    Tiếp: Giao Viết lại &rarr;
                   </button>
                 </div>
 
@@ -1590,6 +1834,45 @@ export const Stage4Labeling: React.FC = () => {
                     reviewDetailModal.sampleObjectId || reviewDetailModal.id,
                     reviewDetailModal.convId
                   );
+                  
+                  const displayStaffHumanScore = (() => {
+                    const comparison = sampleComparison;
+                    if (comparison) {
+                      const target = comparison.targets?.find((t: any) => t.targetScope === 'sample' && t.messageIndex === 0);
+                      const staffAnnotatorsCount = target ? target.annotators?.filter((a: any) => !a.isCanonical).length : 0;
+                      if (staffAnnotatorsCount === 2 && comparison.hasConflict && comparison.pendingAdjudicationCount > 0) {
+                        return "⏳ Đang tính toán";
+                      }
+                    }
+                    if (staffHuman == null) return "⏳ Đang tính toán";
+                    return staffHuman;
+                  })();
+
+                  const annotatorsEvaluations = (() => {
+                    if (!sampleComparison || !Array.isArray(sampleComparison.targets)) return [];
+                    const evalMap = new Map<string, { name: string; email: string; subject?: string; status?: string; quality?: string }>();
+                    
+                    sampleComparison.targets.forEach((target: any) => {
+                      if (target.targetScope === 'sample') {
+                        const idx = Number(target.messageIndex);
+                        target.annotators?.forEach((a: any) => {
+                          const staffId = String(a.annotator?.id || a.annotator?._id || '');
+                          if (!staffId) return;
+                          const current: { name: string; email: string; subject?: string; status?: string; quality?: string } = evalMap.get(staffId) || {
+                            name: a.annotator?.name || a.annotator?.email || (a.isOwner ? 'Owner' : 'Staff'),
+                            email: a.annotator?.email || '',
+                          };
+                          const val = String(a.labels?.[0] || '');
+                          if (idx === 0) current.subject = val;
+                          if (idx === 1) current.status = val;
+                          if (idx === 2) current.quality = val;
+                          evalMap.set(staffId, current);
+                        });
+                      }
+                    });
+                    return Array.from(evalMap.values());
+                  })();
+
                   const scores = { ...baseScores, human: staffHuman };
                   const label = getQualityLabel(reviewDetailModal);
                   const avgAI = getAvgAI(scores);
@@ -1615,7 +1898,7 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ background: '#1e293b', padding: '20px 24px', borderRadius: '12px 12px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#f8fafc' }}>{reviewDetailModal.convId}</h3>
-                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{label}</span>
+                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                             {scores.conflict && <span style={{ padding: '4px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={12} /> CONFLICT</span>}
                           </div>
                           <button onClick={() => setReviewDetailModal(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '22px', cursor: 'pointer' }}>&#x2715;</button>
@@ -1629,7 +1912,7 @@ export const Stage4Labeling: React.FC = () => {
                           )}
                         </div>
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                          <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Evaluation Scores (read-only)</h4>
+                          <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm đánh giá (chỉ xem)</h4>
                           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                             {[{ label: 'OpenRouter', val: scores.openrouter, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.groq, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
                               <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px' }}>
@@ -1644,8 +1927,10 @@ export const Stage4Labeling: React.FC = () => {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', color: '#94a3b8', fontSize: '22px', fontWeight: '300', alignSelf: 'center' }}>vs</div>
                             <div style={{ background: '#fed7aa', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '2px solid #f97316' : '2px solid transparent' }}>
-                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Staff Rule Score</div>
-                              <div style={{ fontSize: '22px', fontWeight: '900', color: scores.human == null ? '#cbd5e1' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>{scores.human != null ? scores.human.toFixed(1) : '-'}</div>
+                              <div style={{ fontSize: '11px', fontWeight: '700', color: '#ea580c', marginBottom: '4px' }}>Điểm luật Staff</div>
+                              <div style={{ fontSize: scores.human == null || typeof displayStaffHumanScore === 'string' ? '14px' : '22px', fontWeight: '900', color: scores.human == null ? '#ea580c' : scores.human >= 7 ? '#15803d' : scores.human >= 5 ? '#d97706' : '#dc2626' }}>
+                                {typeof displayStaffHumanScore === 'string' ? displayStaffHumanScore : (scores.human != null ? scores.human.toFixed(1) : '⏳ Đang tính toán')}
+                              </div>
                             </div>
                             {diff != null && (
                               <div style={{ background: scores.conflict ? '#fee2e2' : '#f1f5f9', borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px', border: scores.conflict ? '1px solid #fca5a5' : '1px solid #e2e8f0' }}>
@@ -1658,29 +1943,87 @@ export const Stage4Labeling: React.FC = () => {
                           {scores.conflict && diff != null && (
                             <div style={{ marginTop: '14px', background: '#fff7f7', border: '1px solid #fca5a5', borderRadius: '8px', padding: '12px 16px', fontSize: '13px', color: '#b91c1c', display: 'flex', gap: '8px', alignItems: 'center' }}>
                               <AlertTriangle size={16} />
-                              <span><strong>Conflict AI vs Staff Rule Score:</strong> The average AI score ({avgAI?.toFixed(1)}) differs from the Stage 3 Staff Rule Score ({scores.human?.toFixed(1)}) by +/-{diff.toFixed(1)} exceeding the threshold of {conflictThreshold}. Requires expert human review.</span>
+                              <span><strong>Xung đột giữa điểm AI và điểm Luật Staff:</strong> Điểm AI trung bình ({avgAI?.toFixed(1)}) lệch so với điểm Luật Staff ({scores.human?.toFixed(1)}) khoảng +/-{diff.toFixed(1)}, vượt quá ngưỡng cho phép là {conflictThreshold}. Cần người có chuyên môn xem xét và phân xử.</span>
+                            </div>
+                          )}
+                          
+                          {annotatorsEvaluations.length > 0 && (
+                            <div style={{ marginTop: '16px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '16px' }}>
+                              <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Đánh giá chi tiết của Staff</h4>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                                <thead>
+                                  <tr style={{ borderBottom: '2px solid #e2e8f0', color: '#64748b', fontWeight: '800' }}>
+                                    <th style={{ padding: '6px 8px' }}>Nhân viên (Staff)</th>
+                                    <th style={{ padding: '6px 8px' }}>Môn học</th>
+                                    <th style={{ padding: '6px 8px' }}>Trạng thái</th>
+                                    <th style={{ padding: '6px 8px' }}>Chất lượng</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {annotatorsEvaluations.map((a: any, idx: number) => {
+                                    const statusMap: Record<string, string> = { 'COMPLETED': 'Hoàn thành', 'INCOMPLETE': 'Chưa xong', 'ABANDONED': 'Bỏ dở' };
+                                    const qualityMap: Record<string, string> = { 'GOLD': 'Tốt', 'MEDIUM': 'Cần sửa', 'POOR': 'Chưa đạt', 'BAD': 'Chưa đạt' };
+                                    return (
+                                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                        <td style={{ padding: '8px', fontWeight: '700', color: '#334155' }}>{a.name}</td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{ padding: '2px 8px', borderRadius: '4px', background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: '600' }}>{a.subject || 'Chưa gán'}</span>
+                                        </td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: a.status === 'COMPLETED' ? '#dcfce7' : '#fee2e2',
+                                            color: a.status === 'COMPLETED' ? '#15803d' : '#991b1b',
+                                            fontSize: '11px', fontWeight: '600'
+                                          }}>{statusMap[a.status] || a.status || 'Chưa gán'}</span>
+                                        </td>
+                                        <td style={{ padding: '8px' }}>
+                                          <span style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: a.quality === 'GOLD' ? '#e0f2fe' : a.quality === 'MEDIUM' ? '#fef3c7' : '#fee2e2',
+                                            color: a.quality === 'GOLD' ? '#0369a1' : a.quality === 'MEDIUM' ? '#b45309' : '#dc2626',
+                                            fontSize: '11px', fontWeight: '600'
+                                          }}>{qualityMap[a.quality] || a.quality || 'Chưa gán'}</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
                             </div>
                           )}
                         </div>
                         <div style={{ padding: '20px 24px' }}>
-                          <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Conversation Content</h4>
+                          <h4 style={{ margin: '0 0 12px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nội dung hội thoại</h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto' }}>
                             {reviewDetailModal.messages.map((msg, idx) => {
                               const messageLabels = getStaffMessageLabels(idx, msg.role);
-                              const isTarget = String(idx) === String(reviewDetailModal.errorMessageIndex);
+                              const isTarget = (reviewDetailModal.errorMessageIndices || []).includes(idx);
                               return (
                                 <div key={idx} 
                                   onClick={() => {
                                     if (msg.role === 'assistant') {
                                       const updatedIndex = idx;
-                                      setReviewDetailModal((prev: any) => prev ? { ...prev, errorMessageIndex: updatedIndex } : prev);
+                                      setReviewDetailModal((prev: any) => {
+                                        if (!prev) return prev;
+                                        const currentIndices = prev.errorMessageIndices || [];
+                                        const nextIndices = currentIndices.includes(updatedIndex)
+                                          ? currentIndices.filter((x: number) => x !== updatedIndex)
+                                          : [...currentIndices, updatedIndex];
+                                        return { ...prev, errorMessageIndices: nextIndices };
+                                      });
                                       setQualityResult((prev: any) => {
                                         if (!prev) return prev;
                                         return {
                                           ...prev,
                                           items: prev.items.map((i: any) => 
                                             (String(i._id) === String(reviewDetailModal._id) || String(i.id) === String(reviewDetailModal.id))
-                                              ? { ...i, errorMessageIndex: updatedIndex }
+                                              ? {
+                                                  ...i,
+                                                  errorMessageIndices: (i.errorMessageIndices || []).includes(updatedIndex)
+                                                    ? (i.errorMessageIndices || []).filter((x: number) => x !== updatedIndex)
+                                                    : [...(i.errorMessageIndices || []), updatedIndex]
+                                                }
                                               : i
                                           )
                                         };
@@ -1711,7 +2054,7 @@ export const Stage4Labeling: React.FC = () => {
                                   <div style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px' }}>
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
-                                      {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target Rewrite)' : 'AI Tutor'}
+                                      {msg.role === 'user' ? 'Học sinh' : isTarget ? 'Trợ giảng AI (Mục tiêu viết lại)' : 'Trợ giảng AI'}
                                     </span>
                                     {msg.role === 'assistant' && (
                                       <span style={{ fontSize: '10px', color: isTarget ? '#d97706' : '#94a3b8', fontWeight: 'bold' }}>
@@ -1724,20 +2067,44 @@ export const Stage4Labeling: React.FC = () => {
                                     <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                                       {messageLabels.map((item: any, labelIdx: number) => {
                                         const isIntent = item.kind === 'Intent';
+                                        let bg = isIntent ? '#eef2ff' : '#ecfdf5';
+                                        let fg = isIntent ? '#4338ca' : '#047857';
+                                        let border = `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`;
+                                        let prefix = '';
+
+                                        if (item.source === 'checker') {
+                                          bg = '#f0fdf4';
+                                          fg = '#16a34a';
+                                          border = '1px solid #bbf7d0';
+                                          prefix = '✅ Checker: ';
+                                        } else if (item.source === 'supervisor') {
+                                          bg = '#faf5ff';
+                                          fg = '#7c3aed';
+                                          border = '1px solid #e9d5ff';
+                                          prefix = '👑 Supervisor: ';
+                                        } else if (item.source === 'ai') {
+                                          bg = '#fff7ed';
+                                          fg = '#ea580c';
+                                          border = '1px solid #ffedd5';
+                                          prefix = '🤖 AI: ';
+                                        } else {
+                                          prefix = `👤 ${item.staff}: `;
+                                        }
+
                                         return (
                                           <span
                                             key={`${item.staff}-${item.label}-${labelIdx}`}
                                             title={`${item.kind} • assigned by ${item.staff}`}
                                             style={{
                                               padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: '700',
-                                              background: isIntent ? '#eef2ff' : '#ecfdf5',
-                                              color: isIntent ? '#4338ca' : '#047857',
-                                              border: `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`,
+                                              background: bg,
+                                              color: fg,
+                                              border,
                                               display: 'inline-flex', alignItems: 'center', gap: '4px',
                                             }}
                                           >
-                                            <span style={{ opacity: 0.7, fontWeight: '800' }}>{item.kind}:</span>
-                                            {item.label}
+                                            <span style={{ opacity: 0.8, fontWeight: '800' }}>{prefix}</span>
+                                            {TRANSLATED_LABEL_MAP[item.label] || item.label}
                                           </span>
                                         );
                                       })}
@@ -1749,11 +2116,11 @@ export const Stage4Labeling: React.FC = () => {
                           </div>
                           <div style={{ marginTop: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                             <Info size={16} style={{ color: '#64748b' }} />
-                            <span style={{ fontSize: '13px', color: '#64748b', marginRight: 'auto' }}>Admin verdict</span>
+                            <span style={{ fontSize: '13px', color: '#64748b', marginRight: 'auto' }}>Quyết định của Supervisor</span>
                             {[
-                              { value: 'Gold', label: 'Mark Gold', bg: '#dcfce7', color: '#15803d' },
-                              { value: 'Rewrite', label: 'Mark Rewrite', bg: '#fef3c7', color: '#92400e' },
-                              { value: 'Reject', label: 'Mark Bad', bg: '#fee2e2', color: '#dc2626' },
+                              { value: 'Gold', label: 'Đánh dấu Tốt', bg: '#dcfce7', color: '#15803d' },
+                              { value: 'Rewrite', label: 'Đánh dấu Viết lại', bg: '#fef3c7', color: '#92400e' },
+                              { value: 'Reject', label: 'Đánh dấu Chưa đạt', bg: '#fee2e2', color: '#dc2626' },
                             ].map(action => (
                               <button key={action.value} onClick={() => handleAdminSetVerdict(reviewDetailModal, action.value as any)}
                                 style={{ padding: '8px 12px', borderRadius: '8px', border: `1px solid ${action.color}55`, background: action.bg, color: action.color, fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
@@ -1770,8 +2137,8 @@ export const Stage4Labeling: React.FC = () => {
             );
           })()}
 
-          {/* ===== STEP 10: ASSIGN REWRITE (BULK ASSIGN) ===== */}
-          {currentSubStep4 === 10 && (() => {
+          {/* ===== STEP 9: ASSIGN REWRITE (BULK ASSIGN) ===== */}
+          {currentSubStep4 === 9 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
             const rewriteAssignTotalPages = Math.max(1, Math.ceil(rewriteItems.length / itemsPerPage));
             const rewriteAssignSafePage = Math.min(rewriteAssignPage, rewriteAssignTotalPages);
@@ -1925,9 +2292,9 @@ export const Stage4Labeling: React.FC = () => {
                         style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', color: '#334155', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         Tiến độ
                       </button>
-                      <button onClick={() => setCurrentSubStep4(11)}
+                      <button onClick={() => setCurrentSubStep4(10)}
                         style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                        Go to Review &rarr;
+                        Đi tới Duyệt &rarr;
                       </button>
                     </div>
                   </div>
@@ -2191,29 +2558,39 @@ export const Stage4Labeling: React.FC = () => {
                       if (!staff || !activeVersionId) return;
                       const staffId = String(staff._id || staff.id);
 
-                      const assignments = selectedRewriteIds.map(id => {
+                      const assignments: any[] = [];
+                      selectedRewriteIds.forEach(id => {
                         const item = rewriteItems.find(x => x.id === id);
-                        const messages = item?.data?.messages || item?.messages || [];
-                        let targetMessageIndex = item?.errorMessageIndex ?? -1;
-                        if (targetMessageIndex < 0) {
-                          for (let i = messages.length - 1; i >= 0; i--) {
-                            if (messages[i]?.role === 'assistant') {
-                              targetMessageIndex = i;
-                              break;
-                            }
-                          }
-                        }
-                        const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || messages[targetMessageIndex]?.text || '') : '';
-                        return {
-                          sampleId: String(item.sampleObjectId || item._id || item.id),
-                          assigneeId: staffId,
-                          convId: String(item.convId || item.sampleId || item.id),
-                          subject: item?.subject || '',
-                          reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
-                          originalText,
-                          targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-                          contextMode: 'n-2:n+2'
-                        };
+                        if (!item) return;
+                        const messages = item.data?.messages || item.messages || [];
+                        const targetIndices = item.errorMessageIndices && item.errorMessageIndices.length > 0
+                          ? item.errorMessageIndices
+                          : (() => {
+                              let targetIdx = item.errorMessageIndex ?? -1;
+                              if (targetIdx < 0) {
+                                for (let i = messages.length - 1; i >= 0; i--) {
+                                  if (messages[i]?.role === 'assistant') {
+                                    targetIdx = i;
+                                    break;
+                                  }
+                                }
+                              }
+                              return targetIdx >= 0 ? [targetIdx] : [1];
+                            })();
+
+                        targetIndices.forEach((targetIdx: number) => {
+                          const originalText = targetIdx >= 0 ? String(messages[targetIdx]?.content || messages[targetIdx]?.text || '') : '';
+                          assignments.push({
+                            sampleId: String(item.sampleObjectId || item._id || item.id),
+                            assigneeId: staffId,
+                            convId: String(item.convId || item.sampleId || item.id),
+                            subject: item?.subject || '',
+                            reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
+                            originalText,
+                            targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
+                            contextMode: 'n-2:n+2'
+                          });
+                        });
                       });
 
                       try {
@@ -2236,125 +2613,32 @@ export const Stage4Labeling: React.FC = () => {
                         alert(error?.response?.data?.error || 'Không thể giao task rewrite.');
                       }
                     }} style={{ padding: '10px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.4)' }}>
-                      Assign All
+                      Giao tất cả
                     </button>
                     <button onClick={() => setSelectedRewriteIds([])}
                       style={{ padding: '10px 16px', fontSize: '13px', fontWeight: '600', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
-                      Cancel
+                      Hủy
                     </button>
                   </div>
                 )}
-                {adminRewriteModal && (
-                  <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.48)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => !isSavingAdminRewrite && setAdminRewriteModal(null)}>
-                    <div style={{ width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Admin tự rewrite</h3>
-                          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{adminRewriteModal.item?.convId || adminRewriteModal.item?.sampleId || 'Conversation'} - lưu xong sẽ được duyệt thẳng vào bản export.</p>
-                        </div>
-                        <button onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
-                      </div>
-                      <div style={{ padding: 20, display: 'grid', gap: 14 }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                          <section style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, background: '#f8fafc' }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Câu AI gốc cần sửa</div>
-                            <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.6, color: '#0f172a' }}>{adminRewriteModal.originalText || '(Không tìm thấy câu AI mục tiêu)'}</div>
-                          </section>
-                          <section style={{ border: '1px solid #bae6fd', borderRadius: 10, padding: 14, background: '#f0f9ff' }}>
-                            <div style={{ fontSize: 12, fontWeight: 900, color: '#0369a1', textTransform: 'uppercase', marginBottom: 8 }}>Bản sửa sẽ dùng trong export</div>
-                            <textarea value={adminRewriteDraft} onChange={(e) => setAdminRewriteDraft(e.target.value)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ width: '100%', minHeight: 220, resize: 'vertical', border: '1px solid #7dd3fc', borderRadius: 8, padding: 12, fontSize: 14, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box' }}
-                              placeholder="Nhập câu trả lời AI đã sửa ở đây..." />
-                          </section>
-                        </div>
-                        <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#fff' }}>
-                          <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
-                          {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
-                            <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
-                              <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'AI' : 'Student'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
-                              <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
-                            </div>
-                          ))}
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                          <button type="button" onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite}
-                            style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 800, cursor: 'pointer' }}>Hủy</button>
-                          <button type="button" disabled={isSavingAdminRewrite || !adminRewriteDraft.trim()} onClick={async () => {
-                            if (!activeVersionId) return alert('Missing dataset version.');
-                            const sampleId = String(adminRewriteModal.item?.sampleObjectId || adminRewriteModal.item?._id || adminRewriteModal.item?.id || '');
-                            setIsSavingAdminRewrite(true);
-                            try {
-                              const response = await stage4Api.adminSubmitRewrite(activeVersionId, {
-                                sampleId,
-                                submittedText: adminRewriteDraft.trim(),
-                                reason: adminRewriteModal.item?.issue || 'Admin self rewrite',
-                                targetMessageIndex: adminRewriteModal.targetIndex,
-                              });
-                              setRewriteAssignments((prev) => {
-                                const next = prev.filter((task: any) => task.id !== response.task.id && String(task.sampleId) !== String(response.task.sampleId));
-                                return [...next, response.task];
-                              });
-                              setCompletedRewrites((prev: any) => ({ ...prev, [sampleId]: true, [String(adminRewriteModal.item?.id)]: true }));
-                              setAdminRewriteModal(null);
-                              setAdminRewriteDraft('');
-                            } catch (error: any) {
-                              alert(error?.response?.data?.error || 'Không thể lưu bản admin rewrite.');
-                            } finally {
-                              setIsSavingAdminRewrite(false);
-                            }
-                          }}
-                            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#0369a1', color: '#fff', fontWeight: 900, cursor: isSavingAdminRewrite ? 'wait' : 'pointer' }}>
-                            {isSavingAdminRewrite ? 'Đang lưu...' : 'Lưu và duyệt thẳng'}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(11)}
+                  <button onClick={() => setCurrentSubStep4(10)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Review Submissions &rarr;
+                    Tiếp: Duyệt bài Viết lại &rarr;
                   </button>
                 </div>
               </div>
             );
           })()}
 
-          {/* ===== STEP 11: STAFF SUBMISSION REVIEW (3b) ===== */}
-          {currentSubStep4 === 11 && (() => {
+          {/* ===== STEP 10: STAFF SUBMISSION REVIEW (3b) ===== */}
+          {currentSubStep4 === 10 && (() => {
             const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
-            const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
             const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
-            const activeRewriteTask: any = activeItem ? taskBySample.get(String(activeItem.sampleObjectId || activeItem._id || activeItem.id)) : null;
             const approvedCount = rewriteAssignments.filter((task: any) => task.status === 'approved').length;
             const pendingCount = rewriteAssignments.filter((task: any) => task.status === 'submitted').length;
-            const getAdminRewriteTarget = (item: any) => {
-              const messages = item?.sampleData?.messages || item?.data?.messages || item?.messages || [];
-              let targetIndex = Number(item?.errorMessageIndex);
-              if (!Number.isInteger(targetIndex) || targetIndex < 0 || !messages[targetIndex]) {
-                targetIndex = -1;
-                for (let i = messages.length - 1; i >= 0; i -= 1) {
-                  if (messages[i]?.role === 'assistant') {
-                    targetIndex = i;
-                    break;
-                  }
-                }
-              }
-              const targetMessage = targetIndex >= 0 ? messages[targetIndex] : null;
-              return {
-                targetIndex,
-                originalText: String(targetMessage?.content || targetMessage?.text || ''),
-                messages,
-              };
-            };
-            const openAdminRewrite = (item: any) => {
-              const target = getAdminRewriteTarget(item);
-              setAdminRewriteModal({ item, ...target });
-              setAdminRewriteDraft(activeRewriteTask?.submittedText || target.originalText || '');
-            };
 
             const subjectColors = {
               'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
@@ -2366,7 +2650,7 @@ export const Stage4Labeling: React.FC = () => {
               'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
               'MATH': { bg: '#e0e7ff', color: '#4338ca' },
             };
-            const getSubjectStyle = (s) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
+            const getSubjectStyle = (s: string) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
 
             return (
               <div className="animate-fade-in-up" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -2377,238 +2661,150 @@ export const Stage4Labeling: React.FC = () => {
                       <Search size={22} />
                     </div>
                     <div>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Review Staff Submissions</h2>
-                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>Compare the original and staff-revised versions. Approve (Gold) or request a redo.</p>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Duyệt bài Viết lại của Staff</h2>
+                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>So sánh bản gốc và bản sửa của Staff. Duyệt (Tốt) hoặc yêu cầu làm lại.</p>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Pending Review</div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Chờ duyệt</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', lineHeight: 1.2 }}>{pendingCount}</div>
                     </div>
                     <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Approved</div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase' }}>Đã duyệt</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{approvedCount}</div>
                     </div>
-                    <button onClick={() => setCurrentSubStep4(12)}
-                      style={{ padding: '12px 22px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #1e293b, #334155)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 12px rgba(30,41,59,0.25)', whiteSpace: 'nowrap' }}>
-                      Dataset Distribution &rarr;
-                    </button>
                   </div>
                 </div>
 
-                {/* 2-col layout */}
+                {/* Table View */}
                 {rewriteItems.length === 0 ? (
                   <div className="empty-state-card">
                     <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
-                    <h3 className="empty-state-title">No submissions pending!</h3>
-                    <p className="empty-state-desc">All staff submissions have been reviewed and approved.</p>
+                    <h3 className="empty-state-title">Không có bài chờ duyệt!</h3>
+                    <p className="empty-state-desc">Tất cả bài viết lại của staff đã được xem xét và duyệt.</p>
                   </div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: '16px', alignItems: 'flex-start' }}>
-                    {/* Left sidebar */}
-                    <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                      <div style={{ padding: '14px 18px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Submission List</h4>
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>{rewriteItems.length} items</span>
+                  <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+                    {/* Submission List Header with Integrated Progress Bar */}
+                    <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                        <h4 style={{ margin: 0, fontSize: '13px', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Danh sách bài nộp</h4>
+                        <span style={{ fontSize: '12px', fontWeight: '600', color: '#64748b' }}>({rewriteItems.length} mục)</span>
                       </div>
-                      <div style={{ maxHeight: '540px', overflowY: 'auto' }}>
-                        {rewriteItems.map((item, idx) => {
-                          const isSelected = activeItem?.id === item.id;
-                          const isDone = completedRewrites[item.id];
-                          const staffName = reassignStaff[item.id];
-                          const subjStyle = getSubjectStyle(item.subject);
-                          return (
-                            <div key={item.id} className="premium-table-row"
-                              onClick={() => { setRewriteConvIdx(idx); setRewriteTextContent(''); }}
-                              style={{ padding: '14px 18px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: isSelected ? '#f5f3ff' : '#fff', borderLeft: isSelected ? '3px solid #4f46e5' : '3px solid transparent' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: '800', color: '#1e293b', fontFamily: 'monospace' }}>{item.convId}</span>
-                                <span style={{ fontSize: '10px', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: isDone ? '#dcfce7' : staffName ? '#fef9c3' : '#f1f5f9', color: isDone ? '#15803d' : staffName ? '#854d0e' : '#94a3b8', letterSpacing: '0.3px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                  {isDone ? <><Check size={10} /> Approved</> : staffName ? <><RotateCcw size={10} /> Pending Review</> : 'Not Submitted'}
-                                </span>
-                              </div>
-                              <span style={{ fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', background: subjStyle.bg, color: subjStyle.color }}>{item.subject}</span>
-                              {staffName && <div style={{ fontSize: '11px', color: '#4f46e5', marginTop: '5px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {staffName}</div>}
-                            </div>
-                          );
-                        })}
+                      
+                      {/* Integrated Progress Bar */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, maxWidth: '450px', marginLeft: 'auto' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: '700', color: '#64748b', whiteSpace: 'nowrap' }}>
+                          Tiến độ: {approvedCount}/{rewriteItems.length}
+                        </span>
+                        <div style={{ flex: 1, height: '8px', background: '#cbd5e1', borderRadius: '999px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, Math.round(rewriteItems.length > 0 ? (approvedCount / rewriteItems.length) * 100 : 0))}%`, height: '100%', background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)', borderRadius: '999px', transition: 'width 0.5s ease-out' }} />
+                        </div>
+                        <span style={{ fontSize: '12.5px', fontWeight: '800', color: '#16a34a', minWidth: '40px', textAlign: 'right' }}>
+                          {Math.round(rewriteItems.length > 0 ? (approvedCount / rewriteItems.length) * 100 : 0)}%
+                        </span>
                       </div>
                     </div>
 
-                    {/* Right review panel */}
-                    {activeItem ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {/* Conv header */}
-                        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div style={{ width: '42px', height: '42px', borderRadius: '8px', background: getSubjectStyle(activeItem.subject).bg, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${getSubjectStyle(activeItem.subject).color}30` }}>
-                              <span style={{ fontSize: '10px', fontWeight: '900', color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject.slice(0, 3)}</span>
-                            </div>
-                            <div>
-                              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a', fontFamily: 'monospace' }}>{activeItem.convId}</h3>
-                              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                                Subject: <strong style={{ color: getSubjectStyle(activeItem.subject).color }}>{activeItem.subject}</strong>
-                                {reassignStaff[activeItem.id] && <> &middot; Assigned to: <strong style={{ color: '#4f46e5' }}>{reassignStaff[activeItem.id]}</strong></>}
-                                {rewriteReasons[activeItem.id] && rewriteReasons[activeItem.id] !== 'None' && <> &middot; Reason: <strong style={{ color: '#d97706' }}>{rewriteReasons[activeItem.id]}</strong></>}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Mã hội thoại</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Môn học</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff được giao</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Lỗi cần sửa</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Trạng thái</th>
+                          <th style={{ padding: '14px 18px', fontSize: '12px', fontWeight: '800', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>Hành động</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rewriteItems.map((item, idx) => {
+                          const task = taskBySample.get(String(item.sampleObjectId || item._id || item.id));
+                          const staffName = reassignStaff[item.id] || (task?.assigneeId ? shareUsers.find((u: any) => String(u.id || u._id) === String(task.assigneeId))?.name : '') || 'Chưa giao';
+                          const subjStyle = getSubjectStyle(item.subject);
+                          
+                          let statusLabel = 'Not Assigned';
+                          let statusColor = { bg: '#f1f5f9', text: '#64748b' };
+                          if (task) {
+                            if (task.status === 'approved') {
+                              statusLabel = 'Đã duyệt (Tốt)';
+                              statusColor = { bg: '#dcfce7', text: '#15803d' };
+                            } else if (task.status === 'submitted') {
+                              statusLabel = 'Chờ duyệt';
+                              statusColor = { bg: '#fef9c3', text: '#854d0e' };
+                            } else if (task.status === 'redo') {
+                              statusLabel = 'Yêu cầu làm lại';
+                              statusColor = { bg: '#fee2e2', text: '#991b1b' };
+                            } else if (task.status === 'rejected') {
+                              statusLabel = 'Từ chối';
+                              statusColor = { bg: '#fee2e2', text: '#dc2626' };
+                            } else if (task.status === 'assigned') {
+                              statusLabel = 'Đã giao (Đang làm)';
+                              statusColor = { bg: '#e0f2fe', text: '#0369a1' };
+                            }
+                          } else if (completedRewrites[item.id]) {
+                            statusLabel = 'Approved (Gold)';
+                            statusColor = { bg: '#dcfce7', text: '#15803d' };
+                          }
 
-                        {/* Error context banner */}
-                        <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '14px', alignItems: 'center' }}>
-                          <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
-                            <AlertTriangle size={14} />
-                          </div>
-                          {(() => {
-                            const activeScores = getScoresForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId);
-                            return (
-                              <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Error to Fix (Detected by AI Judges)</p>
-                                  <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason}</p>
-                                </div>
-                                <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                                  <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Staff Rule Score</p>
-                                  <p style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#94a3b8' }}>{activeScores.human != null ? activeScores.human.toFixed(1) : '-'}</p>
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Comparison: Original vs Rewrite */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                          <div style={{ background: '#fff', border: '1.5px solid #fca5a5', borderRadius: '12px', overflow: 'hidden' }}>
-                            <div style={{ padding: '12px 16px', background: '#fff1f2', borderBottom: '1px solid #fca5a5', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: '#b91c1c', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Original Response (Has Error)</span>
-                              <span style={{ fontSize: '11px', color: '#ef4444', marginLeft: 'auto' }}>Turn #{(activeItem.errorMessageIndex || 1) + 1}</span>
-                            </div>
-                            <div style={{ padding: '16px', fontSize: '14px', color: '#374151', lineHeight: '1.7', minHeight: '100px', maxHeight: '400px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                              {(() => {
-                                const sampleComparison = sampleComparisons[activeItem.sampleObjectId || activeItem.id];
-                                const step11TurnPairs = getTurnPairsForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId, activeItem);
-                                const messageLevelTargets = Array.isArray(sampleComparison?.targets)
-                                  ? sampleComparison.targets.filter((target: any) =>
-                                    target.targetScope === 'message' &&
-                                    Array.isArray(target.annotators) &&
-                                    target.annotators.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
-                                  )
-                                  : [];
-                                const getStep11MessageLabels = (messageIndex: number, role: string) =>
-                                  buildStaffMessageLabels(messageIndex, role, step11TurnPairs, messageLevelTargets);
-
-                                return (activeItem.sampleData?.messages || activeItem.messages || []).map((msg: any, idx: number) => {
-                                  const isTarget = String(idx) === String(activeItem.errorMessageIndex || 1);
-                                  const messageLabels = getStep11MessageLabels(idx, msg.role);
-                                  return (
-                                    <div key={idx} style={{ padding: '12px 16px', borderRadius: '8px', background: isTarget ? '#fee2e2' : msg.role === 'user' ? '#f8fafc' : '#f0fdf4', border: isTarget ? '1px solid #fca5a5' : '1px solid #e2e8f0', alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end', maxWidth: '90%' }}>
-                                      <div style={{ fontSize: '11px', fontWeight: '800', color: isTarget ? '#dc2626' : msg.role === 'user' ? '#64748b' : '#16a34a', textTransform: 'uppercase', marginBottom: '6px' }}>
-                                        {msg.role === 'user' ? 'Student' : isTarget ? 'AI Tutor (Target to Rewrite)' : 'AI Tutor'}
-                                      </div>
-                                      <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#1e293b', whiteSpace: 'pre-wrap' }}>
-                                        {msg.text || msg.content}
-                                      </div>
-                                      {messageLabels.length > 0 && (
-                                        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                          {messageLabels.map((item: any, labelIdx: number) => {
-                                            const isIntent = item.kind === 'Intent';
-                                            return (
-                                              <span
-                                                key={labelIdx}
-                                                title={`${item.kind} • assigned by ${item.staff}`}
-                                                style={{
-                                                  padding: '4px 10px', borderRadius: '16px', fontSize: '11px', fontWeight: '700',
-                                                  background: isIntent ? '#eef2ff' : '#ecfdf5',
-                                                  color: isIntent ? '#4338ca' : '#047857',
-                                                  border: `1px solid ${isIntent ? '#c7d2fe' : '#a7f3d0'}`,
-                                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                                }}
-                                              >
-                                                <span style={{ opacity: 0.7, fontWeight: '800' }}>{item.kind}:</span>
-                                                {item.label}
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                });
-                              })()}
-                            </div>
-                          </div>
-                          <div style={{ background: '#fff', border: `1.5px solid ${activeRewriteTask?.submittedText ? '#86efac' : '#e2e8f0'}`, borderRadius: '12px', overflow: 'hidden' }}>
-                            <div style={{ padding: '12px 16px', background: activeRewriteTask?.submittedText ? '#f0fdf4' : '#f8fafc', borderBottom: `1px solid ${activeRewriteTask?.submittedText ? '#86efac' : '#e2e8f0'}`, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: activeRewriteTask?.submittedText ? '#16a34a' : '#94a3b8' }} />
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: activeRewriteTask?.submittedText ? '#15803d' : '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>Staff Submission</span>
-                              {reassignStaff[activeItem.id] && <span style={{ fontSize: '11px', color: '#4f46e5', marginLeft: 'auto', fontWeight: '600' }}>by {reassignStaff[activeItem.id]}</span>}
-                            </div>
-                            <div style={{ padding: '16px', fontSize: '14px', color: activeRewriteTask?.submittedText ? '#15803d' : '#94a3b8', lineHeight: '1.7', minHeight: '100px', fontStyle: activeRewriteTask?.submittedText ? 'normal' : 'italic', whiteSpace: 'pre-wrap' }}>
-                              {activeRewriteTask?.submittedText || 'Staff has not submitted a rewrite yet.'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Admin action bar */}
-                        {activeRewriteTask?.submittedText ? (
-                          <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px 22px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#475569', flex: 1 }}>Admin Decision:</span>
-                            <button onClick={() => openAdminRewrite(activeItem)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: '1.5px solid #bae6fd', background: '#f0f9ff', color: '#0369a1', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Pencil size={14} /> Admin tự sửa
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'approved')} disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 24px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: activeRewriteTask.status === 'approved' ? '#e2e8f0' : 'linear-gradient(135deg, #16a34a, #15803d)', color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Approved</> : <><Check size={14} /> Approve</>}
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'redo')}
-                              disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid #e2e8f0', background: '#fff', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <RotateCcw size={14} /> Request Redo
-                            </button>
-                            <button onClick={() => reviewRewriteTask(activeRewriteTask, 'rejected')} disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
-                              style={{ padding: '11px 20px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: '1.5px solid #fca5a5', background: '#fff1f2', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <X size={14} /> Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '12px', padding: '28px', textAlign: 'center' }}>
-                            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', color: '#cbd5e1' }}><Inbox size={32} /></div>
-                            <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Staff has not submitted a rewrite yet.</p>
-                            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#cbd5e1' }}>Waiting for the rewrite submission workflow to provide revised text.</p>
-                            <button onClick={() => openAdminRewrite(activeItem)}
-                              disabled={isSavingAdminRewrite}
-                              style={{ marginTop: '14px', padding: '11px 20px', fontSize: '14px', fontWeight: '800', borderRadius: '8px', border: 'none', background: '#0369a1', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <Pencil size={14} /> Admin tự rewrite
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ padding: '60px', textAlign: 'center', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px', color: '#cbd5e1' }}><MousePointer2 size={40} /></div>
-                        <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', fontWeight: '500' }}>Select a conversation on the left to review it.</p>
-                      </div>
-                    )}
+                          return (
+                            <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-slate-50 transition-colors">
+                              <td style={{ padding: '14px 18px', fontSize: '13px', fontWeight: '700', color: '#1e293b', fontFamily: 'monospace' }}>
+                                {item.convId}
+                              </td>
+                              <td style={{ padding: '14px 18px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '999px', background: subjStyle.bg, color: subjStyle.color }}>
+                                  {item.subject}
+                                </span>
+                              </td>
+                              <td style={{ padding: '14px 18px', fontSize: '13px', color: '#475569', fontWeight: '600' }}>
+                                {staffName !== 'Unassigned' ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#4f46e5' }}>
+                                    <User size={13} />
+                                    {staffName}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Chưa giao</span>
+                                )}
+                              </td>
+                              <td style={{ padding: '14px 18px', fontSize: '13px', color: '#64748b', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.reason || item.issue || 'Quality review requires rewrite'}>
+                                {item.reason || item.issue || 'Quality review requires rewrite'}
+                              </td>
+                              <td style={{ padding: '14px 18px' }}>
+                                <span style={{ fontSize: '11px', fontWeight: '800', padding: '4px 10px', borderRadius: '999px', background: statusColor.bg, color: statusColor.text, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                                <button onClick={() => {
+                                  setRewriteConvIdx(idx);
+                                  setReviewSubmissionModal(item);
+                                }}
+                                style={{ padding: '8px 16px', fontSize: '12.5px', fontWeight: '800', borderRadius: '8px', border: '1px solid #4f46e5', background: '#f5f3ff', color: '#4f46e5', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(79,70,229,0.08)' }}>
+                                  <Search size={13} /> Xem xét &amp; Xử lý
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+
                 {/* Navigation button */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                  <button onClick={() => setCurrentSubStep4(12)}
+                  <button onClick={() => setCurrentSubStep4(11)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Next: Dataset Distribution &rarr;
+                    Tiếp: Phân phối Dataset &rarr;
                   </button>
                 </div>
               </div>
             );
           })()}
-
-          {/* ===== STEP 12: FINAL DISTRIBUTION DASHBOARD ===== */}
-          {currentSubStep4 === 12 && (() => {
+          {/* ===== STEP 11: FINAL DISTRIBUTION DASHBOARD ===== */}
+          {currentSubStep4 === 11 && (() => {
             const statSummary = statistics?.summary;
             const totalConv = statSummary?.totalSamples ?? displayQualityItems.length;
 
@@ -3026,6 +3222,495 @@ export const Stage4Labeling: React.FC = () => {
                   </button>
                 </div>
 
+              </div>
+            );
+          })()}
+          {adminRewriteModal && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.48)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => !isSavingAdminRewrite && setAdminRewriteModal(null)}>
+              <div style={{ width: 'min(900px, 96vw)', maxHeight: '90vh', overflow: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 24px 80px rgba(15,23,42,.35)', border: '1px solid #e2e8f0' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ padding: '18px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Admin tự rewrite</h3>
+                    <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{adminRewriteModal.item?.convId || adminRewriteModal.item?.sampleId || 'Conversation'} - lưu xong sẽ được duyệt thẳng vào bản export.</p>
+                  </div>
+                  <button onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite} style={{ border: 0, background: '#f1f5f9', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontWeight: 800 }}>Đóng</button>
+                </div>
+                <div style={{ padding: 20, display: 'grid', gap: 14 }}>
+                  {/* Table Comparison for admin rewrite */}
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#b91c1c', background: '#fff1f2', borderRight: '1px solid #e2e8f0', textAlign: 'left' }}>
+                            Câu AI gốc cần sửa (Original AI Message)
+                          </th>
+                          <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#0369a1', background: '#f0f9ff', textAlign: 'left' }}>
+                            Bản sửa sẽ dùng trong export (Your Revision)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', background: '#fff5f5', whiteSpace: 'pre-wrap' }}>
+                            {adminRewriteModal.originalText || '(Không tìm thấy câu AI mục tiêu)'}
+                          </td>
+                          <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', background: '#fcfdff', boxSizing: 'border-box' }}>
+                            <textarea 
+                              value={adminRewriteDraft} 
+                              onChange={(e) => setAdminRewriteDraft(e.target.value)}
+                              disabled={isSavingAdminRewrite}
+                              style={{ 
+                                width: '100%', 
+                                minHeight: '220px', 
+                                resize: 'vertical', 
+                                border: '1px solid #7dd3fc', 
+                                borderRadius: '8px', 
+                                padding: '12px', 
+                                fontSize: '14px', 
+                                lineHeight: '1.6', 
+                                outline: 'none', 
+                                boxSizing: 'border-box',
+                                background: '#fff'
+                              }}
+                              placeholder="Nhập câu trả lời AI đã sửa ở đây..." 
+                            />
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #e2e8f0', borderRadius: 10, padding: 12, background: '#fff' }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Ngữ cảnh</div>
+                    {(adminRewriteModal.messages || []).map((message: any, idx: number) => (
+                      <div key={idx} style={{ padding: '8px 10px', marginBottom: 8, borderRadius: 8, background: idx === adminRewriteModal.targetIndex ? '#fff1f2' : message.role === 'assistant' ? '#f0fdf4' : '#f8fafc', border: `1px solid ${idx === adminRewriteModal.targetIndex ? '#fecdd3' : '#e2e8f0'}` }}>
+                        <strong style={{ display: 'block', fontSize: 11, color: idx === adminRewriteModal.targetIndex ? '#be123c' : '#475569', textTransform: 'uppercase' }}>{message.role === 'assistant' ? 'Trợ giảng AI' : 'Học sinh'}{idx === adminRewriteModal.targetIndex ? ' - mục tiêu' : ''}</strong>
+                        <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, lineHeight: 1.5 }}>{message.content || message.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button type="button" onClick={() => setAdminRewriteModal(null)} disabled={isSavingAdminRewrite}
+                      style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 800, cursor: 'pointer' }}>Hủy</button>
+                    
+                    <button
+                      type="button"
+                      disabled={isSuggestingAI || isSavingAdminRewrite}
+                      onClick={async () => {
+                        if (!activeVersionId) return alert('Missing dataset version.');
+                        setIsSuggestingAI(true);
+                        try {
+                          const res = await stage4Api.suggestRewriteGeneric(activeVersionId, {
+                            originalText: adminRewriteModal.originalText,
+                            targetMessageIndex: adminRewriteModal.targetIndex,
+                            messages: adminRewriteModal.messages,
+                            reason: adminRewriteModal.item?.reason || adminRewriteModal.item?.issue || '',
+                          });
+                          setAdminRewriteDraft(res.suggestedText);
+                        } catch (err: any) {
+                          alert('Không thể tạo gợi ý từ AI: ' + (err?.response?.data?.error || err.message));
+                        } finally {
+                          setIsSuggestingAI(false);
+                        }
+                      }}
+                      style={{
+                        padding: '10px 16px',
+                        borderRadius: 8,
+                        border: '1px solid #10b981',
+                        background: '#ecfdf5',
+                        color: '#047857',
+                        fontWeight: 800,
+                        cursor: isSuggestingAI ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <Sparkles size={14} />
+                      {isSuggestingAI ? 'AI đang sửa...' : 'Tự sửa bằng AI'}
+                    </button>
+
+                    <button type="button" disabled={isSavingAdminRewrite || !adminRewriteDraft.trim()} onClick={async () => {
+                      if (!activeVersionId) return alert('Missing dataset version.');
+                      const sampleId = String(adminRewriteModal.item?.sampleObjectId || adminRewriteModal.item?._id || adminRewriteModal.item?.id || '');
+                      setIsSavingAdminRewrite(true);
+                      try {
+                        const response = await stage4Api.adminSubmitRewrite(activeVersionId, {
+                          sampleId,
+                          submittedText: adminRewriteDraft.trim(),
+                          reason: adminRewriteModal.item?.issue || 'Admin self rewrite',
+                          targetMessageIndex: adminRewriteModal.targetIndex,
+                        });
+                        setRewriteAssignments((prev) => {
+                          const next = prev.filter((task: any) => task.id !== response.task.id && String(task.sampleId) !== String(response.task.sampleId));
+                          return [...next, response.task];
+                        });
+                        setCompletedRewrites((prev: any) => ({ ...prev, [sampleId]: true, [String(adminRewriteModal.item?.id)]: true }));
+                        setAdminRewriteModal(null);
+                        setAdminRewriteDraft('');
+                      } catch (error: any) {
+                        alert(error?.response?.data?.error || 'Không thể lưu bản admin rewrite.');
+                      } finally {
+                        setIsSavingAdminRewrite(false);
+                      }
+                    }}
+                      style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: '#0369a1', color: '#fff', fontWeight: 900, cursor: isSavingAdminRewrite ? 'wait' : 'pointer' }}>
+                      {isSavingAdminRewrite ? 'Đang lưu...' : 'Lưu và duyệt thẳng'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {reviewSubmissionModal && (() => {
+            const activeItem = reviewSubmissionModal;
+            const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
+            const activeRewriteTask: any = activeItem ? taskBySample.get(String(activeItem.sampleObjectId || activeItem._id || activeItem.id)) : null;
+            
+            const getAdminRewriteTarget = (item: any) => {
+              const messages = item?.sampleData?.messages || item?.data?.messages || item?.messages || [];
+              let targetIndex = Number(item?.errorMessageIndex);
+              if (!Number.isInteger(targetIndex) || targetIndex < 0 || !messages[targetIndex]) {
+                targetIndex = -1;
+                for (let i = messages.length - 1; i >= 0; i -= 1) {
+                  if (messages[i]?.role === 'assistant') {
+                    targetIndex = i;
+                    break;
+                  }
+                }
+              }
+              const targetMessage = targetIndex >= 0 ? messages[targetIndex] : null;
+              return {
+                targetIndex,
+                originalText: String(targetMessage?.content || targetMessage?.text || ''),
+                messages,
+              };
+            };
+
+            const target = getAdminRewriteTarget(activeItem);
+            const originalText = target.originalText;
+            const submittedText = activeRewriteTask?.submittedText || '';
+
+            const handleReviewInModal = async (task: any, action: 'approved' | 'rejected' | 'redo') => {
+              if (!activeVersionId || !task?.id) return;
+              const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+              if (action !== 'approved' && !note?.trim()) return;
+              setReviewingRewriteId(task.id);
+              try {
+                const response = await stage4Api.reviewRewrite(activeVersionId, task.id, action, note || '');
+                setRewriteAssignments(prev => prev.map(item => item.id === task.id ? response.task : item));
+                if (action === 'approved') setCompletedRewrites(prev => ({ ...prev, [String(task.sampleId)]: true }));
+                setReviewSubmissionModal(null);
+              } catch (error: any) {
+                alert(error?.response?.data?.error || 'Không thể lưu quyết định review.');
+              } finally { setReviewingRewriteId(null); }
+            };
+
+            const openAdminRewriteFromModal = (item: any) => {
+              const target = getAdminRewriteTarget(item);
+              setAdminRewriteModal({ item, ...target });
+              setAdminRewriteDraft(activeRewriteTask?.submittedText || target.originalText || '');
+            };
+
+            const subjectColors = {
+              'Math': { bg: '#e0e7ff', color: '#4338ca' }, 'Physics': { bg: '#cffafe', color: '#0e7490' },
+              'Chemistry': { bg: '#d1fae5', color: '#065f46' }, 'Biology': { bg: '#fef3c7', color: '#92400e' },
+              'History': { bg: '#ede9fe', color: '#6d28d9' }, 'Geography': { bg: '#fee2e2', color: '#b91c1c' },
+              'Literature': { bg: '#fce7f3', color: '#9d174d' }, 'English': { bg: '#fff7ed', color: '#9a3412' },
+              'PHYSICAL': { bg: '#cffafe', color: '#0e7490' }, 'CHEMISTRY': { bg: '#d1fae5', color: '#065f46' },
+              'BIOLOGY': { bg: '#fef3c7', color: '#92400e' }, 'HISTORY': { bg: '#ede9fe', color: '#6d28d9' },
+              'GEOGRAPHY': { bg: '#fee2e2', color: '#b91c1c' }, 'LITERATURE': { bg: '#fce7f3', color: '#9d174d' },
+              'MATH': { bg: '#e0e7ff', color: '#4338ca' },
+            };
+            const getSubjectStyle = (s: string) => subjectColors[s] || { bg: '#f1f5f9', color: '#475569' };
+            const activeSubjStyle = getSubjectStyle(activeItem.subject);
+
+            return (
+              <div 
+                style={{ 
+                  position: 'fixed', 
+                  inset: 0, 
+                  background: 'rgba(15, 23, 42, 0.65)', 
+                  backdropFilter: 'blur(4px)', 
+                  WebkitBackdropFilter: 'blur(4px)', 
+                  zIndex: 2000, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  padding: '24px'
+                }} 
+                onClick={() => setReviewSubmissionModal(null)}
+              >
+                <div 
+                  style={{ 
+                    width: 'min(1100px, 96vw)', 
+                    maxHeight: '92vh', 
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: '#fff', 
+                    borderRadius: '16px', 
+                    boxShadow: '0 24px 80px rgba(15, 23, 42, 0.25)', 
+                    border: '1px solid #e2e8f0',
+                    overflow: 'hidden'
+                  }} 
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Header */}
+                  <div 
+                    style={{ 
+                      padding: '20px 24px', 
+                      background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center', 
+                      gap: '12px',
+                      borderBottom: '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Search size={20} style={{ color: '#fff' }} />
+                      </div>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '900', color: '#fff', letterSpacing: '0.3px' }}>Review Staff Submission</h3>
+                        <p style={{ margin: '3px 0 0', fontSize: '12.5px', color: '#e0e7ff' }}>
+                          Conv ID: <span style={{ fontFamily: 'monospace', fontWeight: '700', background: 'rgba(255,255,255,0.15)', padding: '2px 6px', borderRadius: '4px' }}>{activeItem.convId}</span>
+                          {activeItem.subject && <span style={{ marginLeft: '8px', fontSize: '11px', fontWeight: '700', padding: '2px 8px', borderRadius: '999px', background: activeSubjStyle.bg, color: activeSubjStyle.color }}>{activeItem.subject}</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setReviewSubmissionModal(null)} 
+                      style={{ 
+                        border: 0, 
+                        background: 'rgba(255,255,255,0.15)', 
+                        color: '#fff',
+                        borderRadius: '8px', 
+                        padding: '8px 14px', 
+                        cursor: 'pointer', 
+                        fontWeight: '800',
+                        fontSize: '13px'
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {/* Content Area */}
+                  <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1 }}>
+                    
+                    {/* Error context banner */}
+                    <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', display: 'flex', gap: '14px', alignItems: 'center' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+                        <AlertTriangle size={14} />
+                      </div>
+                      {(() => {
+                        const activeScores = getScoresForSample(activeItem.sampleObjectId || activeItem.id, activeItem.convId);
+                        return (
+                          <div style={{ display: 'flex', flex: 1, justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Lỗi cần sửa (Phát hiện bởi AI)</p>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#78350f', lineHeight: '1.6', fontWeight: '500' }}>{activeItem.reason || activeItem.issue || 'Yêu cầu viết lại từ xem xét chất lượng'}</p>
+                            </div>
+                            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                              <p style={{ margin: '0 0 3px 0', fontSize: '11px', fontWeight: '800', color: '#ea580c', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm luật Staff</p>
+                              <p style={{ margin: 0, fontSize: activeScores.human != null ? '16px' : '13px', fontWeight: '900', color: activeScores.human != null ? (activeScores.human >= 7 ? '#15803d' : activeScores.human >= 5 ? '#d97706' : '#dc2626') : '#ea580c' }}>
+                                {activeScores.human != null ? activeScores.human.toFixed(1) : '⏳ Đang tính toán'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Comparison Table */}
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#b91c1c', background: '#fff1f2', borderRight: '1px solid #e2e8f0', textAlign: 'left' }}>
+                              Original AI Message (Bản gốc lỗi)
+                            </th>
+                            <th style={{ width: '50%', padding: '12px 16px', fontSize: '13px', fontWeight: '800', color: '#15803d', background: '#f0fdf4', textAlign: 'left' }}>
+                              Staff Revised Message (Bản Staff sửa)
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', background: '#fff5f5', whiteSpace: 'pre-wrap' }}>
+                              {originalText || '(Không tìm thấy câu AI gốc)'}
+                            </td>
+                            <td style={{ padding: '16px', fontSize: '13.5px', lineHeight: '1.6', color: '#1e293b', verticalAlign: 'top', background: submittedText ? '#fafdff' : '#fafafa', whiteSpace: 'pre-wrap', fontStyle: submittedText ? 'normal' : 'italic' }}>
+                              {submittedText || '(Staff chưa nộp bài sửa)'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Collapsible Conversation Context */}
+                    <details style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', marginBottom: '8px' }}>
+                      <summary style={{ padding: '12px 16px', fontWeight: '800', color: '#475569', cursor: 'pointer', fontSize: '13px', userSelect: 'none' }}>
+                        👀 Xem bối cảnh hội thoại (Conversation Context)
+                      </summary>
+                      <div style={{ padding: '0 16px 16px 16px', maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {target.messages.map((msg: any, idx: number) => {
+                          const isTarget = idx === target.targetIndex;
+                          return (
+                            <div key={idx} style={{
+                              padding: '10px 14px',
+                              borderRadius: '8px',
+                              background: isTarget ? '#fee2e2' : msg.role === 'user' ? '#fff' : '#f0fdf4',
+                              border: isTarget ? '1px solid #fca5a5' : '1px solid #e2e8f0',
+                              alignSelf: msg.role === 'user' ? 'flex-start' : 'flex-end',
+                              maxWidth: '85%',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                            }}>
+                              <strong style={{ display: 'block', fontSize: '10px', color: isTarget ? '#dc2626' : msg.role === 'user' ? '#64748b' : '#16a34a', textTransform: 'uppercase', marginBottom: '4px' }}>
+                                {msg.role === 'user' ? 'Học sinh' : isTarget ? 'Trợ giảng AI (Cần viết lại)' : 'Trợ giảng AI'}
+                              </strong>
+                              <div style={{ fontSize: '13px', lineHeight: '1.5', color: '#1e293b', whiteSpace: 'pre-wrap' }}>
+                                {msg.text || msg.content}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  </div>
+
+                  {/* Action Bar / Footer */}
+                  <div 
+                    style={{ 
+                      padding: '16px 24px', 
+                      background: '#f8fafc', 
+                      borderTop: '1px solid #e2e8f0', 
+                      display: 'flex', 
+                      justifyContent: 'flex-end', 
+                      alignItems: 'center', 
+                      gap: '12px' 
+                    }}
+                  >
+                    <div style={{ marginRight: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '700', color: '#64748b' }}>Decision:</span>
+                    </div>
+                    
+                    <button 
+                      onClick={() => {
+                        openAdminRewriteFromModal(activeItem);
+                        setReviewSubmissionModal(null);
+                      }}
+                      disabled={isSavingAdminRewrite}
+                      style={{ 
+                        padding: '10px 18px', 
+                        fontSize: '13.5px', 
+                        fontWeight: '800', 
+                        borderRadius: '8px', 
+                        border: '1px solid #bae6fd', 
+                        background: '#f0f9ff', 
+                        color: '#0284c7', 
+                        cursor: 'pointer', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px' 
+                      }}
+                    >
+                      <Pencil size={14} /> Admin tự sửa
+                    </button>
+
+                    {activeRewriteTask?.submittedText ? (
+                      <>
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'approved');
+                          }} 
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 20px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '800', 
+                            borderRadius: '8px', 
+                            border: 'none', 
+                            background: activeRewriteTask.status === 'approved' ? '#cbd5e1' : 'linear-gradient(135deg, #16a34a, #15803d)', 
+                            color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', 
+                            cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', 
+                            boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.25)', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          {activeRewriteTask.status === 'approved' ? <><Check size={14} /> Đã duyệt (Tốt)</> : <><Check size={14} /> Duyệt (Tốt)</>}
+                        </button>
+                        
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'redo');
+                          }}
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 18px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '700', 
+                            borderRadius: '8px', 
+                            border: '1px solid #cbd5e1', 
+                            background: '#fff', 
+                            color: '#475569', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          <RotateCcw size={14} /> Yêu cầu làm lại
+                        </button>
+
+                        <button 
+                          onClick={async () => {
+                            await handleReviewInModal(activeRewriteTask, 'rejected');
+                          }} 
+                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          style={{ 
+                            padding: '10px 18px', 
+                            fontSize: '13.5px', 
+                            fontWeight: '700', 
+                            borderRadius: '8px', 
+                            border: '1px solid #fca5a5', 
+                            background: '#fff1f2', 
+                            color: '#dc2626', 
+                            cursor: 'pointer', 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '6px' 
+                          }}
+                        >
+                          <X size={14} /> Từ chối
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', marginRight: '8px' }}>
+                        (Waiting for staff submission)
+                      </span>
+                    )}
+                    
+                    <button 
+                      onClick={() => setReviewSubmissionModal(null)} 
+                      style={{ 
+                        padding: '10px 16px', 
+                        fontSize: '13.5px', 
+                        fontWeight: '700', 
+                        borderRadius: '8px', 
+                        border: '1px solid #cbd5e1', 
+                        background: '#fff', 
+                        color: '#64748b', 
+                        cursor: 'pointer' 
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
               </div>
             );
           })()}

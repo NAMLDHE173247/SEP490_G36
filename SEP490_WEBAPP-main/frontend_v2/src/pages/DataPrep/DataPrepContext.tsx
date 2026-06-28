@@ -3,11 +3,11 @@ import { apiService } from '../../services/api';
 
 // --- Constants ---
 export const STAGES = [
-  { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
-  { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
-  { num: 5, label: 'Finish', sub: 'Step 12-14' },
+  { num: 1, label: 'Tải lên & Chuyển đổi', sub: 'Bước 1' },
+  { num: 2, label: 'Tiền xử lý', sub: 'Bước 2-4' },
+  { num: 3, label: 'Gán nhãn', sub: 'Bước 5-7' },
+  { num: 4, label: 'Xem xét & Phân loại', sub: 'Bước 8-11' },
+  { num: 5, label: 'Hoàn tất', sub: 'Bước 12-14' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
@@ -641,7 +641,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: false });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');

@@ -213,6 +213,8 @@ export const Stage4TrainEval: React.FC = () => {
       intent: 'REQUEST_EXPLANATION',
       action: 'DIRECT_ANSWER',
       expected: 'SCAFFOLDING',
+      issue: 'Direct answer too early',
+      reason: 'Assistant gave "2x" immediately before checking whether the learner remembered the derivative rule.',
     },
     {
       title: 'CONVERSATION 9',
@@ -223,6 +225,8 @@ export const Stage4TrainEval: React.FC = () => {
       intent: 'ASK_THEORY',
       action: 'DIRECT_ANSWER',
       expected: 'HINTING',
+      issue: 'Direct answer',
+      reason: 'The reply gives the final answer directly and does not guide the learner.',
     },
   ];
   const currentRewrite = rewriteRows[Math.max(0, rewriteConvIdx - 8) % rewriteRows.length];
