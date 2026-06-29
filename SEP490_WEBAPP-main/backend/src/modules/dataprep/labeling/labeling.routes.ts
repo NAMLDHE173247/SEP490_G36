@@ -31,6 +31,7 @@ router.post('/versions/:versionId/assignments/revoke', (req, res) => assignmentC
 router.get('/assignments/my-tasks', (req, res) => assignmentController.getMyTasks(req, res));
 router.get('/assignments/all', (req, res) => assignmentController.getAllTasks(req, res));
 router.get('/assignments/manager/overview', (req, res) => assignmentController.getManagerOverview(req, res));
+router.get('/assignments/staff-stats', (req, res) => assignmentController.getStaffStats(req, res));
 router.get('/assignments/manager/task/:taskId', (req, res) => assignmentController.getTaskDetail(req, res));
 router.get('/assignments/my-task/:submissionId/samples', (req, res) => assignmentController.getBatchSamples(req, res));
 router.post('/assignments/my-task/:submissionId/save-label', (req, res) => assignmentController.saveSampleLabel(req, res));

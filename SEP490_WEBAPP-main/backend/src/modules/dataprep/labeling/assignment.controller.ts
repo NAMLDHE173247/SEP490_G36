@@ -6,12 +6,13 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 import { DatasetAssignmentActivity } from '../../../models/DatasetAssignmentActivity';
 import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
 import { User } from '../../../models/User';
 import { Stage4Notification } from '../../../models/Stage4Notification';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
 import { broadcastAssignmentUpdate } from './assignment.events';
-import { buildAssignmentConflictList, buildAssignmentSampleComparison } from '../../../services/labelAssignmentService';
+import { buildAssignmentConflictList, buildAssignmentSampleComparison, autoResolveSampleIfConsensus } from '../../../services/labelAssignmentService';
 
 function isCompleteStaffLabel(label: any): boolean {
   if (!label || typeof label !== 'object') return false;
@@ -60,10 +61,13 @@ export class AssignmentController {
       const overlappingSampleIds = overlapping.map(o => String(o._id));
       let hasConflict = false;
       for (const sId of overlappingSampleIds) {
+        // Run auto-resolution first
+        await autoResolveSampleIfConsensus(String(submission.datasetVersionId), sId);
+
+        // Then check if conflict still persists
         const comp = await buildAssignmentSampleComparison(String(submission.datasetVersionId), sId);
-        if (comp.hasConflict) {
+        if (comp.hasConflict && comp.targets.some(t => t.hasConflict && (!t.adjudication || t.adjudication.status === 'pending'))) {
           hasConflict = true;
-          break;
         }
       }
 
@@ -847,6 +851,181 @@ export class AssignmentController {
       return res.status(200).json({ success: true, data: Object.values(grouped) });
     } catch (error: any) {
       console.error('[AssignmentController] Error fetching manager overview:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
+  /**
+   * GET /api/dataprep/assignments/staff-stats
+   */
+  async getStaffStats(req: Request, res: Response) {
+    try {
+      const authUser = (req as any).user;
+      const role = String(authUser?.role || '').toLowerCase();
+      if (role !== 'admin' && role !== 'supervisor') {
+        return res.status(403).json({ success: false, error: 'Chỉ Admin hoặc Supervisor mới có quyền xem thông tin này.' });
+      }
+
+      // 1. Get all staff users
+      const staffUsers = await User.find({ role: 'staff' }).lean();
+      const staffObjectIds = staffUsers.map(u => u._id);
+      const staffIds = staffUsers.map(u => String(u._id));
+      const queryIds = [...staffObjectIds, ...staffIds];
+
+      // 2. Fetch all related documents
+      const submissions = await DatasetAssignmentSubmission.find({ assigneeId: { $in: queryIds } }).lean();
+      const sampleAssignments = await DatasetSampleAssignment.find({ assigneeId: { $in: queryIds }, active: { $ne: false } }).lean();
+      const labelAssignments = await LabelAssignment.find({ createdBy: { $in: queryIds }, type: 'hard' }).lean();
+      const canonicalLabels = await DatasetCanonicalLabel.find({}).lean();
+      const adjudications = await DatasetAssignmentAdjudication.find({}).lean();
+
+      // 3. Generate daily trend labels (past 22 days to match frontend display)
+      const dayLabels: string[] = [];
+      const now = new Date();
+      for (let i = 21; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        dayLabels.push(d.toISOString().split('T')[0]);
+      }
+
+      const results = staffUsers.map(staff => {
+        const staffId = String(staff._id);
+
+        const userSubmissions = submissions.filter(s => String(s.assigneeId) === staffId);
+        const userAssignments = sampleAssignments.filter(a => String(a.assigneeId) === staffId);
+        const userLabels = labelAssignments.filter(la => String(la.createdBy) === staffId);
+
+        const tasksAssigned = userSubmissions.length;
+        const tasksDone = userSubmissions.filter(s => ['submitted', 'approved', 'completed'].includes(s.status)).length;
+
+        const samplesAssigned = userAssignments.length;
+        const samplesDone = userAssignments.filter(a => a.reviewStatus === 'submitted' || a.reviewStatus === 'approved').length;
+
+        const completionRate = samplesAssigned > 0 ? Number(((samplesDone / samplesAssigned) * 100).toFixed(1)) : 0.0;
+
+        // On time submissions
+        const completedOnTime = userSubmissions.filter(s => {
+          if (!['submitted', 'approved', 'completed'].includes(s.status)) return false;
+          if (!s.deadline) return true;
+          const submittedDate = s.submittedAt || s.updatedAt || new Date();
+          return new Date(submittedDate).getTime() <= new Date(s.deadline).getTime();
+        }).length;
+        const onTimeRate = tasksDone > 0 ? Number(((completedOnTime / tasksDone) * 100).toFixed(1)) : 100.0;
+
+        // Active days
+        const activeDaysSet = new Set<string>();
+        userLabels.forEach(la => {
+          if (la.createdAt) {
+            activeDaysSet.add(new Date(la.createdAt).toISOString().split('T')[0]);
+          }
+        });
+        userSubmissions.forEach(sub => {
+          if (sub.createdAt) activeDaysSet.add(new Date(sub.createdAt).toISOString().split('T')[0]);
+          if (sub.submittedAt) activeDaysSet.add(new Date(sub.submittedAt).toISOString().split('T')[0]);
+        });
+        const activeDays = activeDaysSet.size || 1;
+
+        // Labels/hour productivity (fallback logic if no active days)
+        const labelsPerHour = activeDays > 0 ? Number((samplesDone / (activeDays * 8)).toFixed(1)) : 0.0;
+        const avgTimePerSample = labelsPerHour > 0 ? Number((60 / labelsPerHour).toFixed(1)) : 5.0;
+
+        // Conflict rate
+        const staffSampleIds = userAssignments.map(sa => String(sa.sampleId));
+        const sampleAdjudications = adjudications.filter(a => staffSampleIds.includes(String(a.sampleId)));
+        const conflictCount = new Set(sampleAdjudications.map(a => String(a.sampleId))).size;
+        const conflictRate = staffSampleIds.length > 0 ? Number(((conflictCount / staffSampleIds.length) * 100).toFixed(1)) : 0.0;
+
+        // Good labeling rate (accuracy matches canonical labels)
+        let matchCount = 0;
+        let totalCompare = 0;
+        userLabels.forEach(la => {
+          const canonical = canonicalLabels.find(c =>
+            String(c.sampleId) === String(la.sampleId) &&
+            c.targetScope === la.targetScope &&
+            c.messageIndex === (la.messageIndex ?? null) &&
+            c.messageRole === (la.messageRole ?? null)
+          );
+          if (canonical) {
+            totalCompare++;
+            if (canonical.labels.includes(la.name)) {
+              matchCount++;
+            }
+          }
+        });
+        // fallback to average submission human score * 10
+        const completedSubs = userSubmissions.filter(s => s.humanScore !== undefined);
+        const avgHumanScore = completedSubs.length > 0
+          ? completedSubs.reduce((sum, s) => sum + (s.humanScore || 0), 0) / completedSubs.length
+          : 8.5;
+        const goodLabelingRate = totalCompare > 0
+          ? Number(((matchCount / totalCompare) * 100).toFixed(1))
+          : Number((avgHumanScore * 10).toFixed(1));
+
+        // Daily activity counts
+        const dailyData = dayLabels.map(dayStr => {
+          return userLabels.filter(la => la.createdAt && la.createdAt.toISOString().split('T')[0] === dayStr).length;
+        });
+
+        // Detail task items
+        const tasks = userSubmissions.map(sub => ({
+          id: String(sub._id).substring(18, 24).toUpperCase(),
+          name: sub.name,
+          status: sub.status,
+          samples: sub.totalSamples,
+          done: sub.status === 'submitted' || sub.status === 'approved' ? sub.totalSamples : sub.labeledCount,
+          submittedAt: sub.submittedAt ? new Date(sub.submittedAt).toISOString().replace('T', ' ').substring(0, 16) : null,
+          onTime: sub.deadline && sub.submittedAt ? new Date(sub.submittedAt).getTime() <= new Date(sub.deadline).getTime() : true,
+        }));
+
+        // Activity log items
+        const activityLog: any[] = [];
+        userSubmissions.slice(0, 5).forEach(sub => {
+          if (sub.submittedAt) {
+            activityLog.push({
+              time: new Date(sub.submittedAt).toISOString().replace('T', ' ').substring(0, 16),
+              action: 'Submitted',
+              detail: `${sub.name} (${sub.totalSamples} samples)`,
+            });
+          }
+        });
+        userLabels.slice(0, 5).forEach(la => {
+          activityLog.push({
+            time: new Date(la.createdAt).toISOString().replace('T', ' ').substring(0, 16),
+            action: 'Labeled',
+            detail: `Gán nhãn: ${la.name} cho mẫu ${String(la.sampleId).substring(18, 24)}`,
+          });
+        });
+        activityLog.sort((a, b) => b.time.localeCompare(a.time));
+
+        return {
+          id: staffId,
+          name: staff.name || staff.email,
+          email: staff.email,
+          avatar: (staff.name || staff.email).substring(0, 2).toUpperCase(),
+          projectsParticipated: new Set(userSubmissions.map(s => String(s.projectId))).size,
+          tasksAssigned,
+          tasksDone,
+          samplesAssigned,
+          samplesDone,
+          completionRate,
+          labelsPerHour,
+          avgTimePerSample,
+          conflictRate,
+          goodLabelingRate,
+          onTimeRate,
+          activeDays,
+          totalDays: 22,
+          lastActive: (staff as any).updatedAt ? new Date((staff as any).updatedAt).toISOString().replace('T', ' ').substring(0, 16) : 'N/A',
+          joinDate: (staff as any).createdAt ? new Date((staff as any).createdAt).toISOString().split('T')[0] : 'N/A',
+          dailyData,
+          tasks,
+          activityLog: activityLog.slice(0, 10),
+        };
+      });
+
+      return res.status(200).json({ success: true, data: results });
+    } catch (error: any) {
+      console.error('[AssignmentController] Error calculating staff stats:', error);
       return res.status(500).json({ success: false, error: error.message });
     }
   }

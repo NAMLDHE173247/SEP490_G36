@@ -2025,7 +2025,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const similarityThreshold = req.body?.similarityThreshold;
 
       const taskType = req.body?.taskType === 'cross-check' ? 'cross-check' : 'labeling';
-      const priority = ['low', 'medium', 'high'].includes(req.body?.priority) ? req.body.priority : 'medium';
+      const priority = ['low', 'medium', 'high', 'urgent'].includes(req.body?.priority) ? req.body.priority : 'medium';
 
       if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(assigneeId)) {
         res.status(400).json({ error: 'Dataset version id hoặc assigneeId không hợp lệ.' });

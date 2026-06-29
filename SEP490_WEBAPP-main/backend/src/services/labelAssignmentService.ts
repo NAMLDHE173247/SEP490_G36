@@ -8,6 +8,7 @@ import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudication';
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
+import { CheckerActivityLog } from '../models/CheckerActivityLog';
 import { User } from '../models/User';
 import { QUALITY_AUTO_REJECT_MARKER } from '../modules/dataprep/quality/quality.constants';
 
@@ -1487,7 +1488,16 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     const msgRole = target.messageRole ?? null;
     const existing = existingAdjs.find((a: any) => a.targetScope === target.targetScope && a.messageIndex === msgIdx && a.messageRole === msgRole);
     
-    if (agreementScore === null || agreementScore >= threshold) {
+    const canonical = canonicalLabels.find((c: any) => 
+      c.targetScope === target.targetScope && 
+      c.messageIndex === msgIdx && 
+      c.messageRole === msgRole
+    );
+
+    const hasUrgentPriority = assignments.some((a) => a.priority === 'urgent');
+    const isUrgentPending = hasUrgentPriority && (!existing || existing.status !== 'published') && !canonical;
+
+    if (agreementScore === null || (agreementScore >= threshold && !isUrgentPending)) {
       if (existing && existing.status !== 'published') {
         bulkOps.push({
           deleteOne: {
@@ -1509,7 +1519,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
             $set: {
               status: existing?.status === 'published' ? 'published' : existing?.status === 'resolved_unpublished' ? 'resolved_unpublished' : 'pending',
               threshold,
-              agreementScore,
+              agreementScore: agreementScore !== null ? agreementScore : 1.0,
               majorityLabels,
               labelCounts,
               annotatorSets,
@@ -1526,12 +1536,6 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         }
       });
     }
-
-    const canonical = canonicalLabels.find((c: any) => 
-      c.targetScope === target.targetScope && 
-      c.messageIndex === msgIdx && 
-      c.messageRole === msgRole
-    );
 
     const targetAnnotators = annotatorSets.map((item) => ({
       annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
@@ -1563,7 +1567,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       messageRole: target.messageRole,
       targetTextSnapshot: target.targetTextSnapshot,
       agreementScore,
-      hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
+      hasConflict: (agreementScore !== null && agreementScore < similarityThreshold) || isUrgentPending,
       labelCounts,
       majorityLabels,
       annotators: targetAnnotators,
@@ -2065,4 +2069,111 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
     conflicts: conflicts.filter((item) => item.status !== 'published'),
     refreshedAt: new Date().toISOString(),
   };
+}
+
+export async function autoResolveSampleIfConsensus(datasetVersionId: string | mongoose.Types.ObjectId, sampleId: string | mongoose.Types.ObjectId) {
+  const versionOid = new mongoose.Types.ObjectId(String(datasetVersionId));
+  const sampleOid = new mongoose.Types.ObjectId(String(sampleId));
+
+  const version = await DatasetVersion.findById(versionOid).lean();
+  if (!version) return;
+
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
+    sampleId: sampleOid,
+    active: { $ne: false },
+  }).lean();
+
+  if (assignments.length === 0) return;
+
+  const totalAssigned = assignments.length;
+  const submittedAssignments = assignments.filter(
+    (a) => a.reviewStatus === 'submitted' || a.reviewStatus === 'approved'
+  );
+  const totalSubmitted = submittedAssignments.length;
+
+  // Only run consensus matching when all assigned staff have submitted their results.
+  if (totalSubmitted < totalAssigned) {
+    return;
+  }
+
+  // Do not auto-resolve if the task/sample has an urgent priority
+  const hasUrgentPriority = assignments.some((a) => a.priority === 'urgent');
+  if (hasUrgentPriority) {
+    return;
+  }
+
+  // Get the comparison of all annotator sets
+  const comparison = await buildAssignmentSampleComparison(String(datasetVersionId), String(sampleId));
+
+  for (const target of comparison.targets) {
+    if (!target.hasConflict) continue;
+
+    // Filter to only count active staff annotators
+    const staffAnnotators = target.annotators.filter((a) => !a.isCanonical && !a.isOwner);
+    if (staffAnnotators.length === 0) continue;
+
+    // Count occurrences of each unique label set
+    const labelSetCounts = new Map<string, { count: number; labels: string[] }>();
+    staffAnnotators.forEach((ann) => {
+      const key = [...ann.labels].sort().join(',');
+      if (!labelSetCounts.has(key)) {
+        labelSetCounts.set(key, { count: 0, labels: ann.labels });
+      }
+      labelSetCounts.get(key)!.count += 1;
+    });
+
+    let maxCount = 0;
+    let consensusLabels: string[] = [];
+    for (const { count, labels } of labelSetCounts.values()) {
+      if (count > maxCount) {
+        maxCount = count;
+        consensusLabels = labels;
+      }
+    }
+
+    // Check if consensus meets the 2/3 threshold: maxCount / totalAssigned >= 2 / 3
+    if (maxCount * 3 >= totalAssigned * 2) {
+      // Auto-resolve and publish
+      await resolveAssignmentAdjudication({
+        datasetVersionId: String(datasetVersionId),
+        sampleId: String(sampleId),
+        targetScope: target.targetScope,
+        messageIndex: target.messageIndex,
+        messageRole: target.messageRole,
+        finalLabels: consensusLabels,
+        note: 'Auto-resolved: 2/3 or more Staff gave identical results.',
+        resolvedBy: String(version.ownerId),
+      });
+
+      await publishAssignmentAdjudication({
+        datasetVersionId: String(datasetVersionId),
+        sampleId: String(sampleId),
+        targetScope: target.targetScope,
+        messageIndex: target.messageIndex,
+        messageRole: target.messageRole,
+        publishedBy: String(version.ownerId),
+      });
+
+      // Log the auto-resolution activity
+      const sampleIndexStr = comparison.sample?.sampleIndex !== undefined ? `#${comparison.sample.sampleIndex}` : '';
+      const scopeText = target.targetScope === 'message' && target.messageIndex !== undefined
+        ? ` (tin nhắn #${target.messageIndex + 1} - ${target.messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+      
+      const user = await User.findById(version.ownerId).select('name email').lean();
+      await CheckerActivityLog.create({
+        datasetVersionId: versionOid,
+        sampleId: sampleOid,
+        userId: version.ownerId,
+        userName: user?.name || 'System',
+        userEmail: user?.email || 'system@resolve.com',
+        action: 'publish',
+        targetScope: target.targetScope || null,
+        messageIndex: target.messageIndex || null,
+        messageRole: target.messageRole || null,
+        details: `Tự động chốt nhãn (Auto-Resolve 2/3): [${consensusLabels.join(', ')}] cho mẫu ${sampleIndexStr}${scopeText}`,
+      });
+    }
+  }
 }

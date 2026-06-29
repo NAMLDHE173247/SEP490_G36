@@ -375,6 +375,7 @@
   letter-spacing: 0.3px;
 }
 
+.al-priority-urgent { background: #ffe4e6; color: #e11d48; border: 1px solid #fda4af; }
 .al-priority-high { background: #fee2e2; color: #dc2626; }
 .al-priority-medium { background: #fef3c7; color: #d97706; }
 .al-priority-low { background: #e0f2fe; color: #0284c7; }
