@@ -3,17 +3,17 @@ import { apiService } from '../../services/api';
 
 // --- Constants ---
 export const STAGES = [
-  { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
-  { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
-  { num: 5, label: 'Finish', sub: 'Step 12-14' },
+  { num: 1, label: 'Tải lên & Chuyển đổi', sub: 'Bước 1' },
+  { num: 2, label: 'Tiền xử lý', sub: 'Bước 2-4' },
+  { num: 3, label: 'Gán nhãn', sub: 'Bước 5-7' },
+  { num: 4, label: 'Xem xét & Phân loại', sub: 'Bước 8-11' },
+  { num: 5, label: 'Hoàn tất', sub: 'Bước 12-14' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
-  { num: 1, label: 'Clean' },
-  { num: 2, label: 'Find K' },
-  { num: 3, label: 'K-means Cluster' },
+  { num: 2, label: 'Clean' },
+  { num: 3, label: 'Find K' },
+  { num: 4, label: 'K-means Cluster' },
 ];
 
 export const SAMPLE_RAW_DATA = `[
@@ -220,8 +220,8 @@ export const PREVIEW_REMOVED = [
 const DataPrepContext = createContext<any>(null);
 
 const resolveStageFromResumeStep = (step: number) => {
-  if (step >= 13) return 5;
-  if (step >= 7) return 4;
+  if (step >= 12) return 5;
+  if (step >= 8) return 4;
   if (step >= 5) return 3;
   if (step >= 2) return 2;
   return 1;
@@ -276,15 +276,10 @@ const buildConversationRowsFromVersionItems = (items: any[]) => {
 };
 
 export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentStage, setCurrentStage] = useState(() => {
-    const saved = localStorage.getItem('dp_currentStage');
-    const parsed = saved ? parseInt(saved, 10) : 1;
-    return parsed > 5 ? 5 : parsed;
-  });
-  const [currentSubStep, setCurrentSubStep] = useState(() => {
-    const saved = localStorage.getItem('dp_currentSubStep');
-    return saved ? parseInt(saved, 10) : 1;
-  });
+  // Always start at Stage 1 — session resume is handled by the mount useEffect
+  // which calls openWorkflowVersion() via the API with full data hydration.
+  const [currentStage, setCurrentStage] = useState(1);
+  const [currentSubStep, setCurrentSubStep] = useState(2);
 
   React.useEffect(() => {
     localStorage.setItem('dp_currentStage', currentStage.toString());
@@ -558,19 +553,24 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const getLabelBadgeStyle = (labelName: string) => {
     const name = labelName.toUpperCase();
+    // Tích cực / xác nhận đúng → xanh lá
+    if (name === 'ANS' || name === 'CONF' || name === 'PR') {
+      return { backgroundColor: '#16a34a', color: '#ffffff' };
+    }
+    // Sai / cần sửa → đỏ
+    if (name === 'WRONG' || name === 'FIX') {
+      return { backgroundColor: '#dc2626', color: '#ffffff' };
+    }
+    // Dẫn dắt Socratic → xám đậm
     if (name === 'SCAF') {
       return { backgroundColor: '#475569', color: '#ffffff' };
     }
+    // Gợi ý → cam
     if (name === 'HINT') {
       return { backgroundColor: '#f97316', color: '#ffffff' };
     }
-    if (name === 'PR') {
-      return { backgroundColor: '#10b981', color: '#ffffff' };
-    }
-    if (name === 'OK') {
-      return { backgroundColor: '#16a34a', color: '#ffffff' };
-    }
-    if (name === 'THEO') {
+    // Lý thuyết / khái niệm → tím
+    if (name === 'THEO' || name === 'CLR') {
       return { backgroundColor: '#7c3aed', color: '#ffffff' };
     }
     return { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
@@ -641,7 +641,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: false });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -718,7 +718,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
       const stage = resolveStageFromResumeStep(resumeStep);
       setCurrentStage(stage);
-      if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
+      if (stage === 2) setCurrentSubStep(Math.max(2, Math.min(4, resumeStep)));
       if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(7, resumeStep)));
       if (stage === 4) setCurrentSubStep4(Math.max(8, Math.min(11, resumeStep)));
       if (stage === 5) setCurrentSubStep6(Math.max(12, Math.min(14, resumeStep)));
@@ -738,7 +738,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     localStorage.removeItem('dp_currentSubStep6');
     setActiveWorkflowVersion(null);
     setCurrentStage(1);
-    setCurrentSubStep(1);
+    setCurrentSubStep(2);
     setCurrentSubStep3(5);
     setCurrentSubStep4(8);
     setCurrentSubStep6(12);
@@ -757,7 +757,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
       setActiveWorkflowVersion(null);
       setCurrentStage(1);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
       setCurrentSubStep3(5);
       setCurrentSubStep4(8);
       setCurrentSubStep6(12);
@@ -980,7 +980,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
 
       setCurrentStage(2);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
     } catch (err: any) {
       console.error('Conversion failed:', err);
       alert(err.response?.data?.error || err.message || 'Chuyển đổi dữ liệu thất bại');
@@ -1277,7 +1277,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
           ...res,
           clusterStats: updatedStats
         });
-        alert(`Đã loại bỏ ${res.removedCount} hội thoại trùng lặp. Giữ lại ${res.keptCount} hội thoại.`);
+        alert(`Đã loại bỏ ${(res as any).removedCount} hội thoại trùng lặp. Giữ lại ${(res as any).keptCount} hội thoại.`);
       }
     } catch (err: any) {
       console.error('Deduplicate failed:', err);

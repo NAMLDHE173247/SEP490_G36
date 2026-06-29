@@ -264,5 +264,6 @@ export function useStage4Data(versionId: string | null) {
     adjudicateQuality,
     adjudicateMultiEvalResult,
     refreshData,
+    setQualityResult,
   };
 }

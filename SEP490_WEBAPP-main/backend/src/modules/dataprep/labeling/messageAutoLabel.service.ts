@@ -5,34 +5,12 @@ import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 import { ILlmProvider } from '../../../services/providers/ILlmProvider';
 import { replaceHardLabelsForUserOnTarget } from '../../../services/labelAssignmentService';
+import { STUDENT_INTENTS, ASSISTANT_ACTIONS } from './autoLabelV2.service';
 
-export const USER_MESSAGE_LABELS = [
-  'CORRECT',
-  'INCORRECT',
-  'REQUEST_HINT',
-  'ASK_THEORY',
-  'REQUEST_EXPLANATION',
-  'REQUEST_SIMPLER',
-  'SKIP_EXERCISE',
-  'ENCOURAGE',
-  'OFF_TOPIC',
-  'NEXT_SECTION',
-  'WAIT_READY',
-] as const;
+// Bộ nhãn dùng chung với quy trình gán nhãn của Staff (V2 Socratic taxonomy)
+export const USER_MESSAGE_LABELS = Object.keys(STUDENT_INTENTS) as readonly string[];
 
-export const ASSISTANT_MESSAGE_LABELS = [
-  'PRAISING',
-  'SCAFFOLDING',
-  'HINTING',
-  'CONCEPT_CLARIFY',
-  'LOGIC_BREAKDOWN',
-  'SIMPLIFYING',
-  'NAVIGATING',
-  'MOTIVATING',
-  'REDIRECTING',
-  'TRANSITIONING',
-  'WAITING',
-] as const;
+export const ASSISTANT_MESSAGE_LABELS = Object.keys(ASSISTANT_ACTIONS) as readonly string[];
 
 type MessageRole = 'user' | 'assistant';
 
@@ -121,7 +99,7 @@ function validLabelsForRole(role: MessageRole, label: unknown): string[] {
 }
 
 function fallbackLabels(role: MessageRole): string[] {
-  return [role === 'user' ? 'WAIT_READY' : 'WAITING'];
+  return [role === 'user' ? 'ANSWER_ATTEMPT' : 'WAITING'];
 }
 
 function clampConcurrency(value: unknown, fallback = 4, max = 8): number {
@@ -139,57 +117,26 @@ function buildPrompt(messages: MessageAutoLabelInput[]): string {
     content: message.content,
   }));
 
+  // Sinh phần định nghĩa nhãn trực tiếp từ bộ nhãn V2 dùng chung với Staff,
+  // đảm bảo AI luôn gán đúng bộ nhãn mà Staff đang sử dụng.
+  const intentDefs = Object.entries(STUDENT_INTENTS)
+    .map(([key, desc]) => `${key}: ${desc}`)
+    .join('\n');
+  const actionDefs = Object.entries(ASSISTANT_ACTIONS)
+    .map(([key, desc]) => `${key}: ${desc}`)
+    .join('\n');
+
   return `Bạn là chuyên gia phân tích hội thoại gia sư AI theo mô hình Flipped Classroom và phương pháp Socratic. Nhiệm vụ của bạn là gán nhãn (label) cho từng tin nhắn để đánh giá tính chuẩn xác sư phạm.
 
-DỰA TRÊN FILE CẤU HÌNH, ĐỊNH NGHĨA CÁC NHÃN NHƯ SAU:
+QUAN TRỌNG: CHỈ được dùng đúng các mã nhãn dưới đây, không tự bịa nhãn mới.
 
 NHÃN CHO USER (STUDENT INTENT):
+${intentDefs}
 
-CORRECT: Học sinh đưa ra đáp án đúng cho bài tập hiện tại.
-
-INCORRECT: Học sinh đưa ra đáp án sai hoặc logic có lỗ hổng.
-
-REQUEST_HINT: Học sinh yêu cầu gợi ý hoặc than "bí", không biết làm tiếp thế nào.
-
-ASK_THEORY: Câu hỏi về khái niệm, định nghĩa, công thức hoặc đổi đơn vị (ví dụ: "Diện tích là gì?", "1km bằng bao nhiêu m?").
-
-REQUEST_EXPLANATION: Câu hỏi về logic (Tại sao lại ra kết quả đó? Các bước giải thế nào?).
-
-REQUEST_SIMPLER: Học sinh chưa hiểu cách giải thích hiện tại, yêu cầu nói dễ hiểu hơn hoặc dùng ví dụ khác.
-
-SKIP_EXERCISE: Yêu cầu bỏ qua bài tập này để làm bài khác hoặc sang phần tiếp theo.
-
-ENCOURAGE: Thể hiện sự nản lòng, mệt mỏi, chán nản (ví dụ: "khó quá", "mệt quá", "không muốn học nữa").
-
-OFF_TOPIC: Nói chuyện phiếm, hỏi về thông tin cá nhân của AI hoặc các chủ đề không liên quan bài học.
-
-NEXT_SECTION: Xác nhận đã sẵn sàng hoặc yêu cầu chuyển sang phần mới/bài mới.
-
-WAIT_READY: Yêu cầu đợi một chút, chưa sẵn sàng để tiếp tục.
+LƯU Ý: Việc học sinh trả lời đúng hay sai KHÔNG phải là intent. Khi học sinh đưa ra đáp án (dù đúng hay sai) hãy dùng ANSWER_ATTEMPT. Việc đánh giá đúng/sai là hành động của gia sư (assistant).
 
 NHÃN CHO ASSISTANT (TUTOR ACTION):
-
-PRAISING: Xác nhận đáp án đúng và khen ngợi cụ thể.
-
-SCAFFOLDING: Phản hồi khi HS làm sai. Không cho đáp án, chỉ đưa ra câu hỏi gợi mở hoặc chỉ ra điểm mâu thuẫn để HS tự nhận ra lỗi.
-
-HINTING: Đưa ra gợi ý từng bước (progressive hints), đi từ gợi ý khái quát đến cụ thể.
-
-CONCEPT_CLARIFY: Giải thích ngắn gọn lý thuyết hoặc công thức mà HS đang hỏi.
-
-LOGIC_BREAKDOWN: Phân tích chi tiết từng bước logic để giải quyết vấn đề.
-
-SIMPLIFYING: Sử dụng kỹ thuật ELI5, ẩn dụ hoặc ví dụ thực tế để làm đơn giản hóa vấn đề.
-
-NAVIGATING: Điều hướng luồng bài học (đồng ý bỏ qua bài tập, chuyển sang phần dễ hơn).
-
-MOTIVATING: Thể hiện sự đồng cảm, khích lệ tinh thần học tập (Growth Mindset).
-
-REDIRECTING: Lịch sự dẫn dắt học sinh quay lại chủ đề chính của bài học.
-
-TRANSITIONING: Tóm tắt bài cũ và giới thiệu mục tiêu phần mới.
-
-WAITING: Xác nhận sự chờ đợi theo yêu cầu của học sinh.
+${actionDefs}
 
 DỮ LIỆU HỘI THOẠI:
 ${JSON.stringify(payload)}
@@ -210,8 +157,8 @@ Tuyệt đối không thêm trường "reason" hay bất kỳ văn bản giải 
 
 ĐỊNH DẠNG:
 [
-{ "messageIndex": 0, "role": "user", "label": ["REQUEST_SIMPLER", "REQUEST_HINT"], "confidence": 0.9 },
-{ "messageIndex": 1, "role": "assistant", "label": ["SIMPLIFYING", "HINTING"], "confidence": 0.85, "is_correct_logic": true }
+{ "messageIndex": 0, "role": "user", "label": ["ANSWER_ATTEMPT"], "confidence": 0.9 },
+{ "messageIndex": 1, "role": "assistant", "label": ["CONFIRM_CORRECT_ANSWER", "PRAISING"], "confidence": 0.85, "is_correct_logic": true }
 ]`;
 }
 

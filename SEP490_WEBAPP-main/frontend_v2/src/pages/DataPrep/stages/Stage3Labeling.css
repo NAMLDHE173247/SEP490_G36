@@ -1609,6 +1609,67 @@
   opacity: 0.9;
 }
 
+/* Auto-Labeling Control Panel */
+.ia-autolabel-card {
+  background: linear-gradient(180deg, #faf5ff 0%, #ffffff 60%);
+  border: 1px solid #ede9fe;
+}
+
+.ia-autolabel-desc {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+.ia-autolabel-desc strong {
+  color: #6d28d9;
+}
+
+.ia-autolabel-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ia-autolabel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ia-autolabel-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ia-autolabel-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #334155;
+  outline: none;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+
+.ia-autolabel-input:focus {
+  border-color: #a855f7;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+}
+
+.ia-auto-labeling-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 /* Section Subtitle */
 .ia-section-subtitle {
   font-size: 12px;
@@ -2119,7 +2180,8 @@
 .ct-drawer-body {
   display: flex;
   flex: 1;
-  overflow: hidden; /* Two scrollable columns */
+  overflow: hidden;
+  min-height: 0;
 }
 
 .ct-drawer-left {

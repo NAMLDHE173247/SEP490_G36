@@ -12,9 +12,8 @@ import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudi
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
-import { GeminiProvider } from '../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../services/providers/DeepseekProvider';
+import { CheckerActivityLog } from '../models/CheckerActivityLog';
+import { apiKeyService } from '../services/apiKeyService';
 import { getAuthUserId, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
 import { EvalFormat, inferFormatFromRow } from '../utils/evalUtils';
@@ -339,17 +338,41 @@ async function ensureEvaluationHistoryIndexes(): Promise<void> {
   evaluationIndexesEnsured = true;
 }
 
-export class EvaluationController {
-  private getService(provider?: string): EvaluationService {
-    const normalizedProvider = String(provider || '').toLowerCase();
-    if (normalizedProvider === 'openai') {
-      return new EvaluationService(new OpenAIProvider());
-    }
-    if (normalizedProvider === 'deepseek') {
-      return new EvaluationService(new DeepseekProvider());
-    }
+async function logCheckerActivity(params: {
+  datasetVersionId: string;
+  sampleId: string;
+  userId: string;
+  action: 'view' | 'save_draft' | 'publish';
+  targetScope?: 'sample' | 'message';
+  messageIndex?: number | null;
+  messageRole?: 'user' | 'assistant' | null;
+  details?: string;
+}) {
+  try {
+    const user = await User.findById(params.userId).select('name email').lean();
+    if (!user) return;
+    await CheckerActivityLog.create({
+      datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
+      sampleId: new mongoose.Types.ObjectId(params.sampleId),
+      userId: new mongoose.Types.ObjectId(params.userId),
+      userName: user.name || 'Unknown',
+      userEmail: user.email || 'unknown@test.com',
+      action: params.action,
+      targetScope: params.targetScope || null,
+      messageIndex: params.messageIndex || null,
+      messageRole: params.messageRole || null,
+      details: params.details || '',
+    });
+  } catch (err) {
+    console.error('Failed to log checker activity:', err);
+  }
+}
 
-    return new EvaluationService(new GeminiProvider());
+export class EvaluationController {
+  private async getService(provider: string | undefined, userId?: string | null): Promise<EvaluationService> {
+    const normalizedProvider = String(provider || 'gemini').toLowerCase();
+    const llmProvider = await apiKeyService.createProvider(userId, normalizedProvider, true);
+    return new EvaluationService(llmProvider);
   }
 
   async evaluate(req: Request, res: Response): Promise<void> {
@@ -365,7 +388,8 @@ export class EvaluationController {
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const result = await service.evaluateBatch(data, format);
 
       res.json(result);
@@ -390,7 +414,8 @@ export class EvaluationController {
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const samples = data.map((item) => ({
         assistant: String(item?.assistant || ''),
         reason: String(item?.reason || ''),
@@ -432,7 +457,7 @@ ${conflictingLabels.map((c: any) => `- ${c.annotator}: [${c.labels.join(', ')}]`
 
 Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên giữ nhãn nào):`;
 
-      const provider = new GeminiProvider(false);
+      const provider = await apiKeyService.createProvider(ownerId, 'gemini', false);
       const advice = await provider.generateContent(prompt, 'gemini-2.5-flash');
 
       res.json({ advice });
@@ -472,7 +497,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const normalizedProjectName = normalizeProjectName(projectName);
       const normalizedFormat = format === 'openai' || format === 'alpaca'
         ? format
-        : inferFormatFromRow(data[0] || {});
+        : inferFormatFromRow((data[0] as any)?.data || data[0] || {});
       const threshold = Number.isFinite(Number(similarityThreshold))
         ? Math.min(1, Math.max(0, Number(similarityThreshold)))
         : 0.9;
@@ -540,7 +565,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const { items } = req.body as {
         items: Array<{
           sampleId: string;
-          evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+          evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq' | 'none';
           results: EvaluationScorePayload;
         }>;
       };
@@ -555,7 +580,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           return (
             item &&
             mongoose.Types.ObjectId.isValid(item.sampleId) &&
-            ['manual', 'gemini', 'openai', 'deepseek', 'none'].includes(item.evaluatedBy) &&
+            ['manual', 'gemini', 'openai', 'deepseek', 'openrouter', 'groq', 'none'].includes(item.evaluatedBy) &&
             item.results
           );
         });
@@ -1146,7 +1171,8 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const service = this.getService(provider);
+      const ownerId = getAuthUserId(req);
+      const service = await this.getService(provider, ownerId);
       const samples = data.map((item) => ({
         turns: Array.isArray(item?.turns) ? item.turns.map((turn) => ({
           userMessageIndex: Number(turn?.userMessageIndex),
@@ -1701,6 +1727,27 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       }
 
       const comparison = await buildAssignmentSampleComparison(id, sampleId);
+
+      // Check for recent view logs to avoid duplicate logs (e.g. from React StrictMode double render)
+      const recentViewLog = await DatasetAssignmentActivity.findOne({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'view',
+        createdAt: { $gte: new Date(Date.now() - 5000) }
+      }).lean();
+
+      if (!recentViewLog) {
+        // Log activity
+        await logCheckerActivity({
+          datasetVersionId: id,
+          sampleId,
+          userId: ownerId,
+          action: 'view',
+          details: `Xem đối chiếu nhãn mẫu #${comparison.sample?.sampleIndex !== undefined ? comparison.sample.sampleIndex : ''} (Mã: ${comparison.sample?.sampleKey || ''})`,
+        });
+      }
+
       res.json(comparison);
     } catch (error: any) {
       console.error('Get assignment sample comparison error:', error);
@@ -1734,8 +1781,11 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const targetScope = req.body?.targetScope === 'message' ? 'message' : 'sample';
       let messageIndex: number | undefined;
       let messageRole: 'user' | 'assistant' | undefined;
+      const parsedMessageIndex = Number(req.body?.messageIndex);
+      if (Number.isInteger(parsedMessageIndex) && parsedMessageIndex >= 0) {
+        messageIndex = parsedMessageIndex;
+      }
       if (targetScope === 'message') {
-        const parsedMessageIndex = Number(req.body?.messageIndex);
         const parsedMessageRole = req.body?.messageRole === 'user' || req.body?.messageRole === 'assistant'
           ? req.body.messageRole
           : undefined;
@@ -1743,7 +1793,6 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           res.status(400).json({ error: 'message target requires valid messageIndex and messageRole.' });
           return;
         }
-        messageIndex = parsedMessageIndex;
         messageRole = parsedMessageRole;
       }
 
@@ -1752,11 +1801,32 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         datasetVersionId: id,
         sampleId,
         targetScope,
-        messageIndex: targetScope === 'message' ? messageIndex : undefined,
+        messageIndex,
         messageRole,
         finalLabels,
         note: String(req.body?.note || ''),
         resolvedBy: ownerId,
+      });
+
+      const assignment = await DatasetSampleAssignment.findOne({
+        datasetVersionId: id,
+        sampleId: sampleId
+      }).select('sampleIndex').lean();
+      const sampleIndexStr = assignment?.sampleIndex !== undefined ? `#${assignment.sampleIndex}` : '';
+      const scopeText = targetScope === 'message' && messageIndex !== undefined
+        ? ` (tin nhắn #${messageIndex + 1} - ${messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+
+      // Log resolve activity
+      await logCheckerActivity({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'save_draft',
+        targetScope,
+        messageIndex,
+        messageRole,
+        details: `Lưu nháp nhãn: [${finalLabels.join(', ')}]${req.body?.note ? ' (Ghi chú: ' + req.body.note + ')' : ''} cho mẫu ${sampleIndexStr}${scopeText}`,
       });
 
       res.json({
@@ -1794,8 +1864,11 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const targetScope = req.body?.targetScope === 'message' ? 'message' : 'sample';
       let messageIndex: number | undefined;
       let messageRole: 'user' | 'assistant' | undefined;
+      const parsedMessageIndex = Number(req.body?.messageIndex);
+      if (Number.isInteger(parsedMessageIndex) && parsedMessageIndex >= 0) {
+        messageIndex = parsedMessageIndex;
+      }
       if (targetScope === 'message') {
-        const parsedMessageIndex = Number(req.body?.messageIndex);
         const parsedMessageRole = req.body?.messageRole === 'user' || req.body?.messageRole === 'assistant'
           ? req.body.messageRole
           : undefined;
@@ -1803,7 +1876,6 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           res.status(400).json({ error: 'message target requires valid messageIndex and messageRole.' });
           return;
         }
-        messageIndex = parsedMessageIndex;
         messageRole = parsedMessageRole;
       }
 
@@ -1811,9 +1883,30 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         datasetVersionId: id,
         sampleId,
         targetScope,
-        messageIndex: targetScope === 'message' ? messageIndex : undefined,
+        messageIndex,
         messageRole,
         publishedBy: ownerId,
+      });
+
+      const assignment = await DatasetSampleAssignment.findOne({
+        datasetVersionId: id,
+        sampleId: sampleId
+      }).select('sampleIndex').lean();
+      const sampleIndexStr = assignment?.sampleIndex !== undefined ? `#${assignment.sampleIndex}` : '';
+      const scopeText = targetScope === 'message' && messageIndex !== undefined
+        ? ` (tin nhắn #${messageIndex + 1} - ${messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+
+      // Log publish activity
+      await logCheckerActivity({
+        datasetVersionId: id,
+        sampleId,
+        userId: ownerId,
+        action: 'publish',
+        targetScope,
+        messageIndex,
+        messageRole,
+        details: `Đã chốt nhãn: [${adjudication?.finalLabels?.join(', ') || ''}] cho mẫu ${sampleIndexStr}${scopeText}`,
       });
 
       res.json({
@@ -1824,6 +1917,57 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       console.error('Publish assignment adjudication error:', error);
       res.status(error?.statusCode || 500).json({
         error: error.message || 'Publish final labels thất bại',
+      });
+    }
+  }
+
+  async getCheckerActivityLogs(req: Request, res: Response): Promise<void> {
+    try {
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ error: 'Dataset version id không hợp lệ.' });
+        return;
+      }
+
+      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      if (!version) {
+        res.status(404).json({ error: 'Không tìm thấy dataset version.' });
+        return;
+      }
+
+      const logs = await CheckerActivityLog.find({ datasetVersionId: id })
+        .populate('sampleId', 'sampleId')
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .lean();
+
+      res.json({
+        success: true,
+        data: logs.map((log: any) => ({
+          id: String(log._id),
+          sampleId: String(log.sampleId?._id || log.sampleId),
+          sampleKey: log.sampleId ? String(log.sampleId.sampleId || '') : '',
+          action: log.action,
+          userName: log.userName,
+          userEmail: log.userEmail,
+          targetScope: log.targetScope,
+          messageIndex: log.messageIndex,
+          messageRole: log.messageRole,
+          details: log.details,
+          createdAt: log.createdAt,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Get checker activity logs error:', error);
+      res.status(500).json({
+        error: 'Lấy nhật ký hoạt động của checker thất bại',
+        details: error.message,
       });
     }
   }
@@ -2243,7 +2387,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
       const { id } = req.params;
       const { results, evaluatedBy } = req.body as {
         results: EvaluationScorePayload;
-        evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+        evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq' | 'none';
       };
 
       if (!id || !mongoose.Types.ObjectId.isValid(id)) {
@@ -2256,8 +2400,8 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      if (!['manual', 'gemini', 'openai', 'deepseek', 'none'].includes(evaluatedBy)) {
-        res.status(400).json({ error: 'evaluatedBy chỉ nhận manual, gemini, openai, deepseek hoặc none.' });
+      if (!['manual', 'gemini', 'openai', 'deepseek', 'openrouter', 'groq', 'none'].includes(evaluatedBy)) {
+        res.status(400).json({ error: 'evaluatedBy chỉ nhận manual, gemini, openai, deepseek, openrouter, groq hoặc none.' });
         return;
       }
 

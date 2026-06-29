@@ -213,6 +213,8 @@ export const Stage4TrainEval: React.FC = () => {
       intent: 'REQUEST_EXPLANATION',
       action: 'DIRECT_ANSWER',
       expected: 'SCAFFOLDING',
+      issue: 'Direct answer too early',
+      reason: 'Assistant gave "2x" immediately before checking whether the learner remembered the derivative rule.',
     },
     {
       title: 'CONVERSATION 9',
@@ -223,6 +225,8 @@ export const Stage4TrainEval: React.FC = () => {
       intent: 'ASK_THEORY',
       action: 'DIRECT_ANSWER',
       expected: 'HINTING',
+      issue: 'Direct answer',
+      reason: 'The reply gives the final answer directly and does not guide the learner.',
     },
   ];
   const currentRewrite = rewriteRows[Math.max(0, rewriteConvIdx - 8) % rewriteRows.length];
@@ -543,26 +547,32 @@ export const Stage4TrainEval: React.FC = () => {
           <section className="sep490-panel sep490-rewrite-header">
             <div className="sep490-panel-head">
               <div>
-                <h3>Rewrite Workspace</h3>
-                <p>Review the flagged tutor turn, compare suggestions, and choose the final training response.</p>
+                <span className="rw-section-kicker">Stage 4 cleanup</span>
+                <h3>Rewrite Triage</h3>
+                <p>Fix only the flagged tutor answer, keep the useful context, then approve the version that is ready for training.</p>
               </div>
               <div className="sep490-actions">
-                <select className="sep490-select" defaultValue="gemini">
-                  <option value="gemini">AI Judge: GEMINI</option>
-                  <option value="openai">AI Judge: OPENAI</option>
+                <select className="sep490-select" defaultValue="openrouter">
+                  <option value="openrouter">AI Judge: OPENROUTER</option>
+                  <option value="groq">AI Judge: GROQ</option>
                   <option value="deepseek">AI Judge: DEEPSEEK</option>
                 </select>
-                <button className="sep490-outline" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> AI fix all</button>
-                <button className="sep490-outline" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Quick approve all</button>
-                <button className="sep490-primary" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Save rewrite</button>
+                <button className="sep490-outline" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> Draft with AI</button>
+                <button className="sep490-outline" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Accept selected</button>
+                <button className="sep490-primary" onClick={() => setSepRewriteDecision('ai')}><Check size={14} /> Save final</button>
               </div>
             </div>
+            <div className="rw-flow-strip">
+              <div className="active"><strong>1</strong><span>Find the broken tutor turn</span></div>
+              <div className={sepRewriteGenerated ? 'active' : ''}><strong>2</strong><span>Rewrite with context</span></div>
+              <div className={sepRewriteDecision === 'ai' || sepRewriteDecision === 'manual' ? 'active' : ''}><strong>3</strong><span>Approve training answer</span></div>
+            </div>
             <div className="sep490-metric-grid">
-              <div><span>Need Rewrite</span><strong>10</strong></div>
-              <div><span>AI Suggestions</span><strong>{sepRewriteGenerated ? 11 : 7}</strong></div>
-              <div><span>AI Accepted</span><strong>{sepRewriteDecision === 'ai' ? 5 : 4}</strong></div>
-              <div><span>Manual Edited</span><strong>2</strong></div>
-              <div><span>Original Kept</span><strong>1</strong></div>
+              <div><span>Needs action</span><strong>10</strong></div>
+              <div><span>Drafted by AI</span><strong>{sepRewriteGenerated ? 11 : 7}</strong></div>
+              <div><span>Accepted drafts</span><strong>{sepRewriteDecision === 'ai' ? 5 : 4}</strong></div>
+              <div><span>Manual edits</span><strong>2</strong></div>
+              <div><span>Kept original</span><strong>1</strong></div>
             </div>
           </section>
 
@@ -572,6 +582,7 @@ export const Stage4TrainEval: React.FC = () => {
                 <h3>Rewrite Queue</h3>
                 <span className="sep490-pill amber">10 pending</span>
               </div>
+              <p className="rw-queue-note">Pick one conversation. The center panel shows the exact answer to fix and the surrounding turn for context.</p>
               {rewriteRows.map((row, idx) => {
                 const convNumber = idx + 8;
                 return (
@@ -580,9 +591,10 @@ export const Stage4TrainEval: React.FC = () => {
                     className={rewriteConvIdx === convNumber ? 'active' : ''}
                     onClick={() => setRewriteConvIdx(convNumber)}
                   >
-                    <span>{row.title}</span>
-                    <strong>{row.intent}</strong>
-                    <small>{row.action} {'->'} {row.expected}</small>
+                    <span className="rw-queue-title">{row.title}</span>
+                    <strong>{row.issue}</strong>
+                    <small>{row.intent} / {row.action}</small>
+                    <em>{row.expected}</em>
                   </button>
                 );
               })}
@@ -595,8 +607,20 @@ export const Stage4TrainEval: React.FC = () => {
             <main className="rw-content sep490-rw-full">
               <div className="rw-turn-card rw-turn-rewrite">
                 <div className="rw-turn-header">
-                  <span className="rw-turn-title">Turn #1 needs edit</span>
+                  <span className="rw-turn-title">Target tutor turn</span>
                   <span className="rw-turn-badge-required">REWRITE REQUIRED</span>
+                </div>
+                <div className="rw-brief">
+                  <div>
+                    <span>Problem</span>
+                    <strong>{currentRewrite.issue}</strong>
+                    <p>{currentRewrite.reason}</p>
+                  </div>
+                  <div>
+                    <span>Rewrite goal</span>
+                    <strong>{currentRewrite.expected}</strong>
+                    <p>Keep the response Socratic, concise, and aligned with the student's current step.</p>
+                  </div>
                 </div>
                 <div className="rw-turn-tags">
                   <span className="rw-tag rw-tag-blue">INTENT: {currentRewrite.intent}</span>
@@ -631,13 +655,13 @@ export const Stage4TrainEval: React.FC = () => {
                     ) : (
                       <div className="rw-col-box rw-col-editable">
                         <p>{rewriteText}</p>
-                        <p className="rw-hint-text">{sepRewriteDecision === 'ai' ? 'AI suggestion is selected.' : 'Original answer is selected.'}</p>
+                        <p className="rw-hint-text">{sepRewriteDecision === 'ai' ? 'AI draft selected. Review before saving.' : 'Original answer selected. Use only if the issue is resolved.'}</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <button className="rw-suggest-btn" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> Generate AI suggestion for this turn</button>
+                <button className="rw-suggest-btn" onClick={() => { setSepRewriteGenerated(true); setSepRewriteDecision('ai'); }}><Sparkles size={14} /> Generate focused rewrite for this turn</button>
               </div>
 
               <div className="rw-turn-card rw-turn-context">

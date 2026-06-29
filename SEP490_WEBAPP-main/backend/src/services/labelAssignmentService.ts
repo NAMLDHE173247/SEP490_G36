@@ -19,6 +19,7 @@ export const HARD_LABELS = [
   'LITERATURE',
   'BIOLOGY',
   'OUT_OF_SCOPE',
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -30,6 +31,13 @@ export const HARD_LABELS = [
   'OFF_TOPIC',
   'NEXT_SECTION',
   'WAIT_READY',
+  // V2 Socratic student intents (đồng bộ với bộ nhãn của Staff)
+  'DISCOURAGED',
+  'READY_NEXT',
+  'CONFIRM_UNDERSTANDING',
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -41,12 +49,14 @@ export const HARD_LABELS = [
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ] as const;
 
 export type LabelScope = 'sample' | 'message';
 export type LabelQueryScope = 'sample' | 'message' | 'all';
 export type LabelRole = 'user' | 'assistant';
 export type LabelType = 'hard' | 'soft';
+export type LabelSource = 'ai' | 'human' | 'default' | 'system';
 
 export type LabelAssignmentAggregate = {
   _id: string;
@@ -57,6 +67,7 @@ export type LabelAssignmentAggregate = {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
   createdAt: Date | null;
   updatedAt: Date | null;
   assignedUserCount: number;
@@ -108,7 +119,7 @@ function sampleScopeMatch(): Record<string, any> {
 function buildTargetKey(targetScope: LabelScope, messageIndex?: number | null, messageRole?: LabelRole | null): string {
   return targetScope === 'message'
     ? `message:${Number(messageIndex)}:${String(messageRole || '')}`
-    : 'sample';
+    : `sample:${Number.isInteger(Number(messageIndex)) ? Number(messageIndex) : 0}`;
 }
 
 export function normalizeTargetScope(value: unknown): LabelScope {
@@ -160,6 +171,7 @@ async function ensureLabelAssignmentsForSampleObjectIds(sampleIds: mongoose.Type
         messageIndex: Number.isInteger(Number(label.messageIndex)) ? Number(label.messageIndex) : null,
         messageRole: label.messageRole === 'user' || label.messageRole === 'assistant' ? label.messageRole : null,
         targetTextSnapshot: label.targetTextSnapshot ? String(label.targetTextSnapshot) : undefined,
+        source: 'human',
         createdBy: new mongoose.Types.ObjectId(userId),
         legacyLabelId: label._id,
       });
@@ -265,6 +277,7 @@ function mergeAggregateDocs(
         messageIndex: Number.isInteger(Number(doc.messageIndex)) ? Number(doc.messageIndex) : undefined,
         messageRole: doc.messageRole === 'user' || doc.messageRole === 'assistant' ? doc.messageRole : undefined,
         targetTextSnapshot: doc.targetTextSnapshot ? String(doc.targetTextSnapshot) : undefined,
+        source: doc.source || 'human',
         createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
         updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
         assignedUserCount: 0,
@@ -313,6 +326,7 @@ function mapCanonicalRowsToAggregateDocs(rows: any[]): any[] {
         messageIndex: Number.isInteger(Number(row.messageIndex)) ? Number(row.messageIndex) : null,
         messageRole: row.messageRole === 'user' || row.messageRole === 'assistant' ? row.messageRole : null,
         targetTextSnapshot: row.targetTextSnapshot ? String(row.targetTextSnapshot) : undefined,
+        source: 'system',
         createdBy: row.publishedBy,
         createdAt: row.publishedAt || row.updatedAt || row.createdAt || null,
         updatedAt: row.updatedAt || row.publishedAt || row.createdAt || null,
@@ -432,13 +446,13 @@ export async function getAggregatedLabelsForSample(
   );
   const users = contributorIds.length
     ? await User.find({ _id: { $in: contributorIds.map((id) => new mongoose.Types.ObjectId(id)) } })
-        .select('_id name email')
+        .select('_id name email role')
         .lean()
     : [];
   const userMap = new Map(
     users.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -454,6 +468,7 @@ export async function assignLabelToSample(params: {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -472,6 +487,7 @@ export async function assignLabelToSample(params: {
     {
       $setOnInsert: {
         targetTextSnapshot: params.targetTextSnapshot,
+        source: params.source || 'human',
       },
     },
     { upsert: true, returnDocument: 'after' }
@@ -540,6 +556,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
   messageRole?: LabelRole;
   labels: string[];
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -597,6 +614,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
       messageIndex: params.targetScope === 'message' ? Number(params.messageIndex) : null,
       messageRole: params.targetScope === 'message' ? params.messageRole : null,
       targetTextSnapshot: params.targetTextSnapshot,
+      source: params.source || 'human',
     }));
     await LabelAssignment.insertMany(docs, { ordered: false });
     await Promise.all(
@@ -625,8 +643,9 @@ export async function insertAssignments(docs: any[]) {
   if (!docs.length) {
     return;
   }
+  const docsWithSource = docs.map((doc) => ({ source: 'human', ...doc }));
   try {
-    await LabelAssignment.insertMany(docs, { ordered: false });
+    await LabelAssignment.insertMany(docsWithSource, { ordered: false });
   } catch (error: any) {
     if (error?.code !== 11000) {
       throw error;
@@ -718,36 +737,6 @@ export async function getAggregatedSampleLabels(sampleIds: mongoose.Types.Object
   ]);
 }
 
-async function getAggregatedHardSampleLabels(sampleIds: mongoose.Types.ObjectId[]) {
-  await ensureLabelAssignmentsForSamples(sampleIds.map((id) => String(id)));
-  return LabelAssignment.aggregate([
-    { $match: { sampleId: { $in: sampleIds }, type: 'hard' } },
-    {
-      $group: {
-        _id: {
-          sampleId: '$sampleId',
-          name: '$name',
-          type: '$type',
-          targetScope: '$targetScope',
-          messageIndex: '$messageIndex',
-          messageRole: '$messageRole',
-        },
-        contributors: { $addToSet: '$createdBy' },
-      },
-    },
-    {
-      $project: {
-        sampleId: '$_id.sampleId',
-        name: '$_id.name',
-        type: '$_id.type',
-        targetScope: '$_id.targetScope',
-        messageIndex: '$_id.messageIndex',
-        messageRole: '$_id.messageRole',
-        assignedUserCount: { $size: '$contributors' },
-      },
-    },
-  ]);
-}
 
 export async function getCanonicalSampleLabelsForVersion(
   datasetVersionId: string | mongoose.Types.ObjectId,
@@ -789,26 +778,143 @@ export async function getEffectiveSampleLabelsForVersion(
   const versionOid = typeof datasetVersionId === 'string'
     ? new mongoose.Types.ObjectId(datasetVersionId)
     : datasetVersionId;
-  const hasAssignments = Boolean(
-    await DatasetSampleAssignment.exists({ datasetVersionId: versionOid })
-  );
 
-  if (!hasAssignments) {
-    return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
-  }
-
+  // 1. Get all canonical/published labels
   const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
-  const aggregated = await getAggregatedHardSampleLabels(sampleIds);
 
+  // 2. Load all raw hard label assignments
+  await ensureLabelAssignmentsForSamples(sampleIds.map(id => String(id)));
+  const hardAssignments = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'hard'
+  }).lean();
+
+  // 3. Find unique creators and get their roles
+  const creatorIds = Array.from(new Set(hardAssignments.map(a => String(a.createdBy))));
+  const creators = creatorIds.length
+    ? await User.find({ _id: { $in: creatorIds } }).select('_id role').lean()
+    : [];
+  const creatorRoleMap = new Map<string, string>(creators.map((c: any) => [String(c._id), c.role || 'staff']));
+
+  // 4. Load assignee count per sample to know if it's overlap/multi-staff
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: versionOid,
+    sampleId: { $in: sampleIds },
+    active: true
+  }).select('sampleId assigneeId').lean();
+
+  const sampleAssigneeCount = new Map<string, number>();
+  assignments.forEach((asg: any) => {
+    const sid = String(asg.sampleId);
+    sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+  });
+
+  // 5. Group hard assignments by sample + target key
+  // Target key: targetScope:messageIndex:messageRole
+  const groupedHard = new Map<string, any[]>();
+  hardAssignments.forEach((a: any) => {
+    const targetKey = `${String(a.sampleId)}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
+    const list = groupedHard.get(targetKey) || [];
+    list.push(a);
+    groupedHard.set(targetKey, list);
+  });
+
+  // 6. For each group, determine the effective labels
   const canonicalKeys = new Set(canonical.map(c => 
     `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
   ));
 
-  const effectiveAggregated = (aggregated as any).filter((a: any) => 
-    !canonicalKeys.has(`${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`)
-  );
+  const effectiveHard: EffectiveLabelAggregate[] = [];
+  
+  groupedHard.forEach((docs, targetKey) => {
+    // If it's already in canonical, discard hard assignments
+    if (canonicalKeys.has(targetKey)) {
+      return;
+    }
 
-  return [...canonical, ...effectiveAggregated];
+    // Partition docs by role
+    const checkerDocs = docs.filter(d => {
+      const role = creatorRoleMap.get(String(d.createdBy));
+      return role === 'checker' || role === 'supervisor' || role === 'admin';
+    });
+
+    const sid = String(docs[0].sampleId);
+    const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+
+    if (checkerDocs.length > 0) {
+      // If checker/supervisor/admin has labeled, use their labels ONLY!
+      const counts = new Map<string, Set<string>>();
+      checkerDocs.forEach((d) => {
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = counts.get(name) || new Set<string>();
+          list.add(String(d.createdBy));
+          counts.set(name, list);
+        }
+      });
+      counts.forEach((contributors, name) => {
+        effectiveHard.push({
+          sampleId: docs[0].sampleId,
+          name,
+          type: 'hard',
+          targetScope: docs[0].targetScope,
+          messageIndex: docs[0].messageIndex,
+          messageRole: docs[0].messageRole,
+          assignedUserCount: contributors.size
+        });
+      });
+    } else {
+      // No checker label yet. Check if staff annotators agreed, or if assigneeCount < 2
+      const staffDocs = docs.filter(d => !checkerDocs.includes(d));
+      const userLabelsMap = new Map<string, string[]>();
+      staffDocs.forEach((d) => {
+        const userId = String(d.createdBy);
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = userLabelsMap.get(userId) || [];
+          if (!list.includes(name)) list.push(name);
+          userLabelsMap.set(userId, list);
+        }
+      });
+
+      const uniqueStaffCount = userLabelsMap.size;
+      let staffAgreed = false;
+      if (uniqueStaffCount > 0) {
+        const lists = Array.from(userLabelsMap.values());
+        const firstList = lists[0].slice().sort();
+        staffAgreed = lists.every(list => {
+          if (list.length !== firstList.length) return false;
+          const sorted = list.slice().sort();
+          return sorted.every((val, index) => val === firstList[index]);
+        });
+      }
+
+      if (staffAgreed || assigneeCount < 2) {
+        const counts = new Map<string, Set<string>>();
+        staffDocs.forEach((d) => {
+          const name = String(d.name || '').trim().toUpperCase();
+          if (name) {
+            const list = counts.get(name) || new Set<string>();
+            list.add(String(d.createdBy));
+            counts.set(name, list);
+          }
+        });
+        counts.forEach((contributors, name) => {
+          effectiveHard.push({
+            sampleId: docs[0].sampleId,
+            name,
+            type: 'hard',
+            targetScope: docs[0].targetScope,
+            messageIndex: docs[0].messageIndex,
+            messageRole: docs[0].messageRole,
+            assignedUserCount: contributors.size
+          });
+        });
+      }
+    }
+  });
+
+  return [...canonical, ...effectiveHard];
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
@@ -883,7 +989,7 @@ function getLogicalMessagesForSample(sample: any): Array<{ messageIndex: number;
 
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -908,6 +1014,7 @@ const DRAFT_ACTION_MAP: Record<string, string> = {
 };
 
 const USER_INTENT_SET = new Set([
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -922,6 +1029,9 @@ const USER_INTENT_SET = new Set([
 ]);
 
 const ASSISTANT_ACTION_SET = new Set([
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -933,6 +1043,7 @@ const ASSISTANT_ACTION_SET = new Set([
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ]);
 
 const SUBJECT_CODE_SET = new Set([
@@ -997,10 +1108,25 @@ function buildRequiredTargets(sample: any): DecisionTarget[] {
 
   return [
     {
-      key: buildTargetKey('sample'),
+      key: buildTargetKey('sample', 0),
       targetScope: 'sample',
+      messageIndex: 0,
       labels: [],
-      targetTextSnapshot: conversationContent.slice(0, 2000),
+      targetTextSnapshot: `Mon hoc\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 1),
+      targetScope: 'sample',
+      messageIndex: 1,
+      labels: [],
+      targetTextSnapshot: `Muc do hoan thien\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 2),
+      targetScope: 'sample',
+      messageIndex: 2,
+      labels: [],
+      targetTextSnapshot: `Chat luong hoi thoai\n${conversationContent}`.slice(0, 2000),
     },
     ...getLogicalMessagesForSample(sample).map((message) => ({
       key: buildTargetKey('message', message.messageIndex, message.role),
@@ -1157,7 +1283,7 @@ export async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
       status: { $ne: 'published' },
     });
@@ -1168,7 +1294,7 @@ export async function syncAdjudicationForTarget(params: {
     datasetVersionId: params.datasetVersionId,
     sampleId: params.sampleId,
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   })
     .select('status')
@@ -1179,7 +1305,7 @@ export async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1237,19 +1363,9 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     sampleId: sampleOid,
   }).lean();
 
-  const assignedIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
-  const sampleIndexByAssignee = new Map(assignments.map((item: any) => [String(item.assigneeId), Number(item.sampleIndex)]));
-  const submittedRows = assignedIds.length ? await DatasetAssignmentSubmission.find({
-    datasetVersionId: { $in: [versionOid, String(versionOid)] },
-    assigneeId: { $in: assignedIds.flatMap((id) => mongoose.Types.ObjectId.isValid(id) ? [id, new mongoose.Types.ObjectId(id)] : [id]) },
-    status: { $in: ['submitted', 'approved'] },
-  }).select('assigneeId batchStart batchCount').lean() : [];
-  const assigneeIds = assignedIds.filter((assigneeId) => submittedRows.some((row: any) => {
-    if (String(row.assigneeId) !== assigneeId) return false;
-    const sampleIndex = Number(sampleIndexByAssignee.get(assigneeId));
-    const start = Number(row.batchStart || 1);
-    return sampleIndex >= start && sampleIndex < start + Number(row.batchCount || 0);
-  }));
+  const assigneeIds = assignments
+    .filter((sa: any) => sa.reviewStatus === 'submitted' || sa.reviewStatus === 'approved')
+    .map((sa: any) => String(sa.assigneeId));
   const allSampleAssignments = await LabelAssignment.find({
     sampleId: sampleOid,
     type: { $in: ['hard', 'soft'] },
@@ -1270,12 +1386,17 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       saved = null;
     }
     if (!saved || typeof saved !== 'object') return;
-    ['subject', 'completion', 'quality'].forEach((field) => {
+    const sampleFields = [
+      ['subject', 0],
+      ['completion', 1],
+      ['quality', 2],
+    ] as const;
+    sampleFields.forEach(([field, fieldIndex]) => {
       if (saved[field]) {
         softDerivedAssignments.push({
           ...doc,
           targetScope: 'sample',
-          messageIndex: null,
+          messageIndex: fieldIndex,
           messageRole: null,
           name: String(saved[field]),
         });
@@ -1294,13 +1415,24 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
   });
-  const userRows = comparisonAnnotatorIds.length
-    ? await User.find({ _id: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+  const canonicalLabels = await DatasetCanonicalLabel.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).lean();
+
+  const checkerUserIds = canonicalLabels.map(c => String(c.publishedBy)).filter(Boolean);
+  const allUserIdsToLoad = Array.from(new Set([
+    ...comparisonAnnotatorIds,
+    ...checkerUserIds
+  ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const userRows = allUserIdsToLoad.length
+    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email role').lean()
     : [];
   const userMap = new Map(
     userRows.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -1395,6 +1527,35 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       });
     }
 
+    const canonical = canonicalLabels.find((c: any) => 
+      c.targetScope === target.targetScope && 
+      c.messageIndex === msgIdx && 
+      c.messageRole === msgRole
+    );
+
+    const targetAnnotators = annotatorSets.map((item) => ({
+      annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
+      labels: item.labels,
+      displayLabels: item.displayLabels,
+      isOwner: item.annotatorId === ownerId,
+      isCanonical: false,
+    }));
+
+    if (canonical) {
+      const checkerId = String(canonical.publishedBy);
+      const checkerUser = userMap.get(checkerId) || { id: checkerId, name: 'Checker', email: 'checker@system.com' };
+      targetAnnotators.push({
+        annotator: { ...checkerUser, role: 'checker' } as any,
+        labels: canonical.labels,
+        displayLabels: canonical.labels.map(l => {
+          const { display } = resolveStaffLabelName(l, msgRole, target.targetScope);
+          return display || l;
+        }),
+        isOwner: false,
+        isCanonical: true,
+      });
+    }
+
     return {
       targetKey,
       targetScope: target.targetScope,
@@ -1405,12 +1566,7 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       hasConflict: agreementScore !== null && agreementScore < similarityThreshold,
       labelCounts,
       majorityLabels,
-      annotators: annotatorSets.map((item) => ({
-        annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
-        labels: item.labels,
-        displayLabels: item.displayLabels,
-        isOwner: item.annotatorId === ownerId,
-      })),
+      annotators: targetAnnotators,
     };
   });
 
@@ -1461,6 +1617,8 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       id: String(sample._id),
       sampleKey: String(sample.sampleId || ''),
       preview: requiredTargets.map((target) => target.targetTextSnapshot || '').join(' ').trim().slice(0, 180),
+      sampleIndex: typeof assignments[0]?.sampleIndex === 'number' ? assignments[0].sampleIndex : 0,
+      data: (sample as any).data,
     },
     agreementScore: targetScores.length
       ? Number((targetScores.reduce((sum, value) => sum + value, 0) / targetScores.length).toFixed(4))
@@ -1553,7 +1711,7 @@ export async function resolveAssignmentAdjudication(params: {
       datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
       sampleId: new mongoose.Types.ObjectId(params.sampleId),
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1593,7 +1751,7 @@ export async function publishAssignmentAdjudication(params: {
     datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
     sampleId: new mongoose.Types.ObjectId(params.sampleId),
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   };
 
@@ -1613,7 +1771,7 @@ export async function publishAssignmentAdjudication(params: {
         datasetVersionId: sample.datasetVersionId,
         sampleId: sample._id,
         targetScope: params.targetScope,
-        messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+        messageIndex: params.messageIndex ?? null,
         messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
         labels: adjudication.finalLabels,
         targetTextSnapshot: String((adjudication as any).targetTextSnapshot || ''),
@@ -1657,11 +1815,6 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
   const samples = await ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).select('_id sampleId data').lean();
   const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
 
-  const submittedRows = await DatasetAssignmentSubmission.find({
-    datasetVersionId: { $in: [versionOid, String(versionOid)] },
-    status: { $in: ['submitted', 'approved'] },
-  }).select('assigneeId batchStart batchCount').lean();
-
   const results: any[] = [];
   for (const sampleId of sampleIds) {
     const assignmentsForSample = assignmentRows.filter((row: any) => String(row.sampleId) === sampleId);
@@ -1673,17 +1826,7 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
       continue;
     }
 
-    let submittedCount = 0;
-    for (const assignee of assignmentsForSample) {
-      const isSubmitted = submittedRows.some((row: any) => 
-        String(row.assigneeId) === String(assignee.assigneeId) &&
-        sampleIndex >= Number(row.batchStart || 1) &&
-        sampleIndex < Number(row.batchStart || 1) + Number(row.batchCount || 0)
-      );
-      if (isSubmitted) {
-        submittedCount++;
-      }
-    }
+    const submittedCount = assignmentsForSample.filter((row: any) => row.reviewStatus === 'submitted' || row.reviewStatus === 'approved').length;
 
     if (submittedCount < 2) {
       continue;

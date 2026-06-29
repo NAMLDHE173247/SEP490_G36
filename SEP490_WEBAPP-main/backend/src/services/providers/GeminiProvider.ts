@@ -4,10 +4,11 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export class GeminiProvider implements ILlmProvider {
-    constructor(private isJson: boolean = true) {}
+    constructor(private isJson: boolean = true, private apiKey?: string) {}
 
     async generateContent(prompt: string, modelOverride?: string, systemPrompt?: string): Promise<string> {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+        const key = this.apiKey || process.env.GEMINI_API_KEY || '';
+        const genAI = new GoogleGenerativeAI(key);
         const config: any = {
             temperature: 0.1,
             maxOutputTokens: 16384,

@@ -164,13 +164,20 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'staff';
+  role: 'admin' | 'supervisor' | 'staff' | 'reviewer' | 'checker';
   status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
 export const apiService = {
   getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
     const response = await api.get(`/dataprep/export/${versionId}/training-data`);
+    return response.data;
+  },
+  snapshotDatasetLabels: async (
+    versionId: string,
+    payload?: { name?: string; description?: string },
+  ): Promise<{ success: boolean; snapshotId: string; totalLabels: number; message: string }> => {
+    const response = await api.post(`/dataprep/export/${versionId}/snapshot`, payload || {});
     return response.data;
   },
   listUsers: async (): Promise<{ users: User[] }> => {
@@ -209,10 +216,10 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File, projectId: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
+  uploadFile: async (file: File, projectId?: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('projectId', projectId);
+    if (projectId) formData.append('projectId', projectId);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -300,7 +307,7 @@ export const apiService = {
    */
   previewAutoLabels: async (
     versionId: string,
-    provider: 'gemini' | 'openai' | 'deepseek'
+    provider: 'openrouter' | 'groq' | 'deepseek'
   ): Promise<{
     suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
@@ -381,6 +388,11 @@ export const apiService = {
     return response.data;
   },
 
+  getCheckerActivityLogs: async (id: string): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments/checker-logs`);
+    return response.data;
+  },
+
   setDatasetSampleCanonicalLabels: async (payload: { versionId: string; sampleId: string; labels: string[]; targetTextSnapshot?: string; sourceAnnotatorIds?: string[] }): Promise<any> => {
     const response = await api.post('/dataprep/assignments/samples/canonical', payload);
     return response.data;
@@ -388,7 +400,7 @@ export const apiService = {
 
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string; checkerId?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
     const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
       assigneeIds: [payload.assigneeId],
@@ -398,7 +410,8 @@ export const apiService = {
       priority: payload.priority || 'medium',
       batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`,
       similarityThreshold: payload.similarityThreshold,
-      supervisorId: payload.supervisorId
+      supervisorId: payload.supervisorId,
+      checkerId: payload.checkerId
     });
     return response.data;
   },
@@ -637,7 +650,7 @@ export const apiService = {
   previewMessageAutoLabels: async (
     sampleId: string,
     payload: {
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'openrouter' | 'groq' | 'deepseek';
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
     }
   ): Promise<{ suggestions: MessageAutoLabelSuggestion[] }> => {
@@ -687,7 +700,7 @@ export const apiService = {
    * Chạy AI gán nhãn hàng loạt cho nhiều sample cùng lúc (preview + save trong một lần).
    */
   previewAndSaveMessageAutoLabelsBatch: async (payload: {
-    provider?: 'gemini' | 'openai' | 'deepseek';
+    provider?: 'openrouter' | 'groq' | 'deepseek';
     samples: Array<{
       sampleId: string;
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;

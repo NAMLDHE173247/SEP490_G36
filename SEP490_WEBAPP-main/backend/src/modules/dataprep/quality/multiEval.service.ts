@@ -4,11 +4,12 @@ import { MultiModelEvaluationResult, ILlmScorecard } from '../../../models/Multi
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { DatasetVersion } from '../../../models/DatasetVersion';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
 import { QualityService } from './quality.service';
+import { apiKeyService } from '../../../services/apiKeyService';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -25,21 +26,15 @@ export class MultiEvalService {
     }
   }
 
-  private getProvider(modelName: string) {
+  private async getProvider(modelName: string, userId: string | null | undefined) {
     const name = String(modelName).toLowerCase();
-    if (name === 'openai') {
-      return new OpenAIProvider();
-    }
-    if (name === 'deepseek') {
-      return new DeepseekProvider();
-    }
-    return new GeminiProvider();
+    return apiKeyService.createProvider(userId, name, true);
   }
 
   async runJob(
     versionId: string,
     startedBy: string,
-    models: ('gemini' | 'openai' | 'deepseek')[],
+    models: ('gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq')[],
     contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2',
     conflictThreshold = 2
   ) {
@@ -143,6 +138,49 @@ export class MultiEvalService {
         job.progress.processing = 1;
         await job.save();
 
+        // Check if sample has severe error flag from Stage 3
+        const qualityItem = qualityResult.items.find((i: any) => String(i._id) === String(sample._id));
+        const isSevereError = qualityItem && qualityItem.bucket === 'Reject' && 
+          String(qualityItem.conflictReason || '').startsWith('Bị gắn cờ lỗi nghiêm trọng từ Stage 3:');
+
+        if (isSevereError) {
+          const modelScores = new Map<string, any>();
+          models.forEach((modelName) => {
+            modelScores.set(modelName, {
+              status: 'success',
+              socratic: null,
+              encouragement: null,
+              factuality: null,
+              languageQuality: null,
+              consistency: null,
+              completeness: null,
+              readiness: null,
+              overall: 0,
+              reason: 'Tự động loại bỏ (Reject) do mẫu bị gắn cờ lỗi nghiêm trọng từ Stage 3 bởi con người.',
+              recommendation: 'Reject',
+            });
+          });
+
+          await MultiModelEvaluationResult.create({
+            jobId,
+            datasetVersionId: versionId,
+            sampleId: sample._id,
+            modelScores,
+            averageOverall: 0,
+            humanScore: 0,
+            finalRecommendation: 'Reject',
+            hasConflict: false,
+            targetIdx: 0,
+            contextSize: 0,
+            autoRefined: false,
+          });
+
+          evaluatedCount += 1;
+          job.progress.evaluated = evaluatedCount + failedCount;
+          await job.save();
+          continue; // Skip AI model calls entirely
+        }
+
         // 1. Identify which message index to evaluate.
         const rewriteHistories = await ConversationRewriteHistory.find({
           datasetVersionId: versionId,
@@ -215,7 +253,7 @@ export class MultiEvalService {
           const modelNames = models;
           const evaluationPromises = modelNames.map(async (modelName) => {
             try {
-              const provider = this.getProvider(modelName);
+              const provider = await this.getProvider(modelName, job.startedBy?.toString());
               const inputData = {
                 contextWindow,
                 originalMessageIndex: targetIdx,
@@ -275,6 +313,12 @@ export class MultiEvalService {
                   ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
                   : 0;
               }
+
+              // Apply Veto Rule: Overall score cannot exceed Factuality score
+              if (typeof scorecard.factuality === 'number' && scorecard.overall > scorecard.factuality) {
+                scorecard.overall = scorecard.factuality;
+              }
+
 
               if (!scorecard.overall) throw new Error('Model trả về kết quả không hợp lệ hoặc thiếu điểm đánh giá.');
 
@@ -348,7 +392,8 @@ export class MultiEvalService {
 
           // Detect Conflict
           const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
-          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold);
+          const hasStaffMismatch = failedTargetMap.has(String(sample._id)) || failedTargetMap.has(String((sample as any).sampleId));
+          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold, hasStaffMismatch);
           if (hasConflict) {
             conflictCount += 1;
           }
@@ -367,7 +412,7 @@ export class MultiEvalService {
           // Auto Rewrite Logic
           if (finalRecommendation === 'Need Rewrite' && bestModelSelected && bestModelScorecard?.reason) {
             try {
-              const refineProvider = this.getProvider(bestModelSelected);
+              const refineProvider = await this.getProvider(bestModelSelected, job.startedBy?.toString());
               const assistantString = contextWindow.map((m: any) => `[${m.role.toUpperCase()}${m.isTarget ? ' (TARGET)' : ''}]: ${m.content}`).join('\n\n');
               const payload = [{
                 index: 0,
@@ -457,9 +502,12 @@ export class MultiEvalService {
     }
   }
 
-  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2): boolean {
+  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2, hasStaffMismatch = false): boolean {
     const models = Object.keys(scorecards).filter(model => scorecards[model].status !== 'unavailable');
-    if (models.length <= 1 && humanScore === null) return false;
+    if (models.length <= 1 && humanScore === null && !hasStaffMismatch) return false;
+
+    if (hasStaffMismatch) return true;
+
 
     let hasPass = false;
     let hasReject = false;
@@ -471,6 +519,10 @@ export class MultiEvalService {
       if (card.recommendation === 'Reject') hasReject = true;
       if (typeof card.overall === 'number' && !isNaN(card.overall)) {
         overallScores.push(card.overall);
+      }
+      // Layer 1 - Factuality < 4 automatically flags conflict
+      if (typeof card.factuality === 'number' && card.factuality < 4) {
+        return true;
       }
     }
 
@@ -568,11 +620,42 @@ export class MultiEvalService {
     const historyMap = new Map();
     rewriteHistories.forEach(h => historyMap.set(String(h.sampleId), h));
 
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
+
+    // Fetch canonical docs to check if sample has been chốt/published
+    const canonicalDocs = await DatasetCanonicalLabel.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId)
+    }).select('sampleId').lean();
+    const canonicalSampleIds = new Set(canonicalDocs.map(c => String(c.sampleId)));
+
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
+
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
       const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
-      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      
+      const assigneeCount = sampleAssigneeCount.get(String(sample?._id)) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const hasCanonical = canonicalSampleIds.has(String(sample?._id));
+      const pendingAdjudication = isOverlapped ? !hasCanonical : pendingAdjudicationSet.has(String(sample?._id));
+
+      const qualityHasHumanScore = !pendingAdjudication && qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
       const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
         ? Number(qualityItem.humanScore)
         : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
@@ -616,6 +699,7 @@ export class MultiEvalService {
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
         turnPairs: qualityItem?.turnPairs || [],
         staffTargets: qualityItem?.staffTargets || [],
+        pendingAdjudication,
       };
     });
 

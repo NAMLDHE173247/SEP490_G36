@@ -4,10 +4,10 @@ const fetch = async (url: any, init?: any) => {
   return module.default(url, init);
 };
 import { ChatHistory } from '../models/ChatHistory';
-import { OpenRouterProvider } from '../services/providers/OpenRouterProvider';
 import { ModelVersion, ModelVersionStatus } from '../models/ModelVersion';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
+import { apiKeyService } from '../services/apiKeyService';
 
 const getGpuUrl = (instanceId?: number) => configService.getGpuUrl(instanceId);
 
@@ -49,7 +49,10 @@ export const validateModel = async (req: Request, res: Response): Promise<void> 
 
     let llmProvider;
     const normalizedProvider = String(provider).toLowerCase();
-    if (normalizedProvider === 'openrouter') llmProvider = new OpenRouterProvider();
+    const userId = getAuthUserId(req);
+    if (userId) {
+      llmProvider = await apiKeyService.createProvider(userId, normalizedProvider, false);
+    }
 
     if (llmProvider) {
       // Test the model with a very simple, short prompt
@@ -114,22 +117,8 @@ export const chatWithAI = async (req: Request, res: Response): Promise<void> => 
 
     // --- CASE 1: External LLM Provider (OpenRouter, Gemini, etc.) ---
     if (provider) {
-      let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-
-      if (normalizedProvider === 'openrouter') {
-        llmProvider = new OpenRouterProvider();
-      } else if (normalizedProvider === 'gemini') {
-        // Use GeminiProvider with isJson = false for chat
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
-      } else if (normalizedProvider === 'openai') {
-        const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
-        llmProvider = new OpenAIProvider();
-      } else if (normalizedProvider === 'deepseek') {
-        const { DeepseekProvider } = await import('../services/providers/DeepseekProvider.js');
-        llmProvider = new DeepseekProvider();
-      }
+      const llmProvider = await apiKeyService.createProvider(ownerId, normalizedProvider, false);
 
       if (llmProvider) {
         console.log(`[chatWithAI] Using external provider: ${normalizedProvider}`);
@@ -225,20 +214,8 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
 
     // --- CASE 1: External LLM Provider ---
     if (provider) {
-      let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') {
-        llmProvider = new OpenRouterProvider();
-      } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
-      } else if (normalizedProvider === 'openai') {
-        const { OpenAIProvider } = await import('../services/providers/OpenAIProvider.js');
-        llmProvider = new OpenAIProvider();
-      } else if (normalizedProvider === 'deepseek') {
-        const { DeepseekProvider } = await import('../services/providers/DeepseekProvider.js');
-        llmProvider = new DeepseekProvider();
-      }
+      const llmProvider = await apiKeyService.createProvider(ownerId, normalizedProvider, false);
 
       if (llmProvider) {
         console.log(`[inferWithAI] Using external provider: ${normalizedProvider}`);
@@ -336,14 +313,8 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
 
     // --- CASE 1: External Provider (Non-streaming fallback for now) ---
     if (provider) {
-      let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') {
-        llmProvider = new OpenRouterProvider();
-      } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
-      }
+      const llmProvider = await apiKeyService.createProvider(ownerId, normalizedProvider, false);
 
       if (llmProvider) {
         res.setHeader('Content-Type', 'text/event-stream');
@@ -506,14 +477,8 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
 
     // --- CASE 1: External Provider (Non-streaming fallback) ---
     if (provider) {
-      let llmProvider;
       const normalizedProvider = String(provider).toLowerCase();
-      if (normalizedProvider === 'openrouter') {
-        llmProvider = new OpenRouterProvider();
-      } else if (normalizedProvider === 'gemini') {
-        const { GeminiProvider } = await import('../services/providers/GeminiProvider.js');
-        llmProvider = new GeminiProvider(false);
-      }
+      const llmProvider = await apiKeyService.createProvider(ownerId, normalizedProvider, false);
 
       if (llmProvider) {
         res.setHeader('Content-Type', 'text/event-stream');

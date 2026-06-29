@@ -14,7 +14,7 @@ interface StaffItem {
   totalAssigned: number;
 }
 
-interface SupervisorItem { id: string; name: string; email: string; }
+interface CheckerItem { id: string; name: string; email: string; }
 
 interface VersionItem {
   _id: string;
@@ -33,7 +33,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [step, setStep] = useState(1);
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
-  const [supervisors, setSupervisors] = useState<SupervisorItem[]>([]);
+  const [checkers, setCheckers] = useState<CheckerItem[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<VersionItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [aiStaff, setAiStaff] = useState<string[]>([]);
@@ -45,7 +45,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [overlapCount, setOverlapCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedSupervisor, setSelectedSupervisor] = useState('');
+  const [selectedChecker, setSelectedChecker] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setOverlapCount(1);
       setError('');
       fetchVersions();
-      fetchSupervisors();
+      fetchCheckers();
     }
   }, [isOpen]);
 
@@ -93,12 +93,12 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
     setLoading(false);
   };
 
-  const fetchSupervisors = async () => {
+  const fetchCheckers = async () => {
     try {
       const res = await api.get('/auth/users');
-      const list = (res.data.users || []).filter((u: any) => u.role === 'supervisor' && (!u.status || u.status === 'active'));
-      setSupervisors(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
-    } catch { setSupervisors([]); }
+      const list = (res.data.users || []).filter((u: any) => u.role === 'checker' && (!u.status || u.status === 'active'));
+      setCheckers(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
+    } catch { setCheckers([]); }
   };
 
   const toggleStaff = (id: string) => {
@@ -174,7 +174,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         priority,
         deadline: deadline || undefined,
         overlapCount,
-        supervisorId: selectedSupervisor || undefined,
+        checkerId: selectedChecker || undefined,
       });
       if (res.data.success) {
         onSuccess();
@@ -459,13 +459,13 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                 </div>
               </div>
 
-              <div className="ta-config-group ta-supervisor-field">
-                <label><Users size={14} /> Supervisor phụ trách</label>
-                <select value={selectedSupervisor} onChange={e => setSelectedSupervisor(e.target.value)} className="ta-select">
-                  <option value="">Admin tự phân giải (mặc định)</option>
-                  {supervisors.map(s => <option key={s.id} value={s.id}>{s.name} — {s.email}</option>)}
+              <div className="ta-config-group ta-checker-field">
+                <label><Users size={14} /> Checker phụ trách</label>
+                <select value={selectedChecker} onChange={e => setSelectedChecker(e.target.value)} className="ta-select">
+                  <option value="">-- Chọn Checker --</option>
+                  {checkers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
                 </select>
-                <small>Conflict của task sẽ xuất hiện trong workspace của Supervisor được chọn.</small>
+                <small>Nhãn nộp từ Staff hoặc conflict phát sinh sẽ được giao cho Checker được chọn kiểm duyệt.</small>
               </div>
 
               <div className="ta-summary-card">

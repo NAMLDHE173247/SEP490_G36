@@ -10,11 +10,11 @@ import { apiService } from '../services/api';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, HelpCircle, MessageSquare, Plus, RefreshCw, RotateCcw, Scissors, Settings, Sparkles, Upload, X } from 'lucide-react';
 
 const STAGES = [
-  { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
-  { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification & Assignment Review', sub: 'Step 8-11' },
-  { num: 5, label: 'Finish', sub: 'Step 13-15' },
+  { num: 1, label: 'Tải lên & Chuyển đổi', sub: 'Bước 1' },
+  { num: 2, label: 'Tiền xử lý', sub: 'Bước 2-4' },
+  { num: 3, label: 'Gán nhãn', sub: 'Bước 5-7' },
+  { num: 4, label: 'Xem xét & Phân loại', sub: 'Bước 8-11' },
+  { num: 5, label: 'Hoàn tất', sub: 'Bước 12-14' },
 ];
 
 const SUB_STEPS_STAGE2 = [
@@ -302,7 +302,7 @@ function DataPrepInner() {
   const [selectedConv3, setSelectedConv3] = useState(null);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
   /* AI Labeling state */
-  const [aiProvider, setAiProvider] = useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
   const [isSavingLabels, setIsSavingLabels] = useState(false);
   const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
@@ -311,12 +311,8 @@ function DataPrepInner() {
 
   React.useEffect(() => {
     if (currentStage === 4) {
-      if (currentSubStep4 < 7 || currentSubStep4 > 10) {
+      if (currentSubStep4 < 7 || currentSubStep4 > 12) {
         setCurrentSubStep4(7);
-      }
-    } else if (currentStage === 5) {
-      if (currentSubStep4 < 11 || currentSubStep4 > 12) {
-        setCurrentSubStep4(11);
       }
     }
   }, [currentStage]);
@@ -714,7 +710,7 @@ function DataPrepInner() {
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: false, deepseek: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -794,7 +790,7 @@ function DataPrepInner() {
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+        const res = await apiService.uploadFile(uploaded, undefined, (progressEvent: any) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);
@@ -1369,8 +1365,8 @@ function DataPrepInner() {
 
             {/* Radio: OpenAI Message Format */}
             <div
-              className={`dataprep-radio-option ${selectedFormat === 'openai' ? 'selected' : ''}`}
-              onClick={() => setSelectedFormat('openai')}
+              className={`dataprep-radio-option ${selectedFormat === 'groq' ? 'selected' : ''}`}
+              onClick={() => setSelectedFormat('groq')}
             >
               <div className="radio-circle">
                 <div className="radio-dot" />
@@ -2952,8 +2948,8 @@ function DataPrepInner() {
                       disabled={isLabelingWithAI}
                     >
                       <option value="deepseek">Deepseek</option>
-                      <option value="openai">ChatGPT</option>
-                      <option value="gemini">Gemini</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                     <button
                       className="label-ai-btn"
@@ -3611,7 +3607,7 @@ function DataPrepInner() {
                     <button className="ia-add-label-btn">Add Label</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
-                      <option>Gemini</option>
+                      <option>OpenRouter</option>
                       <option>Deepseek</option>
                     </select>
                   </div>
@@ -4190,7 +4186,7 @@ function DataPrepInner() {
         </div>
       )}
 
-      {false && shouldShowWorkflowBar && (
+      {shouldShowWorkflowBar && (
         <div className="dataprep-workflow-bar">
           <div className="dataprep-workflow-copy">
             <span className="dataprep-workflow-label">Resume draft</span>

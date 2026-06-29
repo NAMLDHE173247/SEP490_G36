@@ -1,610 +1,449 @@
-import React, { useState } from 'react';
-import {
-  ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
-  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
-} from 'lucide-react';
-import '../styles/stafftasks.css';
-
-import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
-import { stage4Api } from '../services/stage4Api';
-import * as XLSX from 'xlsx';
-
-function useStaffTasks() {
-  const { user } = useAuth();
-  const staffId = user?.id || (user as any)?._id || '';
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  React.useEffect(() => {
-    const fetchMyTasks = async () => {
-      if (!staffId) return [];
-      try {
-        const res = await api.get('/dataprep/assignments/my-tasks', { params: { userId: staffId } });
-        if (res.data.success) {
-          const fetchedTasks = res.data.data.map((t: any) => ({
-            id: t.id,
-            name: t.name,
-            datasetVersionId: t.datasetVersionId,
-            dataset: t.dataset || 'Dataset',
-            version: t.version || '',
-            batchStart: t.batchStart,
-            batchCount: t.batchCount,
-            assignees: [t.assigneeId],
-            status: t.status,
-            priority: t.priority,
-            taskType: t.taskType,
-            createdAt: t.createdAt?.split('T')[0] || '',
-            deadline: t.deadline?.split('T')[0] || '',
-            totalSamples: t.totalSamples || t.batchCount,
-            labeledCount: t.labeledCount || 0,
-            reviewedCount: 0,
-            aiAssistEnabled: !!t.aiAssistEnabled,
-          }));
-          setTasks(fetchedTasks);
-          return fetchedTasks;
-        }
-        return [];
-      } catch (e) {
-        console.error('Failed to fetch staff tasks', e);
-        return [];
-      }
-    };
-    const loadStage4ForVersions = async (versionIds: string[]) => {
-      const uniqueVersionIds = Array.from(new Set(versionIds.filter(Boolean)));
-      try {
-        const [globalRewriteRes, globalNotificationRes] = await Promise.all([
-          stage4Api.listMyRewriteAssignments().catch(() => ({ tasks: [] })),
-          stage4Api.listMyNotifications().catch(() => ({ notifications: [] })),
-        ]);
-        const results = await Promise.all(uniqueVersionIds.map(async (versionId) => {
-          const [rewriteRes, notificationRes] = await Promise.all([
-            stage4Api.listRewriteAssignments(versionId).catch(() => ({ tasks: [] })),
-            stage4Api.listNotifications(versionId).catch(() => ({ notifications: [] })),
-          ]);
-          return {
-            rewriteTasks: (rewriteRes.tasks || []).map((task: any) => ({ ...task, datasetVersionId: versionId })),
-            notifications: (notificationRes.notifications || []).map((note: any) => ({ ...note, datasetVersionId: versionId })),
-          };
-        }));
-        const mergedRewriteTasks = [
-          ...(globalRewriteRes.tasks || []),
-          ...results.flatMap((item) => item.rewriteTasks),
-        ];
-        const rewriteMap = new Map<string, any>();
-        mergedRewriteTasks.forEach((task: any) => rewriteMap.set(String(task.id), task));
-        setRewriteTasks(Array.from(rewriteMap.values()));
-        const mergedNotifications = [
-          ...(globalNotificationRes.notifications || []),
-          ...results.flatMap((item) => item.notifications),
-        ];
-        const notificationMap = new Map<string, any>();
-        mergedNotifications.forEach((note: any) => notificationMap.set(String(note._id || note.id || `${note.message}-${note.createdAt}`), note));
-        setNotifications(Array.from(notificationMap.values()).sort((a: any, b: any) => {
-          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
-        }));
-      } catch (error) {
-        console.error('Failed to fetch Stage 4 staff data', error);
-        setRewriteTasks([]);
-      }
-    };
-    const refresh = async () => {
-      const fetchedTasks = await fetchMyTasks();
-      const currentVersionId = localStorage.getItem('current_version_id') || '';
-      const versionIds = [
-        currentVersionId,
-        ...fetchedTasks.map((task: any) => String(task.datasetVersionId || '')),
-      ];
-      await loadStage4ForVersions(versionIds);
-    };
-    refresh();
-    const intervalId = window.setInterval(refresh, 20000);
-    return () => window.clearInterval(intervalId);
-  }, [staffId, refreshTick]);
-
-  return { tasks, rewriteTasks, setRewriteTasks, notifications, refreshNow: () => setRefreshTick((tick) => tick + 1) };
-}
-
-const STATUS_CONFIG = {
-  pending: { label: 'Cho thuc hien', icon: <Clock size={14} />, className: 'st-status-pending' },
-  in_progress: { label: 'Dang thuc hien', icon: <AlertCircle size={14} />, className: 'st-status-progress' },
-  submitted: { label: 'Da Submit', icon: <CheckCircle size={14} />, className: 'st-status-submitted' },
-};
-
-const PRIORITY_CONFIG = {
-  urgent: { label: 'Urgent', className: 'st-pri-urgent' },
-  high: { label: 'High', className: 'st-pri-high' },
-  medium: { label: 'Medium', className: 'st-pri-medium' },
-  low: { label: 'Low', className: 'st-pri-low' },
-};
-
-function StaffTasksView({ onOpenTask }) {
-  const { tasks: MY_TASKS, rewriteTasks, setRewriteTasks, notifications, refreshNow } = useStaffTasks();
-  const [taskType, setTaskType] = useState('labeling');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('priority');
-  const [rewriteDraftTask, setRewriteDraftTask] = useState<any>(null);
-  const [rewriteDraftText, setRewriteDraftText] = useState('');
-  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+2');
-  const [isSubmittingRewrite, setIsSubmittingRewrite] = useState(false);
-  const [isSuggestingRewrite, setIsSuggestingRewrite] = useState(false);
-  const [offlineMessage, setOfflineMessage] = useState('');
-  const [isImportingRewrite, setIsImportingRewrite] = useState(false);
-  const rewriteFileRef = React.useRef<HTMLInputElement>(null);
-  const rewriteContextOptions = [
-    { value: 'n-2:n+2', label: 'n-2 to n+2' },
-    { value: 'n-1:n+1', label: 'n-1 to n+1' },
-    { value: 'n-1:n', label: 'n-1 to n' },
-    { value: 'target-only', label: 'Target only' },
-    { value: 'full', label: 'Full conversation' },
-  ];
-
-  const rewriteTaskCards = rewriteTasks.map((task: any) => ({
-    id: task.id,
-    name: `Rewrite AI response ${task.convId}`,
-    dataset: 'Stage 4 Rewrite',
-    version: task.subject || '',
-    batchStart: 1,
-    batchCount: 1,
-    status: ['submitted', 'approved', 'rejected'].includes(task.status) ? 'submitted' : 'in_progress',
-    priority: 'high',
-    taskType: 'rewrite',
-    datasetVersionId: task.datasetVersionId,
-    createdAt: task.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-    totalSamples: 1,
-    labeledCount: ['submitted', 'approved', 'rejected'].includes(task.status) ? 1 : 0,
-    supervisor: 'Admin',
-    rewriteTask: task,
-  }));
-
-  const downloadRewriteBatch = () => {
-    const editable = rewriteTasks.filter((task: any) => !['approved', 'rejected'].includes(task.status));
-    const data = editable.map((task: any) => {
-      const ctxStr = task.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
-      return {
-        'Task ID': String(task.id),
-        'Dataset Version ID': String(task.datasetVersionId),
-        'Revision': task.updatedAt,
-        'Original Text': task.originalText || '',
-        'Reason': task.reason || '',
-        'Context': ctxStr,
-        'Rewritten Text': task.submittedText || ''
-      };
-    });
-    
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Rewrite Tasks');
-    XLSX.writeFile(wb, `rewrite-tasks-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    setOfflineMessage(`Đã tải ${editable.length} task rewrite (Excel).`);
-  };
-
-  const importRewriteBatch = async (file: File) => {
-    setOfflineMessage(''); setIsImportingRewrite(true);
-    try {
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: 'array' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const parsedRows: any[] = XLSX.utils.sheet_to_json(ws);
-      
-      const ownTasks = new Map(rewriteTasks.map((task: any) => [String(task.id), task]));
-      const valid = parsedRows.filter((row: any) => ownTasks.has(String(row['Task ID'])) && String(row['Rewritten Text'] || '').trim());
-      const invalidCount = parsedRows.length - valid.length;
-      
-      if (!valid.length) throw new Error('Không có dòng hợp lệ có Rewritten Text để nạp.');
-      if (!window.confirm(`Tìm thấy ${valid.length} bản hợp lệ${invalidCount ? `, bỏ qua ${invalidCount} dòng lỗi/trống` : ''}. Nạp ngay?`)) return;
-      
-      const results = await Promise.allSettled(valid.map((row: any) => { 
-        const task: any = ownTasks.get(String(row['Task ID'])); 
-        const versionId = String(task.datasetVersionId || row['Dataset Version ID'] || ''); 
-        return versionId ? stage4Api.submitRewrite(versionId, String(row['Task ID']), String(row['Rewritten Text']).trim(), row['Revision']) : Promise.reject(new Error('Missing version')); 
-      }));
-      
-      const succeeded = results.filter((r: any) => r.status === 'fulfilled').length;
-      setOfflineMessage(`Đã nạp ${succeeded}/${valid.length} bản rewrite${invalidCount ? `; bỏ qua ${invalidCount} dòng lỗi` : ''}.`); refreshNow();
-    } catch (error: any) { 
-      setOfflineMessage(`Không thể import: ${error.message || 'File không hợp lệ'}`); 
-    } finally { 
-      setIsImportingRewrite(false); 
-      if (rewriteFileRef.current) rewriteFileRef.current.value = ''; 
-    }
-  };
-  const tasksByType = taskType === 'labeling' ? MY_TASKS : taskType === 'rewrite' ? rewriteTaskCards : [];
-  const stats = {
-    total: tasksByType.length,
-    inProgress: tasksByType.filter(t => t.status === 'in_progress').length,
-    submitted: tasksByType.filter(t => t.status === 'submitted').length,
-  };
-  let filtered = tasksByType.filter(t => statusFilter === 'all' || t.status === statusFilter);
-  const getDateTime = (value?: string) => {
-    if (!value) return Number.POSITIVE_INFINITY;
-    const time = new Date(value).getTime();
-    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
-  };
-
-  filtered.sort((a, b) => {
-    switch (sortBy) {
-      case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
-      case 'priority': {
-        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
-        return order[a.priority] - order[b.priority];
-      }
-      case 'newest': return getDateTime(b.createdAt) - getDateTime(a.createdAt);
-      default: return 0;
-    }
-  });
-
-  const isOverdue = (deadline: string) => {
-    const time = getDateTime(deadline);
-    return Number.isFinite(time) && time < Date.now();
-  };
-  const isNearDeadline = (deadline: string) => {
-    const time = getDateTime(deadline);
-    if (!Number.isFinite(time)) return false;
-    const diff = time - Date.now();
-    return diff > 0 && diff < 3 * 24 * 60 * 60 * 1000;
-  };
-
-  const getTargetAiResponse = (task: any) => {
-    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) ? task.rewriteTask.conversationMessages : [];
-    const target = messages.find((message: any) => message?.isTarget);
-    return target?.content || task?.rewriteTask?.originalText || '';
-  };
-
-  const getStudentRequestForRewrite = (task: any) => {
-    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) ? task.rewriteTask.conversationMessages : [];
-    const targetIdx = messages.findIndex((message: any) => message?.isTarget);
-    if (targetIdx >= 0) {
-      for (let i = targetIdx - 1; i >= 0; i -= 1) {
-        if (messages[i]?.role === 'user' && String(messages[i]?.content || '').trim()) {
-          return messages[i].content;
-        }
-      }
-    }
-    const firstUser = messages.find((message: any) => message?.role === 'user' && String(message?.content || '').trim());
-    return firstUser?.content || 'No student request found in context.';
-  };
-
+import React, { useState } from 'react';
+import {
+  ClipboardList, Clock, CheckCircle, AlertCircle, ChevronRight,
+  Calendar, Filter, RefreshCw, Tag, Users, BarChart2, ArrowUpDown
+} from 'lucide-react';
+import '../styles/stafftasks.css';
+
+import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import { stage4Api } from '../services/stage4Api';
+import * as XLSX from 'xlsx';
+
+function useStaffTasks() {
+  const { user } = useAuth();
+  const staffId = user?.id || (user as any)?._id || '';
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  React.useEffect(() => {
+    const fetchMyTasks = async () => {
+      if (!staffId) return [];
+      try {
+        const res = await api.get('/dataprep/assignments/my-tasks', { params: { userId: staffId } });
+        if (res.data.success) {
+          const fetchedTasks = res.data.data.map((t: any) => ({
+            id: t.id,
+            name: t.name,
+            datasetVersionId: t.datasetVersionId,
+            dataset: t.dataset || 'Dataset',
+            version: t.version || '',
+            batchStart: t.batchStart,
+            batchCount: t.batchCount,
+            assignees: [t.assigneeId],
+            status: t.status,
+            priority: t.priority,
+            taskType: t.taskType,
+            createdAt: t.createdAt?.split('T')[0] || '',
+            deadline: t.deadline?.split('T')[0] || '',
+            totalSamples: t.totalSamples || t.batchCount,
+            labeledCount: t.labeledCount || 0,
+            reviewedCount: 0,
+            aiAssistEnabled: !!t.aiAssistEnabled,
+          }));
+          setTasks(fetchedTasks);
+          return fetchedTasks;
+        }
+        return [];
+      } catch (e) {
+        console.error('Failed to fetch staff tasks', e);
+        return [];
+      }
+    };
+    const loadStage4ForVersions = async (versionIds: string[]) => {
+      const uniqueVersionIds = Array.from(new Set(versionIds.filter(Boolean)));
+      try {
+        const [globalRewriteRes, globalNotificationRes] = await Promise.all([
+          stage4Api.listMyRewriteAssignments().catch(() => ({ tasks: [] })),
+          stage4Api.listMyNotifications().catch(() => ({ notifications: [] })),
+        ]);
+        const results = await Promise.all(uniqueVersionIds.map(async (versionId) => {
+          const [rewriteRes, notificationRes] = await Promise.all([
+            stage4Api.listRewriteAssignments(versionId).catch(() => ({ tasks: [] })),
+            stage4Api.listNotifications(versionId).catch(() => ({ notifications: [] })),
+          ]);
+          return {
+            rewriteTasks: (rewriteRes.tasks || []).map((task: any) => ({ ...task, datasetVersionId: versionId })),
+            notifications: (notificationRes.notifications || []).map((note: any) => ({ ...note, datasetVersionId: versionId })),
+          };
+        }));
+        const mergedRewriteTasks = [
+          ...(globalRewriteRes.tasks || []),
+          ...results.flatMap((item) => item.rewriteTasks),
+        ];
+        const rewriteMap = new Map<string, any>();
+        mergedRewriteTasks.forEach((task: any) => rewriteMap.set(String(task.id), task));
+        setRewriteTasks(Array.from(rewriteMap.values()));
+        const mergedNotifications = [
+          ...(globalNotificationRes.notifications || []),
+          ...results.flatMap((item) => item.notifications),
+        ];
+        const notificationMap = new Map<string, any>();
+        mergedNotifications.forEach((note: any) => notificationMap.set(String(note._id || note.id || `${note.message}-${note.createdAt}`), note));
+        setNotifications(Array.from(notificationMap.values()).sort((a: any, b: any) => {
+          return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+        }));
+      } catch (error) {
+        console.error('Failed to fetch Stage 4 staff data', error);
+        setRewriteTasks([]);
+      }
+    };
+    const refresh = async () => {
+      const fetchedTasks = await fetchMyTasks();
+      const currentVersionId = localStorage.getItem('current_version_id') || '';
+      const versionIds = [
+        currentVersionId,
+        ...fetchedTasks.map((task: any) => String(task.datasetVersionId || '')),
+      ];
+      await loadStage4ForVersions(versionIds);
+    };
+    refresh();
+    const intervalId = window.setInterval(refresh, 20000);
+    return () => window.clearInterval(intervalId);
+  }, [staffId, refreshTick]);
+
+  return { tasks, rewriteTasks, setRewriteTasks, notifications, refreshNow: () => setRefreshTick((tick) => tick + 1) };
+}
+
+const STATUS_CONFIG = {
+  pending: { label: 'Chờ thực hiện', icon: <Clock size={14} />, className: 'st-status-pending' },
+  in_progress: { label: 'Đang thực hiện', icon: <AlertCircle size={14} />, className: 'st-status-progress' },
+  submitted: { label: 'Đã nộp', icon: <CheckCircle size={14} />, className: 'st-status-submitted' },
+};
+
+const PRIORITY_CONFIG = {
+  urgent: { label: 'Khẩn cấp', className: 'st-pri-urgent' },
+  high: { label: 'Cao', className: 'st-pri-high' },
+  medium: { label: 'Trung bình', className: 'st-pri-medium' },
+  low: { label: 'Thấp', className: 'st-pri-low' },
+};
+
+function StaffTasksView({ onOpenTask }) {
+  const { tasks: MY_TASKS, rewriteTasks, setRewriteTasks, notifications, refreshNow } = useStaffTasks();
+  const [taskType, setTaskType] = useState('labeling');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('priority');
+  const rewriteTaskCards = React.useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    rewriteTasks.forEach((t: any) => {
+      const versionId = t.datasetVersionId || 'default';
+      if (!groups[versionId]) groups[versionId] = [];
+      groups[versionId].push(t);
+    });
+
+    return Object.keys(groups).map((versionId) => {
+      const groupTasks = groups[versionId];
+      const sampleTask = groupTasks[0];
+      const completed = groupTasks.filter((t: any) => ['submitted', 'approved'].includes(t.status)).length;
+      const total = groupTasks.length;
+      
+      let groupStatus = 'pending';
+      if (completed === total) {
+        groupStatus = 'submitted';
+      } else if (completed > 0 || groupTasks.some((t: any) => t.submittedText)) {
+        groupStatus = 'in_progress';
+      }
+
+      const priorities = groupTasks.map((t: any) => t.priority || 'medium');
+      let highestPriority = 'medium';
+      if (priorities.includes('urgent')) highestPriority = 'urgent';
+      else if (priorities.includes('high')) highestPriority = 'high';
+      else if (priorities.includes('medium')) highestPriority = 'medium';
+      else if (priorities.includes('low')) highestPriority = 'low';
+
+      const prjName = sampleTask.projectName || 'Stage 4 Rewrite';
+
+      return {
+        id: versionId,
+        name: `Viết lại câu trả lời AI - ${prjName}`,
+        dataset: sampleTask.dataset || prjName,
+        version: sampleTask.versionName || sampleTask.version || 'v1',
+        batchStart: 1,
+        batchCount: total,
+        status: groupStatus,
+        priority: highestPriority,
+        taskType: 'rewrite',
+        datasetVersionId: versionId,
+        createdAt: sampleTask.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+        totalSamples: total,
+        labeledCount: completed,
+        supervisor: 'Admin',
+        rewriteTasks: groupTasks,
+      };
+    });
+  }, [rewriteTasks]);
+
+  const tasksByType = taskType === 'labeling' ? MY_TASKS : taskType === 'rewrite' ? rewriteTaskCards : [];
+  const stats = {
+    total: tasksByType.length,
+    inProgress: tasksByType.filter(t => t.status === 'in_progress').length,
+    submitted: tasksByType.filter(t => t.status === 'submitted').length,
+  };
+  let filtered = tasksByType.filter(t => statusFilter === 'all' || t.status === statusFilter);
+  const getDateTime = (value?: string) => {
+    if (!value) return Number.POSITIVE_INFINITY;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+
+  filtered.sort((a, b) => {
+    switch (sortBy) {
+      case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
+      case 'priority': {
+        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
+        return order[a.priority] - order[b.priority];
+      }
+      case 'newest': return getDateTime(b.createdAt) - getDateTime(a.createdAt);
+      default: return 0;
+    }
+  });
+
+  const isOverdue = (deadline: string) => {
+    const time = getDateTime(deadline);
+    return Number.isFinite(time) && time < Date.now();
+  };
+  const isNearDeadline = (deadline: string) => {
+    const time = getDateTime(deadline);
+    if (!Number.isFinite(time)) return false;
+    const diff = time - Date.now();
+    return diff > 0 && diff < 3 * 24 * 60 * 60 * 1000;
+  };
+
+  const getTargetAiResponse = (task: any) => {
+    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) ? task.rewriteTask.conversationMessages : [];
+    const target = messages.find((message: any) => message?.isTarget);
+    return target?.content || task?.rewriteTask?.originalText || '';
+  };
+
+  const getStudentRequestForRewrite = (task: any) => {
+    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) ? task.rewriteTask.conversationMessages : [];
+    const targetIdx = messages.findIndex((message: any) => message?.isTarget);
+    if (targetIdx >= 0) {
+      for (let i = targetIdx - 1; i >= 0; i -= 1) {
+        if (messages[i]?.role === 'user' && String(messages[i]?.content || '').trim()) {
+          return messages[i].content;
+        }
+      }
+    }
+    const firstUser = messages.find((message: any) => message?.role === 'user' && String(message?.content || '').trim());
+    return firstUser?.content || 'Không tìm thấy yêu cầu của học sinh trong ngữ cảnh.';
+  };
+
   const getVisibleRewriteMessages = (task: any) => {
-    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) && task.rewriteTask.conversationMessages.length > 0
-      ? task.rewriteTask.conversationMessages
-      : [{ role: 'assistant', content: task?.rewriteTask?.originalText || '', isTarget: true }];
-    if (rewriteContextMode === 'full') return messages;
-    const targetIdx = messages.findIndex((message: any) => message?.isTarget);
-    if (targetIdx < 0) return messages;
-    let start = targetIdx;
-    let end = targetIdx;
-    if (rewriteContextMode === 'n-1:n') {
-      start = Math.max(0, targetIdx - 1);
-    } else if (rewriteContextMode === 'n-1:n+1') {
-      start = Math.max(0, targetIdx - 1);
-      end = Math.min(messages.length - 1, targetIdx + 1);
-    } else if (rewriteContextMode === 'n-2:n+2') {
-      start = Math.max(0, targetIdx - 2);
-      end = Math.min(messages.length - 1, targetIdx + 2);
-    }
-    return messages.slice(start, end + 1);
-  };
-
-  return (
-    <div className="st-container">
-      {/* Header */}
-      <div className="st-header">
-        <div className="st-header-left">
-          <div className="st-icon-wrapper">
-            <ClipboardList size={24} />
-          </div>
-          <div>
-            <h2>Task cua toi</h2>
-            <p className="st-subtitle">Xem va thuc hien cac task duoc giao</p>
-          </div>
-        </div>
-        <button className="st-btn-refresh" onClick={refreshNow}>
-          <RefreshCw size={16} />
-          Lam moi
-        </button>
-      </div>
-
-      {/* Task Type Tabs */}
-      <div className="st-tabs-container">
-        <button
-          className={`st-tab-btn ${taskType === 'labeling' ? 'active labeling' : ''}`}
-          onClick={() => setTaskType('labeling')}
-        >
-          Task Gan nhan
-        </button>
-        <button
-          className={`st-tab-btn ${taskType === 'rewrite' ? 'active crosscheck' : ''}`}
-          onClick={() => setTaskType('rewrite')}
-        >
-          Task Rewrite
-        </button>
-      </div>
-
-      {/* Stats */}
-      <div className="st-stats">
-        <div className="st-stat-card">
-          <div className="st-stat-icon total"><ClipboardList size={20} /></div>
-          <div className="st-stat-info">
-            <span className="st-stat-value">{stats.total}</span>
-            <span className="st-stat-label">Tong Task</span>
-          </div>
-        </div>
-        <div className="st-stat-card">
-          <div className="st-stat-icon progress"><AlertCircle size={20} /></div>
-          <div className="st-stat-info">
-            <span className="st-stat-value">{stats.inProgress}</span>
-            <span className="st-stat-label">Dang thuc hien</span>
-          </div>
-        </div>
-        <div className="st-stat-card">
-          <div className="st-stat-icon submitted"><CheckCircle size={20} /></div>
-          <div className="st-stat-info">
-            <span className="st-stat-value">{stats.submitted}</span>
-            <span className="st-stat-label">Da Submit</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="st-toolbar">
-        <div className="st-filter-group">
-          <Filter size={14} />
-          {['all', 'pending', 'in_progress', 'submitted'].map(key => (
-            <button
-              key={key}
-              className={`st-filter-btn ${statusFilter === key ? 'active' : ''}`}
-              onClick={() => setStatusFilter(key)}
-            >
-              {key === 'all' ? 'Tat ca' : STATUS_CONFIG[key]?.label}
-            </button>
-          ))}
-        </div>
-        {taskType === 'rewrite' && (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginLeft: 'auto', marginRight: '16px' }}>
-            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={downloadRewriteBatch}>⬇ Tải Excel</button>
-            <input type="file" ref={rewriteFileRef} style={{ display: 'none' }} accept=".xlsx, .xls" onChange={(e) => {
-              if (e.target.files && e.target.files[0]) void importRewriteBatch(e.target.files[0]);
-            }} />
-            <button className="st-tab-btn" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => rewriteFileRef.current?.click()} disabled={isImportingRewrite}>
-              {isImportingRewrite ? '⏳ Đang nạp...' : '⬆ Nạp Excel'}
-            </button>
-            {offlineMessage && <span style={{ fontSize: '12px', color: '#10b981', fontWeight: 500 }}>{offlineMessage}</span>}
-          </div>
-        )}
-        <div className="st-sort-wrapper">
-          <ArrowUpDown size={14} />
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="st-sort-select">
-            <option value="deadline">Deadline gan nhat</option>
-            <option value="priority">Uu tien cao nhat</option>
-            <option value="newest">Moi nhat</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Task Cards */}
-      <div className="st-task-grid">
-        {filtered.length === 0 && (
-          <div className="st-empty">
-            <ClipboardList size={48} />
-            <p>Khong co task nao.</p>
-          </div>
-        )}
-
-        {filtered.map(task => {
-          const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
-          const statusInfo = STATUS_CONFIG[task.status];
-          const priInfo = PRIORITY_CONFIG[task.priority];
-          const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
-          const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
-
-          return (
-            <div key={task.id} className={`st-task-card ${overdue ? 'overdue' : ''}`}>
-              <div className="st-card-top">
-                <span className={`st-priority-badge ${priInfo.className}`}>{priInfo.label}</span>
-                <span className={`st-status-badge ${statusInfo.className}`}>
-                  {statusInfo.icon}
-                  {statusInfo.label}
-                </span>
-              </div>
-
-              <h3 className="st-card-title">{task.name}</h3>
-
-              <div className="st-card-meta">
-                <div className="st-meta-row">
-                  <Tag size={13} />
-                  <span>Dataset: <strong>{task.dataset} - {task.version}</strong></span>
-                </div>
-                {task.taskType === 'rewrite' && task.rewriteTask?.reason && task.rewriteTask.reason !== 'None' && (
-                  <div className="st-meta-row st-issue-row">
-                    <AlertCircle size={13} />
-                    <span>Co loi: <strong>{task.rewriteTask.reason}</strong></span>
-                  </div>
-                )}
-                {task.taskType === 'rewrite' && (
-                  <div className="st-meta-row">
-                    <BarChart2 size={13} />
-                    <span>
-                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+2'}</strong>
-                      {task.rewriteTask?.targetMessageIndex != null && <> · Turn <strong>#{Number(task.rewriteTask.targetMessageIndex) + 1}</strong></>}
-                    </span>
-                  </div>
-                )}
-                <div className="st-meta-row">
-                  <BarChart2 size={13} />
-                  <span>Batch: Samples {task.batchStart}-{task.batchStart + task.batchCount - 1}</span>
-                </div>
-                <div className={`st-meta-row ${overdue ? 'deadline-overdue' : nearDl ? 'deadline-near' : ''}`}>
-                  <Calendar size={13} />
-                  <span>Deadline: <strong>{task.deadline || 'No deadline'}</strong></span>
-                  {overdue && <span className="st-overdue-tag">Qua han!</span>}
-                  {nearDl && <span className="st-near-tag">Sap het han</span>}
-                </div>
-                <div className="st-meta-row">
-                  <Users size={13} />
-                  <span>Supervisor: {task.supervisor}</span>
-                </div>
-              </div>
-
-              {/* Progress */}
-              <div className="st-card-progress">
-                <div className="st-progress-header">
-                  <span>Tien do</span>
-                  <span className="st-progress-num">{task.labeledCount}/{task.totalSamples} ({progress}%)</span>
-                </div>
-                <div className="st-progress-bar">
-                  <div className="st-progress-fill" style={{ width: `${progress}%` }}></div>
-                </div>
-              </div>
-
-              {task.disableAi && (
-                <div className="st-ai-disabled-badge">AI suggestions disabled</div>
-              )}
-
-              {task.taskType === 'rewrite' ? (
-                <button
-                  className={`st-open-btn ${task.status === 'submitted' ? 'disabled' : ''}`}
-                  disabled={task.status === 'submitted'}
-                  onClick={() => {
-                    setRewriteDraftTask(task);
-                    setRewriteDraftText(task.rewriteTask?.submittedText || getTargetAiResponse(task));
-                    setRewriteContextMode('n-2:n+2');
-                  }}
-                >
-                  <ChevronRight size={16} />
-                  {task.status === 'submitted' ? 'Da Submit' : 'Rewrite AI response'}
-                </button>
-              ) : (
-                <button
-                  className={`st-open-btn ${task.status === 'submitted' ? 'disabled' : ''}`}
-                  onClick={() => task.status !== 'submitted' && onOpenTask && onOpenTask(task)}
-                  disabled={task.status === 'submitted'}
-                >
-                  <ChevronRight size={16} />
-                  {task.status === 'submitted' ? 'Da Submit' : task.status === 'pending' ? 'Bat dau Task' : 'Tiep tuc gan nhan'}
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {rewriteDraftTask && (
-        <div className="st-modal-backdrop" onClick={() => !isSubmittingRewrite && setRewriteDraftTask(null)}>
-          <div className="st-rewrite-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="st-rewrite-modal-header">
-              <div>
-                <h3>Rewrite target AI response</h3>
-                <p>
-                  {rewriteDraftTask.name}
-                  {rewriteDraftTask.rewriteTask?.targetMessageIndex != null ? ` · turn #${Number(rewriteDraftTask.rewriteTask.targetMessageIndex) + 1}` : ''}
-                  {rewriteDraftTask.rewriteTask?.contextMode ? ` · ${rewriteDraftTask.rewriteTask.contextMode}` : ''}
-                </p>
-              </div>
-              <button type="button" onClick={() => setRewriteDraftTask(null)} disabled={isSubmittingRewrite}>×</button>
-            </div>
-            {rewriteDraftTask.rewriteTask?.reason && rewriteDraftTask.rewriteTask.reason !== 'None' && (
-              <div className="st-rewrite-issue">
-                <AlertCircle size={15} />
-                <span>Co loi: {rewriteDraftTask.rewriteTask.reason}</span>
-              </div>
-            )}
-            <div className="st-rewrite-helper">
-              Rewrite only the AI tutor response below. Use the student request and optional context to keep the answer aligned.
-            </div>
-            <div className="st-rewrite-workbench">
-              <section className="st-rewrite-panel student">
-                <div className="st-rewrite-panel-title">1. Student request</div>
-                <div className="st-rewrite-panel-body">{getStudentRequestForRewrite(rewriteDraftTask)}</div>
-              </section>
-              <section className="st-rewrite-panel original">
-                <div className="st-rewrite-panel-title">2. AI response needing rewrite</div>
-                <div className="st-rewrite-panel-body">{getTargetAiResponse(rewriteDraftTask) || '(no target AI response found)'}</div>
-              </section>
-              <section className="st-rewrite-panel revised">
-                <div className="st-rewrite-panel-title">3. Revised response</div>
-                <div className="st-rewrite-ai-row">
-                  <span>Write manually or use AI as a draft, then edit before submitting.</span>
-                  <button
-                    type="button"
-                    disabled={isSuggestingRewrite || isSubmittingRewrite}
-                    onClick={() => {
-                      const versionId = rewriteDraftTask.datasetVersionId || localStorage.getItem('current_version_id');
-                      if (!versionId) {
-                        alert('Missing dataset version, cannot generate AI suggestion.');
-                        return;
-                      }
-                      setIsSuggestingRewrite(true);
-                      stage4Api.suggestRewrite(versionId, rewriteDraftTask.id)
-                        .then((res) => setRewriteDraftText(res.suggestedText || rewriteDraftText))
-                        .catch((err) => alert(err?.response?.data?.error || 'Failed to generate AI rewrite suggestion.'))
-                        .finally(() => setIsSuggestingRewrite(false));
-                    }}
-                  >
-                    {isSuggestingRewrite ? 'Generating...' : 'AI suggest'}
-                  </button>
-                </div>
-                <textarea
-                  value={rewriteDraftText}
-                  onChange={(e) => setRewriteDraftText(e.target.value)}
-                  placeholder="Write only the corrected AI tutor response here..."
-                  className="st-rewrite-textarea"
-                  disabled={isSubmittingRewrite}
-                />
-              </section>
-            </div>
-            <div className="st-rewrite-context-toolbar">
-              <div className="st-rewrite-section-title">Optional conversation context</div>
-              <select value={rewriteContextMode} onChange={(e) => setRewriteContextMode(e.target.value)}>
-                {rewriteContextOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </div>
-            <div className="st-rewrite-conversation">
-              {getVisibleRewriteMessages(rewriteDraftTask).map((message: any, index: number) => (
-                <div key={`${message.role}-${index}`} className={`st-rewrite-message ${message.role === 'assistant' ? 'assistant' : 'user'} ${message.isTarget ? 'target' : ''}`}>
-                  <div className="st-rewrite-message-role">
-                    {message.role === 'assistant' ? 'AI Tutor' : 'Student'}
-                    {message.isTarget && <span>Co loi</span>}
-                  </div>
-                  <div className="st-rewrite-message-content">{message.content}</div>
-                </div>
-              ))}
-            </div>
-            <div className="st-rewrite-modal-actions">
-              <button type="button" className="st-modal-secondary" onClick={() => setRewriteDraftTask(null)} disabled={isSubmittingRewrite}>Cancel</button>
-              <button
-                type="button"
-                className="st-modal-primary"
-                disabled={isSubmittingRewrite || !rewriteDraftText.trim()}
-                onClick={() => {
-                  const versionId = rewriteDraftTask.datasetVersionId || localStorage.getItem('current_version_id');
-                  if (!versionId) {
-                    alert('Missing dataset version, cannot submit rewrite.');
-                    return;
-                  }
-                  setIsSubmittingRewrite(true);
-                  stage4Api.submitRewrite(versionId, rewriteDraftTask.id, rewriteDraftText.trim())
-                    .then((res) => {
-                      const next = rewriteTasks.map((rewriteTask: any) => rewriteTask.id === rewriteDraftTask.id ? res.task : rewriteTask);
-                      setRewriteTasks(next);
-                      setRewriteDraftTask(null);
-                      setRewriteDraftText('');
-                    })
-                    .catch((err) => alert(err?.response?.data?.error || 'Failed to submit rewrite.'))
-                    .finally(() => setIsSubmittingRewrite(false));
-                }}
-              >
-                {isSubmittingRewrite ? 'Submitting...' : 'Submit replacement'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default StaffTasksView;
+    const rewriteContextMode = task?.rewriteTask?.contextMode || 'n-2:n+2';
+    const messages = Array.isArray(task?.rewriteTask?.conversationMessages) && task.rewriteTask.conversationMessages.length > 0
+      ? task.rewriteTask.conversationMessages
+      : [{ role: 'assistant', content: task?.rewriteTask?.originalText || '', isTarget: true }];
+    if (rewriteContextMode === 'full') return messages;
+    const targetIdx = messages.findIndex((message: any) => message?.isTarget);
+    if (targetIdx < 0) return messages;
+    let start = targetIdx;
+    let end = targetIdx;
+    if (rewriteContextMode === 'n-1:n') {
+      start = Math.max(0, targetIdx - 1);
+    } else if (rewriteContextMode === 'n-1:n+1') {
+      start = Math.max(0, targetIdx - 1);
+      end = Math.min(messages.length - 1, targetIdx + 1);
+    } else if (rewriteContextMode === 'n-2:n+2') {
+      start = Math.max(0, targetIdx - 2);
+      end = Math.min(messages.length - 1, targetIdx + 2);
+    }
+    return messages.slice(start, end + 1);
+  };
+
+  return (
+    <div className="st-container">
+      {/* Header */}
+      <div className="st-header">
+        <div className="st-header-left">
+          <div className="st-icon-wrapper">
+            <ClipboardList size={24} />
+          </div>
+          <div>
+            <h2>Task của tôi</h2>
+            <p className="st-subtitle">Xem và thực hiện các task được giao</p>
+          </div>
+        </div>
+        <button className="st-btn-refresh" onClick={refreshNow}>
+          <RefreshCw size={16} />
+          Làm mới
+        </button>
+      </div>
+
+      {/* Task Type Tabs */}
+      <div className="st-tabs-container">
+        <button
+          className={`st-tab-btn ${taskType === 'labeling' ? 'active labeling' : ''}`}
+          onClick={() => setTaskType('labeling')}
+        >
+          Task gán nhãn
+        </button>
+        <button
+          className={`st-tab-btn ${taskType === 'rewrite' ? 'active crosscheck' : ''}`}
+          onClick={() => setTaskType('rewrite')}
+        >
+          Task viết lại
+        </button>
+      </div>
+
+      {/* Stats */}
+      <div className="st-stats">
+        <div className="st-stat-card">
+          <div className="st-stat-icon total"><ClipboardList size={20} /></div>
+          <div className="st-stat-info">
+            <span className="st-stat-value">{stats.total}</span>
+            <span className="st-stat-label">Tổng số task</span>
+          </div>
+        </div>
+        <div className="st-stat-card">
+          <div className="st-stat-icon progress"><AlertCircle size={20} /></div>
+          <div className="st-stat-info">
+            <span className="st-stat-value">{stats.inProgress}</span>
+            <span className="st-stat-label">Đang thực hiện</span>
+          </div>
+        </div>
+        <div className="st-stat-card">
+          <div className="st-stat-icon submitted"><CheckCircle size={20} /></div>
+          <div className="st-stat-info">
+            <span className="st-stat-value">{stats.submitted}</span>
+            <span className="st-stat-label">Đã nộp</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="st-toolbar">
+        <div className="st-filter-group">
+          <Filter size={14} />
+          {['all', 'pending', 'in_progress', 'submitted'].map(key => (
+            <button
+              key={key}
+              className={`st-filter-btn ${statusFilter === key ? 'active' : ''}`}
+              onClick={() => setStatusFilter(key)}
+            >
+              {key === 'all' ? 'Tất cả' : STATUS_CONFIG[key]?.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="st-sort-wrapper">
+          <ArrowUpDown size={14} />
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="st-sort-select">
+            <option value="deadline">Hạn chót gần nhất</option>
+            <option value="priority">Ưu tiên cao nhất</option>
+            <option value="newest">Mới nhất</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Task Cards */}
+      <div className="st-task-grid">
+        {filtered.length === 0 && (
+          <div className="st-empty">
+            <ClipboardList size={48} />
+            <p>Không có task nào.</p>
+          </div>
+        )}
+
+        {filtered.map(task => {
+          const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
+          const statusInfo = STATUS_CONFIG[task.status];
+          const priInfo = PRIORITY_CONFIG[task.priority];
+          const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
+          const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
+
+          return (
+            <div key={task.id} className={`st-task-card ${overdue ? 'overdue' : ''}`}>
+              <div className="st-card-top">
+                <span className={`st-priority-badge ${priInfo.className}`}>{priInfo.label}</span>
+                <span className={`st-status-badge ${statusInfo.className}`}>
+                  {statusInfo.icon}
+                  {statusInfo.label}
+                </span>
+              </div>
+
+              <h3 className="st-card-title">{task.name}</h3>
+
+              <div className="st-card-meta">
+                <div className="st-meta-row">
+                  <Tag size={13} />
+                  <span>Dataset: <strong>{task.dataset} - {task.version}</strong></span>
+                </div>
+                {task.taskType === 'rewrite' && task.rewriteTask?.reason && task.rewriteTask.reason !== 'None' && (
+                  <div className="st-meta-row st-issue-row">
+                    <AlertCircle size={13} />
+                    <span>Có lỗi: <strong>{task.rewriteTask.reason}</strong></span>
+                  </div>
+                )}
+                {task.taskType === 'rewrite' && (
+                  <div className="st-meta-row">
+                    <BarChart2 size={13} />
+                    <span>
+                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+2'}</strong>
+                      {task.rewriteTask?.targetMessageIndex != null && <> · Turn <strong>#{Number(task.rewriteTask.targetMessageIndex) + 1}</strong></>}
+                    </span>
+                  </div>
+                )}
+                <div className="st-meta-row">
+                  <BarChart2 size={13} />
+                  <span>Batch: Samples {task.batchStart}-{task.batchStart + task.batchCount - 1}</span>
+                </div>
+                <div className={`st-meta-row ${overdue ? 'deadline-overdue' : nearDl ? 'deadline-near' : ''}`}>
+                  <Calendar size={13} />
+                  <span>Hạn chót: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  {overdue && <span className="st-overdue-tag">Quá hạn!</span>}
+                  {nearDl && <span className="st-near-tag">Sắp hết hạn</span>}
+                </div>
+                <div className="st-meta-row">
+                  <Users size={13} />
+                  <span>Supervisor: {task.supervisor}</span>
+                </div>
+              </div>
+
+              {/* Progress */}
+              <div className="st-card-progress">
+                <div className="st-progress-header">
+                  <span>Tiến độ</span>
+                  <span className="st-progress-num">{task.labeledCount}/{task.totalSamples} ({progress}%)</span>
+                </div>
+                <div className="st-progress-bar">
+                  <div className="st-progress-fill" style={{ width: `${progress}%` }}></div>
+                </div>
+              </div>
+
+              {task.disableAi && (
+                <div className="st-ai-disabled-badge">Đề xuất AI bị vô hiệu hóa</div>
+              )}
+
+              {task.taskType === 'rewrite' ? (
+                <button
+                  className="st-open-btn"
+                  id={`st-btn-open-${task.id}`}
+                  onClick={() => onOpenTask && onOpenTask(task)}
+                >
+                  <ChevronRight size={16} />
+                  {task.status === 'submitted' ? 'Xem lại' : 'Tiếp tục viết lại'}
+                </button>
+              ) : (
+                <button
+                  className={`st-open-btn ${task.status === 'submitted' ? 'disabled' : ''}`}
+                  onClick={() => task.status !== 'submitted' && onOpenTask && onOpenTask(task)}
+                  disabled={task.status === 'submitted'}
+                  id={`st-btn-open-${task.id}`}
+                >
+                  <ChevronRight size={16} />
+                  {task.status === 'submitted' ? 'Đã nộp' : task.status === 'pending' ? 'Bắt đầu task' : 'Tiếp tục gán nhãn'}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
+  );
+}
+
+export default StaffTasksView;

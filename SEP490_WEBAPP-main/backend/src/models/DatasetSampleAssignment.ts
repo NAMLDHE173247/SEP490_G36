@@ -5,6 +5,7 @@ export interface IDatasetSampleAssignment extends Document {
   datasetVersionId: Types.ObjectId | string;
   sampleId: Types.ObjectId | string;
   assigneeId: Types.ObjectId | string;
+  checkerId?: Types.ObjectId | string;
   assignedBy: Types.ObjectId | string;
   sampleIndex: number;
   taskType?: 'labeling' | 'cross-check';
@@ -42,6 +43,10 @@ const DatasetSampleAssignmentSchema = new Schema<IDatasetSampleAssignment>(
     assigneeId: {
       type: Schema.Types.Mixed,
       required: true,
+      index: true,
+    },
+    checkerId: {
+      type: Schema.Types.Mixed,
       index: true,
     },
     assignedBy: {

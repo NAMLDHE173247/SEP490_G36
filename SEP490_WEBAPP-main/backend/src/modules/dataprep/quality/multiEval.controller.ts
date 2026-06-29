@@ -114,17 +114,26 @@ export class MultiEvalController {
       }
 
       const role = String((req as any).user?.role || '').toLowerCase();
-      if (!['admin', 'supervisor'].includes(role)) {
-        res.status(403).json({ error: 'Admin hoặc Supervisor role required.' });
+      if (!['admin', 'supervisor', 'checker'].includes(role)) {
+        res.status(403).json({ error: 'Admin, Supervisor hoặc Checker role required.' });
         return;
       }
 
       const { versionId, resultId } = req.params;
-      if (role === 'supervisor') {
-        const assigned = await DatasetAssignmentSubmission.exists({ datasetVersionId: versionId, supervisor: supervisorId });
-        if (!assigned) {
-          res.status(403).json({ error: 'Conflict này chưa được giao cho Supervisor hiện tại.' });
-          return;
+      if (role === 'supervisor' || role === 'checker') {
+        const anySubmission = await DatasetAssignmentSubmission.exists({ datasetVersionId: versionId });
+        if (anySubmission) {
+          const assigned = await DatasetAssignmentSubmission.exists({
+            datasetVersionId: versionId,
+            $or: [
+              { supervisor: supervisorId },
+              { checker: supervisorId }
+            ]
+          });
+          if (!assigned) {
+            res.status(403).json({ error: 'Conflict này chưa được giao cho Supervisor hoặc Checker hiện tại.' });
+            return;
+          }
         }
       }
       const { action, note } = req.body;

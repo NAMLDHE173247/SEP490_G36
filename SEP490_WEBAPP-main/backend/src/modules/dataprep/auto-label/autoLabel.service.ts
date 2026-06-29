@@ -255,6 +255,7 @@ export class AutoLabelingService {
         name: item.label,
         type: 'hard' as const,
         targetScope: 'sample' as const,
+        source: 'ai' as const,
         createdBy: userOid,
       }));
 

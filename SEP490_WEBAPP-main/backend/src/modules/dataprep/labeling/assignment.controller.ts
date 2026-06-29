@@ -11,9 +11,19 @@ import { Stage4Notification } from '../../../models/Stage4Notification';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
 import { broadcastAssignmentUpdate } from './assignment.events';
+import { buildAssignmentConflictList, buildAssignmentSampleComparison } from '../../../services/labelAssignmentService';
 
 function isCompleteStaffLabel(label: any): boolean {
-  return Boolean(label?.subject && label?.completion && label?.quality);
+  if (!label || typeof label !== 'object') return false;
+  if (label.subject && label.completion && label.quality) return true;
+
+  const messages = label.messages && typeof label.messages === 'object' ? label.messages : {};
+  return Object.values(messages).some((value: any) => {
+    if (!value || typeof value !== 'object') return false;
+    const intents = Array.isArray(value.intent) ? value.intent : value.intent ? [value.intent] : [];
+    const actions = Array.isArray(value.action) ? value.action : value.action ? [value.action] : [];
+    return intents.length > 0 || actions.length > 0 || Boolean(value.responseQuality);
+  });
 }
 
 function parseSavedLabel(snapshot?: string): any {
@@ -25,7 +35,54 @@ function parseSavedLabel(snapshot?: string): any {
   }
 }
 
+function resolveAssignmentSupervisor(req: Request, supervisorId?: string): string | undefined {
+  const cleanSupervisorId = String(supervisorId || '').trim();
+  if (cleanSupervisorId) return cleanSupervisorId;
+
+  const authUser = (req as any).user;
+  const role = String(authUser?.role || '').toLowerCase();
+  if (role !== 'supervisor' && role !== 'checker') return undefined;
+  return String(authUser?.id || authUser?._id || authUser?.userId || '').trim() || undefined;
+}
+
 export class AssignmentController {
+  private async checkAndNotifyConflicts(submission: any, sampleIds: string[]) {
+    try {
+      if (!sampleIds || sampleIds.length === 0) return;
+
+      const overlapping = await DatasetSampleAssignment.aggregate([
+        { $match: { sampleId: { $in: sampleIds.map(id => typeof id === 'string' ? new mongoose.Types.ObjectId(id) : id) }, reviewStatus: { $in: ['submitted', 'approved'] }, active: { $ne: false } } },
+        { $group: { _id: "$sampleId", count: { $sum: 1 } } },
+        { $match: { count: { $gte: 2 } } }
+      ]);
+      if (overlapping.length === 0) return;
+
+      const overlappingSampleIds = overlapping.map(o => String(o._id));
+      let hasConflict = false;
+      for (const sId of overlappingSampleIds) {
+        const comp = await buildAssignmentSampleComparison(String(submission.datasetVersionId), sId);
+        if (comp.hasConflict) {
+          hasConflict = true;
+          break;
+        }
+      }
+
+      if (hasConflict) {
+        const actor = await User.findById(submission.assigneeId).select('name email').lean();
+        const actorName = String((actor as any)?.name || (actor as any)?.email || 'Nhân viên');
+        const msg = `Phát sinh mẫu cần phân xử sau khi ${actorName} nộp bài.`;
+        await Stage4Notification.create({
+          datasetVersionId: submission.datasetVersionId,
+          recipientRole: 'checker',
+          actorId: submission.assigneeId,
+          type: 'warning',
+          message: msg,
+        });
+      }
+    } catch (e) {
+      console.error('[AssignmentController] Error checking conflicts for notification', e);
+    }
+  }
 
   /**
    * API: Xóa toàn bộ dữ liệu Test của Assignment
@@ -111,8 +168,9 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
+      const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
       if (!assigneeIds || !assigneeIds.length) {
         return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên' });
@@ -205,7 +263,8 @@ export class AssignmentController {
             taskType: 'labeling',
             priority: priority || 'medium',
             deadline: parsedDeadline,
-            supervisor: supervisorId || assignedBy,
+            supervisor: assignmentSupervisor,
+            checker: checkerId ? String(checkerId) : undefined,
             labeledCount: 0,
             totalSamples: group.sampleIds.length,
             dataset: datasetName,
@@ -220,6 +279,7 @@ export class AssignmentController {
             datasetVersionId: versionId,
             sampleId: item._id,
             assigneeId: staffId,
+            checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined,
             assignedBy,
             sampleIndex: group.startIndex + i,
             taskType: 'labeling',
@@ -279,8 +339,9 @@ export class AssignmentController {
   async createBatchAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId } = req.body;
+      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId, checkerId } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
+      const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
@@ -325,7 +386,8 @@ export class AssignmentController {
           totalSamples: sampleCount,
           dataset: datasetName,
           version: version?.versionName || 'v1',
-          supervisor: supervisorId || assignedBy
+          supervisor: assignmentSupervisor,
+          checker: checkerId ? String(checkerId) : undefined
         });
 
         await submission.save();
@@ -344,6 +406,7 @@ export class AssignmentController {
             datasetVersionId: versionId,
             sampleId: actualItem ? actualItem._id : new mongoose.Types.ObjectId().toHexString(), // fallback if not found
             assigneeId: assigneeId,
+            checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined,
             assignedBy: assignedBy,
             sampleIndex: sampleStartIndex + i,
             taskType: taskType || 'labeling',
@@ -410,6 +473,7 @@ export class AssignmentController {
         datasetVersionId: versionId,
         sampleId: s.sampleId,
         assigneeId: toAssigneeId,
+        checkerId: s.checkerId,
         assignedBy,
         sampleIndex: s.sampleIndex,
         taskType: s.taskType || 'labeling',
@@ -440,7 +504,8 @@ export class AssignmentController {
         taskType: src?.taskType || 'labeling',
         priority: src?.priority || 'medium',
         deadline: src?.deadline,
-        supervisor: assignedBy,
+        supervisor: src?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId),
+        checker: src?.checker,
         dataset: src?.dataset || version.projectName,
         version: src?.version || version.versionName,
         totalSamples: src?.totalSamples || fromSamples.length,
@@ -521,6 +586,13 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Không tìm thấy mẫu nào để gán thêm' });
       }
       const startIndex = sourceSamples[0].sampleIndex;
+      const sourceSubmission = await DatasetAssignmentSubmission.findOne({
+        datasetVersionId: versionId,
+        ...(fromAssigneeId ? { assigneeId: fromAssigneeId } : {}),
+        active: { $ne: false },
+      }).select('supervisor checker').lean();
+      const assignmentSupervisor = (sourceSubmission as any)?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId);
+      const assignmentChecker = (sourceSubmission as any)?.checker || (req.body as any).checkerId;
 
       let added = 0;
       for (const assigneeId of assigneeIds) {
@@ -529,6 +601,7 @@ export class AssignmentController {
           datasetVersionId: versionId,
           sampleId: s.sampleId,
           assigneeId,
+          checkerId: s.checkerId || (assignmentChecker ? new mongoose.Types.ObjectId(String(assignmentChecker)) : undefined),
           assignedBy,
           sampleIndex: s.sampleIndex,
           taskType: s.taskType || 'labeling',
@@ -547,7 +620,8 @@ export class AssignmentController {
           batchCount: sourceSamples.length,
           taskType: 'labeling',
           priority: 'medium',
-          supervisor: assignedBy,
+          supervisor: assignmentSupervisor,
+          checker: assignmentChecker ? String(assignmentChecker) : undefined,
           dataset: version.projectName,
           version: version.versionName,
           totalSamples: sourceSamples.length,
@@ -659,12 +733,32 @@ export class AssignmentController {
       const authUser = (req as any).user;
       const role = String(authUser?.role || '').toLowerCase();
       const viewerId = String(authUser?._id || authUser?.userId || authUser?.id || '');
-      if (role === 'supervisor' && !viewerId) {
+      if ((role === 'supervisor' || role === 'checker') && !viewerId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
-      // Supervisors may only see submissions explicitly assigned to them.
-      // Admin keeps the system-wide overview.
-      const submissionFilter = role === 'supervisor' ? { supervisor: viewerId } : {};
+      let submissionFilter: any = {};
+      if (role === 'supervisor' || role === 'checker') {
+        const supervisorUsers = await User.find({ role: { $in: ['supervisor', 'checker'] } }).select('_id').lean();
+        const supervisorIds = supervisorUsers.map((user: any) => String(user._id));
+        if (role === 'checker') {
+          submissionFilter = {
+            $or: [
+              { checker: viewerId },
+              { checker: { $exists: false } },
+              { checker: '' },
+            ],
+          };
+        } else {
+          submissionFilter = {
+            $or: [
+              { supervisor: viewerId },
+              { supervisor: { $exists: false } },
+              { supervisor: '' },
+              { supervisor: { $nin: supervisorIds } },
+            ],
+          };
+        }
+      }
       const submissions = await DatasetAssignmentSubmission.find(submissionFilter);
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];
       const versions = await DatasetVersion.find({ _id: { $in: versionIds } });
@@ -696,6 +790,7 @@ export class AssignmentController {
             : (versionDoc && (versionDoc as any).projectId ? String((versionDoc as any).projectId) : '');
           grouped[groupId] = {
             id: groupId,
+            datasetVersionId: vid,
             projectId: resolvedProjectId,
             projectName: versionDoc ? versionDoc.projectName : (sub.dataset || 'Project Dataset'),
             name: baseName !== 'Default Task' ? baseName : (versionDoc ? versionDoc.versionName : `Dataset Version ${vid.substring(0, 6)}...`),
@@ -706,6 +801,7 @@ export class AssignmentController {
             dueDate: sub.deadline || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
             status: 'in_progress',
             priority: sub.priority || 'medium',
+            checkerId: sub.checker || undefined,
             batches: []
           };
         }
@@ -799,6 +895,7 @@ export class AssignmentController {
       const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
       const users = await User.find({ _id: { $in: validAssigneeIds } });
       const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
+      const userEmailMap = new Map(users.map(u => [String(u._id), u.email || null]));
 
       subs.forEach(sub => {
         const assigneeIdStr = String(sub.assigneeId);
@@ -877,6 +974,9 @@ export class AssignmentController {
             assignees: [],
             staffStatus: {},
             staffLabels: {},
+            subjectLabelWithAI: null,
+            subjectLabelWithHuman: null,
+            subjectLabelDefault: null,
             conflict: false,
           };
           sampleIdMap[String(sa.sampleId)] = sa.sampleIndex;
@@ -901,7 +1001,9 @@ export class AssignmentController {
           if (item && sIndex && samplesMap[sIndex]) {
             const data = (item as any).data || {};
             let preview = '';
+            let messages: any[] = [];
             if (Array.isArray(data.messages) && data.messages.length > 0) {
+              messages = data.messages.map((m: any) => ({ role: m.role, content: m.content || m.text || '' }));
               // Lấy 2 tin nhắn đầu, mỗi tin cắt 100 ký tự
               preview = data.messages.slice(0, 2).map((m: any) => {
                 const role = m.role === 'user' ? 'U' : 'A';
@@ -909,9 +1011,22 @@ export class AssignmentController {
                 return `[${role}] ${text}`;
               }).join(' | ');
             } else if (data.prompt || data.response) {
+              messages = [
+                { role: 'user', content: data.prompt || '' },
+                { role: 'assistant', content: data.response || '' },
+              ];
               preview = `[U] ${(data.prompt || '').substring(0, 80)} | [A] ${(data.response || '').substring(0, 80)}`;
             }
             samplesMap[sIndex].preview = preview || `Sample #${sIndex}`;
+            samplesMap[sIndex].messages = messages;
+            samplesMap[sIndex].subjectLabelDefault =
+              data.subject ||
+              data.subjectLabel ||
+              data.subject_label ||
+              data.groupLabel ||
+              data.group_label ||
+              data.meta?.subject ||
+              null;
           }
         }
       }
@@ -925,8 +1040,20 @@ export class AssignmentController {
       for (const label of labels) {
         const sIndex = sampleIdMap[String(label.sampleId)];
         if (sIndex && samplesMap[sIndex]) {
-          // Only mark 'done' if the saved label is complete (has subject + completion + quality)
           const parsed = parseSavedLabel(label.targetTextSnapshot);
+          if (!parsed && label.targetScope === 'sample' && label.type === 'hard' && label.name) {
+            const labelSource = (label as any).source;
+            const createdByStaff = Boolean(staffMap[String(label.createdBy)]);
+            if (labelSource === 'human' || (!labelSource && createdByStaff)) {
+              samplesMap[sIndex].subjectLabelWithHuman = label.name;
+            } else if (labelSource === 'default') {
+              samplesMap[sIndex].subjectLabelDefault = label.name;
+            } else {
+              samplesMap[sIndex].subjectLabelWithAI = label.name;
+            }
+            continue;
+          }
+          // Only mark 'done' if the saved label is complete (has subject + completion + quality)
           const isComplete = isCompleteStaffLabel(parsed);
           samplesMap[sIndex].staffStatus[String(label.createdBy)] = isComplete ? 'done' : 'in_progress';
           samplesMap[sIndex].staffLabels[String(label.createdBy)] = {
@@ -937,12 +1064,40 @@ export class AssignmentController {
             isDraft: !isComplete,
             raw: parsed?.subject || label.name,
           };
+          if (parsed?.subject) {
+            samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
+          }
           if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
           conflictMap[sIndex].push(label);
         }
       }
 
       const samples = Object.values(samplesMap);
+
+      // Chuẩn hoá nhãn của 1 annotator để hiển thị đầy đủ khi phân xử
+      const buildAnnotatorLabel = (l: any) => {
+        const parsed = parseSavedLabel(l.targetTextSnapshot) || {};
+        const u = staffMap[String(l.createdBy)] || {};
+        return {
+          annotatorId: String(l.createdBy),
+          annotatorName: u.name || String(l.createdBy),
+          annotatorEmail: userEmailMap.get(String(l.createdBy)) || null,
+          // Giữ tương thích ngược: subject = tên annotator, quality = tên nhãn
+          subject: u.name || u.email || String(l.createdBy),
+          quality: l.name,
+          labelName: l.name,
+          // Chi tiết nhãn thật mà annotator đã gán
+          detail: {
+            subject: parsed.subject || null,
+            quality: parsed.quality || null,
+            completion: parsed.completion || null,
+            note: parsed.note || parsed.reason || null,
+          },
+          isComplete: isCompleteStaffLabel(parsed),
+          updatedAt: l.updatedAt || l.createdAt || null,
+        };
+      };
+
       const conflicts = [];
       for (const sIndexStr of Object.keys(conflictMap)) {
         const sIndex = Number(sIndexStr);
@@ -952,14 +1107,20 @@ export class AssignmentController {
           const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
           if (hasConflict || true) { // Always show as conflict for now if > 1 label for demo purposes
             samplesMap[sIndex].conflict = true;
+            const annotatorLabels = sLabels.map(buildAnnotatorLabel);
             conflicts.push({
               sampleId: sIndex,
               key: samplesMap[sIndex].key,
               annotators: sLabels.length,
               iaa: 0.45,
               status: 'pending' as const,
-              labelA: { subject: staffMap[String(sLabels[0].createdBy)]?.name || String(sLabels[0].createdBy), quality: sLabels[0].name },
-              labelB: { subject: staffMap[String(sLabels[1].createdBy)]?.name || String(sLabels[1].createdBy), quality: sLabels[1].name }
+              // Nội dung sample để người phân xử đọc và đối chiếu
+              preview: samplesMap[sIndex].preview || '',
+              messages: samplesMap[sIndex].messages || [],
+              // Danh sách nhãn đầy đủ của tất cả annotator (hỗ trợ >2 người)
+              annotatorLabels,
+              labelA: annotatorLabels[0],
+              labelB: annotatorLabels[1],
             });
           }
         }
@@ -1120,6 +1281,7 @@ export class AssignmentController {
       });
 
       if (existingLabel) {
+        (existingLabel as any).source = 'human';
         existingLabel.targetTextSnapshot = JSON.stringify(label);
         await existingLabel.save();
       } else {
@@ -1129,6 +1291,7 @@ export class AssignmentController {
           name: 'Label',
           type: 'soft',
           targetScope: 'sample',
+          source: 'human',
           targetTextSnapshot: JSON.stringify(label)
         });
       }
@@ -1201,7 +1364,7 @@ export class AssignmentController {
         if (labelData && typeof labelData === 'object' && Object.keys(labelData).length > 0) {
           await LabelAssignment.findOneAndUpdate(
             { createdBy: submission.assigneeId, sampleId: sa.sampleId },
-            { $set: { name: 'Label', type: 'soft', targetScope: 'sample', targetTextSnapshot: JSON.stringify(labelData) } },
+            { $set: { name: 'Label', type: 'soft', targetScope: 'sample', source: 'human', targetTextSnapshot: JSON.stringify(labelData) } },
             { upsert: true }
           );
         }
@@ -1213,6 +1376,9 @@ export class AssignmentController {
       }
 
       await this.recomputeSubmissionCounts(submission);
+
+      const submittedSampleIds = sampleAssigns.map((sa: any) => sa.sampleId);
+      this.checkAndNotifyConflicts(submission, submittedSampleIds).catch(err => console.error(err));
 
       broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit_samples' });
       return res.status(200).json({ success: true, message: `Đã nộp ${submitted} câu.`, submitted });
@@ -1271,7 +1437,9 @@ export class AssignmentController {
       const sampleIds = rows.map((r: any) => r.sampleId);
       const [items, labels] = await Promise.all([
         ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).select('_id data').lean(),
-        LabelAssignment.find({ sampleId: { $in: sampleIds } }).lean(),
+        LabelAssignment.find({ sampleId: { $in: sampleIds } })
+          .sort({ updatedAt: -1, createdAt: -1 })
+          .lean(),
       ]);
       const itemMap = new Map(items.map((i: any) => [String(i._id), i]));
       const userIds = [...new Set(rows.map((r: any) => String(r.assigneeId)).filter((id: string) => mongoose.Types.ObjectId.isValid(id)))];
@@ -1291,7 +1459,13 @@ export class AssignmentController {
 
       const data = rows.map((r: any) => {
         const item = itemMap.get(String(r.sampleId));
-        const label = labels.find((l: any) => String(l.sampleId) === String(r.sampleId) && String(l.createdBy) === String(r.assigneeId));
+        const label = labels.find((l: any) =>
+          String(l.sampleId) === String(r.sampleId) &&
+          String(l.createdBy) === String(r.assigneeId) &&
+          String(l.type || '') === 'soft' &&
+          (String(l.targetScope || 'sample') === 'sample') &&
+          safeParse(l.targetTextSnapshot)
+        ) || labels.find((l: any) => String(l.sampleId) === String(r.sampleId) && String(l.createdBy) === String(r.assigneeId));
         return {
           assignmentId: String(r._id),
           sampleIndex: r.sampleIndex,
@@ -1435,6 +1609,7 @@ export class AssignmentController {
                 name: 'Label',
                 type: 'soft',
                 targetScope: 'sample',
+                source: 'human',
                 targetTextSnapshot: JSON.stringify(labelData),
               } },
               upsert: true,
@@ -1486,6 +1661,16 @@ export class AssignmentController {
           },
         ]);
       }
+
+      // Check conflicts and only notify checker if there is actual conflict
+      const sampleAssigns = await DatasetSampleAssignment.find({
+        datasetVersionId: submission.datasetVersionId,
+        assigneeId: submission.assigneeId,
+        sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+        active: { $ne: false }
+      }).lean();
+      const submittedSampleIds = sampleAssigns.map((sa: any) => sa.sampleId);
+      this.checkAndNotifyConflicts(submission, submittedSampleIds).catch(err => console.error(err));
 
       // Trigger SSE update for Step 7 real-time reflection
       broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'submit' });
@@ -1548,6 +1733,7 @@ export class AssignmentController {
       // 4. Map labels và rewrites theo messageIndex
       const labelsByMsg: Record<number, any[]> = {};
       const sampleLabels: any[] = [];
+      const sampleMeta: any = {};
       for (const label of labels) {
         if (label.targetScope === 'message' && label.messageIndex != null) {
           if (!labelsByMsg[label.messageIndex]) labelsByMsg[label.messageIndex] = [];
@@ -1562,9 +1748,11 @@ export class AssignmentController {
           if (parsed) {
             // Conversation-level summary
             const parts: string[] = [];
-            if (parsed.subject) parts.push(parsed.subject);
-            if (parsed.quality) parts.push('Chất lượng: ' + parsed.quality);
-            if (parsed.completion) parts.push('Hoàn thành: ' + parsed.completion);
+            if (parsed.subject) { sampleMeta.subject = parsed.subject; parts.push(parsed.subject); }
+            if (parsed.quality) { sampleMeta.quality = parsed.quality; parts.push('Chất lượng: ' + parsed.quality); }
+            if (parsed.completion) { sampleMeta.completion = parsed.completion; parts.push('Hoàn thành: ' + parsed.completion); }
+            if (Array.isArray(parsed.flags)) sampleMeta.flags = parsed.flags;
+            if (parsed.note) sampleMeta.note = parsed.note;
             if (parts.length) sampleLabels.push({ name: parts.join(' · '), type: label.type });
             // Message-level intent/action extracted from blob
             if (parsed.messages && typeof parsed.messages === 'object') {
@@ -1607,6 +1795,7 @@ export class AssignmentController {
         data: {
           original: { messages: originalMessages },
           labeled: {
+            sampleMeta,
             sampleLabels,
             messageLabels: labelsByMsg,
             rewrites: rewritesByMsg,
@@ -1635,6 +1824,19 @@ export class AssignmentController {
 
       if (submission.status !== 'submitted') {
         return res.status(400).json({ success: false, error: `Không thể duyệt submission ở trạng thái "${submission.status}". Chỉ duyệt được khi status = "submitted".` });
+      }
+
+      // Check if this specific staff has any pending conflicts in this version
+      const conflicts = await buildAssignmentConflictList(String(submission.datasetVersionId), { 
+        status: 'pending', 
+        assigneeId: String(submission.assigneeId) 
+      });
+
+      if (conflicts.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Không thể duyệt! Nhân viên này đang có ${conflicts.length} mẫu gán nhãn bị conflict (xung đột) chưa được Checker giải quyết.`
+        });
       }
 
       submission.status = 'approved';
@@ -1714,6 +1916,42 @@ export class AssignmentController {
       return res.status(500).json({ success: false, error: error.message });
     }
   }
+
+  async updateBatchChecker(req: Request, res: Response) {
+    try {
+      const { versionId } = req.params;
+      const { batchName, checkerId } = req.body;
+      if (!batchName) {
+        return res.status(400).json({ success: false, error: 'Missing batchName' });
+      }
+      
+      // Update DatasetAssignmentSubmission
+      await DatasetAssignmentSubmission.updateMany(
+        { datasetVersionId: versionId, name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) },
+        { $set: { checker: checkerId || undefined } }
+      );
+      
+      // Fetch submissions to update corresponding sample assignments
+      const subs = await DatasetAssignmentSubmission.find({
+        datasetVersionId: versionId,
+        name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      }).select('_id assigneeId').lean();
+      
+      const assigneeIds = subs.map(s => s.assigneeId);
+      
+      await DatasetSampleAssignment.updateMany(
+        { datasetVersionId: versionId, assigneeId: { $in: assigneeIds } },
+        { $set: { checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined } }
+      );
+      
+      broadcastAssignmentUpdate({ type: 'assignment_updated', versionId, action: 'update_checker' });
+      
+      return res.status(200).json({ success: true, message: 'Updated checker successfully' });
+    } catch (e: any) {
+      console.error('[AssignmentController] updateBatchChecker error:', e);
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  }
 }
 // --- AUTO SCORE LOGIC ---
 function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
@@ -1755,11 +1993,12 @@ function calculateHumanScore(hardLabels: any[], totalSamples: number): number {
 // using the same valid/harmful action rules as the Quality stage, so the Staff Rule
 // Score is computed the moment a staff member submits.
 const RULE_INTENTS = [
-  'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
+  'ANSWER_ATTEMPT', 'CORRECT', 'INCORRECT', 'REQUEST_HINT', 'ASK_THEORY', 'REQUEST_EXPLANATION',
   'REQUEST_SIMPLER', 'SKIP_EXERCISE', 'ENCOURAGE', 'OFF_TOPIC', 'NEXT_SECTION',
 ] as const;
 const RULE_VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
-  CORRECT: new Set(['PRAISING']),
+  ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
+  CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
   REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
   ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
@@ -1771,6 +2010,7 @@ const RULE_VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
 const RULE_HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
@@ -1868,7 +2108,7 @@ const SUBJECT_MAP: Record<string, string> = {
 
 const INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -1897,7 +2137,7 @@ function mapToStandardIntent(rawIntent: string): string {
   if (INTENT_MAP[trimmed]) return INTENT_MAP[trimmed];
   const upper = trimmed.toUpperCase();
   if ((USER_MESSAGE_LABELS as readonly string[]).includes(upper)) return upper;
-  return 'WAIT_READY';
+  return 'ANSWER_ATTEMPT';
 }
 
 function mapToStandardAction(rawAction: string): string {
@@ -2002,6 +2242,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
           name: mappedSubject,
           type: 'hard',
           targetScope: 'sample',
+          source: 'human',
           createdBy: submission.assigneeId
         });
       }
@@ -2027,6 +2268,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               targetScope: 'message',
               messageIndex: msgIdx,
               messageRole: 'user',
+              source: 'human',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
               });
@@ -2044,6 +2286,7 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
               targetScope: 'message',
               messageIndex: msgIdx,
               messageRole: 'assistant',
+              source: 'human',
               targetTextSnapshot: contentSnapshot,
               createdBy: submission.assigneeId
               });

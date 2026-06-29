@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, Eye, X, Settings, Database, Plus, Search, HelpCircle, BarChart2, RefreshCw, AlertCircle, Calendar, Download, FileText, Sparkles, MessageSquare, ChevronLeft, ChevronRight, Play, DownloadCloud, FileJson, CheckCircle2, RotateCcw, Upload } from 'lucide-react';
-import { useDataPrep, SUB_STEPS_STAGE6, PROMPT_VERSIONS, EXPORT_ROWS } from '../DataPrepContext';
+import { useDataPrep, SUB_STEPS_STAGE6, PROMPT_VERSIONS } from '../DataPrepContext';
+import { useStage4Data } from '../../../hooks/useStage4Data';
 import { Tooltip, getPageNumbers } from '../utils';
 import { apiService } from '../../../services/api';
 import JSZip from 'jszip';
@@ -26,6 +27,9 @@ export const Stage6Finish: React.FC = () => {
     sepQualityLabels
   } = dataPrep;
 
+  const activeVersionId = localStorage.getItem('current_version_id');
+  const { results, qualityResult } = useStage4Data(activeVersionId);
+
   // Local States
   const [downloadFormat, setDownloadFormat] = useState('json');
   const [showConfirmPush, setShowConfirmPush] = useState(false);
@@ -41,7 +45,7 @@ export const Stage6Finish: React.FC = () => {
   const [historyPage, setHistoryPage] = useState(1);
   const historyPerPage = 5;
 
-  const [trialProvider, setTrialProvider] = useState<'gemini' | 'deepseek'>('gemini');
+  const [trialProvider, setTrialProvider] = useState<'openrouter' | 'deepseek'>('openrouter');
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitResult, setSplitResult] = useState<any>(null);
 
@@ -130,7 +134,7 @@ export const Stage6Finish: React.FC = () => {
     setIsRunningTrial(true);
     setTrialResponse('Đang gọi API chạy thử prompt...');
     try {
-      let modelId = 'gemini-flash-latest';
+      let modelId = 'meta-llama/llama-3.1-8b-instruct:free';
       if (trialProvider === 'deepseek') modelId = 'deepseek-chat';
 
       const res = await apiService.infer({
@@ -298,17 +302,50 @@ export const Stage6Finish: React.FC = () => {
     }
   };
 
-  // Deterministic mock score generator for the demo
-  const getOverallScore = (cId: string) => {
-    if (sepQualityRatings && sepQualityRatings[cId] && typeof sepQualityRatings[cId].overall === 'number') {
-      return sepQualityRatings[cId].overall;
+  // Real score from AI / Staff, or null if not evaluated
+  const getOverallScoreData = (cId: string, sampleObjectId?: string) => {
+    const candidates = [cId, sampleObjectId].filter(Boolean).map(String);
+    
+    // 1. Try to find AI Score
+    let avgAI = null;
+    if (results) {
+      const getResultSampleId = (r: any) => String(r.sampleId?._id || r.sampleId || r.sampleIdRef?._id || r.sampleIdRef?.sampleId || '');
+      const resMatch = results.find(r => candidates.includes(getResultSampleId(r)) || candidates.includes(String(r.sampleIdRef?.sampleId || '')));
+      if (resMatch) {
+        const modelScores = resMatch.modelScores || {};
+        const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
+        const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
+        const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
+        const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
+        avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
+      }
     }
-    // Generate deterministic score between 4.0 and 9.5 based on ID
-    if (!cId) return 8.5;
-    let hash = 0;
-    for (let i = 0; i < cId.length; i++) hash = cId.charCodeAt(i) + ((hash << 5) - hash);
-    const normalized = (Math.abs(hash) % 56) / 10; // 0.0 to 5.5
-    return 4.0 + normalized; // 4.0 to 9.5
+
+    // 2. Try to find Human Score
+    let humanScore = null;
+    let label = null;
+    if (qualityResult?.items) {
+      const humanItem = qualityResult.items.find((i: any) => candidates.includes(String(i.sampleId)) || candidates.includes(String(i._id)));
+      if (humanItem) {
+        humanScore = typeof humanItem.humanScore === 'number' ? humanItem.humanScore : humanItem.ratings?.human;
+        label = humanItem.finalClassification || humanItem.qualityClassification || humanItem.bucket;
+      }
+    }
+
+    // Determine what to display (prefer AI score if available, otherwise human)
+    if (avgAI !== null) {
+      return { score: avgAI, evaluatedBy: 'Avg AI', label: label || (avgAI < 6.0 ? 'Needs improvement' : 'Good') };
+    }
+    if (humanScore !== null) {
+      return { score: humanScore, evaluatedBy: 'Staff', label: label || (humanScore < 6.0 ? 'Needs improvement' : 'Good') };
+    }
+    
+    // Fallback
+    if (sepQualityRatings && sepQualityRatings[cId] && typeof sepQualityRatings[cId].overall === 'number') {
+      return { score: sepQualityRatings[cId].overall, evaluatedBy: 'Manual', label: '-' };
+    }
+    
+    return { score: null, evaluatedBy: '-', label: '-' };
   };
 
   // Helper: get full conversation messages by id
@@ -435,8 +472,14 @@ export const Stage6Finish: React.FC = () => {
     testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
     // Filter by overall score
-    trainData = trainData.filter((c: any) => getOverallScore(c.conversation_id || c.id) >= exportMinScore);
-    testData = testData.filter((c: any) => getOverallScore(c.conversation_id || c.id) >= exportMinScore);
+    trainData = trainData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
+    testData = testData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
 
     const zip = new JSZip();
     zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
@@ -578,12 +621,33 @@ export const Stage6Finish: React.FC = () => {
   const activePage = Math.min(exportPage, totalPages);
 
   const previewRows = conversationsList && conversationsList.length > 0
-    ? conversationsList.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage).map(c => ({
-      id: c.id || c.conversation_id,
-      user: c.messages[0]?.user || '',
-      assistant: c.messages[0]?.assistant || '',
-    }))
-    : EXPORT_ROWS.map((r: any, idx: number) => ({ id: `ex_${idx}`, ...r }));
+    ? conversationsList.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage).map(c => {
+        let sys = promptText || '';
+        let usr = '';
+        let ast = '';
+        if (c.messages && c.messages.length > 0) {
+          const firstMsg = c.messages[0];
+          if (firstMsg.user !== undefined || firstMsg.assistant !== undefined) {
+            usr = firstMsg.user || '';
+            ast = firstMsg.assistant || '';
+          } else {
+            const userMsg = c.messages.find((m: any) => m.role === 'user');
+            const astMsg = c.messages.find((m: any) => m.role === 'assistant');
+            const sysMsg = c.messages.find((m: any) => m.role === 'system');
+            if (userMsg) usr = userMsg.content;
+            if (astMsg) ast = astMsg.content;
+            if (sysMsg) sys = sysMsg.content;
+          }
+        }
+        return {
+          id: c.id || c.conversation_id,
+          sampleObjectId: c.sampleObjectId,
+          system: sys,
+          user: usr,
+          assistant: ast,
+        };
+      })
+    : [];
 
   return (
     <div className="dataprep-stage2">
@@ -746,7 +810,7 @@ export const Stage6Finish: React.FC = () => {
                   style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
                 >
                   <option value="deepseek">Deepseek</option>
-                  <option value="gemini">Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
                 </select>
                 <button
                   className="s6-trial-btn"
@@ -1167,23 +1231,31 @@ export const Stage6Finish: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {previewRows.map((row, idx) => {
-                  const score = getOverallScore(row.id);
-                  const reason = score < 6.0 ? 'Needs improvement' : '-';
+                {previewRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '20px' }}>Không có dữ liệu</td>
+                  </tr>
+                ) : previewRows.map((row, idx) => {
+                  const scoreData = getOverallScoreData(row.id, row.sampleObjectId);
+                  const scoreText = scoreData.score !== null ? scoreData.score.toFixed(1) : '-';
+                  const reason = scoreData.score !== null ? scoreData.label : '-';
                   return (
                     <tr key={idx}>
-                      <td>-</td>
                       <td>
-                        <span className="ex-cell-text">{row.user}</span>
-                        <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.user); }}>Read more</a>
+                        <span className="ex-cell-text">{row.system || '-'}</span>
+                        { row.system && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.system); }}>Read more</a> }
                       </td>
                       <td>
-                        <span className="ex-cell-text">{row.assistant}</span>
-                        <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.assistant); }}>Read more</a>
+                        <span className="ex-cell-text">{row.user || '-'}</span>
+                        { row.user && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.user); }}>Read more</a> }
                       </td>
-                      <td>{score.toFixed(1)}</td>
+                      <td>
+                        <span className="ex-cell-text">{row.assistant || '-'}</span>
+                        { row.assistant && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.assistant); }}>Read more</a> }
+                      </td>
+                      <td>{scoreText}</td>
                       <td>{reason !== '-' ? <span className="ex-cell-text">{reason}</span> : '-'}</td>
-                      <td>Auto</td>
+                      <td>{scoreData.evaluatedBy}</td>
                     </tr>
                   );
                 })}

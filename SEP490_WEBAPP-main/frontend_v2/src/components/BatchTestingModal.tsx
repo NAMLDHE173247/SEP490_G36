@@ -69,7 +69,7 @@ export function BatchTestingModal({ onClose, activeModelId, provider, params, in
   };
 
   const handleStartBatch = async () => {
-    if (!activeModelId && provider !== "openrouter" && provider !== "gemini") {
+    if (!activeModelId && provider !== "openrouter" && provider !== "openrouter") {
       toast.error("Vui lòng Load Model trước khi chạy kiểm thử!");
       return;
     }

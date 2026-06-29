@@ -51,7 +51,7 @@ import {
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
-import { getGpuConfig, updateGpuConfig } from '../controllers/configController';
+import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
 import { isManager } from '../utils/auth';
 
@@ -180,6 +180,10 @@ router.post('/auto-label', autoLabelGroups);
 // Config Routes
 router.get('/config/gpu-url', authMiddleware, requireManager, getGpuConfig);
 router.post('/config/gpu-url', authMiddleware, requireManager, updateGpuConfig);
+router.get('/config/personal-keys', authMiddleware, getPersonalApiKeys);
+router.put('/config/personal-keys', authMiddleware, updatePersonalApiKeys);
+router.get('/config/global-keys', authMiddleware, requireManager, getGlobalApiKeys);
+router.put('/config/global-keys', authMiddleware, requireManager, updateGlobalApiKeys);
 
 // Training Routes
 router.post('/train/start', authMiddleware, requireManager, upload.single('dataset_file'), startTraining);

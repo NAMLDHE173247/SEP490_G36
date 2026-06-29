@@ -168,6 +168,7 @@ function Navbar() {
     navigate('/login');
   };
   const unreadNotificationCount = notifications.filter((note: any) => !note.readAt).length;
+  const canManageGpu = user?.role === 'admin' || user?.role === 'supervisor';
 
   const toggleNotifications = async () => {
     const nextOpen = !notificationOpen;
@@ -204,44 +205,46 @@ function Navbar() {
         <>
           {/* Middle: Resources (Only shown when logged in) */}
           <div style={{ display: 'flex', alignItems: 'center', flex: 1, justifyContent: 'center' }}>
-            {gpuStats ? (
-              <div className="resources-pill">
-                <div className="resources-item">
-                  <span className="status-dot"></span>
-                  <Activity size={16} className="icon-blue" />
-                  <span>Util: {Math.round(gpuStats.gpu_util || 0)}%</span>
-                </div>
-                <div className="divider"></div>
-                <div className="resources-item">
-                  <span className="vram-text">VRAM:</span>
-                  <span className="vram-value">
-                    {((gpuStats.vram_used_mb || 0) / 1024).toFixed(1)} / {((gpuStats.vram_total_mb || 1024) / 1024).toFixed(1)} GB
-                  </span>
-                  <div className="progress-bar-container">
-                    <div className="progress-bar-fill" style={{ width: `${Math.min(100, ((gpuStats.vram_used_mb || 0) / Math.max(1, gpuStats.vram_total_mb || 1)) * 100)}%` }}></div>
+            {canManageGpu && (
+              gpuStats ? (
+                <div className="resources-pill">
+                  <div className="resources-item">
+                    <span className="status-dot"></span>
+                    <Activity size={16} className="icon-blue" />
+                    <span>Util: {Math.round(gpuStats.gpu_util || 0)}%</span>
+                  </div>
+                  <div className="divider"></div>
+                  <div className="resources-item">
+                    <span className="vram-text">VRAM:</span>
+                    <span className="vram-value">
+                      {((gpuStats.vram_used_mb || 0) / 1024).toFixed(1)} / {((gpuStats.vram_total_mb || 1024) / 1024).toFixed(1)} GB
+                    </span>
+                    <div className="progress-bar-container">
+                      <div className="progress-bar-fill" style={{ width: `${Math.min(100, ((gpuStats.vram_used_mb || 0) / Math.max(1, gpuStats.vram_total_mb || 1)) * 100)}%` }}></div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="resources-pill" style={{ opacity: 0.6 }}>
-                <div className="resources-item">
-                  <span className="status-dot" style={{ background: '#cbd5e1', boxShadow: 'none' }}></span>
-                  <Activity size={16} className="icon-blue" style={{ filter: 'grayscale(100%)' }} />
-                  <span>Offline</span>
-                </div>
-                <div className="divider"></div>
-                <div className="resources-item">
-                  <span className="vram-text">VRAM:</span>
-                  <span className="vram-value">-- / -- GB</span>
-                  <div className="progress-bar-container">
-                    <div className="progress-bar-fill" style={{ width: '0%', background: '#cbd5e1' }}></div>
+              ) : (
+                <div className="resources-pill" style={{ opacity: 0.6 }}>
+                  <div className="resources-item">
+                    <span className="status-dot" style={{ background: '#cbd5e1', boxShadow: 'none' }}></span>
+                    <Activity size={16} className="icon-blue" style={{ filter: 'grayscale(100%)' }} />
+                    <span>Offline</span>
+                  </div>
+                  <div className="divider"></div>
+                  <div className="resources-item">
+                    <span className="vram-text">VRAM:</span>
+                    <span className="vram-value">-- / -- GB</span>
+                    <div className="progress-bar-container">
+                      <div className="progress-bar-fill" style={{ width: '0%', background: '#cbd5e1' }}></div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
 
-            {/* Infrastructure controls belong to Admin only. */}
-            {user.role === 'admin' ? (
+            {/* Admin and Supervisor both manage the shared GPU connection. */}
+            {canManageGpu ? (
               <div className="gpu-widget-container" style={{ maxWidth: '350px', marginLeft: '16px', position: 'relative' }}>
                 {connectionStatus === 'connected' ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '8px', padding: '6px 12px' }}>
@@ -378,15 +381,18 @@ function Navbar() {
                       <User size={18} className="dropdown-item-icon" />
                       Profile Settings
                     </li>
-                    <li className="dropdown-item">
-                      <CreditCard size={18} className="dropdown-item-icon" />
-                      API Tokens
+                    <li className="dropdown-item" onClick={() => {
+                      setDropdownOpen(false);
+                      navigate('/dashboard', { state: { tab: 'API Keys' } });
+                    }}>
+                      <Shield size={18} className="dropdown-item-icon" />
+                      Cấu hình API Keys
                     </li>
                     <li className="dropdown-item">
                       <Settings size={18} className="dropdown-item-icon" />
                       Settings
                     </li>
-                    {user.role === 'admin' && (
+                    {user?.role === 'admin' && (
                       <li className="dropdown-item">
                         <Shield size={18} className="dropdown-item-icon" />
                         Admin Panel

@@ -162,7 +162,9 @@ export class VersionService {
   }
 
   private buildRows(data: VersionDataRow[], format?: 'openai' | 'alpaca') {
-    const normalizedFormat = format || inferFormatFromRow((data[0] as any)?.data || data[0] || {});
+    const normalizedFormat = (format === 'openai' || format === 'alpaca')
+      ? format
+      : inferFormatFromRow((data[0] as any)?.data || data[0] || {});
     const rows = data
       .map((row, index) => {
         const rawData = (row && typeof row === 'object' && 'data' in row && row.data) ? row.data : row;
@@ -504,11 +506,16 @@ export class VersionService {
     const evaluationResult = deletedSampleObjectIds.length
       ? await EvaluationHistory.deleteMany({ sampleId: { $in: deletedSampleObjectIds } })
       : { deletedCount: 0 };
+    const deletedVersionOidsAndStrings = [
+      ...deletedVersionObjectIds,
+      ...deletedVersionIds
+    ];
+
     const assignmentResult = await DatasetSampleAssignment.deleteMany({
-      datasetVersionId: { $in: deletedVersionObjectIds },
+      datasetVersionId: { $in: deletedVersionOidsAndStrings },
     });
     const submissionResult = await DatasetAssignmentSubmission.deleteMany({
-      datasetVersionId: { $in: deletedVersionObjectIds },
+      datasetVersionId: { $in: deletedVersionOidsAndStrings },
     });
     const sampleResult = await ProcessedDatasetItem.deleteMany({
       datasetVersionId: { $in: deletedVersionObjectIds },
