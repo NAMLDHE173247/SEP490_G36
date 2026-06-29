@@ -11,15 +11,15 @@ export interface IDatasetVersion extends Document {
   versionNo?: number;
   versionName: string;
   operationType?:
-    | 'upload'
-    | 'clean'
-    | 'cluster'
-    | 'labeling_base'
-    | 'classification_balanced'
-    | 'evaluation_filtered'
-    | 'refine_approved'
-    | 'manual_edit'
-    | 'legacy';
+  | 'upload'
+  | 'clean'
+  | 'cluster'
+  | 'labeling_base'
+  | 'classification_balanced'
+  | 'evaluation_filtered'
+  | 'refine_approved'
+  | 'manual_edit'
+  | 'legacy';
   operationParams?: Record<string, unknown>;
   prepareResumeStep?: number;
   promptId?: mongoose.Types.ObjectId;
