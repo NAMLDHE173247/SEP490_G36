@@ -22,6 +22,7 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
+  'urgent': { label: 'Cực cao',    className: 'al-priority-urgent' },
   'high':   { label: 'Cao',      className: 'al-priority-high' },
   'medium': { label: 'Trung bình', className: 'al-priority-medium' },
   'low':    { label: 'Thấp',     className: 'al-priority-low' },

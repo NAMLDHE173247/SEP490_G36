@@ -130,6 +130,32 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         setSystemResources(res.data);
       } catch (e) {
         console.error('Error fetching system GPU resources:', e);
+        // Fallback: try the same endpoint Navbar uses (which doesn't require requireManager)
+        try {
+          const fallbackRes = await axios.get('/api/model-eval/gpu-status', {
+            headers: getAuthHeaders(),
+            timeout: 6000,
+          });
+          if (fallbackRes.status === 200 && fallbackRes.data) {
+            // Construct a compatible workers array from gpu-status response
+            setSystemResources({
+              workers: [{
+                status: 'online',
+                gpu_name: 'GPU Worker',
+                vram_used_mb: fallbackRes.data.vram_used_mb || 0,
+                vram_total_mb: fallbackRes.data.vram_total_mb || 0,
+                vram_free: ((fallbackRes.data.vram_total_mb - fallbackRes.data.vram_used_mb) / 1024).toFixed(1),
+                gpu_util: fallbackRes.data.gpu_util || 0,
+              }],
+              vram_used_mb: fallbackRes.data.vram_used_mb || 0,
+              vram_total_mb: fallbackRes.data.vram_total_mb || 0,
+              gpu_util: fallbackRes.data.gpu_util || 0,
+            });
+          }
+        } catch (fallbackErr) {
+          // Both endpoints failed — GPU truly offline
+          console.error('Fallback GPU status also failed:', fallbackErr);
+        }
       }
     };
     fetchResources();

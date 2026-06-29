@@ -65,7 +65,7 @@ const DatasetSampleAssignmentSchema = new Schema<IDatasetSampleAssignment>(
     },
     priority: {
       type: String,
-      enum: ['low', 'medium', 'high'],
+      enum: ['low', 'medium', 'high', 'urgent'],
       default: 'medium',
     },
     active: { type: Boolean, default: true, index: true },

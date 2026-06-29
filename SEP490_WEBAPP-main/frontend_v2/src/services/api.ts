@@ -727,4 +727,48 @@ export const apiService = {
       throw err;
     }
   },
+
+  getEvaluatedModels: async (): Promise<any[]> => {
+    const response = await api.get('/model-eval/leaderboard');
+    return response.data;
+  },
+  getEvaluationDetail: async (evalId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/${evalId}`);
+    return response.data;
+  },
+  runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
+    const formData = new FormData();
+    formData.append('eval_file', file);
+    if (options.judgeModel) formData.append('judge_model', options.judgeModel);
+    if (options.baseModelHfRepo) formData.append('base_model_hf_repo', options.baseModelHfRepo);
+    const response = await api.post(`/model-eval/run/${jobId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  getEvalHistory: async (jobId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/history/${jobId}`);
+    return response.data;
+  },
+  pinEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.post(`/model-eval/pin/${evalId}`);
+    return response.data;
+  },
+  deleteEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.delete(`/model-eval/${evalId}`);
+    return response.data;
+  },
+  compareEvaluations: async (evalIdA: string, evalIdB: string): Promise<any> => {
+    const response = await api.get('/model-eval/compare', {
+      params: { a: evalIdA, b: evalIdB },
+    });
+    return response.data;
+  },
+  reviewConversation: async (evalId: string, convIndex: number, review: { verdict: 'agree' | 'disagree' | 'skip'; note?: string; reviewer?: string }): Promise<any> => {
+    const response = await api.patch(`/model-eval/${evalId}/review/${convIndex}`, review);
+    return response.data;
+  },
 };
+
