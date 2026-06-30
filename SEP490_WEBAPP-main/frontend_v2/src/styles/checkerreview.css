@@ -1582,3 +1582,19 @@
   flex-shrink: 0;
   border-radius: 4px;
 }
+.checker-project-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.checker-project-filters label { font-size: 13px; font-weight: 700; color: #475569; }
+.checker-project-filters select {
+  min-width: 170px;
+  padding: 9px 34px 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #0f172a;
+}

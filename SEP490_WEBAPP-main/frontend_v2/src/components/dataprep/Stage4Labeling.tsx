@@ -426,7 +426,7 @@ export const Stage4Labeling: React.FC = () => {
           reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
           originalText,
           targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
-          contextMode: 'n-2:n+2'
+          contextMode: 'n-2:n+3'
         });
       }
       setReassignStaff((prev: any) => ({ ...prev, [item.id]: staffName }));
@@ -624,16 +624,29 @@ export const Stage4Labeling: React.FC = () => {
     return null;
   };
 
-  const getStaffSubjectFromComparison = (comparison: any, fallback?: string) => {
-    if (!comparison?.targets) return fallback;
+  const getStaffSubjectFromComparison = (comparison: any) => {
+    if (!comparison?.targets) return 'Chưa chốt';
     const sampleTarget = comparison.targets.find((t: any) =>
       t.targetScope === 'sample' &&
+      Number(t.messageIndex) === 0 &&
       Array.isArray(t.annotators) &&
       t.annotators.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
     );
-    if (!sampleTarget) return fallback;
+    if (!sampleTarget) return 'Chưa chốt';
+
+    // "Chưa rõ" là một nhãn nghiệp vụ Staff có thể chọn, không phải trạng thái
+    // duyệt. Khi các reviewer còn xung đột, Supervisor chỉ được thấy "Chưa chốt".
+    if (sampleTarget.hasConflict && sampleTarget.adjudication?.status !== 'published') {
+      return 'Chưa chốt';
+    }
+
+    const canonical = sampleTarget.annotators.find((a: any) =>
+      (a.isCanonical || a.annotator?.role === 'checker' || a.annotator?.role === 'supervisor' || a.annotator?.role === 'admin') &&
+      Array.isArray(a.labels) && a.labels.length > 0
+    );
+    const relevantAnnotators = canonical ? [canonical] : sampleTarget.annotators;
     const excluded = new Set(['COMPLETED', 'INCOMPLETE', 'ABANDONED', 'GOOD', 'MEDIUM', 'POOR']);
-    for (const annotator of sampleTarget.annotators) {
+    for (const annotator of relevantAnnotators) {
       const labels = Array.isArray(annotator.labels) ? annotator.labels : [];
       const displays = Array.isArray(annotator.displayLabels) ? annotator.displayLabels : labels;
       for (let i = 0; i < labels.length; i += 1) {
@@ -643,7 +656,7 @@ export const Stage4Labeling: React.FC = () => {
         return display;
       }
     }
-    return fallback;
+    return 'Chưa chốt';
   };
 
   const getUiMessagesForSample = (sampleId?: string, sampleKey?: string) => {
@@ -951,7 +964,7 @@ export const Stage4Labeling: React.FC = () => {
       id: item._id,
       sampleObjectId: item._id,
       convId: item.sampleId,
-      subject: getStaffSubjectFromComparison(getComparisonForSample(sampleId, String(item.sampleId)), getSeededSubject(item.sampleId)),
+      subject: getStaffSubjectFromComparison(getComparisonForSample(sampleId, String(item.sampleId))),
       ...item,
       bucket: combinedBucket,
       combinedScore,
@@ -960,9 +973,9 @@ export const Stage4Labeling: React.FC = () => {
       score: item.score,
       issue: item.conflict ? 'Conflict' : 'None',
       issueKey: item.conflict ? 'conflict' : 'none',
-      reason: item.note || 'No special issues flagged.',
-      errorMessageIndices: item.errorMessageIndices ?? (item.errorMessageIndex != null ? [item.errorMessageIndex] : [1]),
-      errorMessageIndex: item.errorMessageIndex ?? 1,
+      reason: item.note || 'Chưa có nhận xét',
+      errorMessageIndices: item.errorMessageIndices ?? (item.errorMessageIndex != null ? [item.errorMessageIndex] : []),
+      errorMessageIndex: item.errorMessageIndex ?? null,
       messages: mapBackendMessagesToUiMessages(item.data?.messages || []),
       rawItem: item,
       pendingAdjudication: Boolean(item.pendingAdjudication || evalMatch?.pendingAdjudication),
@@ -2212,7 +2225,7 @@ export const Stage4Labeling: React.FC = () => {
                 reason: reason || rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
                 originalText,
                 targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-                contextMode: 'n-2:n+2',
+                contextMode: 'n-2:n+3',
                 projectName: getRewriteProjectName(item),
               };
             };
@@ -2269,7 +2282,7 @@ export const Stage4Labeling: React.FC = () => {
                             convId: String(item.convId || item.sampleId || item.id), subject: item.subject || '',
                             reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
                             originalText, targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
-                            contextMode: 'n-2:n+2',
+                            contextMode: 'n-2:n+3',
                             projectName: getRewriteProjectName(item),
                           };
                         }));
@@ -2588,7 +2601,7 @@ export const Stage4Labeling: React.FC = () => {
                             reason: bulkRewriteReason || rewriteReasons[id] || item?.issue || 'Quality review requires rewrite',
                             originalText,
                             targetMessageIndex: targetIdx >= 0 ? targetIdx : undefined,
-                            contextMode: 'n-2:n+2'
+                            contextMode: 'n-2:n+3'
                           });
                         });
                       });

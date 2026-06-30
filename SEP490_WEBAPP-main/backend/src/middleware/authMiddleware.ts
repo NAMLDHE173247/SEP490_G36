@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { User } from '../models/User';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_please_change_in_production';
+const JWT_SECRET: string = process.env.JWT_SECRET ?? '';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is required. Refusing to start with an insecure fallback secret.');
+}
 
 function getRequestToken(req: Request): string | null {
   const authHeader = req.headers.authorization;
@@ -9,15 +13,20 @@ function getRequestToken(req: Request): string | null {
     return authHeader.split(' ')[1];
   }
 
-  const queryToken = req.query.token || req.query.access_token;
-  if (typeof queryToken === 'string' && queryToken.trim()) {
-    return queryToken;
+  // Native EventSource cannot attach an Authorization header. Keep query tokens
+  // narrowly scoped to authenticated SSE endpoints instead of accepting them on
+  // every API route (where they can leak through logs and browser history).
+  if (req.method === 'GET' && (req.path.includes('/stream/') || req.path.endsWith('/events'))) {
+    const queryToken = req.query.token || req.query.access_token;
+    if (typeof queryToken === 'string' && queryToken.trim()) {
+      return queryToken;
+    }
   }
 
   return null;
 }
 
-function attachUserFromToken(req: Request, token: string): boolean {
+async function attachUserFromToken(req: Request, token: string): Promise<boolean> {
   const decoded = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & {
     userId?: string;
     _id?: string;
@@ -30,12 +39,18 @@ function attachUserFromToken(req: Request, token: string): boolean {
     return false;
   }
 
+  const user = await User.findById(userId).select('_id role status').lean();
+  if (!user || user.status !== 'active') return false;
+
+  // Database is authoritative. A role/status change takes effect immediately
+  // instead of waiting for the old JWT to expire.
   (req as any).user = {
     ...decoded,
-    id: String(userId),
-    _id: String(userId),
-    userId: String(userId),
-    role: decoded.role || 'staff',
+    id: String(user._id),
+    _id: String(user._id),
+    userId: String(user._id),
+    role: user.role,
+    status: user.status,
   };
   return true;
 }
@@ -50,7 +65,7 @@ function attachPublicUser(req: Request): void {
 }
 
 // Strict auth: only for routes that must require login.
-export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = getRequestToken(req);
     if (!token) {
@@ -58,8 +73,8 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    if (!attachUserFromToken(req, token)) {
-      res.status(401).json({ error: 'Invalid token payload.' });
+    if (!(await attachUserFromToken(req, token))) {
+      res.status(401).json({ error: 'Invalid token or inactive account.' });
       return;
     }
     next();
@@ -70,11 +85,11 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
 };
 
 // Optional auth: if no/invalid token, continue as "public" user.
-export const optionalAuthMiddleware = (req: Request, _res: Response, next: NextFunction) => {
+export const optionalAuthMiddleware = async (req: Request, _res: Response, next: NextFunction) => {
   const token = getRequestToken(req);
   if (token) {
     try {
-      if (attachUserFromToken(req, token)) {
+      if (await attachUserFromToken(req, token)) {
         return next();
       }
     } catch (error) {

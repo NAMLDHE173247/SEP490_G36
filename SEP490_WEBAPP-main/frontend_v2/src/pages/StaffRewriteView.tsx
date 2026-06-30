@@ -42,7 +42,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   // Drawer / Workbench state
   const [drawerTask, setDrawerTask] = useState<any | null>(null);
   const [rewriteDraftText, setRewriteDraftText] = useState('');
-  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+2');
+  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+3');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
@@ -54,7 +54,8 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const rewriteContextOptions = [
-    { value: 'n-2:n+2', label: 'n-2 đến n+2' },
+    { value: 'n-2:n+3', label: 'n-2 đến n+3' },
+    { value: 'n-2:n+2', label: 'n-2 đến n+2 (legacy)' },
     { value: 'n-1:n+1', label: 'n-1 đến n+1' },
     { value: 'n-1:n', label: 'n-1 đến n' },
     { value: 'target-only', label: 'Chỉ mục tiêu' },
@@ -96,6 +97,9 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     } else if (rewriteContextMode === 'n-1:n+1') {
       start = Math.max(0, targetIdx - 1);
       end = Math.min(messages.length - 1, targetIdx + 1);
+    } else if (rewriteContextMode === 'n-2:n+3') {
+      start = Math.max(0, targetIdx - 2);
+      end = Math.min(messages.length - 1, targetIdx + 3);
     } else if (rewriteContextMode === 'n-2:n+2') {
       start = Math.max(0, targetIdx - 2);
       end = Math.min(messages.length - 1, targetIdx + 2);
@@ -160,7 +164,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const handleOpenDrawer = (item: any) => {
     setDrawerTask(item);
     setRewriteDraftText(item.submittedText || getTargetAiResponse(item));
-    setRewriteContextMode('n-2:n+2');
+    setRewriteContextMode('n-2:n+3');
   };
 
   const handleCloseDrawer = async () => {

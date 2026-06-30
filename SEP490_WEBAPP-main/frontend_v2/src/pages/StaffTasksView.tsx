@@ -232,7 +232,7 @@ function StaffTasksView({ onOpenTask }) {
   };
 
   const getVisibleRewriteMessages = (task: any) => {
-    const rewriteContextMode = task?.rewriteTask?.contextMode || 'n-2:n+2';
+    const rewriteContextMode = task?.rewriteTask?.contextMode || 'n-2:n+3';
     const messages = Array.isArray(task?.rewriteTask?.conversationMessages) && task.rewriteTask.conversationMessages.length > 0
       ? task.rewriteTask.conversationMessages
       : [{ role: 'assistant', content: task?.rewriteTask?.originalText || '', isTarget: true }];
@@ -246,7 +246,10 @@ function StaffTasksView({ onOpenTask }) {
     } else if (rewriteContextMode === 'n-1:n+1') {
       start = Math.max(0, targetIdx - 1);
       end = Math.min(messages.length - 1, targetIdx + 1);
-    } else if (rewriteContextMode === 'n-2:n+2') {
+    } else if (rewriteContextMode === 'n-2:n+3') {
+      start = Math.max(0, targetIdx - 2);
+      end = Math.min(messages.length - 1, targetIdx + 3);
+    } else if (rewriteContextMode === 'n-2:n+2') {
       start = Math.max(0, targetIdx - 2);
       end = Math.min(messages.length - 1, targetIdx + 2);
     }
@@ -381,7 +384,7 @@ function StaffTasksView({ onOpenTask }) {
                   <div className="st-meta-row">
                     <BarChart2 size={13} />
                     <span>
-                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+2'}</strong>
+                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+3'}</strong>
                       {task.rewriteTask?.targetMessageIndex != null && <> · Turn <strong>#{Number(task.rewriteTask.targetMessageIndex) + 1}</strong></>}
                     </span>
                   </div>

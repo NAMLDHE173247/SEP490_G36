@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
+import { getAuthToken } from '../../../services/authSession';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 import './Stage3Labeling.css';
 import { useToast } from '../../../hooks/useToast';
@@ -466,7 +467,8 @@ export const Stage3Labeling: React.FC = () => {
 
       // Listen for Real-Time Updates using SSE
       const apiBase = import.meta.env.VITE_API_URL || '/api';
-      const sseUrl = `${apiBase}/dataprep/labeling/assignments/stream`;
+      const token = getAuthToken();
+      const sseUrl = `${apiBase}/dataprep/labeling/assignments/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
       eventSource = new EventSource(sseUrl);
       eventSource.onmessage = (event) => {
         try {
@@ -841,6 +843,24 @@ export const Stage3Labeling: React.FC = () => {
     const fetchStaffForModal = async () => {
       setIsFetchingDashboard(true);
       try {
+        // Load samples independently from the user directory. A permission or
+        // network error while loading Staff must never make the dataset appear empty.
+        let versionId = '';
+        try {
+          versionId = await ensureDatasetVersionId();
+        } catch (e) {
+          console.warn('Could not resolve the active dataset version:', e);
+        }
+        if (versionId && assignmentSamples.length === 0) {
+          try {
+            const assign = await apiService.getDatasetVersionAssignments(versionId);
+            setAssignmentSamples(assign.samples || []);
+            setAssignmentTotals(assign.totals);
+          } catch (e) {
+            console.warn('Could not load assignment samples:', e);
+          }
+        }
+
         const usersRes = await apiService.listUsers();
         const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
         const users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
@@ -860,17 +880,6 @@ export const Stage3Labeling: React.FC = () => {
           setAssignedCheckerId(chks[0]._id);
         }
 
-        // Also try to load samples if versionId exists
-        const versionId = localStorage.getItem('current_version_id');
-        if (versionId && assignmentSamples.length === 0) {
-          try {
-            const assign = await apiService.getDatasetVersionAssignments(versionId);
-            setAssignmentSamples(assign.samples || []);
-            setAssignmentTotals(assign.totals);
-          } catch (e) {
-            console.warn('Could not load assignment samples:', e);
-          }
-        }
       } catch (err) {
         console.error('Failed to fetch staff for modal:', err);
       } finally {
@@ -3151,6 +3160,14 @@ export const Stage3Labeling: React.FC = () => {
                             </div>
                             <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={(e) => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
                             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, fontSize: 11 }}>
+                              <div style={{ padding: 8, borderRadius: 8, background: '#f0fdf4', color: '#166534' }}>
+                                ≥ {Math.round(conflictThreshold * 100)}%: tự chốt nhãn đa số
+                              </div>
+                              <div style={{ padding: 8, borderRadius: 8, background: '#fff7ed', color: '#9a3412' }}>
+                                &lt; {Math.round(conflictThreshold * 100)}%: chuyển Checker
+                              </div>
+                            </div>
                           </div>
                         </>
                       ) : (
@@ -3380,9 +3397,10 @@ export const Stage3Labeling: React.FC = () => {
                           aiAssigneeIds: aiSelected.filter(id => selectedIds.includes(id)),
                           taskName: taskNameInput.trim(),
                           priority: taskPriority,
-                          deadline: deadlineDate.toISOString(),
-                          overlapCount,
-                          checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined
+                           deadline: deadlineDate.toISOString(),
+                           overlapCount,
+                           similarityThreshold: conflictThreshold,
+                           checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined
                         });
 
                         // Refresh dashboard

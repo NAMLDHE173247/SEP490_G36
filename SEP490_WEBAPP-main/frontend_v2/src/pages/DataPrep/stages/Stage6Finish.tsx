@@ -184,37 +184,7 @@ export const Stage6Finish: React.FC = () => {
       });
       let apiResponse = res;
       if (Array.isArray(res)) {
-        // Colab API returned a flat array without train/test split.
-        // We will perform the split client-side.
-        const total = res.length;
-        const testCount = splitTestPercentage > 0 ? Math.max(1, Math.round(total * (splitTestPercentage / 100))) : 0;
-        const trainCount = total - testCount;
-
-        // Re-inject original IDs by matching first message content
-        const recoveredData = res.map(apiItem => {
-          let id = apiItem.conversation_id || apiItem.id;
-          if (!id && apiItem.messages && apiItem.messages.length > 0) {
-            const firstContent = apiItem.messages[0].content || '';
-            const match = conversationsList.find((c: any) => {
-              if (!c.messages || c.messages.length === 0) return false;
-              const cFirstContent = c.messages[0].content || c.messages[0].user || '';
-              return cFirstContent === firstContent;
-            });
-            if (match) id = match.conversation_id || match.id;
-          }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
-        });
-
-        const shuffled = [...recoveredData].sort(() => 0.5 - Math.random());
-        apiResponse = {
-          train: shuffled.slice(0, trainCount),
-          test: shuffled.slice(trainCount),
-          train_count: trainCount,
-          test_count: testCount,
-          attempts: 1,
-          conflicts: 0,
-          max_similarity: "N/A"
-        };
+        throw new Error('Safe Split API returned an unsupported response without verified train/test partitions.');
       } else if (res && typeof res === 'object' && res.train) {
         // It returned { train, test }. Let's ensure IDs are present
         const injectIds = (arr: any[]) => (arr || []).map(apiItem => {
@@ -228,7 +198,8 @@ export const Stage6Finish: React.FC = () => {
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
+          if (!id) throw new Error('Safe Split response contains an item without a traceable conversation ID.');
+          return { ...apiItem, conversation_id: id };
         });
 
         apiResponse = {
@@ -249,7 +220,8 @@ export const Stage6Finish: React.FC = () => {
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
+          if (!id) throw new Error('Safe Split response contains an item without a traceable conversation ID.');
+          return { ...apiItem, conversation_id: id };
         });
 
         const trainData = res.trainIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
@@ -278,25 +250,8 @@ export const Stage6Finish: React.FC = () => {
       alert('Đã tạo train/test split an toàn thành công!');
     } catch (error: any) {
       console.error('Lỗi khi phân chia dữ liệu:', error);
-      // Fallback local calculations if Colab Colab/GPU service is offline
-      const total = conversationsList.length;
-      const testCount = splitTestPercentage > 0 ? Math.max(1, Math.round(total * (splitTestPercentage / 100))) : 0;
-      const trainCount = total - testCount;
-
-      const shuffled = [...conversationsList].sort(() => 0.5 - Math.random());
-      const trainData = shuffled.slice(0, trainCount);
-      const testData = shuffled.slice(trainCount);
-
-      setSplitResult({
-        train: trainData,
-        test: testData,
-        train_count: trainCount,
-        test_count: testCount,
-        attempts: 1,
-        conflicts: Math.floor(Math.random() * 4 + 1),
-        max_similarity: (0.82 + Math.random() * 0.12).toFixed(2),
-        overlap_info: []
-      });
+      setSplitResult(null);
+      alert(error?.response?.data?.error || error.message || 'Safe Split failed. Export is blocked until leakage validation succeeds.');
     } finally {
       setIsSplitting(false);
     }
@@ -414,6 +369,10 @@ export const Stage6Finish: React.FC = () => {
   };
 
   const handleDownloadSplit = async () => {
+    if (!splitResult?.train || !splitResult?.test) {
+      alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
+      return;
+    }
     let sourceData: any[];
     try {
       sourceData = await loadLabeledExportSource();
@@ -449,6 +408,10 @@ export const Stage6Finish: React.FC = () => {
   const [exportMinScore, setExportMinScore] = useState(6.0);
 
   const handleDownloadFiltered = async () => {
+    if (!splitResult?.train || !splitResult?.test) {
+      alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
+      return;
+    }
     let sourceData: any[];
     try {
       sourceData = await loadLabeledExportSource();

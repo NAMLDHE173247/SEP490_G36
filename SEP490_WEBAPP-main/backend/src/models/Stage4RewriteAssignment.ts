@@ -12,7 +12,7 @@ export interface IStage4RewriteAssignment extends Document {
   originalText: string;
   targetMessageIndex?: number | null;
   targetMessageIndices?: number[];
-  contextMode?: 'n-2:n+2' | 'n-1:n+1' | 'n-1:n' | 'target-only' | 'full';
+  contextMode?: 'n-2:n+3' | 'n-2:n+2' | 'n-1:n+1' | 'n-1:n' | 'target-only' | 'full';
   conversationMessages?: Array<{ role: string; content: string; isTarget?: boolean }>;
   submittedText?: string;
   status: 'assigned' | 'submitted' | 'checker_approved' | 'approved' | 'rejected' | 'redo';
@@ -41,8 +41,8 @@ const Stage4RewriteAssignmentSchema = new Schema<IStage4RewriteAssignment>(
     targetMessageIndices: { type: [Number], default: [] },
     contextMode: {
       type: String,
-      enum: ['n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'],
-      default: 'n-2:n+2',
+      enum: ['n-2:n+3', 'n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'],
+      default: 'n-2:n+3',
     },
     conversationMessages: {
       type: [

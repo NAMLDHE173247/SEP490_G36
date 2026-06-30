@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react';
 import { api, type AssignmentConflictItem } from '../services/api';
+import { getAuthToken } from '../services/authSession';
 import CheckerConflictDialog from '../components/CheckerConflictDialog';
 import { toast } from 'react-hot-toast';
 import '../styles/checkerreview.css';
@@ -45,6 +46,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [projectStatus, setProjectStatus] = useState<'all' | 'pending' | 'completed'>('all');
   const [sortBy, setSortBy] = useState<'severity' | 'deadline'>('severity');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<QueueItem | null>(null);
@@ -160,7 +162,8 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     }, 10000);
 
     // Bật SSE realtime để nhận thông báo nhân viên nộp bài
-    const sseUrl = `${api.defaults.baseURL}/dataprep/assignments/events`;
+    const token = getAuthToken();
+    const sseUrl = `${api.defaults.baseURL}/dataprep/assignments/events${token ? `?token=${encodeURIComponent(token)}` : ''}`;
     const eventSource = new EventSource(sseUrl);
     
     eventSource.onmessage = (event) => {
@@ -306,6 +309,13 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     return projects.find(p => p.versionId === selectedVersionId) || null;
   }, [projects, selectedVersionId]);
 
+  const filteredProjects = useMemo(() => projects.filter(project => {
+    const pending = project.overlapReviews.length + project.quickReviews.length;
+    if (projectStatus === 'pending') return pending > 0;
+    if (projectStatus === 'completed') return pending === 0;
+    return true;
+  }), [projects, projectStatus]);
+
   const overallKPIs = useMemo(() => {
     let totalPendingConflicts = 0;
     let totalResolved = 0;
@@ -418,13 +428,21 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
             <div className="directory-header">
               <h2>Danh sách dự án hoạt động</h2>
               <p>Chọn một dự án để xem danh sách chi tiết và giải quyết xung đột nhãn.</p>
+              <div className="checker-project-filters">
+                <label htmlFor="checker-project-status">Trạng thái dự án</label>
+                <select id="checker-project-status" value={projectStatus} onChange={event => setProjectStatus(event.target.value as typeof projectStatus)}>
+                  <option value="all">Tất cả</option>
+                  <option value="pending">Cần xử lý</option>
+                  <option value="completed">Đã hoàn thành</option>
+                </select>
+              </div>
             </div>
 
             {loading && items.length === 0 ? (
               <div className="sv-skeletons">
                 {[1, 2, 3].map(i => <div key={i} className="sv-skeleton" />)}
               </div>
-            ) : projects.length === 0 ? (
+            ) : filteredProjects.length === 0 ? (
               <div className="sv-state empty-state">
                 <Inbox size={48} />
                 <h3>Không tìm thấy dữ liệu dự án</h3>
@@ -432,7 +450,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               </div>
             ) : (
               <div className="project-grid">
-                {projects.map(p => {
+                {filteredProjects.map(p => {
                   const totalConflicts = p.conflicts.length;
                   const resolved = p.resolvedConflictsCount;
                   const pct = totalConflicts > 0 ? Math.round((resolved / totalConflicts) * 100) : 100;

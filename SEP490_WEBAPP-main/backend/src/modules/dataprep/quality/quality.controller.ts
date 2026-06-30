@@ -16,7 +16,7 @@ import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetVersion } from '../../../models/DatasetVersion';
 
 const qualityService = new QualityService();
-const REWRITE_CONTEXT_MODES = ['n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'] as const;
+const REWRITE_CONTEXT_MODES = ['n-2:n+3', 'n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'] as const;
 type RewriteContextMode = typeof REWRITE_CONTEXT_MODES[number];
 let rewriteIndexUpgradePromise: Promise<void> | null = null;
 
@@ -50,6 +50,9 @@ export class QualityController {
     } else if (contextMode === 'n-1:n+1') {
       start = Math.max(0, normalizedTargetIndex - 1);
       end = Math.min(messages.length - 1, normalizedTargetIndex + 1);
+    } else if (contextMode === 'n-2:n+3') {
+      start = Math.max(0, normalizedTargetIndex - 2);
+      end = Math.min(messages.length - 1, normalizedTargetIndex + 3);
     } else if (contextMode === 'n-2:n+2') {
       start = Math.max(0, normalizedTargetIndex - 2);
       end = Math.min(messages.length - 1, normalizedTargetIndex + 2);
@@ -83,7 +86,7 @@ export class QualityController {
       reason: task.reason || 'None',
       originalText: task.originalText || '',
       targetMessageIndex: Number.isInteger(Number(task.targetMessageIndex)) ? Number(task.targetMessageIndex) : null,
-      contextMode: task.contextMode || 'n-2:n+2',
+      contextMode: task.contextMode || 'n-2:n+3',
       conversationMessages: Array.isArray(task.conversationMessages) && task.conversationMessages.length
         ? task.conversationMessages
         : fallbackConversationMessages,
@@ -407,7 +410,7 @@ export class QualityController {
       const { sampleId, assigneeId, checkerId, convId, subject, reason, originalText } = req.body;
       const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(req.body?.contextMode)
         ? req.body.contextMode
-        : 'n-2:n+2';
+        : 'n-2:n+3';
       if (!mongoose.Types.ObjectId.isValid(sampleId) || !mongoose.Types.ObjectId.isValid(assigneeId)) {
         res.status(400).json({ error: 'Invalid sampleId or assigneeId' });
         return;
@@ -540,7 +543,7 @@ export class QualityController {
         const messages = Array.isArray(sample?.data?.messages) ? sample.data.messages : [];
         const parsedIndex = Number(row.targetMessageIndex);
         const targetIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : null;
-        const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(row.contextMode) ? row.contextMode : 'n-2:n+2';
+        const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(row.contextMode) ? row.contextMode : 'n-2:n+3';
         const originalText = String(row.originalText || (targetIndex !== null ? messages[targetIndex]?.content : '') || '');
         
         const updateFields: any = {
@@ -837,8 +840,8 @@ export class QualityController {
             reason: String(reason || 'Admin self rewrite'),
             originalText,
             targetMessageIndex: messageIndex,
-            contextMode: 'n-2:n+2',
-            conversationMessages: this.buildRewriteContextMessages(messages, messageIndex, 'n-2:n+2'),
+            contextMode: 'n-2:n+3',
+            conversationMessages: this.buildRewriteContextMessages(messages, messageIndex, 'n-2:n+3'),
             submittedText: String(submittedText).trim(),
             status: 'approved',
             reviewedBy: new mongoose.Types.ObjectId(actorId),

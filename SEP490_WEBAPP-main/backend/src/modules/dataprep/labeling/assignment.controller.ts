@@ -172,7 +172,7 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId } = req.body;
+      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId, similarityThreshold } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
       const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
@@ -209,6 +209,14 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Không tìm thấy DatasetVersion' });
       }
       // Mỗi version phải thuộc 1 Project — task kế thừa projectId này
+      if (similarityThreshold !== undefined) {
+        const parsedThreshold = Number(similarityThreshold);
+        if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0 || parsedThreshold > 1) {
+          return res.status(400).json({ success: false, error: 'similarityThreshold must be between 0 and 1.' });
+        }
+        await DatasetVersion.updateOne({ _id: versionId }, { $set: { similarityThreshold: parsedThreshold } });
+        (version as any).similarityThreshold = parsedThreshold;
+      }
       const projectId = (version as any).projectId;
       if (!projectId) {
         return res.status(400).json({ success: false, error: 'DatasetVersion chưa thuộc Project nào. Vui lòng tạo/chọn Project trước.' });
@@ -343,7 +351,7 @@ export class AssignmentController {
   async createBatchAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId, checkerId } = req.body;
+      const { assigneeIds, sampleStartIndex, sampleCount, taskType, priority, batchName, aiAssigneeIds, supervisorId, checkerId, similarityThreshold } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
       const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
@@ -363,6 +371,14 @@ export class AssignmentController {
       const versionDoc = await DatasetVersion.findById(versionId).lean();
       if (!versionDoc) {
         return res.status(404).json({ success: false, error: 'Không tìm thấy DatasetVersion' });
+      }
+      if (similarityThreshold !== undefined) {
+        const parsedThreshold = Number(similarityThreshold);
+        if (!Number.isFinite(parsedThreshold) || parsedThreshold < 0 || parsedThreshold > 1) {
+          return res.status(400).json({ success: false, error: 'similarityThreshold must be between 0 and 1.' });
+        }
+        await DatasetVersion.updateOne({ _id: versionId }, { $set: { similarityThreshold: parsedThreshold } });
+        (versionDoc as any).similarityThreshold = parsedThreshold;
       }
       const projectId = (versionDoc as any).projectId;
       if (!projectId) {
@@ -1719,6 +1735,10 @@ export class AssignmentController {
    */
   async setCanonical(req: Request, res: Response) {
     try {
+      const role = String((req as any).user?.role || '').toLowerCase();
+      if (!['admin', 'supervisor'].includes(role)) {
+        return res.status(403).json({ success: false, error: 'Only Admin or Supervisor can publish a manual canonical label.' });
+      }
       const { versionId, sampleId, labels, targetTextSnapshot, sourceAnnotatorIds } = req.body;
       const publishedBy = (req as any).user?.id || (req as any).user?._id;
       if (!versionId || !sampleId) {

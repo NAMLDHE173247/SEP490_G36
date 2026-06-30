@@ -4,7 +4,10 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import axios from 'axios';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_please_change_in_production';
+const JWT_SECRET: string = process.env.JWT_SECRET ?? '';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is required. Refusing to start with an insecure fallback secret.');
+}
 const JWT_EXPIRES_IN = '7d';
 
 export const register = async (req: Request, res: Response) => {
@@ -44,8 +47,10 @@ export const register = async (req: Request, res: Response) => {
     });
     await user.save();
 
-    // Create token with role
-    const token = jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    // Pending self-registrations must not receive a usable access token.
+    const token = user.status === 'active'
+      ? jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+      : null;
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -361,16 +366,15 @@ const handleSocialCallbackUser = async (email: string, name: string) => {
       email,
       passwordHash,
       role: 'staff',
-      status: 'active',
+      status: 'pending',
     });
     await user.save();
     console.log(`🌱 Created new social user via Redirect OAuth: ${email}`);
-  } else if (user.status === 'pending') {
-    user.status = 'active';
-    await user.save();
-    console.log(`🔓 Auto-approved existing pending user via Redirect OAuth: ${email}`);
   }
 
+  if (user.status === 'pending') {
+    throw new Error('Account is pending administrator approval.');
+  }
   if (user.status === 'banned' || user.status === 'inactive') {
     throw new Error('Tài khoản của bạn đã bị vô hiệu hóa.');
   }

@@ -14,7 +14,7 @@ import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
 import { CheckerActivityLog } from '../models/CheckerActivityLog';
 import { apiKeyService } from '../services/apiKeyService';
-import { getAuthUserId, isManager } from '../utils/auth';
+import { getAuthUserId, isAssignmentReviewer, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
 import { EvalFormat, inferFormatFromRow } from '../utils/evalUtils';
 import { versionService, type DatasetOperationType } from '../modules/dataprep/versions/version.service';
@@ -1677,7 +1677,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1720,7 +1720,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1772,7 +1772,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1855,7 +1855,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1877,6 +1877,22 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           return;
         }
         messageRole = parsedMessageRole;
+      }
+
+      // Publish may carry the final decision so the client does not need to call
+      // resolve + publish as two separate HTTP requests for every target.
+      const finalLabels = Array.isArray(req.body?.finalLabels) ? req.body.finalLabels : [];
+      if (finalLabels.length > 0) {
+        await resolveAssignmentAdjudication({
+          datasetVersionId: id,
+          sampleId,
+          targetScope,
+          messageIndex,
+          messageRole,
+          finalLabels,
+          note: String(req.body?.note || ''),
+          resolvedBy: ownerId,
+        });
       }
 
       const adjudication = await publishAssignmentAdjudication({
@@ -1935,7 +1951,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;

@@ -8,7 +8,7 @@ export interface IDatasetCanonicalLabel extends Document {
   messageRole?: 'user' | 'assistant' | null;
   labels: string[];
   targetTextSnapshot?: string;
-  sourceType: 'owner_manual_resolution';
+  sourceType: 'single_annotator' | 'staff_consensus' | 'checker_adjudication' | 'owner_manual_resolution';
   resolutionRef?: Types.ObjectId | null;
   sourceAnnotatorIds: string[];
   publishedBy: Types.ObjectId;
@@ -47,7 +47,7 @@ const DatasetCanonicalLabelSchema = new Schema<IDatasetCanonicalLabel>(
     targetTextSnapshot: { type: String, default: '' },
     sourceType: {
       type: String,
-      enum: ['owner_manual_resolution'] as const,
+      enum: ['single_annotator', 'staff_consensus', 'checker_adjudication', 'owner_manual_resolution'] as const,
       default: 'owner_manual_resolution',
     },
     resolutionRef: {

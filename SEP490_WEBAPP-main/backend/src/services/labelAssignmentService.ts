@@ -1779,7 +1779,7 @@ export async function publishAssignmentAdjudication(params: {
         messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
         labels: adjudication.finalLabels,
         targetTextSnapshot: String((adjudication as any).targetTextSnapshot || ''),
-        sourceType: 'owner_manual_resolution',
+        sourceType: 'checker_adjudication',
         resolutionRef: adjudication._id,
         sourceAnnotatorIds: Array.isArray(adjudication.annotatorSets)
           ? adjudication.annotatorSets.map((item: any) => String(item.annotatorId || '')).filter(Boolean)
