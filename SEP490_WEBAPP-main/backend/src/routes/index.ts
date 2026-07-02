@@ -51,7 +51,7 @@ import {
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
-import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys } from '../controllers/configController';
+import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys, getCliProxyStatus, getCliProxyModels, startCliProxyOAuth, getCliProxyOAuthStatus, listCliProxyAccounts, disconnectCliProxyAccount } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
 import { isManager } from '../utils/auth';
 
@@ -75,6 +75,14 @@ const requireManager: express.RequestHandler = (req, res, next) => {
 const requireAdjudicator: express.RequestHandler = (req, res, next) => {
   if (!['admin', 'supervisor', 'checker'].includes(String((req as any).user?.role || ''))) {
     res.status(403).json({ error: 'Admin, supervisor, or checker role required.' });
+    return;
+  }
+  next();
+};
+
+const requireAdmin: express.RequestHandler = (req, res, next) => {
+  if (String((req as any).user?.role || '') !== 'admin') {
+    res.status(403).json({ error: 'Admin role required.' });
     return;
   }
   next();
@@ -190,8 +198,14 @@ router.get('/config/gpu-url', authMiddleware, requireManager, getGpuConfig);
 router.post('/config/gpu-url', authMiddleware, requireManager, updateGpuConfig);
 router.get('/config/personal-keys', authMiddleware, getPersonalApiKeys);
 router.put('/config/personal-keys', authMiddleware, updatePersonalApiKeys);
-router.get('/config/global-keys', authMiddleware, requireManager, getGlobalApiKeys);
-router.put('/config/global-keys', authMiddleware, requireManager, updateGlobalApiKeys);
+router.get('/config/global-keys', authMiddleware, requireAdmin, getGlobalApiKeys);
+router.put('/config/global-keys', authMiddleware, requireAdmin, updateGlobalApiKeys);
+router.get('/config/cli-proxy/status', authMiddleware, getCliProxyStatus);
+router.get('/config/cli-proxy/models', authMiddleware, getCliProxyModels);
+router.post('/config/cli-proxy/oauth/:provider/start', authMiddleware, startCliProxyOAuth);
+router.get('/config/cli-proxy/oauth/status', authMiddleware, getCliProxyOAuthStatus);
+router.get('/config/cli-proxy/accounts', authMiddleware, listCliProxyAccounts);
+router.delete('/config/cli-proxy/accounts/:accountId', authMiddleware, disconnectCliProxyAccount);
 
 // Training Routes
 router.post('/train/start', authMiddleware, requireManager, upload.single('dataset_file'), startTraining);

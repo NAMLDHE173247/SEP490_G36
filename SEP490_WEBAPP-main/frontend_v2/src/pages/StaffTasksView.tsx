@@ -128,14 +128,16 @@ function StaffTasksView({ onOpenTask }) {
   const rewriteTaskCards = React.useMemo(() => {
     const groups: Record<string, any[]> = {};
     rewriteTasks.forEach((t: any) => {
-      const versionId = t.datasetVersionId || 'default';
-      if (!groups[versionId]) groups[versionId] = [];
-      groups[versionId].push(t);
+      const versionId = t.datasetVersionId || 'default';
+      const groupKey = `${versionId}::${t.sourceTaskName || t.taskName || 'rewrite'}`;
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(t);
     });
 
-    return Object.keys(groups).map((versionId) => {
-      const groupTasks = groups[versionId];
-      const sampleTask = groupTasks[0];
+    return Object.keys(groups).map((groupKey) => {
+      const groupTasks = groups[groupKey];
+      const sampleTask = groupTasks[0];
+      const versionId = sampleTask.datasetVersionId || groupKey.split('::')[0];
       const completed = groupTasks.filter((t: any) => ['submitted', 'approved'].includes(t.status)).length;
       const total = groupTasks.length;
       
@@ -153,15 +155,16 @@ function StaffTasksView({ onOpenTask }) {
       else if (priorities.includes('medium')) highestPriority = 'medium';
       else if (priorities.includes('low')) highestPriority = 'low';
 
-      const prjName = sampleTask.projectName || 'Stage 4 Rewrite';
+      const prjName = sampleTask.projectName || 'Stage 4 Rewrite';
+      const sourceTaskName = sampleTask.sourceTaskName || sampleTask.taskName || prjName;
 
       return {
-        id: versionId,
-        name: `Viết lại câu trả lời AI - ${prjName}`,
-        dataset: sampleTask.dataset || prjName,
-        version: sampleTask.versionName || sampleTask.version || 'v1',
-        batchStart: 1,
-        batchCount: total,
+        id: `rewrite-${versionId}-${sourceTaskName}`,
+        name: sourceTaskName,
+        dataset: sampleTask.sourceDataset || sampleTask.dataset || prjName,
+        version: sampleTask.sourceVersion || sampleTask.versionName || sampleTask.version || 'v1',
+        batchStart: Number(sampleTask.batchStart || 1),
+        batchCount: Number(sampleTask.batchCount || total),
         status: groupStatus,
         priority: highestPriority,
         taskType: 'rewrite',
@@ -169,7 +172,8 @@ function StaffTasksView({ onOpenTask }) {
         createdAt: sampleTask.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
         totalSamples: total,
         labeledCount: completed,
-        supervisor: 'Admin',
+        supervisor: sampleTask.supervisor || 'Chưa xác định',
+        deadline: sampleTask.deadline || null,
         rewriteTasks: groupTasks,
       };
     });

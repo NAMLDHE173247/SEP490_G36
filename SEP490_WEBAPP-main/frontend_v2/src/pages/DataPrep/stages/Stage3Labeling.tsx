@@ -12,6 +12,7 @@ import './Stage3Labeling.css';
 import { useToast } from '../../../hooks/useToast';
 import ToastContainer from '../../../components/ToastContainer';
 import { Stage3AiReview } from '../../../components/dataprep/Stage3AiReview';
+import { getCliProxyModels } from '../../../services/configApi';
 
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
@@ -278,7 +279,16 @@ export const Stage3Labeling: React.FC = () => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway'>('deepseek');
+  const [aiModel, setAiModel] = React.useState('');
+  const [gatewayModels, setGatewayModels] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels().then((result) => {
+      setGatewayModels(result.models || []);
+      setAiModel(result.defaultModel || '');
+    }).catch(() => { setGatewayModels([]); setAiModel(''); });
+  }, [aiProvider, gatewayModels.length]);
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -1401,13 +1411,21 @@ export const Stage3Labeling: React.FC = () => {
                       className="label-model-select"
                       style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                       value={aiProvider}
-                      onChange={e => setAiProvider(e.target.value as any)}
+                      onChange={e => { setAiProvider(e.target.value as any); setAiModel(''); }}
                       disabled={isLabelingWithAI}
                     >
+                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="deepseek">Deepseek</option>
                       <option value="groq">Groq</option>
+                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="openrouter">OpenRouter</option>
                     </select>
+                    {aiProvider === 'oauth_gateway' && (
+                      <select className="label-model-select" value={aiModel} onChange={(e) => setAiModel(e.target.value)} disabled={isLabelingWithAI} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                        <option value="">Tự động chọn model</option>
+                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                    )}
                     <button
                       className="label-ai-btn"
                       style={{ flex: 1, padding: '8px', borderRadius: '6px', background: '#6366f1', color: 'white', border: 'none', cursor: 'pointer', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
@@ -1464,7 +1482,7 @@ export const Stage3Labeling: React.FC = () => {
                           }
 
                           // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
-                          const res = await apiService.previewAutoLabels(versionId, aiProvider);
+                          const res = await apiService.previewAutoLabels(versionId, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined);
                           const suggestions = res.suggestions || [];
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA

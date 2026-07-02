@@ -307,11 +307,12 @@ export const apiService = {
    */
   previewAutoLabels: async (
     versionId: string,
-    provider: 'openrouter' | 'groq' | 'deepseek'
+    provider: 'openrouter' | 'groq' | 'deepseek' | 'oauth_gateway',
+    model?: string
   ): Promise<{
     suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
-    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider });
+    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider, model });
     return response.data;
   },
 
@@ -479,25 +480,35 @@ export const apiService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${getAuthToken() || ''}`
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: data?.signal,
     });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Inference failed (${response.status})`);
+    }
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
     while (reader) {
       const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = done ? '' : (lines.pop() || '');
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          let parsed: any;
           try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.response && onChunkCallback) onChunkCallback(parsed.response);
-          } catch (e) { }
+            parsed = JSON.parse(line.slice(6));
+          } catch { continue; }
+          if (parsed.error) throw new Error(parsed.error);
+          const text = parsed.response ?? parsed.text;
+          if (typeof text === 'string' && text && onChunkCallback) onChunkCallback(text);
         }
       }
+      if (done) break;
     }
   },
 
@@ -505,7 +516,7 @@ export const apiService = {
   stopInference: async (...args: any[]) => { const response = await api.post(`/infer/stop/${args[0]}`); return response.data; },
   loadModel: async (...args: any[]) => { const response = await api.post('/model/load', { hf_model_id: args[0], ...args[1] }); return response.data; },
   unloadModel: async (...args: any[]) => { const response = await api.post(`/model/unload/${args[0]}`); return response.data; },
-  validateModel: async (...args: any[]) => { const response = await api.post('/chat/validate-model', args[0]); return response.data; },
+  validateModel: async (model: string, provider: string) => { const response = await api.post('/chat/validate-model', { model, provider }); return response.data; },
   listModelRegistries: async (...args: any[]) => { const response = await api.get('/model-registry'); return response.data; },
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/model-versions/evaluations/${args[0]}`); return response.data; },
@@ -531,7 +542,7 @@ export const apiService = {
       remainingSamples: number;
     }>;
   }> => {
-    const response = await api.get('/dataprep/labeling/assignments/available-staff');
+    const response = await api.get('/dataprep/assignments/available-staff');
     return response.data;
   },
 
@@ -771,4 +782,3 @@ export const apiService = {
     return response.data;
   },
 };
-

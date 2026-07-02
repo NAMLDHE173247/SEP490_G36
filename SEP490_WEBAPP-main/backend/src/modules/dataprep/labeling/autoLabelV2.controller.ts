@@ -6,9 +6,9 @@ import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSu
 
 import { apiKeyService } from '../../../services/apiKeyService';
 
-async function createProvider(userId: string | null | undefined, providerName?: string): Promise<ILlmProvider> {
+async function createProvider(userId: string | null | undefined, providerName?: string, model?: string): Promise<ILlmProvider> {
   const normalized = String(providerName || 'gemini').toLowerCase();
-  return apiKeyService.createProvider(userId, normalized, true);
+  return apiKeyService.createProvider(userId, normalized, true, model);
 }
 
 export class AutoLabelV2Controller {
@@ -38,9 +38,10 @@ export class AutoLabelV2Controller {
         }
       }
 
-      const { messages, provider: providerName } = req.body as {
+      const { messages, provider: providerName, model } = req.body as {
         messages?: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
         provider?: string;
+        model?: string;
       };
 
       const normalizedMessages = (messages || [])
@@ -51,7 +52,7 @@ export class AutoLabelV2Controller {
           content: String(message.content || (message as any).text || ''),
         }));
 
-      const selectedProvider = await createProvider(ownerId, providerName);
+      const selectedProvider = await createProvider(ownerId, providerName, model);
       const service = new AutoLabelV2Service(selectedProvider);
       let suggestions;
       let usedFallback = false;
@@ -63,7 +64,7 @@ export class AutoLabelV2Controller {
         usedFallback = true;
       }
 
-      res.json({ success: true, data: suggestions, providerStatus: usedFallback ? 'fallback' : 'live', provider: providerName || 'gemini' });
+      res.json({ success: true, data: suggestions, providerStatus: usedFallback ? 'fallback' : 'live', provider: providerName || 'gemini', model: model || 'auto' });
     } catch (error: any) {
       console.error('AutoLabel V2 preview error:', error);
       res.status(error.statusCode || 500).json({

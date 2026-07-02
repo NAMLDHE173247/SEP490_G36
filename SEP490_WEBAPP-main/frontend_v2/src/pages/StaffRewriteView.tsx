@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import '../styles/staffrewrite.css';
 import { stage4Api } from '../services/stage4Api';
+import { getCliProxyModels } from '../services/configApi';
 import * as XLSX from 'xlsx';
 
 const REWRITE_REASON_VI_MAP: Record<string, string> = {
@@ -46,6 +47,9 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [aiProvider, setAiProvider] = useState<'oauth_gateway' | 'openrouter' | 'groq' | 'deepseek'>('oauth_gateway');
+  const [aiModel, setAiModel] = useState('');
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
   const [offlineMessage, setOfflineMessage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -107,18 +111,16 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     return messages.slice(start, end + 1);
   };
 
-  // Auto save on back as draft
-  const handleBackWithSave = async () => {
-    if (drawerTask && rewriteDraftText.trim() && drawerTask.status !== 'submitted' && drawerTask.status !== 'approved') {
-      const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
-      try {
-        await stage4Api.submitRewrite(versionId, drawerTask.id, rewriteDraftText.trim(), undefined, 'assigned');
-      } catch (e) {
-        console.error('Failed to auto-save rewrite draft on back', e);
-      }
-    }
-    onBack();
-  };
+  React.useEffect(() => {
+    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels().then((result) => {
+      setGatewayModels(result.models || []);
+      setAiModel(result.defaultModel || '');
+    }).catch(() => { setGatewayModels([]); setAiModel(''); });
+  }, [aiProvider, gatewayModels.length]);
+
+  // Navigation never writes data. Saving is always explicit.
+  const handleBackWithSave = () => onBack();
 
   // Filter & Search logic
   const filteredTasks = useMemo(() => {
@@ -168,6 +170,9 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   };
 
   const handleCloseDrawer = async () => {
+    setDrawerTask(null);
+    setRewriteDraftText('');
+    return;
     if (drawerTask && rewriteDraftText.trim() && drawerTask.status !== 'submitted' && drawerTask.status !== 'approved') {
       const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
       try {
@@ -506,7 +511,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                   <td className="sr-table-cell sr-cell-snippet">{aiSnippet}{aiSnippet.length >= 70 ? '...' : ''}</td>
                   <td className="sr-table-cell sr-cell-reason">
                     {item.reason && item.reason !== 'None' ? (
-                      <span className="sr-reason-chip">{REWRITE_REASON_VI_MAP[item.reason] || item.reason}</span>
+                      <span className="sr-reason-chip" title={`Nguồn: ${item.reasonSource || 'Quality Review (system aggregate)'}`}>{REWRITE_REASON_VI_MAP[item.reason] || item.reason}</span>
                     ) : '—'}
                   </td>
                   <td className="sr-table-cell">{renderStatusBadge(status, item.submittedText)}</td>
@@ -556,6 +561,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                 {drawerTask.reason && drawerTask.reason !== 'None' && (
                   <span className="sr-reason-alert-chip"><AlertCircle size={12} /> Lỗi: {REWRITE_REASON_VI_MAP[drawerTask.reason] || drawerTask.reason}</span>
                 )}
+                <span style={{ fontSize: 11, color: '#64748b' }}>Nguồn đánh giá: {drawerTask.reasonSource || 'Quality Review (system aggregate)'}</span>
               </div>
               <div className="sr-drawer-actions">
                 {['submitted', 'approved', 'checker_approved'].includes(drawerTask.status) ? (
@@ -660,6 +666,16 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                   
                   {!['submitted', 'approved', 'checker_approved'].includes(drawerTask.status) && (
                     <div className="sr-ai-suggest-bar">
+                      <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value as any); setAiModel(''); }} className="sr-context-select">
+                        <option value="oauth_gateway">OAuth Gateway</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="groq">Groq</option>
+                        <option value="deepseek">DeepSeek</option>
+                      </select>
+                      {aiProvider === 'oauth_gateway' && <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sr-context-select">
+                        <option value="">Tự động chọn model</option>
+                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>}
                       <span>Sử dụng AI gợi ý làm bản nháp hoặc tự viết lại.</span>
                       <button 
                         className="sr-ai-suggest-btn"
@@ -667,7 +683,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                         onClick={() => {
                           const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
                           setIsSuggesting(true);
-                          stage4Api.suggestRewrite(versionId, drawerTask.id)
+                          stage4Api.suggestRewrite(versionId, drawerTask.id, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined)
                             .then(res => setRewriteDraftText(res.suggestedText || rewriteDraftText))
                             .catch(err => alert(err?.response?.data?.error || 'Không thể lấy gợi ý AI.'))
                             .finally(() => setIsSuggesting(false));

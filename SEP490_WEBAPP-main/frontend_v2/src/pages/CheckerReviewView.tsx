@@ -43,6 +43,8 @@ const LOGS_PAGE_SIZE = 6;
 export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   const [items, setItems] = useState<QueueItem[]>([]);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
+  const [projectCatalog, setProjectCatalog] = useState<any[]>([]);
+  const [rewriteCountsByVersion, setRewriteCountsByVersion] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -52,24 +54,27 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   const [selected, setSelected] = useState<QueueItem | null>(null);
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'conflicts' | 'history' | 'logs' | 'rewrites'>('conflicts');
+  const [activeTab, setActiveTab] = useState<'conflicts' | 'history' | 'logs' | 'rewrites' | 'rewrite_history'>('conflicts');
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [logsPage, setLogsPage] = useState(1);
   const [logsSortOrder, setLogsSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [logsActionFilter, setLogsActionFilter] = useState('all');
+  const [logsQuery, setLogsQuery] = useState('');
 
   const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
+  const [rewriteQuery, setRewriteQuery] = useState('');
   const [loadingRewrites, setLoadingRewrites] = useState(false);
   const [reviewingRewrite, setReviewingRewrite] = useState<any | null>(null);
   const [rewriteReviewNote, setRewriteReviewNote] = useState('');
   const [isSubmittingRewriteReview, setIsSubmittingRewriteReview] = useState(false);
 
   const fetchRewriteAssignments = async () => {
-    if (!selectedVersionId) return;
     setLoadingRewrites(true);
     try {
-      const res = await api.get(`/dataprep/versions/${selectedVersionId}/quality/rewrite-assignments`);
-      setRewriteTasks(res.data.tasks || []);
+      const res = await api.get('/dataprep/stage4/rewrite-assignments');
+      const rows = Array.isArray(res.data?.tasks) ? res.data.tasks : [];
+      setRewriteTasks(selectedVersionId ? rows.filter((task: any) => String(task.datasetVersionId) === String(selectedVersionId)) : rows);
     } catch (e) {
       console.error('Failed to fetch rewrite tasks', e);
     } finally {
@@ -102,6 +107,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       const reviewableTasks = Array.from(new Map(tasks.map((task: any) => [
         String(task.datasetVersionId || task.versionId || task.version || task._id || task.id || '').split('_')[0], task
       ])).values()) as any[];
+      setProjectCatalog(reviewableTasks);
 
       const results = await Promise.allSettled(reviewableTasks.map(async (task: any) => {
         const versionId = String(task.datasetVersionId || task.versionId || task.version || task._id || task.id || '').split('_')[0];
@@ -126,10 +132,22 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
           })) as ReviewRow[];
       }));
 
+      const rewriteResults = await Promise.allSettled(reviewableTasks.map(async (task: any) => {
+        const versionId = String(task.datasetVersionId || task.versionId || task.version || task._id || task.id || '').split('_')[0];
+        if (!versionId) return { versionId, pending: 0 };
+        const res = await api.get(`/dataprep/versions/${versionId}/quality/rewrite-assignments`);
+        const rows = Array.isArray(res.data?.tasks) ? res.data.tasks : [];
+        return { versionId, pending: rows.filter((row: any) => ['submitted', 'checker_approved'].includes(String(row.status))).length };
+      }));
+
       const merged = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
       const unique = Array.from(new Map(merged.map(item => [`${item.versionId}-${item.sampleId}`, item])).values());
       const submittedRows = reviewResults.flatMap(result => result.status === 'fulfilled' ? result.value : []);
       const uniqueRows = Array.from(new Map(submittedRows.map(row => [row.assignmentId, row])).values());
+      const rewriteCountMap: Record<string, number> = {};
+      rewriteResults.forEach(result => {
+        if (result.status === 'fulfilled' && result.value.versionId) rewriteCountMap[result.value.versionId] = result.value.pending;
+      });
 
       unique.sort((a, b) => {
         if (a.status !== b.status) return a.status === 'pending' ? -1 : b.status === 'pending' ? 1 : 0;
@@ -144,6 +162,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       });
       setItems(unique);
       setReviewRows(uniqueRows);
+      setRewriteCountsByVersion(rewriteCountMap);
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Không thể tải danh sách cần quyết định.');
     } finally {
@@ -154,12 +173,8 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   useEffect(() => {
     void loadQueue();
     const timer = window.setInterval(() => {
-      void loadQueue(true);
-      if (selectedVersionId) {
-        if (activeTab === 'logs') void fetchLogs(selectedVersionId, true);
-        if (activeTab === 'rewrites') void fetchRewriteAssignments();
-      }
-    }, 10000);
+      if (document.visibilityState === 'visible') void loadQueue(true);
+    }, 30000);
 
     // Bật SSE realtime để nhận thông báo nhân viên nộp bài
     const token = getAuthToken();
@@ -182,7 +197,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       window.clearInterval(timer);
       eventSource.close();
     };
-  }, [selectedVersionId, activeTab]);
+  }, [sortBy]);
 
   useEffect(() => {
     setPage(1);
@@ -208,7 +223,22 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       overlapReviews: ReviewGroup[];
       resolvedConflictsCount: number;
       pendingConflictsCount: number;
+      rewritePendingCount: number;
     }>();
+
+    projectCatalog.forEach(task => {
+      const vid = String(task.datasetVersionId || task.versionId || task.version || task._id || task.id || '').split('_')[0];
+      if (!vid || map.has(vid)) return;
+      map.set(vid, {
+        versionId: vid,
+        projectName: task.name || task.taskName || 'Dự án chưa đặt tên',
+        datasetName: task.dataset || task.datasetName || task.projectName || 'Dataset',
+        task,
+        conflicts: [], reviewRows: [], quickReviews: [], overlapReviews: [],
+        resolvedConflictsCount: 0, pendingConflictsCount: 0,
+        rewritePendingCount: rewriteCountsByVersion[vid] || 0,
+      });
+    });
 
     items.forEach(item => {
       const vid = item.versionId;
@@ -223,7 +253,8 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
           quickReviews: [],
           overlapReviews: [],
           resolvedConflictsCount: 0,
-          pendingConflictsCount: 0
+          pendingConflictsCount: 0,
+          rewritePendingCount: rewriteCountsByVersion[vid] || 0
         });
       }
       const p = map.get(vid)!;
@@ -248,7 +279,8 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
           quickReviews: [],
           overlapReviews: [],
           resolvedConflictsCount: 0,
-          pendingConflictsCount: 0
+          pendingConflictsCount: 0,
+          rewritePendingCount: rewriteCountsByVersion[vid] || 0
         });
       }
       map.get(vid)!.reviewRows.push(row);
@@ -301,8 +333,15 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       p.overlapReviews = pGroups.filter(g => !!g.conflictItem && g.rows.length >= 2);
     });
 
-    return Array.from(map.values()).sort((a, b) => a.projectName.localeCompare(b.projectName, 'vi'));
-  }, [items, reviewRows]);
+    return Array.from(map.values())
+      .filter(project => project.overlapReviews.length + project.quickReviews.length + project.resolvedConflictsCount > 0)
+      .sort((a, b) => {
+        const pendingA = a.overlapReviews.length + a.quickReviews.length;
+        const pendingB = b.overlapReviews.length + b.quickReviews.length;
+        if ((pendingA > 0) !== (pendingB > 0)) return pendingA > 0 ? -1 : 1;
+        return a.projectName.localeCompare(b.projectName, 'vi');
+      });
+  }, [items, reviewRows, projectCatalog, rewriteCountsByVersion]);
 
   const selectedProject = useMemo(() => {
     if (!selectedVersionId) return null;
@@ -310,7 +349,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   }, [projects, selectedVersionId]);
 
   const filteredProjects = useMemo(() => projects.filter(project => {
-    const pending = project.overlapReviews.length + project.quickReviews.length;
+    const pending = project.overlapReviews.length + project.quickReviews.length + project.rewritePendingCount;
     if (projectStatus === 'pending') return pending > 0;
     if (projectStatus === 'completed') return pending === 0;
     return true;
@@ -331,14 +370,19 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
   }, [projects]);
 
   const sortedLogs = useMemo(() => {
-    const logsCopy = [...activityLogs];
+    const normalizedQuery = logsQuery.trim().toLowerCase();
+    const logsCopy = activityLogs.filter(log => {
+      const matchesAction = logsActionFilter === 'all' || log.action === logsActionFilter;
+      const haystack = `${log.userName || ''} ${log.userEmail || ''} ${log.sampleKey || ''} ${log.details || ''}`.toLowerCase();
+      return matchesAction && (!normalizedQuery || haystack.includes(normalizedQuery));
+    });
     logsCopy.sort((a, b) => {
       const timeA = new Date(a.createdAt).getTime();
       const timeB = new Date(b.createdAt).getTime();
       return logsSortOrder === 'desc' ? timeB - timeA : timeA - timeB;
     });
     return logsCopy;
-  }, [activityLogs, logsSortOrder]);
+  }, [activityLogs, logsSortOrder, logsActionFilter, logsQuery]);
 
   const logsTotalPages = Math.ceil(sortedLogs.length / LOGS_PAGE_SIZE) || 1;
   const visibleLogs = useMemo(() => {
@@ -346,12 +390,26 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     return sortedLogs.slice(start, start + LOGS_PAGE_SIZE);
   }, [sortedLogs, logsPage]);
 
+  const pendingRewriteTasks = useMemo(() => {
+    const normalizedQuery = rewriteQuery.trim().toLowerCase();
+    return rewriteTasks.filter(task => {
+      if (!['submitted', 'checker_approved'].includes(String(task.status))) return false;
+      const haystack = `${task.convId || ''} ${task.assigneeName || task.assigneeId?.name || ''} ${task.reason || ''} ${task.submittedText || ''}`.toLowerCase();
+      return !normalizedQuery || haystack.includes(normalizedQuery);
+    });
+  }, [rewriteTasks, rewriteQuery]);
+  const resolvedRewriteTasks = useMemo(() => rewriteTasks.filter(task =>
+    ['approved', 'rejected'].includes(String(task.status))
+  ), [rewriteTasks]);
+
   const selectProject = (pId: string) => {
     const proj = projects.find(p => p.versionId === pId);
     setSelectedVersionId(pId);
     if (proj) {
       if (proj.overlapReviews.length > 0) {
         setActiveTab('conflicts');
+      } else if (proj.rewritePendingCount > 0) {
+        setActiveTab('rewrites');
       } else {
         setActiveTab('history');
       }
@@ -451,10 +509,10 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
             ) : (
               <div className="project-grid">
                 {filteredProjects.map(p => {
-                  const totalConflicts = p.conflicts.length;
+                  const totalConflicts = p.overlapReviews.length + p.resolvedConflictsCount;
                   const resolved = p.resolvedConflictsCount;
                   const pct = totalConflicts > 0 ? Math.round((resolved / totalConflicts) * 100) : 100;
-                  const pendingTotal = p.overlapReviews.length;
+                  const pendingTotal = p.overlapReviews.length + p.quickReviews.length;
 
                   return (
                     <article key={p.versionId} className="project-card" onClick={() => selectProject(p.versionId)}>
@@ -465,12 +523,10 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
 
                         <div className="project-progress-container">
                           <div className="progress-labels">
-                            <span>Tiến độ phân giải</span>
+                            <span>Tiến độ duyệt nhãn</span>
                             <span>{resolved}/{totalConflicts} ({pct}%)</span>
                           </div>
-                          <div className="sv-task-progress">
-                            <span style={{ width: `${pct}%` }}></span>
-                          </div>
+                          <div className="sv-task-progress"><span style={{ width: `${pct}%` }} /></div>
                         </div>
 
                         <div className="project-mini-kpis">
@@ -526,22 +582,13 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               className={activeTab === 'conflicts' ? 'active' : ''}
               onClick={() => setActiveTab('conflicts')}
             >
-              Phân xử bất đồng <span>{selectedProject?.overlapReviews.length}</span>
-            </button>
-            <button
-              className={activeTab === 'rewrites' ? 'active' : ''}
-              onClick={() => {
-                setActiveTab('rewrites');
-                void fetchRewriteAssignments();
-              }}
-            >
-              Duyệt Viết lại <span>{rewriteTasks.filter(t => t.status === 'submitted').length}</span>
+              Phân xử nhãn <span>{selectedProject?.overlapReviews.length}</span>
             </button>
             <button
               className={activeTab === 'history' ? 'active' : ''}
               onClick={() => setActiveTab('history')}
             >
-              Đã chốt <span>{selectedProject?.resolvedConflictsCount}</span>
+              Nhãn đã chốt <span>{selectedProject?.resolvedConflictsCount}</span>
             </button>
             <button
               className={activeTab === 'logs' ? 'active' : ''}
@@ -726,6 +773,16 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                   </div>
                   <div className="sv-controls">
                     <div className="sv-select">
+                      <select value={logsActionFilter} onChange={(e) => { setLogsActionFilter(e.target.value); setLogsPage(1); }}>
+                        <option value="all">Mọi thao tác</option>
+                        <option value="publish">Chốt nhãn</option>
+                        <option value="rewrite_approved">Duyệt rewrite</option>
+                        <option value="rewrite_redo">Yêu cầu làm lại</option>
+                        <option value="rewrite_rejected">Từ chối rewrite</option>
+                      </select>
+                    </div>
+                    <div className="sv-search"><Search size={14} /><input value={logsQuery} onChange={(e) => { setLogsQuery(e.target.value); setLogsPage(1); }} placeholder="Tìm người, sample, nội dung..." /></div>
+                    <div className="sv-select">
                       <select
                         value={logsSortOrder}
                         onChange={(e) => {
@@ -779,6 +836,21 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                         actionClass = 'action-publish';
                         markerClass = 'marker-publish';
                         MarkerIcon = CheckSquare;
+                      } else if (log.action === 'rewrite_approved') {
+                        actionText = 'Duyệt rewrite';
+                        actionClass = 'action-publish';
+                        markerClass = 'marker-publish';
+                        MarkerIcon = CheckCircle2;
+                      } else if (log.action === 'rewrite_redo') {
+                        actionText = 'Yêu cầu làm lại';
+                        actionClass = 'action-save';
+                        markerClass = 'marker-save';
+                        MarkerIcon = RefreshCw;
+                      } else if (log.action === 'rewrite_rejected') {
+                        actionText = 'Từ chối rewrite';
+                        actionClass = 'action-save';
+                        markerClass = 'marker-save';
+                        MarkerIcon = X;
                       }
 
                       const dateStr = new Date(log.createdAt).toLocaleString('vi-VN');
@@ -805,6 +877,19 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                               <p className="log-details-text">
                                 {log.details}
                               </p>
+
+                              {(log.before || log.after) && (
+                                <div className="log-state-transition" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
+                                  <span style={{ padding: '4px 8px', borderRadius: '6px', background: '#f1f5f9', color: '#475569', fontSize: '11px', fontWeight: 700 }}>
+                                    {log.before?.status || '—'}
+                                  </span>
+                                  <ArrowRight size={13} color="#94a3b8" />
+                                  <span style={{ padding: '4px 8px', borderRadius: '6px', background: '#dcfce7', color: '#166534', fontSize: '11px', fontWeight: 700 }}>
+                                    {log.after?.status || '—'}
+                                  </span>
+                                  {log.reason && <span style={{ color: '#64748b', fontSize: '12px' }}>Lý do: {log.reason}</span>}
+                                </div>
+                              )}
 
                               {log.sampleKey && (
                                 <div className="log-target-ref" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', width: '100%' }}>
@@ -895,43 +980,72 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               </section>
             )}
 
+            {activeTab === 'rewrite_history' && (
+              <section className="sv-queue">
+                <div className="rewrite-queue-header">
+                  <div>
+                    <h3>Rewrite đã chốt</h3>
+                    <p>Lịch sử các bản viết lại đã được duyệt hoặc từ chối.</p>
+                  </div>
+                </div>
+                {resolvedRewriteTasks.length === 0 ? (
+                  <div className="sv-state empty-state"><Inbox size={38}/><h3>Chưa có rewrite đã chốt</h3></div>
+                ) : (
+                  <div className="rewrite-table-wrap">
+                    <table className="rewrite-table">
+                      <thead><tr><th>Sample</th><th>Staff</th><th>Lý do</th><th>Bản đã sửa</th><th>Kết quả</th></tr></thead>
+                      <tbody>{resolvedRewriteTasks.map(task => (
+                        <tr key={task.id}>
+                          <td><strong>#{String(task.convId || task.id).substring(0, 10)}</strong></td>
+                          <td>{task.staffName || task.assigneeName || 'Staff'}</td>
+                          <td><span className="rewrite-reason">{task.reason || 'Yêu cầu viết lại'}</span></td>
+                          <td><p className="rewrite-preview">{task.submittedText || 'Không có nội dung'}</p></td>
+                          <td><span className={`rewrite-status ${task.status === 'approved' ? 'approved' : 'redo'}`}>{task.status === 'approved' ? 'Đã duyệt' : 'Đã từ chối'}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+
             {activeTab === 'rewrites' && (
               <section className="sv-queue">
+                <div className="rewrite-queue-header">
+                  <div>
+                    <h3>Rewrite chờ kiểm duyệt</h3>
+                    <p>So sánh bản gốc và bản Staff viết lại trước khi công bố.</p>
+                  </div>
+                  <div className="sv-search rewrite-search">
+                    <Search size={15} />
+                    <input value={rewriteQuery} onChange={event => setRewriteQuery(event.target.value)} placeholder="Tìm sample, Staff, lý do..." />
+                  </div>
+                </div>
                 {loadingRewrites ? (
                   <div className="sv-skeletons">
                     {[1, 2].map(i => <div key={i} className="sv-skeleton" />)}
                   </div>
-                ) : rewriteTasks.filter(t => t.status === 'submitted').length === 0 ? (
+                ) : pendingRewriteTasks.length === 0 ? (
                   <div className="sv-state empty-state">
                     <CheckCircle2 size={40} className="success-icon" />
                     <h3>Tuyệt vời!</h3>
                     <p>Không có task rewrite nào đang chờ bạn kiểm duyệt trong dự án này.</p>
                   </div>
                 ) : (
-                  <div className="sv-list">
-                    {rewriteTasks.filter(t => t.status === 'submitted').map((task) => (
-                      <article className="sv-overlap-card modern-overlap" key={task.id}>
-                        <div className="sv-overlap-top">
-                          <div>
-                            <span className="sample-number" style={{ background: '#e0e7ff', color: '#4f46e5' }}>Rewrite #{String(task.convId).substring(0, 8)}</span>
-                            <h3>Nhân viên: {task.assigneeName || task.assigneeId?.name || 'Staff'}</h3>
-                            <p className="sample-preview" style={{ color: '#ef4444' }}><strong>Lỗi cần sửa:</strong> {task.reason || 'Yêu cầu viết lại'}</p>
-                            <p className="sample-preview" style={{ marginTop: '8px', color: '#475569' }}>
-                              <strong>Bản viết lại của Staff:</strong> "{String(task.submittedText).substring(0, 100)}{String(task.submittedText).length > 100 ? '...' : ''}"
-                            </p>
-                          </div>
-                          <button
-                            className="sv-open-btn action-btn adjudication-btn"
-                            onClick={() => {
-                              setReviewingRewrite(task);
-                              setRewriteReviewNote('');
-                            }}
-                          >
-                            Kiểm duyệt bản sửa
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                  <div className="rewrite-table-wrap">
+                    <table className="rewrite-table">
+                      <thead><tr><th>Sample</th><th>Staff</th><th>Lý do rewrite</th><th>Bản Staff đã sửa</th><th>Trạng thái</th><th></th></tr></thead>
+                      <tbody>{pendingRewriteTasks.map(task => (
+                        <tr key={task.id}>
+                          <td><strong>#{String(task.convId).substring(0, 10)}</strong></td>
+                          <td>{task.assigneeName || task.assigneeId?.name || 'Staff'}</td>
+                          <td><span className="rewrite-reason">{task.reason || 'Yêu cầu viết lại'}</span></td>
+                          <td><p className="rewrite-preview">{task.submittedText || 'Chưa có nội dung'}</p></td>
+                          <td><span className="rewrite-status pending">Chờ kiểm duyệt</span></td>
+                          <td><button className="sv-open-btn action-btn adjudication-btn" onClick={() => { setReviewingRewrite(task); setRewriteReviewNote(''); }}>Kiểm duyệt</button></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 )}
               </section>
@@ -954,18 +1068,18 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       )}
 
       {reviewingRewrite && (
-        <div className="sv-modal-overlay" style={{
+        <div className="sv-modal-overlay checker-rewrite-detail-page" style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-          padding: '20px'
-        }} onClick={() => setReviewingRewrite(null)}>
-          <div className="sv-modal" style={{
-            backgroundColor: '#fff', borderRadius: '16px', width: '100%', maxWidth: '800px',
-            maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+          backgroundColor: '#f8fafc',
+          display: 'flex', alignItems: 'stretch', justifyContent: 'stretch', zIndex: 1000,
+          padding: 0
+        }}>
+          <div className="sv-modal checker-rewrite-detail-shell" style={{
+            backgroundColor: '#fff', borderRadius: 0, width: '100%', maxWidth: 'none',
+            height: '100vh', display: 'flex', flexDirection: 'column', boxShadow: 'none',
             overflow: 'hidden'
-          }} onClick={e => e.stopPropagation()}>
-            <div className="sv-modal-header" style={{
+          }}>
+            <div className="sv-modal-header checker-rewrite-detail-header" style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '16px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc'
             }}>
@@ -974,16 +1088,28 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               </h3>
               <button onClick={() => setReviewingRewrite(null)} style={{
                 background: 'none', border: 'none', cursor: 'pointer', color: '#64748b'
-              }}><X size={20} /></button>
+              }}><ArrowLeft size={18} /> Quay lại danh sách</button>
             </div>
             
-            <div className="sv-modal-body" style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div className="sv-modal-body checker-rewrite-detail-body" style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
               <div style={{ padding: '12px 16px', background: '#fef2f2', borderLeft: '4px solid #ef4444', borderRadius: '4px' }}>
                 <strong style={{ color: '#991b1b', fontSize: '13px' }}>Yêu cầu / Lỗi cần viết lại:</strong>
                 <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#7f1d1d' }}>{reviewingRewrite.reason}</p>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <section className="checker-rewrite-context" style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, background: '#fff' }}>
+                <h4 style={{ margin: '0 0 12px', color: '#334155' }}>Ngữ cảnh hội thoại</h4>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(reviewingRewrite.conversationMessages || []).map((message: any, index: number) => (
+                    <div key={index} style={{ padding: '10px 12px', borderRadius: 8, background: message.isTarget ? '#fff7ed' : message.role === 'assistant' ? '#eef2ff' : '#f8fafc', border: message.isTarget ? '1px solid #fb923c' : '1px solid #e2e8f0' }}>
+                      <strong style={{ fontSize: 11, color: '#64748b' }}>{message.role === 'assistant' ? 'AI Tutor' : 'Học sinh'}{message.isTarget ? ' · CÂU CẦN REWRITE' : ''}</strong>
+                      <div style={{ marginTop: 4, whiteSpace: 'pre-wrap', color: '#1e293b' }}>{message.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <div className="checker-rewrite-compare" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '20px' }}>
                 <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                   <h4 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bản gốc của AI (Original)</h4>
                   <p style={{ margin: 0, fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>{reviewingRewrite.originalText}</p>
@@ -1006,7 +1132,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
               </div>
             </div>
 
-            <div className="sv-modal-footer" style={{
+            <div className="sv-modal-footer checker-rewrite-detail-footer" style={{
               display: 'flex', justifyContent: 'flex-end', gap: '12px',
               padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc'
             }}>
@@ -1035,6 +1161,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                     toast.success('Đã từ chối bản viết lại và yêu cầu Staff làm lại.');
                     setReviewingRewrite(null);
                     void fetchRewriteAssignments();
+                    void fetchLogs(selectedVersionId);
                   } catch (err: any) {
                     toast.error(err.response?.data?.error || 'Có lỗi xảy ra');
                   } finally {
@@ -1058,9 +1185,10 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
                       action: 'approved',
                       note: rewriteReviewNote.trim() || 'Checker approved'
                     });
-                    toast.success('Duyệt thành công! Đã chuyển lên Supervisor.');
+                    toast.success('Đã duyệt và công bố bản viết lại thành công.');
                     setReviewingRewrite(null);
                     void fetchRewriteAssignments();
+                    void fetchLogs(selectedVersionId);
                   } catch (err: any) {
                     toast.error(err.response?.data?.error || 'Có lỗi xảy ra');
                   } finally {

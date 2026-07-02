@@ -222,7 +222,7 @@ export const Stage4Labeling: React.FC = () => {
 
   const reviewRewriteTask = async (task: any, action: 'approved' | 'redo' | 'rejected') => {
     if (!activeVersionId || !task?.id) return;
-    const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+    const note = action === 'approved' ? 'Legacy review action' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
     if (action !== 'approved' && !note?.trim()) return;
     setReviewingRewriteId(task.id);
     try {
@@ -235,7 +235,7 @@ export const Stage4Labeling: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!activeVersionId || ![10, 11].includes(currentSubStep4)) return; // step 10=Rewrite Assignment, 11=Assignment Review
+    if (!activeVersionId || ![9, 10, 11].includes(currentSubStep4)) return;
     let cancelled = false;
     const loadRewriteProgress = () => stage4Api.listRewriteAssignments(activeVersionId)
       .then((response) => { if (!cancelled) setRewriteAssignments(response.tasks || []); })
@@ -246,7 +246,7 @@ export const Stage4Labeling: React.FC = () => {
   }, [activeVersionId, currentSubStep4]);
 
   useEffect(() => {
-    if (!(currentSubStep4 === 8 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
+    if (!(currentSubStep4 === 8 || currentSubStep4 === 9 || currentSubStep4 === 10 || currentSubStep4 === 11 || currentSubStep4 === 12) || !activeVersionId) return;
 
     let cancelled = false;
     const refreshAssignmentDashboard = () => {
@@ -277,12 +277,19 @@ export const Stage4Labeling: React.FC = () => {
           setSampleComparisons(next);
         });
       }).catch(err => console.error('Failed to fetch assignment dashboard for Stage 4 Lobby:', err));
-      apiService.listUsers().then(res => {
+      apiService.getAvailableStaff().then(res => {
         if (cancelled) return;
-        const activeStaff = (res as any).users?.filter((u: any) => u.role === 'staff' && u.status === 'active') || [];
-        const staffArr = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email, username: u.username }));
+        const activeStaff = (res as any).data || [];
+        const staffArr = activeStaff.map((u: any) => ({
+          _id: u.id,
+          name: u.name,
+          email: u.email,
+          username: u.email,
+          pendingTasks: u.pendingTasks || 0,
+          remainingSamples: u.remainingSamples || 0,
+        }));
         setShareUsers(staffArr);
-      }).catch(err => console.error('Failed to fetch users:', err));
+      }).catch(err => { setShareUsers([]); console.error('Failed to fetch available staff:', err); });
     };
 
     refreshAssignmentDashboard();
@@ -347,7 +354,7 @@ export const Stage4Labeling: React.FC = () => {
   const SUB_STEPS_STAGE4 = [
     { num: 8, label: 'Xem xét Chất lượng' },
     { num: 9, label: 'Giao task Viết lại' },
-    { num: 10, label: 'Duyệt bài Viết lại' },
+    { num: 10, label: 'Theo dõi bài Viết lại' },
     { num: 11, label: 'Phân phối Dataset' },
   ];
 
@@ -2181,8 +2188,11 @@ export const Stage4Labeling: React.FC = () => {
             const staffColors = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#7c3aed', '#dc2626'];
             const selectedRewriteStaff = shareUsers.filter((u: any) => selectedRewriteStaffIds.includes(String(u._id || u.id || '')));
             const assignmentStaffPool = selectedRewriteStaff;
-            const staffList = assignmentStaffPool.length > 0
-              ? assignmentStaffPool.map((u: any, idx: number) => {
+            // Manual row dropdowns must always show every active Staff. The
+            // checked subset is only the pool used by "Tự động chia đều".
+            const manualAssignmentStaffPool = shareUsers;
+            const staffList = manualAssignmentStaffPool.length > 0
+              ? manualAssignmentStaffPool.map((u: any, idx: number) => {
                 const name = u.name || u.username || u.email || 'Unknown Staff';
                 return {
                   value: name,
@@ -2375,7 +2385,7 @@ export const Stage4Labeling: React.FC = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(100px, 1fr))', gap: '8px' }}>
                     {[
                       { label: 'Đang thực hiện', value: Math.max(0, rewriteAssignments.length - submittedCount - approvedTaskCount - redoCount), color: '#2563eb', bg: '#eff6ff' },
-                      { label: 'Chờ Admin duyệt', value: submittedCount, color: '#c2410c', bg: '#fff7ed' },
+                      { label: 'Chờ Checker duyệt', value: submittedCount, color: '#c2410c', bg: '#fff7ed' },
                       { label: 'Cần làm lại', value: redoCount, color: '#be123c', bg: '#fff1f2' },
                       { label: 'Đã duyệt', value: approvedTaskCount, color: '#15803d', bg: '#f0fdf4' },
                     ].map(status => <div key={status.label} style={{ background: status.bg, borderRadius: '8px', padding: '10px 12px' }}><div style={{ fontSize: '20px', fontWeight: '900', color: status.color }}>{status.value}</div><div style={{ fontSize: '11px', fontWeight: '700', color: status.color }}>{status.label}</div></div>)}
@@ -2639,7 +2649,7 @@ export const Stage4Labeling: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
                   <button onClick={() => setCurrentSubStep4(10)}
                     style={{ padding: '12px 24px', fontSize: '14px', fontWeight: '700', borderRadius: '8px', border: 'none', background: '#1e293b', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    Tiếp: Duyệt bài Viết lại &rarr;
+                    Tiếp: Theo dõi bài Viết lại &rarr;
                   </button>
                 </div>
               </div>
@@ -2674,13 +2684,13 @@ export const Stage4Labeling: React.FC = () => {
                       <Search size={22} />
                     </div>
                     <div>
-                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Duyệt bài Viết lại của Staff</h2>
-                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>So sánh bản gốc và bản sửa của Staff. Duyệt (Tốt) hoặc yêu cầu làm lại.</p>
+                      <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#78350f' }}>Theo dõi bài Viết lại của Staff</h2>
+                      <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#92400e' }}>Supervisor theo dõi tiến độ; Checker chịu trách nhiệm duyệt hoặc yêu cầu làm lại.</p>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                     <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Chờ duyệt</div>
+                      <div style={{ fontSize: '10px', fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>Chờ Checker</div>
                       <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', lineHeight: 1.2 }}>{pendingCount}</div>
                     </div>
                     <div style={{ background: '#fff', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '12px 18px', textAlign: 'center' }}>
@@ -2694,8 +2704,8 @@ export const Stage4Labeling: React.FC = () => {
                 {rewriteItems.length === 0 ? (
                   <div className="empty-state-card">
                     <CheckCircle size={48} className="empty-state-icon" style={{ color: '#10b981' }} />
-                    <h3 className="empty-state-title">Không có bài chờ duyệt!</h3>
-                    <p className="empty-state-desc">Tất cả bài viết lại của staff đã được xem xét và duyệt.</p>
+                    <h3 className="empty-state-title">Không có bài chờ Checker!</h3>
+                    <p className="empty-state-desc">Không có bài viết lại nào đang chờ kiểm định.</p>
                   </div>
                 ) : (
                   <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
@@ -2744,7 +2754,7 @@ export const Stage4Labeling: React.FC = () => {
                               statusLabel = 'Đã duyệt (Tốt)';
                               statusColor = { bg: '#dcfce7', text: '#15803d' };
                             } else if (task.status === 'submitted') {
-                              statusLabel = 'Chờ duyệt';
+                              statusLabel = 'Chờ Checker';
                               statusColor = { bg: '#fef9c3', text: '#854d0e' };
                             } else if (task.status === 'redo') {
                               statusLabel = 'Yêu cầu làm lại';
@@ -3406,7 +3416,7 @@ export const Stage4Labeling: React.FC = () => {
 
             const handleReviewInModal = async (task: any, action: 'approved' | 'rejected' | 'redo') => {
               if (!activeVersionId || !task?.id) return;
-              const note = action === 'approved' ? 'Được duyệt bởi Supervisor' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
+              const note = action === 'approved' ? 'Legacy review action' : window.prompt(action === 'redo' ? 'Lý do yêu cầu Staff làm lại:' : 'Lý do từ chối rewrite:');
               if (action !== 'approved' && !note?.trim()) return;
               setReviewingRewriteId(task.id);
               try {
@@ -3500,7 +3510,7 @@ export const Stage4Labeling: React.FC = () => {
                         color: '#fff',
                         borderRadius: '8px', 
                         padding: '8px 14px', 
-                        cursor: 'pointer', 
+                        cursor: 'pointer',
                         fontWeight: '800',
                         fontSize: '13px'
                       }}
@@ -3623,8 +3633,8 @@ export const Stage4Labeling: React.FC = () => {
                         border: '1px solid #bae6fd', 
                         background: '#f0f9ff', 
                         color: '#0284c7', 
-                        cursor: 'pointer', 
-                        display: 'flex', 
+                        cursor: 'pointer',
+                        display: 'none',
                         alignItems: 'center', 
                         gap: '6px' 
                       }}
@@ -3634,11 +3644,14 @@ export const Stage4Labeling: React.FC = () => {
 
                     {activeRewriteTask?.submittedText ? (
                       <>
-                        <button 
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: activeRewriteTask.status === 'approved' ? '#15803d' : '#b45309' }}>
+                          {activeRewriteTask.status === 'approved' ? 'Checker đã duyệt và công bố' : 'Đang chờ Checker kiểm định'}
+                        </span>
+                        <button
                           onClick={async () => {
                             await handleReviewInModal(activeRewriteTask, 'approved');
                           }} 
-                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          disabled={true}
                           style={{ 
                             padding: '10px 20px', 
                             fontSize: '13.5px', 
@@ -3649,7 +3662,7 @@ export const Stage4Labeling: React.FC = () => {
                             color: activeRewriteTask.status === 'approved' ? '#64748b' : '#fff', 
                             cursor: activeRewriteTask.status === 'approved' ? 'default' : 'pointer', 
                             boxShadow: activeRewriteTask.status === 'approved' ? 'none' : '0 4px 12px rgba(22,163,74,0.25)', 
-                            display: 'flex', 
+                            display: 'none',
                             alignItems: 'center', 
                             gap: '6px' 
                           }}
@@ -3661,7 +3674,7 @@ export const Stage4Labeling: React.FC = () => {
                           onClick={async () => {
                             await handleReviewInModal(activeRewriteTask, 'redo');
                           }}
-                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          disabled={true}
                           style={{ 
                             padding: '10px 18px', 
                             fontSize: '13.5px', 
@@ -3671,7 +3684,7 @@ export const Stage4Labeling: React.FC = () => {
                             background: '#fff', 
                             color: '#475569', 
                             cursor: 'pointer', 
-                            display: 'flex', 
+                            display: 'none',
                             alignItems: 'center', 
                             gap: '6px' 
                           }}
@@ -3683,7 +3696,7 @@ export const Stage4Labeling: React.FC = () => {
                           onClick={async () => {
                             await handleReviewInModal(activeRewriteTask, 'rejected');
                           }} 
-                          disabled={reviewingRewriteId === activeRewriteTask.id || activeRewriteTask.status === 'approved'}
+                          disabled={true}
                           style={{ 
                             padding: '10px 18px', 
                             fontSize: '13.5px', 
@@ -3693,7 +3706,7 @@ export const Stage4Labeling: React.FC = () => {
                             background: '#fff1f2', 
                             color: '#dc2626', 
                             cursor: 'pointer', 
-                            display: 'flex', 
+                            display: 'none',
                             alignItems: 'center', 
                             gap: '6px' 
                           }}

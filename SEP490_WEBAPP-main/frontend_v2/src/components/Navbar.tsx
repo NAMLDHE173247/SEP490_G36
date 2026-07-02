@@ -386,7 +386,7 @@ function Navbar() {
                       navigate('/dashboard', { state: { tab: 'API Keys' } });
                     }}>
                       <Shield size={18} className="dropdown-item-icon" />
-                      Cấu hình API Keys
+                      Kết nối nhà cung cấp AI
                     </li>
                     <li className="dropdown-item">
                       <Settings size={18} className="dropdown-item-icon" />

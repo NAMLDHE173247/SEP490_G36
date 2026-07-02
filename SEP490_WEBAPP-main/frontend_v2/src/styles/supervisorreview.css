@@ -1376,3 +1376,21 @@
     align-items: center;
   }
 }
+.rewrite-table-wrap { overflow:auto; border:1px solid #e2e8f0; border-radius:12px; background:#fff; }
+.rewrite-table { width:100%; min-width:940px; border-collapse:collapse; font-size:13px; }
+.rewrite-table th,.rewrite-table td { padding:12px 14px; border-bottom:1px solid #e2e8f0; text-align:left; vertical-align:top; }
+.rewrite-table th { position:sticky; top:0; z-index:2; background:#f8fafc; color:#475569; font-size:10.5px; text-transform:uppercase; letter-spacing:.04em; }
+.rewrite-table tbody tr:last-child td { border-bottom:0; }
+.rewrite-table tbody tr:hover { background:#f8fafc; }
+.rewrite-reason { display:inline-flex; max-width:210px; padding:5px 8px; border-radius:7px; background:#fff1f2; color:#be123c; line-height:1.4; }
+.rewrite-preview { max-width:330px; margin:0; color:#334155; line-height:1.5; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.rewrite-status { display:inline-flex; padding:5px 8px; border-radius:999px; white-space:nowrap; font-size:11px; font-weight:750; }
+.rewrite-status.pending { background:#fff7ed; color:#c2410c; }
+.rewrite-status.approved { background:#dcfce7; color:#15803d; }
+.rewrite-status.redo { background:#fee2e2; color:#b91c1c; }
+.rewrite-monitor-toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+.rewrite-filter-tabs { display:flex; flex-wrap:wrap; gap:6px; }
+.rewrite-filter-tabs button { border:1px solid #e2e8f0; background:#fff; color:#475569; padding:7px 10px; border-radius:8px; font-size:12px; cursor:pointer; }
+.rewrite-filter-tabs button.active { border-color:#2563eb; background:#eff6ff; color:#1d4ed8; font-weight:750; }
+.rewrite-search { width:min(360px,100%); }
+@media(max-width:760px){.rewrite-monitor-toolbar{align-items:stretch;flex-direction:column}.rewrite-search{width:100%}}

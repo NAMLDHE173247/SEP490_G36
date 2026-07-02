@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { getAuthUserId, isManager } from '../../../utils/auth';
+import { getAuthUserId, isAssignmentReviewer, isManager } from '../../../utils/auth';
 import { QualityService } from './quality.service';
 import { Stage4RewriteAssignment } from '../../../models/Stage4RewriteAssignment';
 import { Stage4Notification } from '../../../models/Stage4Notification';
@@ -14,6 +14,7 @@ import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment
 import { AutoLabelV2Service } from '../labeling/autoLabelV2.service';
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetVersion } from '../../../models/DatasetVersion';
+import { CheckerActivityLog } from '../../../models/CheckerActivityLog';
 
 const qualityService = new QualityService();
 const REWRITE_CONTEXT_MODES = ['n-2:n+3', 'n-2:n+2', 'n-1:n+1', 'n-1:n', 'target-only', 'full'] as const;
@@ -84,6 +85,7 @@ export class QualityController {
       convId: task.convId,
       subject: task.subject || '',
       reason: task.reason || 'None',
+      reasonSource: task.reasonSource || 'Quality Review (system aggregate)',
       originalText: task.originalText || '',
       targetMessageIndex: Number.isInteger(Number(task.targetMessageIndex)) ? Number(task.targetMessageIndex) : null,
       contextMode: task.contextMode || 'n-2:n+3',
@@ -373,6 +375,15 @@ export class QualityController {
       } else if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
+      // Repair legacy rewrite tasks created before checker assignment was
+      // persisted. The first active checker opening the queue claims them
+      // atomically, so they no longer disappear from every review queue.
+      if (role === 'checker') {
+        await Stage4RewriteAssignment.updateMany(
+          { checkerId: { $exists: false }, status: { $in: ['submitted', 'checker_approved'] } },
+          { $set: { checkerId: new mongoose.Types.ObjectId(userId) } },
+        );
+      }
       const page = Math.max(1, Number(req.query.page) || 1);
       const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
       const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
@@ -402,12 +413,12 @@ export class QualityController {
   async assignRewrite(req: Request, res: Response): Promise<void> {
     try {
       const actorId = getAuthUserId(req);
-      if (!actorId || !isManager(req)) {
-        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Manager role required' : 'Unauthorized' });
+      if (!actorId || !isAssignmentReviewer(req)) {
+        res.status(actorId ? 403 : 401).json({ error: actorId ? 'Checker permission required' : 'Unauthorized' });
         return;
       }
       const { versionId } = req.params;
-      const { sampleId, assigneeId, checkerId, convId, subject, reason, originalText } = req.body;
+      const { sampleId, assigneeId, checkerId, convId, subject, reason, reasonSource, originalText } = req.body;
       const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(req.body?.contextMode)
         ? req.body.contextMode
         : 'n-2:n+3';
@@ -449,6 +460,10 @@ export class QualityController {
           resolvedCheckerId = String(origAssignment.checkerId);
         }
       }
+      if (!resolvedCheckerId) {
+        const fallbackChecker = await User.findOne({ role: 'checker', status: 'active' }).select('_id').lean();
+        if (fallbackChecker) resolvedCheckerId = String(fallbackChecker._id);
+      }
 
       const task = await Stage4RewriteAssignment.findOneAndUpdate(
         { datasetVersionId: versionId, sampleId, targetMessageIndex: targetIndex >= 0 ? targetIndex : null },
@@ -461,6 +476,7 @@ export class QualityController {
           convId: convId || String((item as any).sampleId || sampleId),
           subject: subject || (item.data as any)?.subject || '',
           reason: reason || 'None',
+          reasonSource: reasonSource || 'Quality Review (system aggregate)',
           originalText: originalText || '',
           targetMessageIndex: targetIndex >= 0 ? targetIndex : null,
           contextMode,
@@ -535,6 +551,7 @@ export class QualityController {
           sampleCheckerMap.set(String(assign.sampleId), String(assign.checkerId));
         }
       });
+      const fallbackChecker = await User.findOne({ role: 'checker', status: 'active' }).select('_id').lean();
 
       await this.ensureRewriteAssignmentIndexes();
       const sampleMap = new Map(samples.map((sample: any) => [String(sample._id), sample]));
@@ -552,6 +569,7 @@ export class QualityController {
           convId: String(row.convId || sample.sampleId || row.sampleId),
           subject: String(row.subject || sample?.data?.subject || ''),
           reason: String(row.reason || 'None'),
+          reasonSource: String(row.reasonSource || 'Quality Review (system aggregate)'),
           originalText,
           targetMessageIndex: targetIndex,
           contextMode,
@@ -562,7 +580,7 @@ export class QualityController {
           checkerReviewNote: ''
         };
         
-        const resolvedCheckerId = row.checkerId || sampleCheckerMap.get(String(row.sampleId));
+        const resolvedCheckerId = row.checkerId || sampleCheckerMap.get(String(row.sampleId)) || fallbackChecker?._id;
         if (resolvedCheckerId && mongoose.Types.ObjectId.isValid(resolvedCheckerId)) {
           updateFields.checkerId = new mongoose.Types.ObjectId(resolvedCheckerId);
         }
@@ -609,6 +627,12 @@ export class QualityController {
       } else if (!isManager(req)) {
         query.assigneeId = new mongoose.Types.ObjectId(userId);
       }
+      if (role === 'checker') {
+        await Stage4RewriteAssignment.updateMany(
+          { checkerId: { $exists: false }, status: { $in: ['submitted', 'checker_approved'] } },
+          { $set: { checkerId: new mongoose.Types.ObjectId(userId) } },
+        );
+      }
       const page = Math.max(1, Number(req.query.page) || 1);
       const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 500));
       const [tasks, total] = await Promise.all([Stage4RewriteAssignment.find(query)
@@ -622,15 +646,40 @@ export class QualityController {
       const versionIds = Array.from(new Set(tasks.map((task: any) => String(task.datasetVersionId)).filter(Boolean)));
       const versions = await DatasetVersion.find({ _id: { $in: versionIds } }).select('projectName versionName versionNo').lean();
       const versionMap = new Map(versions.map((version: any) => [String(version._id), version]));
+      const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: { $in: versionIds } })
+        .select('datasetVersionId assigneeId name dataset version batchStart batchCount deadline supervisor priority')
+        .sort({ createdAt: -1 })
+        .lean();
+      const submissionByVersionAndStaff = new Map<string, any>();
+      const submissionByVersion = new Map<string, any>();
+      submissions.forEach((submission: any) => {
+        const versionKey = String(submission.datasetVersionId);
+        const exactKey = `${versionKey}:${String(submission.assigneeId)}`;
+        if (!submissionByVersionAndStaff.has(exactKey)) submissionByVersionAndStaff.set(exactKey, submission);
+        if (!submissionByVersion.has(versionKey)) submissionByVersion.set(versionKey, submission);
+      });
+      const supervisorIds = Array.from(new Set(submissions.map((submission: any) => String(submission.supervisor || '')).filter((id) => mongoose.Types.ObjectId.isValid(id))));
+      const supervisors = await User.find({ _id: { $in: supervisorIds } }).select('name email').lean();
+      const supervisorMap = new Map(supervisors.map((supervisor: any) => [String(supervisor._id), supervisor.name || supervisor.email]));
       res.json({
         tasks: tasks.map((task) => {
           const version = versionMap.get(String(task.datasetVersionId));
+          const sourceAssignment = submissionByVersionAndStaff.get(`${String(task.datasetVersionId)}:${String((task as any).assigneeId?._id || (task as any).assigneeId)}`)
+            || submissionByVersion.get(String(task.datasetVersionId));
           return {
             ...this.serializeRewriteTask(task),
             datasetVersionId: String(task.datasetVersionId),
             projectName: version?.projectName || '',
             dataset: version?.projectName || '',
             versionName: version?.versionName || (version?.versionNo ? `v${version.versionNo}` : ''),
+            sourceTaskName: sourceAssignment?.name || '',
+            sourceDataset: sourceAssignment?.dataset || version?.projectName || '',
+            sourceVersion: sourceAssignment?.version || '',
+            batchStart: Number(sourceAssignment?.batchStart || 1),
+            batchCount: Number(sourceAssignment?.batchCount || 0),
+            deadline: sourceAssignment?.deadline || null,
+            priority: sourceAssignment?.priority || 'medium',
+            supervisor: supervisorMap.get(String(sourceAssignment?.supervisor || '')) || sourceAssignment?.supervisor || '',
           };
         }),
         pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
@@ -925,7 +974,9 @@ export class QualityController {
       }
 
       // Run AutoLabelV2Service to predict the action for the submitted text
-      const provider = await apiKeyService.createProvider(userId, 'gemini', true);
+      const providerName = String(req.body?.provider || 'oauth_gateway');
+      const model = typeof req.body?.model === 'string' ? req.body.model.trim() : undefined;
+      const provider = await apiKeyService.createProvider(userId, providerName, true, model || undefined);
       const autoLabelService = new AutoLabelV2Service(provider);
       
       let suggestion;
@@ -1108,6 +1159,7 @@ export class QualityController {
         res.status(404).json({ error: 'Rewrite task not found' });
         return;
       }
+      const previousStatus = task.status;
       if (action === 'approved' && !String(task.submittedText || '').trim()) {
         res.status(409).json({ error: 'Staff has not submitted rewritten text.' });
         return;
@@ -1118,23 +1170,32 @@ export class QualityController {
       }
 
       const role = (req as any).user?.role;
-      const isActorChecker = String(task.checkerId) === String(actorId) || role === 'checker';
-      const isActorSupervisorOrAdmin = role === 'supervisor' || role === 'admin';
+      const isActorChecker = role === 'checker' && (!task.checkerId || String(task.checkerId) === String(actorId));
+      const isActorAdmin = role === 'admin';
 
-      if (isActorChecker && task.status === 'submitted') {
+      if (isActorChecker && ['submitted', 'checker_approved'].includes(task.status)) {
         // Checker level review
         if (action === 'approved') {
-          task.status = 'checker_approved';
+          task.status = 'approved';
           task.checkerReviewedAt = new Date();
           task.checkerReviewNote = note || 'Checker approved';
+          task.reviewedBy = new mongoose.Types.ObjectId(actorId);
+          task.reviewNote = note || 'Checker approved';
+          task.reviewedAt = new Date();
           await task.save();
+
+          await ConversationRewriteHistory.findOneAndUpdate(
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0 },
+            { datasetVersionId: task.datasetVersionId, sampleId: task.sampleId, messageIndex: task.targetMessageIndex ?? 0, originalText: task.originalText, proposedText: task.submittedText, approvedText: task.submittedText, editorId: (task.assigneeId as any)?._id || task.assigneeId, editReason: task.reason || note || 'Checker approved rewrite', editType: 'manual' },
+            { upsert: true, new: true }
+          );
 
           await this.notify({
             versionId,
             actorId,
             recipientRole: 'supervisor',
             type: 'info',
-            message: `Rewrite task for ${task.convId} was checked and approved by Checker. Needs final Supervisor approval.`,
+            message: `Rewrite task for ${task.convId} was approved and published by Checker.`,
           });
         } else {
           task.status = action; // 'redo' or 'rejected'
@@ -1150,8 +1211,8 @@ export class QualityController {
             message: `Rewrite for ${task.convId} was rejected by Checker. Note: ${note}`,
           });
         }
-      } else if (isActorSupervisorOrAdmin) {
-        // Supervisor level review
+      } else if (isActorAdmin) {
+        // Admin-only emergency override. Normal approval belongs to Checker.
         if (task.status !== 'checker_approved' && task.status !== 'submitted' && task.status !== 'redo') {
           res.status(400).json({ error: `Không thể review task ở trạng thái: ${task.status}` });
           return;
@@ -1160,7 +1221,7 @@ export class QualityController {
         if (action === 'approved') {
           task.status = 'approved';
           task.reviewedBy = new mongoose.Types.ObjectId(actorId);
-          task.reviewNote = note || 'Supervisor approved';
+          task.reviewNote = note || 'Admin override approved';
           task.reviewedAt = new Date();
           await task.save();
 
@@ -1175,7 +1236,7 @@ export class QualityController {
             actorId,
             recipientId: String((task.assigneeId as any)?._id || task.assigneeId),
             type: 'success',
-            message: `Rewrite for ${task.convId} was final approved by Supervisor.`,
+            message: `Rewrite for ${task.convId} was override-approved by Admin.`,
           });
         } else {
           task.status = action; // 'redo' or 'rejected'
@@ -1195,6 +1256,26 @@ export class QualityController {
       } else {
         res.status(403).json({ error: 'Bạn không có quyền thực hiện thao tác kiểm duyệt này.' });
         return;
+      }
+
+      const actor = await User.findById(actorId).select('name email').lean();
+      if (actor) {
+        const logAction = action === 'approved' ? 'rewrite_approved' : action === 'redo' ? 'rewrite_redo' : 'rewrite_rejected';
+        await CheckerActivityLog.create({
+          datasetVersionId: task.datasetVersionId,
+          sampleId: (task.sampleId as any)?._id || task.sampleId,
+          userId: new mongoose.Types.ObjectId(actorId),
+          userName: actor.name || 'Unknown',
+          userEmail: actor.email || 'unknown@test.com',
+          action: logAction,
+          targetScope: 'message',
+          messageIndex: task.targetMessageIndex ?? null,
+          messageRole: 'assistant',
+          details: `${logAction}: ${task.convId}${note ? ` - ${note}` : ''}`,
+          reason: String(note || ''),
+          before: { status: previousStatus, text: task.originalText },
+          after: { status: task.status, text: action === 'approved' ? task.submittedText : null },
+        });
       }
 
       res.json({ task: this.serializeRewriteTask(task) });

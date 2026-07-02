@@ -40,7 +40,7 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -697,6 +697,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                         onChange={e => setAiProvider(e.target.value as any)}
                         disabled={isLabelingWithAI}
                       >
+                        <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                         <option value="deepseek">Deepseek</option>
                         <option value="groq">Groq</option>
                         <option value="openrouter">OpenRouter</option>

@@ -302,7 +302,7 @@ function DataPrepInner() {
   const [selectedConv3, setSelectedConv3] = useState(null);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
   /* AI Labeling state */
-  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
   const [isSavingLabels, setIsSavingLabels] = useState(false);
   const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
@@ -2947,6 +2947,7 @@ function DataPrepInner() {
                       onChange={e => setAiProvider(e.target.value as any)}
                       disabled={isLabelingWithAI}
                     >
+                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="deepseek">Deepseek</option>
                       <option value="groq">Groq</option>
                       <option value="openrouter">OpenRouter</option>

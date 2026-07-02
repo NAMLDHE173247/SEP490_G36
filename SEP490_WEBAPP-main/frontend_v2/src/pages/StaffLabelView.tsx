@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../hooks/useToast';
 import ToastContainer from '../components/ToastContainer';
+import { getCliProxyModels } from '../services/configApi';
 
 const SUBJECT_OPTIONS = ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro'];
 const SUBJECT_LABEL_MAP: Record<string, string> = {
@@ -258,15 +259,23 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiBackup, setAiBackup] = useState<Record<string, any>>({});
   const [aiProvider, setAiProvider] = useState('openrouter');
+  const [aiModel, setAiModel] = useState('');
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
+  React.useEffect(() => {
+    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels()
+      .then((result) => { setGatewayModels(result.models || []); setAiModel(result.defaultModel || ''); })
+      .catch(() => { setGatewayModels([]); setAiModel(''); });
+  }, [aiProvider, gatewayModels.length]);
   // aiMeta[sampleId][msgIdx] = { confidence, is_correct_pedagogy, pedagogy_note }
   const [aiMeta, setAiMeta] = useState<Record<string, Record<number, any>>>({});
   // aiSummary[sampleId] = { subject, completion, quality, quality_reason }
   const [aiSummary, setAiSummary] = useState<Record<string, any>>({});
   const AI_PROVIDERS = [
+    { value: 'oauth_gateway', label: 'OAuth Gateway (tự động fallback)' },
     { value: 'openrouter', label: 'OpenRouter' },
     { value: 'groq', label: 'OpenAI (GPT-4o-mini)' },
     { value: 'deepseek', label: 'Deepseek Chat' },
-    { value: 'openrouter', label: 'OpenRouter' },
   ];
 
   const handleAIAssist = async (sampleId: string) => {
@@ -276,7 +285,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     setIsAiLoading(true);
     try {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
-      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages.map((message: any, index: number) => ({ ...message, content: getEditedMessageContent(sampleId, index, message.content || '') })), provider: aiProvider });
+      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages.map((message: any, index: number) => ({ ...message, content: getEditedMessageContent(sampleId, index, message.content || '') })), provider: aiProvider, model: aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined });
       if (res.data.success && res.data.data) {
         const suggestion = res.data.data;
 
@@ -876,9 +885,15 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                     </div>
                     {aiAssistEnabled && (
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <select value={aiProvider} onChange={(e) => setAiProvider(e.target.value)} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', cursor: 'pointer', minWidth: '170px' }} disabled={isAiLoading}>
+                        <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value); setAiModel(''); }} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', cursor: 'pointer', minWidth: '170px' }} disabled={isAiLoading}>
                           {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                         </select>
+                        {aiProvider === 'oauth_gateway' && (
+                          <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', minWidth: '210px' }} disabled={isAiLoading} title="Chỉ hiển thị model tài khoản OAuth đang có quyền sử dụng">
+                            <option value="">Tự động chọn model</option>
+                            {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                          </select>
+                        )}
                         <button className="sl-ai-btn" onClick={() => handleAIAssist(drawerSample.id)} disabled={isAiLoading}>
                           {isAiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
                           {isAiLoading ? 'Đang phân tích...' : 'Gợi ý AI'}

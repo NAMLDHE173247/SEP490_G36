@@ -76,6 +76,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
   const [activeTab, setActiveTab] = useState<'quick_reviews' | 'rewrites' | 'history'>('quick_reviews');
 
   const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
+  const [rewriteStatusFilter, setRewriteStatusFilter] = useState<'all' | 'pending' | 'approved' | 'redo'>('all');
+  const [rewriteQuery, setRewriteQuery] = useState('');
   const [loadingRewrites, setLoadingRewrites] = useState(false);
   const [reviewingRewrite, setReviewingRewrite] = useState<any | null>(null);
   const [rewriteReviewNote, setRewriteReviewNote] = useState('');
@@ -93,6 +95,17 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
       setLoadingRewrites(false);
     }
   };
+
+  const visibleRewriteTasks = useMemo(() => {
+    const normalizedQuery = rewriteQuery.trim().toLowerCase();
+    return rewriteTasks.filter(task => {
+      const status = String(task.status || '');
+      const statusGroup = status === 'approved' ? 'approved' : ['redo', 'rejected'].includes(status) ? 'redo' : 'pending';
+      const matchesStatus = rewriteStatusFilter === 'all' || rewriteStatusFilter === statusGroup;
+      const haystack = `${task.convId || ''} ${task.staffName || task.assigneeName || task.assigneeId?.name || ''} ${task.checkerName || ''} ${task.reason || ''}`.toLowerCase();
+      return matchesStatus && (!normalizedQuery || haystack.includes(normalizedQuery));
+    });
+  }, [rewriteTasks, rewriteStatusFilter, rewriteQuery]);
 
   const loadQueue = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -512,8 +525,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                 <span>Cần duyệt</span>
               </div>
               <div className="wkpi blue" style={{ borderLeft: '3px solid #3b82f6' }}>
-                <strong>{rewriteTasks.filter(t => t.status === 'checker_approved').length}</strong>
-                <span>Viết lại</span>
+                <strong>{rewriteTasks.filter(t => t.status === 'submitted').length}</strong>
+                <span>Chờ Checker</span>
               </div>
               <div className="wkpi green">
                 <strong>{selectedProject?.resolvedConflictsCount}</strong>
@@ -536,7 +549,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                 void fetchRewriteAssignments();
               }}
             >
-              Duyệt Viết lại <span>{rewriteTasks.filter(t => t.status === 'checker_approved').length}</span>
+              Theo dõi viết lại <span>{rewriteTasks.length}</span>
             </button>
             <button
               className={activeTab === 'history' ? 'active' : ''}
@@ -714,45 +727,39 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
 
             {activeTab === 'rewrites' && (
               <section className="sv-queue">
+                <div className="rewrite-monitor-toolbar">
+                  <div className="rewrite-filter-tabs">
+                    {([['all','Tất cả'],['pending','Đang chờ'],['approved','Đã duyệt'],['redo','Làm lại']] as const).map(([value,label]) => (
+                      <button key={value} className={rewriteStatusFilter === value ? 'active' : ''} onClick={() => setRewriteStatusFilter(value)}>{label}</button>
+                    ))}
+                  </div>
+                  <div className="sv-search rewrite-search"><Search size={15}/><input value={rewriteQuery} onChange={event => setRewriteQuery(event.target.value)} placeholder="Tìm sample, Staff, Checker..." /></div>
+                </div>
                 {loadingRewrites ? (
                   <div className="sv-skeletons">
                     {[1, 2].map(i => <div key={i} className="sv-skeleton" />)}
                   </div>
-                ) : rewriteTasks.filter(t => t.status === 'checker_approved').length === 0 ? (
+                ) : visibleRewriteTasks.length === 0 ? (
                   <div className="sv-state empty-state">
                     <CheckCircle2 size={40} className="success-icon" />
                     <h3>Tuyệt vời!</h3>
-                    <p>Không có task rewrite nào đang chờ bạn phê duyệt cuối cùng trong dự án này.</p>
+                    <p>Chưa có task rewrite trong dự án này.</p>
                   </div>
                 ) : (
-                  <div className="sv-list">
-                    {rewriteTasks.filter(t => t.status === 'checker_approved').map((task) => (
-                      <article className="sv-overlap-card modern-overlap" key={task.id}>
-                        <div className="sv-overlap-top">
-                          <div>
-                            <span className="sample-number" style={{ background: '#dbeafe', color: '#1e40af' }}>Rewrite #{String(task.convId).substring(0, 8)}</span>
-                            <span className="sr-status-badge" style={{ background: '#dbeafe', color: '#1e40af', marginLeft: '8px', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>Checker đã duyệt</span>
-                            <h3 style={{ marginTop: '8px' }}>Nhân viên: {task.staffName || task.assigneeName || task.assigneeId?.name || 'Staff'}</h3>
-                            <p className="sample-preview" style={{ color: '#ef4444' }}><strong>Lỗi cần sửa:</strong> {REWRITE_REASON_VI_MAP[task.reason] || task.reason || 'Yêu cầu viết lại'}</p>
-                            {task.checkerReviewNote && (
-                              <p className="sample-preview" style={{ marginTop: '4px', color: '#047857' }}><strong>Nhận xét Checker:</strong> "{task.checkerReviewNote}"</p>
-                            )}
-                            <p className="sample-preview" style={{ marginTop: '8px', color: '#475569' }}>
-                              <strong>Bản viết lại của Staff:</strong> "{String(task.submittedText).substring(0, 100)}{String(task.submittedText).length > 100 ? '...' : ''}"
-                            </p>
-                          </div>
-                          <button
-                            className="sv-open-btn action-btn adjudication-btn"
-                            onClick={() => {
-                              setReviewingRewrite(task);
-                              setRewriteReviewNote('');
-                            }}
-                          >
-                            Phê duyệt cuối cùng
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                  <div className="rewrite-table-wrap">
+                    <table className="rewrite-table">
+                      <thead><tr><th>Sample</th><th>Staff</th><th>Lý do</th><th>Bản viết lại</th><th>Checker</th><th>Trạng thái</th></tr></thead>
+                      <tbody>{visibleRewriteTasks.map(task => (
+                        <tr key={task.id}>
+                          <td><strong>#{String(task.convId).substring(0, 10)}</strong></td>
+                          <td>{task.staffName || task.assigneeName || task.assigneeId?.name || 'Staff'}</td>
+                          <td><span className="rewrite-reason">{REWRITE_REASON_VI_MAP[task.reason] || task.reason || 'Yêu cầu viết lại'}</span></td>
+                          <td><p className="rewrite-preview">{task.submittedText || 'Chưa nộp bản sửa'}</p></td>
+                          <td>{task.checkerName || 'Đã phân công'}{task.checkerReviewNote && <small style={{ display:'block', color:'#64748b', marginTop:4 }}>{task.checkerReviewNote}</small>}</td>
+                          <td><span className={`rewrite-status ${task.status === 'approved' ? 'approved' : ['redo','rejected'].includes(task.status) ? 'redo' : 'pending'}`}>{task.status === 'approved' ? 'Đã duyệt' : task.status === 'submitted' ? 'Chờ Checker' : task.status}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 )}
               </section>

@@ -16,12 +16,14 @@ import VersionDataPrepView from './VersionDataPrepView';
 import ManagerAssignLabelingView from './ManagerAssignLabelingView';
 import StaffTasksView from './StaffTasksView';
 import StaffLabelView from './StaffLabelView';
+import StaffRewriteView from './StaffRewriteView';
 import LabelingTaskDetailView from './LabelingTaskDetailView';
 import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
 import CheckerReviewView from './CheckerReviewView';
+import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
@@ -63,6 +65,7 @@ function Dashboard() {
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
     { key: 'Checker Review', label: 'Checker Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
+    { key: 'Checker Rewrite', label: 'Kiểm duyệt Rewrite', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -115,6 +118,10 @@ function Dashboard() {
         setActiveTab('My Tasks');
         return;
       }
+      if (activeTab === 'Staff Rewrite' && !selectedTask) {
+        setActiveTab('My Tasks');
+        return;
+      }
       if (activeTab === 'Task Detail' && !managerSelectedTask) {
         setActiveTab('Assign Labeling');
         return;
@@ -123,6 +130,7 @@ function Dashboard() {
       const isValid =
         (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
+        (activeTab === 'Staff Rewrite' && user.role === 'staff') ||
         (activeTab === 'Task Detail' && user.role === 'admin') ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
 
@@ -163,7 +171,7 @@ function Dashboard() {
 
   const handleOpenTask = (task: any) => {
     setSelectedTask(task);
-    setActiveTab('Staff Label');
+    setActiveTab(task?.taskType === 'rewrite' ? 'Staff Rewrite' : 'Staff Label');
   };
 
   const renderContent = () => {
@@ -196,12 +204,16 @@ function Dashboard() {
         return <StaffTasksView onOpenTask={handleOpenTask} />;
       case 'Staff Label':
         return <StaffLabelView task={selectedTask} onBack={handleBackFromLabel} />;
+      case 'Staff Rewrite':
+        return <StaffRewriteView task={selectedTask} onBack={handleBackFromLabel} />;
       case 'Staff Stats':
         return <StaffStatsView />;
       case 'Supervisor Review':
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
       case 'Checker Review':
         return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
+      case 'Checker Rewrite':
+        return <CheckerRewriteView />;
       case 'My Stats':
         return <MyStatsView />;
       case 'Reviewer Dashboard':

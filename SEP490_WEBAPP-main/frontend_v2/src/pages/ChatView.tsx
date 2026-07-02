@@ -30,6 +30,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
 import { apiService } from '../services/api';
+import { getCliProxyModels } from '../services/configApi';
 import '../styles/chat.css';
 import { BatchTestingModal } from '../components/BatchTestingModal';
 import { TypingIndicator } from '../components/TypingIndicator';
@@ -442,9 +443,24 @@ function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [hfHubId, setHfHubId] = useState("");
   const [provider, setProvider] = useState<string>("local");
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
+  useEffect(() => {
+    if (provider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels()
+      .then((result) => {
+        setGatewayModels(result.models || []);
+        if (!hfHubId) setHfHubId(result.defaultModel || '');
+      })
+      .catch(() => setGatewayModels([]));
+  }, [provider, gatewayModels.length, hfHubId]);
   const [registries, setRegistries] = useState<any[]>([]);
   const [selectedRegistryId, setSelectedRegistryId] = useState<string>("");
   const [activeModelId, setActiveModelId] = useState<string>("");
+  const [showConnectedStatus, setShowConnectedStatus] = useState(false);
+  const flashConnectedStatus = useCallback(() => {
+    setShowConnectedStatus(true);
+    window.setTimeout(() => setShowConnectedStatus(false), 3500);
+  }, []);
   const [modelLoaded, setModelLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -590,7 +606,7 @@ function ChatPanel({
 
     return {
       title: "Chua the hoan tat thao tac",
-      description: "Kiem tra lai model/GPU roi thu lai. Chi tiet loi da duoc ghi trong Logs.",
+      description: message ? `Chi tiet: ${message}` : "Kiem tra lai ket noi AI roi thu lai.",
     };
   };
 
@@ -663,6 +679,7 @@ function ChatPanel({
       const isLocal = provider === "local" || provider === "registry";
       if (!text.trim() || loading) return;
       if (isLocal && (!hfHubId.trim() || !modelLoaded)) return;
+      setLoadError(null);
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
@@ -711,7 +728,11 @@ function ChatPanel({
           },
         };
 
-        await apiService.inferStream(text, hfHubId, options, (chunk: string) => {
+        await apiService.inferStream({
+          text_input: text,
+          hf_hub_id: hfHubId || undefined,
+          ...options,
+        }, (chunk: string) => {
           aiContent += chunk;
           setMessages((prev) => {
             const arr = [...prev];
@@ -843,6 +864,7 @@ function ChatPanel({
         await apiService.validateModel(modelToLoad, provider);
         setActiveModelId(modelToLoad || "Default Model");
         setModelLoaded(true);
+        flashConnectedStatus();
         toast.success(`Da ket noi model: ${modelToLoad || "Mac dinh"}`);
       } catch (error: any) {
         const errorMsg = error.response?.data?.error || error.message;
@@ -879,6 +901,7 @@ function ChatPanel({
       });
       setActiveModelId(modelToLoad);
       setModelLoaded(true);
+      flashConnectedStatus();
       toast.success("Model da san sang!");
       onLog?.({ message: `Tai model thanh cong: ${modelToLoad}`, type: "success", instanceId });
     } catch (error: any) {
@@ -1053,6 +1076,9 @@ function ChatPanel({
             <option value="local">Manual ID</option>
             <option value="registry">Model Registry</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="groq">Groq</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="oauth_gateway">OAuth Gateway</option>
           </select>
 
           {provider === "registry" ? (
@@ -1071,6 +1097,7 @@ function ChatPanel({
             <div style={{ position: 'relative', width: '220px' }} ref={modelPickerRef}>
               <input
                 type="text"
+                list={provider === 'oauth_gateway' ? 'oauth-gateway-models' : undefined}
                 style={{ width: '100%', paddingRight: '30px' }}
                 placeholder={
                   provider === "local"
@@ -1087,6 +1114,11 @@ function ChatPanel({
                 }}
                 disabled={loading}
               />
+              {provider === 'oauth_gateway' && (
+                <datalist id="oauth-gateway-models">
+                  {gatewayModels.map((model) => <option key={model} value={model} />)}
+                </datalist>
+              )}
               {provider === "local" && (
                 <button
                   onClick={() => setShowModelPicker((p) => !p)}
@@ -1181,9 +1213,9 @@ function ChatPanel({
               </div>
             </div>
           )}
-          {modelLoaded && (
-            <span style={{ fontSize: '12.5px', color: 'var(--success)', fontWeight: 500 }}>
-              Active: {activeModelId.split('/').pop()}
+          {modelLoaded && showConnectedStatus && (
+            <span style={{ fontSize: '12.5px', color: 'var(--success)', fontWeight: 600 }}>
+              Đã kết nối: {activeModelId.split('/').pop()}
             </span>
           )}
         </div>

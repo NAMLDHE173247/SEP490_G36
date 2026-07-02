@@ -359,7 +359,7 @@ async function logCheckerActivity(params: {
       userEmail: user.email || 'unknown@test.com',
       action: params.action,
       targetScope: params.targetScope || null,
-      messageIndex: params.messageIndex || null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.messageRole || null,
       details: params.details || '',
     });
@@ -1976,6 +1976,9 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           messageIndex: log.messageIndex,
           messageRole: log.messageRole,
           details: log.details,
+          reason: log.reason || '',
+          before: log.before || null,
+          after: log.after || null,
           createdAt: log.createdAt,
         })),
       });
