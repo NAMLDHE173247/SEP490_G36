@@ -319,6 +319,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [cleaningDetailConv, setCleaningDetailConv] = useState<any>(null);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewItemsPerPage, setPreviewItemsPerPage] = useState(5);
 
@@ -709,11 +710,29 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       setProjectName(version?.projectName || 'Dataset');
       setConversationsList(rows);
       setStage3Convs(rows);
+      const savedCleanStats = version?.cleanStats;
       setConversionStats({
         total: rows.length,
         converted: rows.length,
         datasetVersionId: versionId,
+        stats: savedCleanStats
+          ? {
+              totalConversations: rows.length,
+              cleaning: {
+                originalCount: savedCleanStats.originalCount,
+                finalCount: savedCleanStats.finalCount,
+                removedBoilerplate: savedCleanStats.breakdown?.removedBoilerplate || 0,
+                removedTooShort: savedCleanStats.breakdown?.removedTooShort || 0,
+                removedTooLong: savedCleanStats.breakdown?.removedTooLong || 0,
+                removedUnclosedThink: savedCleanStats.breakdown?.removedUnclosedThink || 0,
+                removedDuplicates: savedCleanStats.breakdown?.removedDuplicates || 0,
+              },
+            }
+          : undefined,
       });
+      if (savedCleanStats) {
+        setCleaningApplied(true);
+      }
 
       const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
       const stage = resolveStageFromResumeStep(resumeStep);
@@ -1044,6 +1063,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
 
           afterPreview.push({
@@ -1052,6 +1073,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
             user: userMsg,
             assistant: assistantMsgAfter,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
         } else {
           beforePreview.push({
@@ -1060,6 +1083,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: 'Bị lọc bỏ',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
 
           removedPreview.push({
@@ -1067,6 +1092,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
         }
       });
@@ -1386,6 +1413,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       cleaningPreviewBefore, setCleaningPreviewBefore,
       cleaningPreviewAfter, setCleaningPreviewAfter,
       cleaningPreviewRemoved, setCleaningPreviewRemoved,
+      cleaningDetailConv, setCleaningDetailConv,
       previewPage, setPreviewPage,
       previewItemsPerPage, setPreviewItemsPerPage,
       removeErrorKeywords, setRemoveErrorKeywords,

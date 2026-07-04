@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { GpuClient } from '../gpu/gpuClient';
 import { DataPrepPreprocessingService } from './preprocessing.service';
 import { versionService } from '../versions/version.service';
+import { ICleanStats } from '../../../models/DatasetVersion';
 import { getAuthUserId } from '../../../utils/auth';
 import dotenv from 'dotenv';
 import { configService } from '../../../services/configService';
@@ -81,19 +82,35 @@ export class DataPrepPreprocessingController {
       const gpuResponse = await getGpuClient().filter(req.body);
 
       if (gpuResponse.status === 200 && version) {
+        const gpuData = gpuResponse.data;
+        const finalCount  = Array.isArray(gpuData.data) ? gpuData.data.length : 0;
+        const removedTotal = typeof gpuData.removedCount === 'number'
+          ? gpuData.removedCount
+          : version.totalSamples - finalCount;
+
+        const cleanStats: ICleanStats = {
+          originalCount: version.totalSamples,
+          finalCount,
+          removedTotal,
+          breakdown: { removedNearDuplicate: removedTotal },
+          cleanParams: { action: 'filter', threshold: req.body.threshold },
+          cleanedAt: new Date().toISOString(),
+        };
+
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
           projectName: version.projectName || 'Legacy Project',
           parentVersionId: String(version._id),
           operationType: 'clean',
-          operationParams: { threshold: req.body.threshold },
+          operationParams: { action: 'filter', threshold: req.body.threshold },
+          cleanStats,
           similarityThreshold: version.similarityThreshold,
-          data: gpuResponse.data.data,
+          data: gpuData.data,
           promptId: version.promptId ? String(version.promptId) : undefined,
           promptContentSnapshot: version.promptContentSnapshot,
         });
-        res.status(201).json({ ...result, gpuResult: gpuResponse.data });
+        res.status(201).json({ ...result, gpuResult: gpuData });
       } else {
         res.status(gpuResponse.status).json(gpuResponse.data);
       }
@@ -113,6 +130,21 @@ export class DataPrepPreprocessingController {
       const gpuResponse = await getGpuClient().removeNoise();
 
       if (gpuResponse.status === 200 && version) {
+        const gpuData = gpuResponse.data;
+        const finalCount  = Array.isArray(gpuData.data) ? gpuData.data.length : 0;
+        const removedTotal = typeof gpuData.removedCount === 'number'
+          ? gpuData.removedCount
+          : version.totalSamples - finalCount;
+
+        const cleanStats: ICleanStats = {
+          originalCount: version.totalSamples,
+          finalCount,
+          removedTotal,
+          breakdown: { removedNoise: removedTotal },
+          cleanParams: { action: 'remove-noise', eps: req.body.eps, min_samples: req.body.min_samples },
+          cleanedAt: new Date().toISOString(),
+        };
+
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
@@ -120,12 +152,13 @@ export class DataPrepPreprocessingController {
           parentVersionId: String(version._id),
           operationType: 'clean',
           operationParams: { action: 'remove-noise' },
+          cleanStats,
           similarityThreshold: version.similarityThreshold,
-          data: gpuResponse.data.data,
+          data: gpuData.data,
           promptId: version.promptId ? String(version.promptId) : undefined,
           promptContentSnapshot: version.promptContentSnapshot,
         });
-        res.status(201).json({ ...result, gpuResult: gpuResponse.data });
+        res.status(201).json({ ...result, gpuResult: gpuData });
       } else {
         res.status(gpuResponse.status).json(gpuResponse.data);
       }
@@ -145,6 +178,21 @@ export class DataPrepPreprocessingController {
       const gpuResponse = await getGpuClient().deduplicate(req.body);
 
       if (gpuResponse.status === 200 && version) {
+        const gpuData = gpuResponse.data;
+        const finalCount  = Array.isArray(gpuData.data) ? gpuData.data.length : 0;
+        const removedTotal = typeof gpuData.removedCount === 'number'
+          ? gpuData.removedCount
+          : version.totalSamples - finalCount;
+
+        const cleanStats: ICleanStats = {
+          originalCount: version.totalSamples,
+          finalCount,
+          removedTotal,
+          breakdown: { removedNearDuplicate: removedTotal },
+          cleanParams: { action: 'deduplicate', threshold: req.body.threshold },
+          cleanedAt: new Date().toISOString(),
+        };
+
         const result = await versionService.createVersion({
           ownerId: String(version.ownerId),
           projectId: version.projectId ? String(version.projectId) : undefined,
@@ -152,12 +200,13 @@ export class DataPrepPreprocessingController {
           parentVersionId: String(version._id),
           operationType: 'clean',
           operationParams: { action: 'deduplicate', threshold: req.body.threshold },
+          cleanStats,
           similarityThreshold: version.similarityThreshold,
-          data: gpuResponse.data.data,
+          data: gpuData.data,
           promptId: version.promptId ? String(version.promptId) : undefined,
           promptContentSnapshot: version.promptContentSnapshot,
         });
-        res.status(201).json({ ...result, gpuResult: gpuResponse.data });
+        res.status(201).json({ ...result, gpuResult: gpuData });
       } else {
         res.status(gpuResponse.status).json(gpuResponse.data);
       }

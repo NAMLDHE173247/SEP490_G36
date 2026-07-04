@@ -475,7 +475,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const { projectName, similarityThreshold, format, data, promptId, promptContentSnapshot } = req.body as {
+      const { projectName, similarityThreshold, format, data, promptId, promptContentSnapshot, cleanStats } = req.body as {
         projectId?: string;
         parentVersionId?: string;
         operationType?: DatasetOperationType;
@@ -486,6 +486,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         format?: string;
         promptId?: string;
         promptContentSnapshot?: string;
+        cleanStats?: Record<string, unknown>;
         data: Array<{ sourceKey?: string; data?: Record<string, any> } | Record<string, any>>;
       };
 
@@ -524,6 +525,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         parentVersionId: requestedParentVersionId,
         operationType: requestedOperationType,
         operationParams: req.body?.operationParams,
+        cleanStats: cleanStats && typeof cleanStats === 'object' ? (cleanStats as any) : undefined,
         prepareResumeStep,
         similarityThreshold: threshold,
         format: normalizedFormat,
@@ -1142,6 +1144,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           sharedWithUsers: await buildSharedUserDtos(version),
           operationType: version.operationType || 'legacy',
           operationParams: version.operationParams || {},
+          cleanStats: (version as any).cleanStats || null,
           prepareResumeStep: Number((version as any).prepareResumeStep || 5),
           checkpointResumeStep: resolveCheckpointResumeStep(version.operationType, (version as any).prepareResumeStep),
           similarityThreshold: version.similarityThreshold,

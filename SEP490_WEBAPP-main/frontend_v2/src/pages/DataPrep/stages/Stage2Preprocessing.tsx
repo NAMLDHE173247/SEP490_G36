@@ -4,7 +4,7 @@ import { Tooltip } from '../utils';
 import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Trash2, GitCompare, ArrowUpDown, ChevronRight, CheckCircle, RefreshCw, MessageSquare, HelpCircle, Scissors, Filter, Calendar, BarChart2, XCircle, Tag, ClipboardList, Send, Play, Eye, RotateCcw, Plus, Sparkles, ChevronLeft, Settings, X } from 'lucide-react';
 
 export const Stage2Preprocessing = () => {
-  const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
+  const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, cleaningDetailConv, setCleaningDetailConv, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
   const [selectedClusterStat, setSelectedClusterStat] = React.useState<any>(null);
 
   const summarizeCluster = React.useCallback((conversations: any[]) => {
@@ -199,7 +199,7 @@ export const Stage2Preprocessing = () => {
                     (conversionStats?.stats?.cleaning?.removedTooShort ?? 0) +
                     (conversionStats?.stats?.cleaning?.removedTooLong ?? 0) +
                     (conversionStats?.stats?.cleaning?.removedUnclosedThink ?? 0) +
-                    (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0) || 47;
+                    (conversionStats?.stats?.cleaning?.removedDuplicates ?? 0);
                   const source = conversionStats?.stats?.cleaning?.originalCount ?? (final + removed);
                   const finalPct = source > 0 ? Math.round((final / source) * 100) : 100;
                   const removedPct = source > 0 ? 100 - finalPct : 0;
@@ -613,9 +613,12 @@ export const Stage2Preprocessing = () => {
                   {cleaningPopupView === 'preview' && (
                     <>
                       {(() => {
-                        const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
-                        const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
-                        const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                        // hasRealData = true khi da chay cleaning thuc, dung data thuc khong fallback PREVIEW gia
+                        const hasRealData = cleaningPreviewBefore.length > 0;
+                        const beforeList  = hasRealData ? cleaningPreviewBefore : PREVIEW_BEFORE;
+                        const afterList   = hasRealData ? cleaningPreviewAfter  : PREVIEW_AFTER;
+                        // Khi da co du lieu thuc: dung removedList thuc (co the rong []) - KHONG fallback PREVIEW_REMOVED gia
+                        const removedList = hasRealData ? cleaningPreviewRemoved : PREVIEW_REMOVED;
                         const fixedList = afterList.filter(r => r.status === 'fixed');
 
                         const totalCount = beforeList.length;
@@ -632,10 +635,13 @@ export const Stage2Preprocessing = () => {
                         const startIdx = (previewPage - 1) * previewItemsPerPage;
                         const paginatedList = activeList.slice(startIdx, startIdx + previewItemsPerPage);
 
-                        const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
-                        const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                        // realTotal: lay tu cleaning.originalCount (so TRUOC clean)
+                        // KHONG dung totalConversations -- controller ghi de = so SAU clean
+                        const cleaningStats = conversionStats?.stats?.cleaning;
+                        const realTotal   = cleaningStats?.originalCount ?? beforeList.length;
+                        const realKept    = cleaningStats?.finalCount    ?? afterList.length;
                         const realRemoved = realTotal - realKept;
-                        const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
+                        const realFixed   = fixedList.length;
 
                         return (
                           <>
@@ -720,6 +726,7 @@ export const Stage2Preprocessing = () => {
                                       <th>Status</th>
                                       <th>User</th>
                                       <th>Assistant (trước)</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -734,6 +741,11 @@ export const Stage2Preprocessing = () => {
                                         </td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -748,6 +760,7 @@ export const Stage2Preprocessing = () => {
                                       <th>Action</th>
                                       <th>User</th>
                                       <th>Assistant (sau)</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -757,6 +770,11 @@ export const Stage2Preprocessing = () => {
                                         <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -771,6 +789,7 @@ export const Stage2Preprocessing = () => {
                                       <th>Lý do loại bỏ</th>
                                       <th>User</th>
                                       <th>Assistant</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -780,6 +799,11 @@ export const Stage2Preprocessing = () => {
                                         <td><span className="status-badge badge-removed">{row.reason}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -833,6 +857,60 @@ export const Stage2Preprocessing = () => {
                       </div>
                     </>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* Cleaning Detail Popup — toàn bộ messages + action từng message của 1 conversation */}
+            {cleaningDetailConv && (
+              <div className="cluster-popup-overlay" onClick={() => setCleaningDetailConv(null)}>
+                <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
+                  <div className="cluster-popup-header">
+                    <div className="cluster-popup-header-left">
+                      <MessageSquare size={20} />
+                      <div>
+                        <h2>Chi tiết Conversation</h2>
+                        <p>{cleaningDetailConv.id} · {(cleaningDetailConv.messagesBefore || []).length} messages</p>
+                      </div>
+                    </div>
+                    <button className="cluster-popup-close-btn" onClick={() => setCleaningDetailConv(null)}>
+                      <X size={18} />
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="conv-detail-body">
+                    {(cleaningDetailConv.messagesBefore || []).map((pair: any, idx: number) => {
+                      const afterPair = cleaningDetailConv.messagesAfter?.[idx];
+                      const isRemoved = !cleaningDetailConv.messagesAfter;
+                      const isChanged = !isRemoved && afterPair && afterPair.assistant !== pair.assistant;
+                      const action = isRemoved ? 'Bị loại bỏ' : (isChanged ? 'Đã làm sạch bằng Regex' : 'Không thay đổi');
+                      return (
+                        <div key={idx} className="conv-detail-pair">
+                          <div className="conv-detail-label">#{idx + 1}</div>
+                          <div className="conv-detail-action-row">
+                            <span className={`status-badge ${isRemoved ? 'badge-removed' : isChanged ? 'badge-fixed' : 'badge-clean'}`}>
+                              {action}
+                            </span>
+                          </div>
+                          <div className="conv-detail-msg conv-detail-user">
+                            <div className="conv-detail-role">👤 User</div>
+                            <div className="conv-detail-text">{pair.user}</div>
+                          </div>
+                          <div className="conv-detail-msg conv-detail-assistant">
+                            <div className="conv-detail-role">🤖 Assistant (trước)</div>
+                            <div className="conv-detail-text">{pair.assistant}</div>
+                          </div>
+                          {!isRemoved && (
+                            <div className="conv-detail-msg conv-detail-assistant">
+                              <div className="conv-detail-role">🤖 Assistant (sau)</div>
+                              <div className="conv-detail-text">{afterPair?.assistant ?? ''}</div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

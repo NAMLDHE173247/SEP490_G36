@@ -74,6 +74,64 @@ export class DataPrepVersionController {
     return legacyEvaluationController.getDatasetVersionDetail(req, res);
   }
 
+  /**
+   * GET /:id/clean-log
+   * Trả về toàn bộ lịch sử các version được tạo từ bước Clean
+   * (operationType = 'clean') bắt đầu từ versionId gốc, kèm cleanStats.
+   * Dùng để tra cứu lại thống kê số lượng / lý do bị loại sau khi reload.
+   */
+  async getCleanLog(req: Request, res: Response): Promise<void> {
+    try {
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, error: 'Invalid version id' });
+        return;
+      }
+
+      // Lấy version hiện tại để xác nhận quyền truy cập
+      const version = await DatasetVersion.findOne({
+        _id: id,
+        $or: [{ ownerId }, { isPublic: true }, { sharedWithUserIds: ownerId }],
+      }).lean();
+
+      if (!version) {
+        res.status(404).json({ success: false, error: 'Version not found' });
+        return;
+      }
+
+      // Tìm tất cả version con có operationType = 'clean' trong cùng project
+      const cleanVersions = await DatasetVersion.find({
+        projectId: version.projectId,
+        operationType: 'clean',
+        $or: [{ ownerId }, { isPublic: true }, { sharedWithUserIds: ownerId }],
+      })
+        .sort({ createdAt: 1 })
+        .select('_id versionName versionNo operationParams cleanStats totalSamples createdAt parentVersionId')
+        .lean();
+
+      const log = cleanVersions.map((v) => ({
+        versionId:      String(v._id),
+        versionName:    v.versionName,
+        versionNo:      v.versionNo,
+        parentVersionId: v.parentVersionId ? String(v.parentVersionId) : null,
+        totalSamples:   v.totalSamples,
+        cleanStats:     (v as any).cleanStats ?? null,
+        operationParams: v.operationParams ?? null,
+        cleanedAt:      (v as any).cleanStats?.cleanedAt ?? v.createdAt,
+      }));
+
+      res.status(200).json({ success: true, data: log });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
   async deleteVersion(req: Request, res: Response): Promise<void> {
     try {
       const ownerId = getAuthUserId(req);

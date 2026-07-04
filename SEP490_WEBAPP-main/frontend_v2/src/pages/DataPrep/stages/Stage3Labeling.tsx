@@ -399,12 +399,36 @@ export const Stage3Labeling: React.FC = () => {
       throw new Error('No Stage 3 conversations available to create dataset version.');
     }
 
+    const cleaning = dataPrep.conversionStats?.stats?.cleaning;
+    const cleanStats = cleaning
+      ? {
+          originalCount: cleaning.originalCount ?? stage3Convs.length,
+          finalCount: cleaning.finalCount ?? stage3Convs.length,
+          removedTotal:
+            (cleaning.removedBoilerplate || 0) +
+            (cleaning.removedTooShort || 0) +
+            (cleaning.removedTooLong || 0) +
+            (cleaning.removedUnclosedThink || 0) +
+            (cleaning.removedDuplicates || 0),
+          breakdown: {
+            removedBoilerplate: cleaning.removedBoilerplate || 0,
+            removedTooShort: cleaning.removedTooShort || 0,
+            removedTooLong: cleaning.removedTooLong || 0,
+            removedUnclosedThink: cleaning.removedUnclosedThink || 0,
+            removedDuplicates: cleaning.removedDuplicates || 0,
+          },
+          cleanParams: {},
+          cleanedAt: new Date().toISOString(),
+        }
+      : undefined;
+
     const payload = {
       projectName: 'Auto-Label Dataset',
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
       operationType: 'labeling_base' as const,
       similarityThreshold: 0.85,
       format: 'openai' as const,
+      ...(cleanStats ? { cleanStats } : {}),
       data: stage3Convs.map((conv, idx) => {
         const messages = conv.messages.flatMap((m: any) => [
           { role: 'user', content: m.user },
@@ -1445,41 +1469,9 @@ export const Stage3Labeling: React.FC = () => {
 
                         setIsLabelingWithAI(true);
                         try {
-                          // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
-                          let versionId: string =
-                            (stage3Convs[0] as any)?.datasetVersionId ||
-                            (stage3Convs[0] as any)?.versionId ||
-                            localStorage.getItem('current_version_id') ||
-                            '';
-
-                          // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
-                          if (!versionId) {
-                            const payload = {
-                              projectName: 'Auto-Label Dataset',
-      projectId: (localStorage.getItem('current_project_id') || undefined) as any,
-                              operationType: 'labeling_base' as const,
-                              similarityThreshold: 0.85,
-                              format: 'openai' as const,
-                              data: stage3Convs.map((conv, idx) => {
-                                const messages = conv.messages.flatMap((m: any) => [
-                                  { role: 'user', content: m.user },
-                                  { role: 'assistant', content: m.assistant }
-                                ]).filter((m: any) => m.content && String(m.content).trim() !== '');
-
-                                return {
-                                  sourceKey: `conv-${idx}`,
-                                  data: {
-                                    messages,
-                                    cluster: conv.groupId,
-                                    conversation_id: `conv-${idx}`
-                                  }
-                                };
-                              })
-                            };
-                            const created = await apiService.createDatasetVersion(payload);
-                            versionId = created.datasetVersion._id;
-                            localStorage.setItem('current_version_id', versionId);
-                          }
+                          // Lấy versionId hiện có, hoặc tự động tạo Dataset Version mới để lưu vào DB
+                          // (dùng chung ensureDatasetVersionId để cleanStats luôn được đính kèm khi tạo version)
+                          const versionId = await ensureDatasetVersionId();
 
                           // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
                           const res = await apiService.previewAutoLabels(versionId, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined);

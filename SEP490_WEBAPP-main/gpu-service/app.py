@@ -3382,7 +3382,7 @@ def cluster_filter():
         return jsonify({"error": "'threshold' phải là số thực trong khoảng (0, 1]."}), 400
 
     try:
-        result = _service.filter_by_centroid(threshold=float(threshold))
+        result = _service.filter_deduplicate(threshold=float(threshold))
         return jsonify(result), 200
     except RuntimeError as re:
         return jsonify({"error": str(re)}), 400

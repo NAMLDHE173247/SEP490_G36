@@ -481,6 +481,19 @@ export class ConversionService {
     stats.removedTooShort = tooShort.length;
     stats.removedTooLong = tooLong.length;
 
+    // --- BƯỚC 4: DEDUPLICATION ---
+    // Loại các bản ghi có instruction + output giống hệt nhau (giữ bản đầu tiên)
+    if (options.deduplicate !== false) {
+      const before = cleaned.length;
+      const seen = new Set<string>();
+      cleaned = cleaned.filter((item) => {
+        const key = `${item.instruction} ${item.output}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      stats.removedDuplicates = before - cleaned.length;
+    }
 
     // --- BƯỚC 5: REMOVE UNCLOSED THINK ---
     if (options.removeUnclosedThink) {
@@ -626,6 +639,19 @@ export class ConversionService {
     stats.removedTooShort = tooShort.length;
     stats.removedTooLong = tooLong.length;
 
+    // BƯỚC 3: DEDUPLICATION
+    // Loại các hội thoại có nội dung messages giống hệt nhau (giữ bản đầu tiên)
+    if (options.deduplicate !== false) {
+      const before = cleaned.length;
+      const seen = new Set<string>();
+      cleaned = cleaned.filter((item) => {
+        const key = JSON.stringify(item.messages.map(msg => `${msg.role}:${msg.content}`));
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      stats.removedDuplicates = before - cleaned.length;
+    }
 
     // BƯỚC 4: REMOVE UNCLOSED THINK
     if (options.removeUnclosedThink) {

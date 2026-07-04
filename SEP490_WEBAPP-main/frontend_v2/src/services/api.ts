@@ -343,6 +343,7 @@ export const apiService = {
     similarityThreshold: number;
     format: 'openai' | 'alpaca';
     data: Array<Record<string, any>>;
+    cleanStats?: Record<string, any>;
   }): Promise<{
     message: string;
     datasetVersion: { _id: string; projectName: string; versionName: string };
