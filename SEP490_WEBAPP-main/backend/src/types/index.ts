@@ -94,6 +94,8 @@ export interface DataCleaningStats {
   removedTooLong: number;
   removedDuplicates: number;
   removedUnclosedThink?: number;
+  removedInsufficientTurns?: number;
+  removedTotal: number;
   finalCount: number;
 }
 

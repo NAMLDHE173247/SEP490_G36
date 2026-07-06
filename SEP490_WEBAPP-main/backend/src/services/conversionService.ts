@@ -412,6 +412,8 @@ export class ConversionService {
       removedTooLong: 0,
       removedDuplicates: 0,
       removedUnclosedThink: 0,
+      removedInsufficientTurns: 0,
+      removedTotal: 0,
       finalCount: 0,
     };
 
@@ -511,7 +513,7 @@ export class ConversionService {
       const before = cleaned.length;
       // Alpaca format luôn là 1 turn (1 cặp QA). Nếu yêu cầu > 1 thì lọc hết.
       cleaned = [];
-      stats.removedTooShort += before;
+      stats.removedInsufficientTurns = before;
     }
 
     // BƯỚC 7: ÁP DỤNG TEXT CLEANING
@@ -523,6 +525,7 @@ export class ConversionService {
     }));
 
     stats.finalCount = cleaned.length;
+    stats.removedTotal = stats.originalCount - stats.finalCount;
     return { cleaned, stats };
   }
 
@@ -545,6 +548,8 @@ export class ConversionService {
       removedTooLong: 0,
       removedDuplicates: 0,
       removedUnclosedThink: 0,
+      removedInsufficientTurns: 0,
+      removedTotal: 0,
       finalCount: 0,
     };
 
@@ -680,7 +685,7 @@ export class ConversionService {
         }
         return pairs >= (options.minTurns || 1);
       });
-      stats.removedTooShort += before - cleaned.length;
+      stats.removedInsufficientTurns = before - cleaned.length;
     }
 
     // BƯỚC 6: ÁP DỤNG TEXT CLEANING CHO TẤT CẢ MESSAGES
@@ -693,6 +698,7 @@ export class ConversionService {
     }));
 
     stats.finalCount = cleaned.length;
+    stats.removedTotal = stats.originalCount - stats.finalCount;
     return { cleaned, stats };
   }
 

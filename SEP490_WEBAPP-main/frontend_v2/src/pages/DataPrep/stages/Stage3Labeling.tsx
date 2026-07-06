@@ -227,6 +227,53 @@ export const Stage3Labeling: React.FC = () => {
   });
   const [isSavingCanonical, setIsSavingCanonical] = React.useState(false);
 
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
   const toggleConversationLabel = (group: string, label: string) => {
     setConversationLabels(prev => ({
       ...prev,
@@ -404,18 +451,19 @@ export const Stage3Labeling: React.FC = () => {
       ? {
           originalCount: cleaning.originalCount ?? stage3Convs.length,
           finalCount: cleaning.finalCount ?? stage3Convs.length,
+          // removedTotal/removedInsufficientTurns nay đã được backend tính sẵn
+          // (xem DataCleaningStats) — dùng trực tiếp thay vì cộng tay để không
+          // bỏ sót lý do removedInsufficientTurns.
           removedTotal:
-            (cleaning.removedBoilerplate || 0) +
-            (cleaning.removedTooShort || 0) +
-            (cleaning.removedTooLong || 0) +
-            (cleaning.removedUnclosedThink || 0) +
-            (cleaning.removedDuplicates || 0),
+            cleaning.removedTotal ??
+            (cleaning.originalCount ?? 0) - (cleaning.finalCount ?? 0),
           breakdown: {
             removedBoilerplate: cleaning.removedBoilerplate || 0,
             removedTooShort: cleaning.removedTooShort || 0,
             removedTooLong: cleaning.removedTooLong || 0,
             removedUnclosedThink: cleaning.removedUnclosedThink || 0,
             removedDuplicates: cleaning.removedDuplicates || 0,
+            removedInsufficientTurns: cleaning.removedInsufficientTurns || 0,
           },
           cleanParams: {},
           cleanedAt: new Date().toISOString(),
@@ -1803,11 +1851,11 @@ export const Stage3Labeling: React.FC = () => {
                   <div className="conv-detail-label">#{idx + 1}</div>
                   <div className="conv-detail-msg conv-detail-user">
                     <div className="conv-detail-role">👤 User</div>
-                    <div className="conv-detail-text">{msg.user}</div>
+                    <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                   </div>
                   <div className="conv-detail-msg conv-detail-assistant">
                     <div className="conv-detail-role">🤖 Assistant</div>
-                    <div className="conv-detail-text">{msg.assistant}</div>
+                    <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                   </div>
                 </div>
               ))}

@@ -7,6 +7,53 @@ export const Stage2Preprocessing = () => {
   const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, cleaningDetailConv, setCleaningDetailConv, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
   const [selectedClusterStat, setSelectedClusterStat] = React.useState<any>(null);
 
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
   const summarizeCluster = React.useCallback((conversations: any[]) => {
     const stopWords = new Set(['và','là','của','có','cho','trong','một','những','các','được','với','không','thì','này','đó','em','anh','chị','tôi','ta','hãy','sao','gì','như','về','khi','để','ở','từ','đến','theo','đúng','phải','bao','nhiêu','rồi','vậy','lắm','tốt','nhé','nha','ạ','à','ơi','ừ','ừm','dạ','vâng','cảm','ơn','thầy','cô','bạn','mình','hiểu','thử','xem','biết','nói','giúp','giải','thích','câu','hỏi','cần','tập','the','and','for','that','this','with','from','what','how','are','is']);
     const documentFrequency = new Map<string, number>();
@@ -192,7 +239,6 @@ export const Stage2Preprocessing = () => {
                   </div>
                 </div>
 
-                {/* Dynamic Data Loss Chart */}
                 {(() => {
                   const final = conversionStats?.stats?.cleaning?.finalCount ?? totalConvs;
                   const removed = (conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0) +
@@ -221,7 +267,6 @@ export const Stage2Preprocessing = () => {
               </div>
             )}
 
-            {/* Full-width content (no sidebar) */}
             <div className="cluster-fullwidth">
               <div className="preview-header">
                 <h3>Converted Dataset Preview</h3>
@@ -278,20 +323,6 @@ export const Stage2Preprocessing = () => {
               </div>
 
               <div className="preview-table-wrapper cluster-table-full">
-                {false && <table className="preview-table" style={{ display: 'none', tableLayout: 'fixed', width: '100%' }}>
-                  <thead><tr><th style={{ width: '5%' }}>STT</th><th style={{ width: '18%' }}>Conversation ID</th><th style={{ width: '9%' }}>Message #</th><th style={{ width: '12%' }}>Role</th><th>Content</th></tr></thead>
-                  <tbody>
-                    {pageConvs.map((message: any, rowIndex: number) => (
-                      <tr key={message.id}>
-                        <td style={{ textAlign: 'center' }}>{startConvIdx + rowIndex + 1}</td>
-                        <td><span className="conv-id-badge">{message.conversationId}</span></td>
-                        <td style={{ textAlign: 'center' }}>#{message.messageIndex}</td>
-                        <td><span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: message.role === 'assistant' ? '#eef2ff' : message.role === 'system' ? '#fef3c7' : '#ecfdf5', color: message.role === 'assistant' ? '#4f46e5' : message.role === 'system' ? '#b45309' : '#047857' }}>{message.role}</span></td>
-                        <td style={{ padding: 12, whiteSpace: 'normal', wordBreak: 'break-word' }}>{highlightSearch(message.content, searchQuery)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>}
                 {true && <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
@@ -335,13 +366,11 @@ export const Stage2Preprocessing = () => {
                           <td className="cell-text-col" style={{ padding: '12px' }}>
                             <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {conv.messages.length === 1 ? (
-                                /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                   <span style={{ marginRight: '6px', fontSize: '13px' }}>📌</span>
                                   {highlightSearch(conv.messages[0].user, searchQuery)}
                                 </div>
                               ) : (
-                                /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: '13px' }}>📌 Chủ đề:</span>
@@ -371,13 +400,11 @@ export const Stage2Preprocessing = () => {
                           <td className="cell-text-col" style={{ padding: '12px' }}>
                             <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {conv.messages.length === 1 ? (
-                                /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                   <span style={{ marginRight: '6px', fontSize: '13px' }}>💡</span>
                                   {highlightSearch(conv.messages[0].assistant, searchQuery)}
                                 </div>
                               ) : (
-                                /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: '13px' }}>💡 Phản hồi:</span>
@@ -417,7 +444,6 @@ export const Stage2Preprocessing = () => {
                 </table>}
               </div>
 
-              {/* Pagination */}
               <div className="preview-pagination">
                 <button
                   className="pagination-arrow"
@@ -449,7 +475,6 @@ export const Stage2Preprocessing = () => {
               </div>
             </div>
 
-            {/* Conversation Detail Popup */}
             {selectedConv && (
               <div className="cluster-popup-overlay" onClick={() => setSelectedConv(null)}>
                 <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
@@ -476,7 +501,7 @@ export const Stage2Preprocessing = () => {
                         <div className="conv-detail-label">#{idx + 1}</div>
                         <div className={`conv-detail-msg ${msg.role === 'assistant' ? 'conv-detail-assistant' : 'conv-detail-user'}`}>
                           <div className="conv-detail-role">{msg.role === 'assistant' ? '🤖 Assistant' : msg.role === 'system' ? '⚙️ System' : '👤 User'}</div>
-                          <div className="conv-detail-text">{msg.content}</div>
+                          <div className="conv-detail-text">{renderMessageContent(msg.content)}</div>
                         </div>
                       </div>
                     ))}
@@ -485,7 +510,6 @@ export const Stage2Preprocessing = () => {
               </div>
             )}
 
-            {/* Data Cleaning Pipeline Popup (merged with Preview) */}
             {showCleaningPopup && (
               <div className="cluster-popup-overlay" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
                 <div className={`cluster-popup-content cleaning-popup-content ${cleaningPopupView === 'preview' ? 'cleaning-popup-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -503,10 +527,8 @@ export const Stage2Preprocessing = () => {
                     </button>
                   </div>
 
-                  {/* ===== VIEW: Settings ===== */}
                   {cleaningPopupView === 'settings' && (
                     <div className="cluster-popup-body">
-                      {/* Enable toggle section */}
                       <div className="cluster-popup-section">
                         <div className="cleaning-pipeline-row">
                           <span className="cleaning-label">Data Cleaning Pipeline</span>
@@ -523,7 +545,6 @@ export const Stage2Preprocessing = () => {
 
                         {cleaningEnabled && (
                           <div className="cleaning-options">
-                            {/* Checkbox: Xóa thẻ think hoàn chỉnh */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -534,7 +555,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Xóa các cặp thẻ &lt;think&gt;...&lt;/think&gt; hoàn chỉnh</span>
                             </label>
 
-                            {/* Checkbox: Vá lỗi thẻ think */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -545,7 +565,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Vá lỗi thẻ &lt;think&gt; bị thiếu thẻ đóng/mở (Regex + AI)</span>
                             </label>
 
-                            {/* Checkbox: Lọc từ khóa lỗi */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -556,7 +575,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Lọc bỏ các từ khóa lỗi quy định</span>
                             </label>
 
-                            {/* Min / Max chars */}
                             <div className="cleaning-inputs-row">
                               <div className="cleaning-input-group">
                                 <label>Min chars assistant</label>
@@ -568,13 +586,6 @@ export const Stage2Preprocessing = () => {
                               </div>
                             </div>
 
-                            {/* Min pairs */}
-                            <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
-                              <label>Số cặp hỏi đáp tối thiểu:</label>
-                              <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
-                            </div>
-
-                            {/* Preview button — switches to preview view */}
                             <button
                               className="cleaning-accept-btn"
                               disabled={isCleaningLoading}
@@ -600,7 +611,6 @@ export const Stage2Preprocessing = () => {
                           setRemoveCompleteThink(false);
                           setMinChars('5');
                           setMaxChars('4000');
-                          setMinPairs('1');
                         }}>
                           <RotateCcw size={14} />
                           Reset to Original
@@ -609,22 +619,14 @@ export const Stage2Preprocessing = () => {
                     </div>
                   )}
 
-                  {/* ===== VIEW: Preview ===== */}
                   {cleaningPopupView === 'preview' && (
                     <>
                       {(() => {
-                        // hasRealData = true khi da chay cleaning thuc, dung data thuc khong fallback PREVIEW gia
                         const hasRealData = cleaningPreviewBefore.length > 0;
                         const beforeList  = hasRealData ? cleaningPreviewBefore : PREVIEW_BEFORE;
                         const afterList   = hasRealData ? cleaningPreviewAfter  : PREVIEW_AFTER;
-                        // Khi da co du lieu thuc: dung removedList thuc (co the rong []) - KHONG fallback PREVIEW_REMOVED gia
                         const removedList = hasRealData ? cleaningPreviewRemoved : PREVIEW_REMOVED;
                         const fixedList = afterList.filter(r => r.status === 'fixed');
-
-                        const totalCount = beforeList.length;
-                        const keptCount = afterList.length;
-                        const fixedCount = fixedList.length;
-                        const removedCount = removedList.length;
 
                         const activeList = previewTab === 'total' || previewTab === 'before' ? beforeList :
                           previewTab === 'kept' || previewTab === 'after' ? afterList :
@@ -635,8 +637,6 @@ export const Stage2Preprocessing = () => {
                         const startIdx = (previewPage - 1) * previewItemsPerPage;
                         const paginatedList = activeList.slice(startIdx, startIdx + previewItemsPerPage);
 
-                        // realTotal: lay tu cleaning.originalCount (so TRUOC clean)
-                        // KHONG dung totalConversations -- controller ghi de = so SAU clean
                         const cleaningStats = conversionStats?.stats?.cleaning;
                         const realTotal   = cleaningStats?.originalCount ?? beforeList.length;
                         const realKept    = cleaningStats?.finalCount    ?? afterList.length;
@@ -645,7 +645,6 @@ export const Stage2Preprocessing = () => {
 
                         return (
                           <>
-                            {/* New Tabs / Summary */}
                             <div className="preview-modal-summary" style={{ display: 'flex', gap: '8px', cursor: 'pointer', flexWrap: 'wrap' }}>
                               <button
                                 className={`summary-tag summary-total ${previewTab === 'total' || previewTab === 'before' ? 'active-tab' : ''}`}
@@ -677,7 +676,6 @@ export const Stage2Preprocessing = () => {
                               </button>
                             </div>
 
-                            {/* Toolbar for Pagination */}
                             <div className="preview-toolbar" style={{ margin: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div className="toolbar-select-wrapper">
                                 <label className="toolbar-label">Hiển thị:</label>
@@ -716,7 +714,6 @@ export const Stage2Preprocessing = () => {
                               </div>
                             </div>
 
-                            {/* Tab Content */}
                             <div className="preview-modal-body">
                               {(previewTab === 'total' || previewTab === 'before') && (
                                 <table className="preview-modal-table">
@@ -765,11 +762,11 @@ export const Stage2Preprocessing = () => {
                                   </thead>
                                   <tbody>
                                     {paginatedList.map((row) => (
-                                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                      <tr key={row.id} className={row.status === 'wiped' ? 'row-removed' : row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
                                         <td><span className="conv-id-badge">{row.id}</span></td>
-                                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                        <td><span className={`status-badge ${row.status === 'wiped' ? 'badge-removed' : row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant || <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>✓ Nội dung rỗng (đã xóa thẻ think)</span>}</div></td>
                                         <td>
                                           <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
                                             <Eye size={14} /> Xem
@@ -819,7 +816,6 @@ export const Stage2Preprocessing = () => {
                         );
                       })()}
 
-                      {/* Footer */}
                       <div className="preview-modal-footer">
                         <button className="modal-cancel-btn" onClick={() => setCleaningPopupView('settings')}>
                           <ChevronLeft size={16} />
@@ -861,7 +857,6 @@ export const Stage2Preprocessing = () => {
               </div>
             )}
 
-            {/* Cleaning Detail Popup — toàn bộ messages + action từng message của 1 conversation */}
             {cleaningDetailConv && (
               <div className="cluster-popup-overlay" onClick={() => setCleaningDetailConv(null)}>
                 <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
@@ -883,23 +878,31 @@ export const Stage2Preprocessing = () => {
                     {(cleaningDetailConv.messagesBefore || []).map((pair: any, idx: number) => {
                       const afterPair = cleaningDetailConv.messagesAfter?.[idx];
                       const isRemoved = !cleaningDetailConv.messagesAfter;
-                      const isChanged = !isRemoved && afterPair && afterPair.assistant !== pair.assistant;
-                      const action = isRemoved ? 'Bị loại bỏ' : (isChanged ? 'Đã làm sạch bằng Regex' : 'Không thay đổi');
+                      const afterContent = afterPair?.assistant ?? '';
+                      const isChanged = !isRemoved && afterPair && afterContent !== pair.assistant;
+                      const isContentWiped = isChanged && afterContent === '';
+                      const action = isRemoved
+                        ? 'Bị loại bỏ'
+                        : isContentWiped
+                          ? 'Đã xóa toàn bộ thẻ think (nội dung rỗng)'
+                          : isChanged
+                            ? 'Đã làm sạch bằng Regex'
+                            : 'Không thay đổi';
                       return (
                         <div key={idx} className="conv-detail-pair">
                           <div className="conv-detail-label">#{idx + 1}</div>
                           <div className="conv-detail-action-row">
-                            <span className={`status-badge ${isRemoved ? 'badge-removed' : isChanged ? 'badge-fixed' : 'badge-clean'}`}>
+                            <span className={`status-badge ${isRemoved ? 'badge-removed' : isContentWiped ? 'badge-removed' : isChanged ? 'badge-fixed' : 'badge-clean'}`}>
                               {action}
                             </span>
                           </div>
                           <div className="conv-detail-msg conv-detail-user">
                             <div className="conv-detail-role">👤 User</div>
-                            <div className="conv-detail-text">{pair.user}</div>
+                            <div className="conv-detail-text">{renderMessageContent(String(pair.user || ''))}</div>
                           </div>
                           <div className="conv-detail-msg conv-detail-assistant">
                             <div className="conv-detail-role">🤖 Assistant (trước)</div>
-                            <div className="conv-detail-text">{pair.assistant}</div>
+                            <div className="conv-detail-text">{renderMessageContent(String(pair.assistant || ''))}</div>
                           </div>
                           {!isRemoved && (
                             <div className="conv-detail-msg conv-detail-assistant">

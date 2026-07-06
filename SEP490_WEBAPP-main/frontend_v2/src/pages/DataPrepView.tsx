@@ -282,6 +282,54 @@ function DataPrepInner() {
   /* Conversation Detail Popup */
   const [selectedConv, setSelectedConv] = useState(null);
 
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ &lt;think&gt;' : '🧠 &lt;think&gt;'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' &lt;/think&gt;'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
   /* Stage 3 state */
   const SUB_STEPS_STAGE3 = [
     { num: 5, label: 'Clustering & Labeling' },
@@ -941,7 +989,9 @@ function DataPrepInner() {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags
+        // Always false for preview: think tags must be visible in conv detail so
+        // users can see what has not been cleaned yet. Removed only at export.
+        removeThinkTags: false
       });
 
       const mapped = mapConvertedToConversations(res.data);
@@ -998,7 +1048,8 @@ function DataPrepInner() {
       const originalRes = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags,
+        // Always false: preserve think tags in before/after comparison
+        removeThinkTags: false,
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
@@ -1779,11 +1830,11 @@ function DataPrepInner() {
                         <div className="conv-detail-label">#{idx + 1}</div>
                         <div className="conv-detail-msg conv-detail-user">
                           <div className="conv-detail-role">👤 User</div>
-                          <div className="conv-detail-text">{msg.user}</div>
+                          <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                         </div>
                         <div className="conv-detail-msg conv-detail-assistant">
                           <div className="conv-detail-role">🤖 Assistant</div>
-                          <div className="conv-detail-text">{msg.assistant}</div>
+                          <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                         </div>
                       </div>
                     ))}
@@ -1875,12 +1926,6 @@ function DataPrepInner() {
                               </div>
                             </div>
 
-                            {/* Min pairs */}
-                            <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
-                              <label>Số cặp hỏi đáp tối thiểu:</label>
-                              <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
-                            </div>
-
                             {/* Preview button — switches to preview view */}
                             <button
                               className="cleaning-accept-btn"
@@ -1907,7 +1952,6 @@ function DataPrepInner() {
                           setRemoveCompleteThink(false);
                           setMinChars('5');
                           setMaxChars('4000');
-                          setMinPairs('1');
                         }}>
                           <RotateCcw size={14} />
                           Reset to Original
@@ -2019,11 +2063,11 @@ function DataPrepInner() {
                                   </thead>
                                   <tbody>
                                     {afterList.map((row) => (
-                                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                      <tr key={row.id} className={row.status === 'wiped' ? 'row-removed' : row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
                                         <td><span className="conv-id-badge">{row.id}</span></td>
-                                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                        <td><span className={`status-badge ${row.status === 'wiped' ? 'badge-removed' : row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant || <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>✓ Nội dung rỗng (đã xóa thẻ think)</span>}</div></td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -3266,11 +3310,11 @@ function DataPrepInner() {
                     <div className="conv-detail-label">#{idx + 1}</div>
                     <div className="conv-detail-msg conv-detail-user">
                       <div className="conv-detail-role">👤 User</div>
-                      <div className="conv-detail-text">{msg.user}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                     </div>
                     <div className="conv-detail-msg conv-detail-assistant">
                       <div className="conv-detail-role">🤖 Assistant</div>
-                      <div className="conv-detail-text">{msg.assistant}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                     </div>
                   </div>
                 ))}

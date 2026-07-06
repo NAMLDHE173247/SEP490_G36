@@ -71,6 +71,15 @@ export class ConversionController {
         return;
       }
 
+      // Đảm bảo mỗi cuộc hội thoại/record đều có một conversation_id ổn định
+      messages.forEach((record, index) => {
+        if (typeof record === 'object' && record !== null) {
+          if (!record.conversation_id) {
+            record.conversation_id = record.id || `conv_${String(index + 1).padStart(3, '0')}`;
+          }
+        }
+      });
+
       const fileId = uuidv4();
 
       let fileType: string = 'chat';

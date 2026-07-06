@@ -978,7 +978,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags
+        // Always false for preview: we need to see think tags in conv detail
+        // so users can verify what needs cleaning. Think tags are removed only at export.
+        removeThinkTags: false
       });
 
       const mapped = mapConvertedToConversations(res.data);
@@ -1034,7 +1036,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const originalRes = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags,
+        // Always false for preview: preserve think tags so before/after comparison shows them
+        removeThinkTags: false,
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
@@ -1055,6 +1058,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (cleanedItem) {
           const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
           const isFixed = assistantMsgBefore !== assistantMsgAfter;
+          const isContentWiped = isFixed && assistantMsgAfter === '';
           cleanedItem.status = isFixed ? 'fixed' : 'clean';
 
           beforePreview.push({
@@ -1069,8 +1073,10 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
           afterPreview.push({
             id: item.id,
-            status: isFixed ? 'fixed' : 'clean',
-            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            status: isContentWiped ? 'wiped' : isFixed ? 'fixed' : 'clean',
+            action: isContentWiped
+              ? 'Đã xóa toàn bộ thẻ think (nội dung rỗng)'
+              : isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
             user: userMsg,
             assistant: assistantMsgAfter,
             messagesBefore: item.messages,
