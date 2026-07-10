@@ -60,7 +60,7 @@ export class ClassificationService {
 
     // 1. Load all samples for this version
     const items = await ProcessedDatasetItem.find({ datasetVersionId: version._id })
-      .select('_id sampleId')
+      .select('_id sampleId data')
       .lean();
 
     if (!items.length) {
@@ -105,7 +105,24 @@ export class ClassificationService {
     for (const item of items) {
       const sid = String((item as any)._id);
       const sampleLabels = sampleLabelsMap.get(sid) || [];
-      const group = this.resolveGroup(sampleLabels);
+
+      const subjectClassification = (item.data as any)?.subject_classification;
+      const savedSubject = subjectClassification?.subject_final;
+
+      let group: ClassificationGroup;
+      if (savedSubject) {
+        let upperSubject = String(savedSubject).toUpperCase();
+        if (upperSubject === 'PHYSICS') {
+          upperSubject = 'PHYSICAL';
+        }
+        if (CLASSIFICATION_GROUPS.includes(upperSubject as any)) {
+          group = upperSubject as ClassificationGroup;
+        } else {
+          group = 'OUT_OF_SCOPE';
+        }
+      } else {
+        group = this.resolveGroup(sampleLabels);
+      }
 
       sampleClassifications.push({ sampleId: sid, group });
       groupCounts.set(group, (groupCounts.get(group) || 0) + 1);

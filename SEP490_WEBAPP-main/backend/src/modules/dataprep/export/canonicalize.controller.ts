@@ -270,6 +270,35 @@ export class CanonicalizeController {
         }
       }
 
+      // Update ProcessedDatasetItem subject_classification inside data
+      try {
+        for (const doc of canonicalDocs) {
+          if (doc.targetScope === 'sample') {
+            const item = await ProcessedDatasetItem.findById(doc.sampleId);
+            if (item) {
+              const itemData = item.data || {};
+              const currentClass = (itemData.subject_classification || {}) as any;
+              const finalSubject = Array.isArray(doc.labels) && doc.labels.length > 0 ? doc.labels[0] : 'Unclear';
+
+              const isCorrected = currentClass.subject_ai && currentClass.subject_ai !== finalSubject;
+
+              itemData.subject_classification = {
+                subject_ai: currentClass.subject_ai || finalSubject,
+                confidence: currentClass.confidence ?? null,
+                subject_final: finalSubject,
+                status: isCorrected ? 'corrected' : 'approved',
+                reviewed_by: userId,
+              };
+
+              item.markModified('data');
+              await item.save();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[CanonicalizeController] canonicalizeVersion - update subject_classification failed:', err);
+      }
+
       const [totalCanonicalLabels, canonicalSampleIds] = await Promise.all([
         DatasetCanonicalLabel.countDocuments({ datasetVersionId: versionId }),
         DatasetCanonicalLabel.distinct('sampleId', { datasetVersionId: versionId }),

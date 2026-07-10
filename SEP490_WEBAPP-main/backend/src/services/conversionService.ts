@@ -458,7 +458,18 @@ export class ConversionService {
       stats.removedBoilerplate = before - cleaned.length;
     }
 
-    // --- BƯỚC 3: LENGTH FILTERING ---
+    // --- BƯỚC 3: REMOVE UNCLOSED THINK ---
+    if (options.removeUnclosedThink) {
+      const before = cleaned.length;
+      cleaned = cleaned.filter((item) => {
+        const hasOpen = item.output.includes('<think>');
+        const hasClose = item.output.includes('</think>');
+        return !(hasOpen && !hasClose);
+      });
+      stats.removedUnclosedThink = before - cleaned.length;
+    }
+
+    // --- BƯỚC 4: LENGTH FILTERING ---
     const tooShort: AlpacaFormat[] = [];
     const tooLong: AlpacaFormat[] = [];
 
@@ -483,29 +494,18 @@ export class ConversionService {
     stats.removedTooShort = tooShort.length;
     stats.removedTooLong = tooLong.length;
 
-    // --- BƯỚC 4: DEDUPLICATION ---
+    // --- BƯỚC 5: DEDUPLICATION ---
     // Loại các bản ghi có instruction + output giống hệt nhau (giữ bản đầu tiên)
     if (options.deduplicate !== false) {
       const before = cleaned.length;
       const seen = new Set<string>();
       cleaned = cleaned.filter((item) => {
-        const key = `${item.instruction} ${item.output}`;
+        const key = `${item.instruction} ${item.output}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       });
       stats.removedDuplicates = before - cleaned.length;
-    }
-
-    // --- BƯỚC 5: REMOVE UNCLOSED THINK ---
-    if (options.removeUnclosedThink) {
-      const before = cleaned.length;
-      cleaned = cleaned.filter((item) => {
-        const hasOpen = item.output.includes('<think>');
-        const hasClose = item.output.includes('</think>');
-        return !(hasOpen && !hasClose);
-      });
-      stats.removedUnclosedThink = before - cleaned.length;
     }
 
     // --- BƯỚC 6: MIN TURNS ---
@@ -584,6 +584,20 @@ export class ConversionService {
     //   /^(I understand|Tôi hiểu)[.!]?\s*$/i,
     // ];
 
+    // BƯỚC 1: REMOVE UNCLOSED THINK
+    if (options.removeUnclosedThink) {
+      const before = cleaned.length;
+      cleaned = cleaned.filter((item) => {
+        return item.messages.every(msg => {
+          if (msg.role !== 'assistant') return true;
+          const hasOpen = msg.content.includes('<think>');
+          const hasClose = msg.content.includes('</think>');
+          return !(hasOpen && !hasClose);
+        });
+      });
+      stats.removedUnclosedThink = before - cleaned.length;
+    }
+
     if (options.removeBoilerplate !== false) {
       const before = cleaned.length;
       cleaned = cleaned.filter((item) => {
@@ -656,20 +670,6 @@ export class ConversionService {
         return true;
       });
       stats.removedDuplicates = before - cleaned.length;
-    }
-
-    // BƯỚC 4: REMOVE UNCLOSED THINK
-    if (options.removeUnclosedThink) {
-      const before = cleaned.length;
-      cleaned = cleaned.filter((item) => {
-        return item.messages.every(msg => {
-          if (msg.role !== 'assistant') return true;
-          const hasOpen = msg.content.includes('<think>');
-          const hasClose = msg.content.includes('</think>');
-          return !(hasOpen && !hasClose);
-        });
-      });
-      stats.removedUnclosedThink = before - cleaned.length;
     }
 
     // BƯỚC 5: MIN TURNS
