@@ -1222,6 +1222,14 @@ export class AssignmentController {
               data.group_label ||
               data.meta?.subject ||
               null;
+
+            const subClass = data.subject_classification || {};
+            if (subClass.subject_ai) {
+              samplesMap[sIndex].subjectLabelWithAI = subClass.subject_ai;
+            }
+            if (subClass.subject_final) {
+              samplesMap[sIndex].subjectLabelWithHuman = subClass.subject_final;
+            }
           }
         }
       }
@@ -1758,6 +1766,32 @@ export class AssignmentController {
         },
         { upsert: true, new: true }
       );
+
+      // Update ProcessedDatasetItem subject_classification inside data
+      try {
+        const item = await ProcessedDatasetItem.findById(sampleId);
+        if (item) {
+          const itemData = item.data || {};
+          const currentClass = (itemData.subject_classification || {}) as any;
+          const finalSubject = Array.isArray(labels) && labels.length > 0 ? labels[0] : 'Unclear';
+
+          const isCorrected = currentClass.subject_ai && currentClass.subject_ai !== finalSubject;
+
+          itemData.subject_classification = {
+            subject_ai: currentClass.subject_ai || finalSubject,
+            confidence: currentClass.confidence ?? null,
+            subject_final: finalSubject,
+            status: isCorrected ? 'corrected' : 'approved',
+            reviewed_by: publishedBy,
+          };
+
+          item.markModified('data');
+          await item.save();
+        }
+      } catch (err) {
+        console.error('[AssignmentController] setCanonical - update subject_classification failed:', err);
+      }
+
       return res.status(200).json({ success: true, canonical: doc });
     } catch (error: any) {
       console.error('[AssignmentController] setCanonical error:', error);
@@ -2042,6 +2076,50 @@ export class AssignmentController {
       submission.approvedBy = userId;
       submission.approvedAt = new Date();
       await submission.save();
+
+      // Update ProcessedDatasetItem subject_classification inside data
+      try {
+        const assignments = await DatasetSampleAssignment.find({
+          datasetVersionId: submission.datasetVersionId,
+          assigneeId: submission.assigneeId,
+          sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+          active: true,
+        }).select('sampleId').lean();
+
+        const sampleIds = assignments.map((a: any) => a.sampleId);
+        if (sampleIds.length > 0) {
+          const labels = await LabelAssignment.find({
+            sampleId: { $in: sampleIds },
+            createdBy: submission.assigneeId,
+            targetScope: 'sample',
+          }).lean();
+
+          for (const label of labels) {
+            const item = await ProcessedDatasetItem.findById(label.sampleId);
+            if (item) {
+              const itemData = item.data || {};
+              const parsedLabel = parseSavedLabel(label.targetTextSnapshot) || {};
+              const currentClass = (itemData.subject_classification || {}) as any;
+
+              const finalSubject = parsedLabel.subject || label.name;
+              const isCorrected = currentClass.subject_ai && currentClass.subject_ai !== finalSubject;
+
+              itemData.subject_classification = {
+                subject_ai: currentClass.subject_ai || finalSubject,
+                confidence: currentClass.confidence ?? null,
+                subject_final: finalSubject,
+                status: isCorrected ? 'corrected' : 'approved',
+                reviewed_by: userId,
+              };
+
+              item.markModified('data');
+              await item.save();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[AssignmentController] approveSubmission - update subject_classification failed:', err);
+      }
 
       broadcastAssignmentUpdate({ type: 'assignment_updated', submissionId, action: 'approve' });
 
