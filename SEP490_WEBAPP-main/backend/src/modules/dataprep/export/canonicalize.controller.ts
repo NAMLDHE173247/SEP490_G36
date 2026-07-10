@@ -82,9 +82,24 @@ export class CanonicalizeController {
           if (messages[entry.messageIndex]) messages[entry.messageIndex].labels = entry.labels;
         });
 
+        // === Plan B: Đọc môn học theo thứ tự ưu tiên ===
+        const itemDataAny = (item.data || {}) as any;
+        const subClass = (itemDataAny.subject_classification || {}) as any;
+        const subject: string =
+          subClass.subject_final ||
+          subClass.subject_ai ||
+          itemDataAny.subject ||
+          itemDataAny.subjectLabel ||
+          itemDataAny.subject_label ||
+          itemDataAny.groupLabel ||
+          itemDataAny.group_label ||
+          itemDataAny.meta?.subject ||
+          'Ungrouped';
+
         return {
           id: String(item.sampleId || item._id),
           conversation_id: String(item.sampleId || item._id),
+          subject,
           messages,
           labels: { sample: Array.from(sampleLabels), messages: messageLabels },
         };

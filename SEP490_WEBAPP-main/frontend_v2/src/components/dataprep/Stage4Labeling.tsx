@@ -1909,7 +1909,7 @@ export const Stage4Labeling: React.FC = () => {
                   const getStaffMessageLabels = (messageIndex: number, role: string) =>
                     buildStaffMessageLabels(messageIndex, role, modalTurnPairs, messageLevelTargets);
 
-                  const staffSubject = getStaffSubjectFromComparison(sampleComparison, reviewDetailModal.subject);
+                  const staffSubject = getStaffSubjectFromComparison(sampleComparison);
                   return (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
                       onClick={() => setReviewDetailModal(null)}>

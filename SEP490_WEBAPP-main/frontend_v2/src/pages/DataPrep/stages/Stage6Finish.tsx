@@ -49,11 +49,17 @@ export const Stage6Finish: React.FC = () => {
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitResult, setSplitResult] = useState<any>(null);
 
-  const [splitTestPercentage, setSplitTestPercentage] = useState(50);
+  const [splitTestPercentage, setSplitTestPercentage] = useState(20);
+  const [splitValPercentage, setSplitValPercentage] = useState(10);
   const [splitThreshold, setSplitThreshold] = useState(0.85);
   const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
   const [excludedSamples, setExcludedSamples] = useState<Set<string>>(new Set());
   const [conflictDetailIdx, setConflictDetailIdx] = useState<number | null>(null);
+
+  // === Plan B: phân bổ theo môn ===
+  const [splitBySubject, setSplitBySubject] = useState<Array<{
+    subject: string; train: number; val: number; test: number; total: number;
+  }>>([]);
 
   // Hugging Face states
   const [hfToken, setHfToken] = useState('');
@@ -239,15 +245,55 @@ export const Stage6Finish: React.FC = () => {
         };
       }
 
+      // === Plan A: Tách tập val từ train ===
+      const rawTrain: any[] = apiResponse.train || [];
+      const totalRemaining = 100 - splitTestPercentage;
+      const valFraction = totalRemaining > 0 ? splitValPercentage / totalRemaining : 0;
+      const valCount = Math.max(0, Math.round(rawTrain.length * valFraction));
+      const valData = rawTrain.slice(rawTrain.length - valCount);
+      const trainData = rawTrain.slice(0, rawTrain.length - valCount);
+      const testData: any[] = apiResponse.test || [];
+
       setSplitResult({
         ...apiResponse,
-        train_count: apiResponse.train_count ?? apiResponse.train?.length ?? 0,
-        test_count: apiResponse.test_count ?? apiResponse.test?.length ?? 0,
+        train: trainData,
+        val: valData,
+        train_count: trainData.length,
+        val_count: valData.length,
+        test_count: testData.length,
         attempts: apiResponse.attempts ?? 1,
         conflicts: apiResponse.conflicts ?? 0,
         max_similarity: apiResponse.max_similarity ?? "N/A"
       });
-      alert('Đã tạo train/test split an toàn thành công!');
+
+      // === Plan B: Tính phân bổ theo môn học ===
+      const subjectMap = new Map<string, { train: number; val: number; test: number }>();
+      const addToMap = (items: any[], partition: 'train' | 'val' | 'test') => {
+        for (const item of items) {
+          // subject có thể nằm trực tiếp trên item (từ conversationsList)
+          const convMatch = conversationsList?.find(
+            (c: any) => String(c.id || c.conversation_id) === String(item.conversation_id || item.id)
+          );
+          const subj: string =
+            (convMatch as any)?.subject ||
+            (convMatch as any)?.subjectLabelWithAI ||
+            (convMatch as any)?.subjectLabelDefault ||
+            (item as any)?.subject ||
+            'Ungrouped';
+          const entry = subjectMap.get(subj) || { train: 0, val: 0, test: 0 };
+          entry[partition]++;
+          subjectMap.set(subj, entry);
+        }
+      };
+      addToMap(trainData, 'train');
+      addToMap(valData,   'val');
+      addToMap(testData,  'test');
+      const subjectRows = Array.from(subjectMap.entries())
+        .map(([subject, counts]) => ({ subject, ...counts, total: counts.train + counts.val + counts.test }))
+        .sort((a, b) => b.total - a.total);
+      setSplitBySubject(subjectRows);
+
+      alert(`Đã tạo train/val/test split an toàn thành công!\nTrain: ${trainData.length} | Val: ${valData.length} | Test: ${testData.length}`);
     } catch (error: any) {
       console.error('Lỗi khi phân chia dữ liệu:', error);
       setSplitResult(null);
@@ -380,28 +426,30 @@ export const Stage6Finish: React.FC = () => {
       alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn từ server.');
       return;
     }
-    let trainData = sourceData;
-    let testData: any[] = [];
 
-    if (splitResult) {
-      const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
-      const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
+    const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
+    const valIds  = new Set((splitResult.val  || []).map((c: any) => c.conversation_id || c.id));
+    const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
 
-      trainData = sourceData.filter((c: any) => trainIds.has(c.conversation_id || c.id));
-      testData = sourceData.filter((c: any) => testIds.has(c.conversation_id || c.id));
-    }
+    let trainData = sourceData.filter((c: any) =>  trainIds.has(c.conversation_id || c.id));
+    let valData   = sourceData.filter((c: any) =>  valIds.has(c.conversation_id || c.id));
+    let testData  = sourceData.filter((c: any) =>  testIds.has(c.conversation_id || c.id));
 
-    // Filter out excluded samples
+    // Loại bỏ mẫu bị exclude thủ công
     trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
-    testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+    valData   = valData.filter((c: any)   => !excludedSamples.has(c.conversation_id || c.id));
+    testData  = testData.filter((c: any)  => !excludedSamples.has(c.conversation_id || c.id));
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
-    if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
+    zip.file('train.json', JSON.stringify(toChatML(trainData), null, 2));
+    if (valData.length > 0) {
+      zip.file('val.json', JSON.stringify(toChatML(valData), null, 2));
+    }
+    if (testData.length > 0) {
+      zip.file('test.json', JSON.stringify(toChatML(testData), null, 2));
     }
 
-    const content = await zip.generateAsync({ type: "blob" });
+    const content = await zip.generateAsync({ type: 'blob' });
     saveAs(content, `${projectName || 'dataset'}_split.zip`);
   };
 
@@ -838,7 +886,7 @@ export const Stage6Finish: React.FC = () => {
           <div className="sg-header">
             <div>
               <h3>Split Guard</h3>
-              <p>Generate a train/test split with semantic conflict checking handled by the GPU service.</p>
+              <p>Generate a train / val / test split with semantic conflict checking handled by the GPU service.</p>
             </div>
             <button
               className="s6-trial-btn"
@@ -861,21 +909,47 @@ export const Stage6Finish: React.FC = () => {
           <div className="sg-config-row">
             <div className="sg-config-card">
               <span className="sg-config-label">TOTAL SAMPLES</span>
-              <span className="sg-config-value">{conversationsList?.length || 72}</span>
+              <span className="sg-config-value">{conversationsList?.length || 0}</span>
             </div>
             <div className="sg-config-card">
               <div className="sg-config-label-row">
-                <span className="sg-config-label">TEST PERCENTAGE</span>
+                <span className="sg-config-label">TEST %</span>
                 <span className="sg-config-pct">{splitTestPercentage}%</span>
               </div>
               <input
                 type="range"
-                min="10"
-                max="90"
+                min="5"
+                max={Math.max(5, 90 - splitValPercentage)}
                 value={splitTestPercentage}
                 onChange={e => setSplitTestPercentage(Number(e.target.value))}
                 className="sg-slider sg-slider-purple"
               />
+            </div>
+            <div className="sg-config-card">
+              <div className="sg-config-label-row">
+                <span className="sg-config-label">VAL %</span>
+                <span className="sg-config-pct" style={{ color: '#10b981' }}>{splitValPercentage}%</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max={Math.max(5, 90 - splitTestPercentage)}
+                value={splitValPercentage}
+                onChange={e => setSplitValPercentage(Number(e.target.value))}
+                className="sg-slider"
+                style={{ accentColor: '#10b981' }}
+              />
+            </div>
+            <div className="sg-config-card">
+              <div className="sg-config-label-row">
+                <span className="sg-config-label">TRAIN %</span>
+                <span className="sg-config-pct" style={{ color: '#7c3aed' }}>
+                  {Math.max(0, 100 - splitTestPercentage - splitValPercentage)}%
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 4 }}>
+                Tự tính = 100% − Test − Val
+              </div>
             </div>
             <div className="sg-config-card">
               <div className="sg-config-label-row">
@@ -911,11 +985,21 @@ export const Stage6Finish: React.FC = () => {
             <div className="sg-result-stats">
               <div className="sg-result-stat">
                 <span className="sg-result-label">TRAIN</span>
-                <span className="sg-result-value">{splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'}</span>
+                <span className="sg-result-value" style={{ color: '#7c3aed' }}>
+                  {splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}
+                </span>
+              </div>
+              <div className="sg-result-stat">
+                <span className="sg-result-label">VAL</span>
+                <span className="sg-result-value" style={{ color: '#10b981' }}>
+                  {splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}
+                </span>
               </div>
               <div className="sg-result-stat">
                 <span className="sg-result-label">TEST</span>
-                <span className="sg-result-value">{splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}</span>
+                <span className="sg-result-value" style={{ color: '#3b82f6' }}>
+                  {splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}
+                </span>
               </div>
               <div className="sg-result-stat">
                 <span className="sg-result-label">ATTEMPTS</span>
@@ -935,27 +1019,37 @@ export const Stage6Finish: React.FC = () => {
           {/* Venn Diagram */}
           <div className="sg-venn-card">
             <h4>Semantic Overlap Visualization</h4>
-            <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
+            <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span>, <span style={{ color: '#10b981' }}>Val</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
             <div className="sg-venn-wrap">
-              <svg viewBox="0 0 400 220" className="sg-venn-svg">
+              <svg viewBox="0 0 520 220" className="sg-venn-svg">
                 {/* Train circle */}
-                <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                <circle cx="120" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                {/* Val circle */}
+                <circle cx="260" cy="110" r="80" fill="rgba(16,185,129,0.12)" stroke="#10b981" strokeWidth="2" />
                 {/* Test circle */}
-                <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
-                {/* Overlap area - dashed */}
-                <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
-                {/* Labels */}
-                <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
-                <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">
-                  {splitResult ? `${splitResult.train_count || splitResult.train?.length || 0} unique` : '- unique'}
+                <circle cx="400" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
+                {/* Overlap Train-Val dashed */}
+                <ellipse cx="190" cy="110" rx="28" ry="50" fill="rgba(239,68,68,0.07)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                {/* Overlap Val-Test dashed */}
+                <ellipse cx="330" cy="110" rx="28" ry="50" fill="rgba(239,68,68,0.07)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                {/* Labels Train */}
+                <text x="95" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
+                <text x="95" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">
+                  {splitResult ? `${splitResult.train_count ?? splitResult.train?.length ?? 0}` : '-'}
                 </text>
-                <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
-                <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">
-                  {splitResult ? `${splitResult.test_count || splitResult.test?.length || 0} unique` : '- unique'}
+                {/* Labels Val */}
+                <text x="260" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#10b981">VAL</text>
+                <text x="260" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#10b981">
+                  {splitResult ? `${splitResult.val_count ?? splitResult.val?.length ?? 0}` : '-'}
                 </text>
-                <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
-                <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">
-                  {splitResult ? `${splitResult.conflicts} conflicts` : '- conflicts'}
+                {/* Labels Test */}
+                <text x="425" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
+                <text x="425" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">
+                  {splitResult ? `${splitResult.test_count ?? splitResult.test?.length ?? 0}` : '-'}
+                </text>
+                {/* Conflicts label */}
+                <text x="190" y="175" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">
+                  {splitResult ? `${splitResult.conflicts} conflicts` : ''}
                 </text>
               </svg>
             </div>
@@ -963,19 +1057,67 @@ export const Stage6Finish: React.FC = () => {
             {/* Summary Cards */}
             <div className="sg-summary-row">
               <div className="sg-summary-card sg-summary-train">
-                <span className="sg-summary-value">{splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'}</span>
-                <span className="sg-summary-label">Train Only</span>
+                <span className="sg-summary-value">{splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Train</span>
+              </div>
+              <div className="sg-summary-card" style={{ borderColor: '#10b981', background: 'rgba(16,185,129,0.08)' }}>
+                <span className="sg-summary-value" style={{ color: '#10b981' }}>{splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Val</span>
               </div>
               <div className="sg-summary-card sg-summary-conflict">
                 <span className="sg-summary-value">{splitResult ? splitResult.conflicts : '-'}</span>
                 <span className="sg-summary-label">Semantic Conflicts</span>
               </div>
               <div className="sg-summary-card sg-summary-test">
-                <span className="sg-summary-value">{splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}</span>
-                <span className="sg-summary-label">Test Only</span>
+                <span className="sg-summary-value">{splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Test</span>
               </div>
             </div>
           </div>
+
+          {/* === Plan B: Subject Distribution Table === */}
+          {splitBySubject.length > 0 && (
+            <div className="sg-exclusion-card" style={{ marginTop: 16 }}>
+              <div className="sg-exclusion-header">
+                <div>
+                  <h4>Subject Distribution</h4>
+                  <p>Phân bổ Train / Val / Test theo từng môn học sau khi split.</p>
+                </div>
+                <span className="sg-excluded-count">{splitBySubject.length} môn</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(124,58,237,0.06)', borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Môn học</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed' }}>Train</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981' }}>Val</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6' }}>Test</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>Tổng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {splitBySubject.map((row, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1e293b' }}>
+                          <span style={{
+                            display: 'inline-block', width: 8, height: 8,
+                            borderRadius: '50%', background: '#7c3aed',
+                            marginRight: 8, opacity: 0.7
+                          }} />
+                          {row.subject}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed', fontWeight: 600 }}>{row.train}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981', fontWeight: 600 }}>{row.val}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6', fontWeight: 600 }}>{row.test}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>{row.total}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Manual Exclusion Tool */}
           <div className="sg-exclusion-card">
@@ -1235,17 +1377,20 @@ export const Stage6Finish: React.FC = () => {
           {/* Download Cards Row */}
           <div className="ex-download-row">
             <div className="ex-download-card">
-              <h4>Download cooked Train/Test Split</h4>
+              <h4>Download Train / Val / Test Split</h4>
               <p className="ex-download-stat">
-                Train: {splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'} /
-                Test: {splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}
+                <span style={{ color: '#7c3aed' }}>Train: {splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}</span>
+                {' / '}
+                <span style={{ color: '#10b981' }}>Val: {splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}</span>
+                {' / '}
+                <span style={{ color: '#3b82f6' }}>Test: {splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}</span>
               </p>
-              <p className="ex-download-note">Export uses the safe split generated in the previous step. Handson-splitting is disabled here.</p>
+              <p className="ex-download-note">ZIP chứa <code>train.json</code>, <code>val.json</code>, <code>test.json</code>. Export bị khoá nếu chưa chạy Split Guard.</p>
               <button
                 className="ex-btn-green"
                 onClick={handleDownloadSplit}
               >
-                <Download size={14} /> Download train/test ZIP
+                <Download size={14} /> Download train/val/test ZIP
               </button>
             </div>
             <div className="ex-download-card">
