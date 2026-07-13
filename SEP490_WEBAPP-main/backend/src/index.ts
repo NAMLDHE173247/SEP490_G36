@@ -23,8 +23,6 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_traini
 import { User } from './models/User';
 import bcrypt from 'bcryptjs';
 import { seedDefaultStage4Data } from './seedStage4';
-import { seedModelRegistryData } from './seedModelRegistry';
-import { seedTrainingHistoryData } from './seedTrainingHistory';
 
 async function seedDefaultUsers() {
   try {
@@ -59,8 +57,6 @@ mongoose
     console.log('✅ MongoDB connected:', MONGO_URI);
     await seedDefaultUsers();
     await seedDefaultStage4Data();
-    await seedModelRegistryData();
-    await seedTrainingHistoryData();
 
     try {
       // Reset any stuck running multi-eval jobs to failed

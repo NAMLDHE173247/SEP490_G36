@@ -273,9 +273,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [aiSummary, setAiSummary] = useState<Record<string, any>>({});
   const AI_PROVIDERS = [
     { value: 'oauth_gateway', label: 'OAuth Gateway (tự động fallback)' },
-    { value: 'openrouter', label: 'OpenRouter' },
-    { value: 'groq', label: 'OpenAI (GPT-4o-mini)' },
+    { value: 'gemini', label: 'Gemini' },
+    { value: 'openai', label: 'ChatGPT / OpenAI' },
     { value: 'deepseek', label: 'Deepseek Chat' },
+    { value: 'groq', label: 'Groq' },
+    { value: 'openrouter', label: 'OpenRouter' },
   ];
 
   const handleAIAssist = async (sampleId: string) => {

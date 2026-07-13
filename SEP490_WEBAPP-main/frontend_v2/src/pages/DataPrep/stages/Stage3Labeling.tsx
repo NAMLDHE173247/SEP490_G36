@@ -326,7 +326,7 @@ export const Stage3Labeling: React.FC = () => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
   const [aiModel, setAiModel] = React.useState('');
   const [gatewayModels, setGatewayModels] = React.useState<string[]>([]);
   React.useEffect(() => {
@@ -405,7 +405,7 @@ export const Stage3Labeling: React.FC = () => {
   /** Số batch count cho auto-label (controlled input) */
   const [batchCount, setBatchCount] = React.useState(1);
   /** Provider cho auto-label batch */
-  const [batchProvider, setBatchProvider] = React.useState<'openrouter' | 'groq' | 'deepseek'>('openrouter');
+  const [batchProvider, setBatchProvider] = React.useState<'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('openrouter');
   /** Trạng thái đang export dữ liệu */
   const [isExporting, setIsExporting] = React.useState(false);
   /** Trạng thái đang đẩy sang Stage 4 */
@@ -1487,9 +1487,10 @@ export const Stage3Labeling: React.FC = () => {
                       disabled={isLabelingWithAI}
                     >
                       <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>
                       <option value="groq">Groq</option>
-                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="openrouter">OpenRouter</option>
                     </select>
                     {aiProvider === 'oauth_gateway' && (
@@ -2371,11 +2372,13 @@ export const Stage3Labeling: React.FC = () => {
                     <select
                       className="ia-autolabel-input"
                       value={batchProvider}
-                      onChange={(e) => setBatchProvider(e.target.value as 'openrouter' | 'groq' | 'deepseek')}
+                      onChange={(e) => setBatchProvider(e.target.value as any)}
                     >
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="groq">Groq</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                   </label>
                 </div>

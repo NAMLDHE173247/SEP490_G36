@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { TrainingHistory } from '../models/TrainingHistory';
 import { ModelEvaluation } from '../models/Evaluation';
 import { getAuthUserId } from '../utils/auth';
+import fs from 'fs';
 
 type EvalStats = { evalCount: number; pinnedOverallPct: number | null };
 
@@ -183,6 +184,36 @@ export const getTrainingHistoryList = async (req: Request, res: Response) => {
     const histories = await TrainingHistory.find(filter)
       .sort({ completedAt: -1 })
       .lean();
+
+    for (const history of histories as any[]) {
+      const recovered: Record<string, number> = {};
+      if (history.status === 'EVALUATING') {
+        history.status = 'COMPLETED';
+        TrainingHistory.updateOne({ _id: history._id, ownerId }, { $set: { status: 'COMPLETED' } }).catch(() => undefined);
+      }
+      if (!history.trainingDuration && history.startedAt && history.completedAt) {
+        recovered.trainingDuration = Math.max(0, new Date(history.completedAt).getTime() - new Date(history.startedAt).getTime());
+        history.trainingDuration = recovered.trainingDuration;
+      }
+      if ((!history.totalRecords || !history.totalTokens) && history.datasetPath && fs.existsSync(history.datasetPath)) {
+        try {
+          const content = fs.readFileSync(history.datasetPath, 'utf8');
+          if (!history.totalTokens) recovered.totalTokens = Math.max(1, Math.round(content.length / 4));
+          if (!history.totalRecords) {
+            try {
+              const parsed = JSON.parse(content);
+              recovered.totalRecords = Array.isArray(parsed) ? parsed.length : 1;
+            } catch {
+              recovered.totalRecords = content.split('\n').filter((line: string) => line.trim()).length;
+            }
+          }
+          Object.assign(history, recovered);
+        } catch {}
+      }
+      if (Object.keys(recovered).length > 0) {
+        TrainingHistory.updateOne({ _id: history._id, ownerId }, { $set: recovered }).catch(() => undefined);
+      }
+    }
 
     const enriched = await enrichHistoriesWithEvalStats(histories, ownerId);
     return res.status(200).json(enriched);

@@ -4,18 +4,19 @@ const fetch = async (url: any, init?: any) => {
   return module.default(url, init);
 };
 import dotenv from 'dotenv';
+import { RESEARCH_MODEL_CATALOG } from '../../config/modelCatalog';
 dotenv.config();
 
 export class OpenRouterProvider implements ILlmProvider {
     private apiKey: string;
 
-    constructor(customApiKey?: string) {
+    constructor(customApiKey?: string, private readonly isJson: boolean = true) {
         this.apiKey = customApiKey || process.env.OPENROUTER_API_KEY || '';
     }
 
     async generateContent(prompt: string, modelOverride?: string, systemPrompt?: string): Promise<string> {
         // Fallback to a sensible default if no model is provided
-        const model = modelOverride || process.env.OPENROUTER_MODEL || 'google/gemma-2-9b-it:free';
+        const model = modelOverride || process.env.OPENROUTER_MODEL || RESEARCH_MODEL_CATALOG.gemini;
         
         const messages: any[] = [];
         if (systemPrompt) {
@@ -35,7 +36,7 @@ export class OpenRouterProvider implements ILlmProvider {
                 model: model,
                 messages: messages,
                 temperature: 0.1,
-                response_format: { type: 'json_object' }
+                ...(this.isJson ? { response_format: { type: 'json_object' } } : {})
             })
         });
 

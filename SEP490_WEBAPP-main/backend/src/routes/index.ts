@@ -46,6 +46,7 @@ import {
   deleteEvaluation,
   compareEvaluations,
   getGpuStatusEndpoint,
+  getActiveEvaluation,
   reviewConversation
 } from '../controllers/evalModelController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
@@ -53,6 +54,7 @@ import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
 import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys, getCliProxyStatus, getCliProxyModels, startCliProxyOAuth, getCliProxyOAuthStatus, listCliProxyAccounts, disconnectCliProxyAccount } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
+import { decideRoute, evaluateRouter, getRouterMetrics } from '../controllers/routerController';
 import { isManager } from '../utils/auth';
 
 
@@ -138,6 +140,9 @@ router.post('/chat/validate-model', authMiddleware, validateModel);
 router.get('/infer/logs', authMiddleware, getInferenceLogs);
 router.post('/model/load', authMiddleware, requireManager, loadModel);
 router.post('/infer/stop/:slotId', authMiddleware, stopInference);
+router.post('/router/decide', authMiddleware, decideRoute);
+router.post('/router/evaluate', authMiddleware, requireManager, evaluateRouter);
+router.get('/router/metrics', authMiddleware, requireManager, getRouterMetrics);
 router.post('/model/unload/:slotId', authMiddleware, requireManager, unloadModel);
 router.post('/chat/history', authMiddleware, saveChatHistory);
 router.get('/chat/history', authMiddleware, getChatHistory);
@@ -229,6 +234,7 @@ router.delete('/train/history/:jobId', authMiddleware, requireManager, deleteTra
 router.use('/model-eval', authMiddleware, requireManager);
 router.patch('/model-eval/:evalId/review/:convIndex', authMiddleware, requireManager, reviewConversation);
 router.get('/model-eval/gpu-status', getGpuStatusEndpoint);  // ⚠️ trước wildcard
+router.get('/model-eval/active', getActiveEvaluation);
 router.get('/model-eval/leaderboard', authMiddleware, getEvaluatedModels);
 router.post('/model-eval/run/:jobId', authMiddleware, requireManager, upload.single('eval_file'), runEvaluation);
 router.get('/model-eval/stream/:evalJobId', authMiddleware, streamEvalStatus);
@@ -241,6 +247,7 @@ router.get('/model-eval/:evalId', getEvaluation);              // ⚠️ wildcar
 
 // Model Registry Routes
 router.get('/model-registry', authMiddleware, (req, res) => registryController.listRegistries(req, res));
+router.post('/model-registry/sync-training-history', authMiddleware, requireManager, (req, res) => registryController.syncFromTrainingHistory(req, res));
 router.post('/model-registry', authMiddleware, requireManager, (req, res) => registryController.createRegistry(req, res));
 router.get('/model-registry/:id', authMiddleware, (req, res) => registryController.getRegistry(req, res));
 router.put('/model-registry/:id', authMiddleware, requireManager, (req, res) => registryController.updateRegistry(req, res));

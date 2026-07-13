@@ -47,7 +47,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  const [aiProvider, setAiProvider] = useState<'oauth_gateway' | 'openrouter' | 'groq' | 'deepseek'>('oauth_gateway');
+  const [aiProvider, setAiProvider] = useState<'oauth_gateway' | 'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('oauth_gateway');
   const [aiModel, setAiModel] = useState('');
   const [gatewayModels, setGatewayModels] = useState<string[]>([]);
   const [offlineMessage, setOfflineMessage] = useState('');
@@ -668,9 +668,11 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                     <div className="sr-ai-suggest-bar">
                       <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value as any); setAiModel(''); }} className="sr-context-select">
                         <option value="oauth_gateway">OAuth Gateway</option>
-                        <option value="openrouter">OpenRouter</option>
-                        <option value="groq">Groq</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="openai">ChatGPT / OpenAI</option>
                         <option value="deepseek">DeepSeek</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
                       </select>
                       {aiProvider === 'oauth_gateway' && <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sr-context-select">
                         <option value="">Tự động chọn model</option>

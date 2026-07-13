@@ -8,6 +8,9 @@ import { ModelVersion, ModelVersionStatus } from '../models/ModelVersion';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
+import { routeVerifiedSubject, SubjectModelMap } from '../services/subjectModelRouter';
+import { decideHybridRoute } from '../services/routing/routingOrchestrator';
+import { HybridRoutingDecision, RoutingMode } from '../services/routing/routingTypes';
 
 const getGpuUrl = (instanceId?: number) => configService.getGpuUrl(instanceId);
 
@@ -187,7 +190,11 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       top_p,
       repetition_penalty,
       provider, // New: support external providers
-      history
+      history,
+      subject,
+      subject_model_map,
+      routing_mode,
+      session_id,
     } = req.body;
 
     if (!text_input) {
@@ -196,6 +203,32 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     }
 
     let actualModelId = hf_model_id;
+    let routingDecision: ReturnType<typeof routeVerifiedSubject> | HybridRoutingDecision | null = null;
+
+    if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
+      routingDecision = await decideHybridRoute({
+        ownerId,
+        question: text_input,
+        history: normalizeHistory(history),
+        mode: routing_mode as RoutingMode,
+        sessionId: session_id,
+        modelMap: subject_model_map,
+      });
+      if (routingDecision.needClarification || !routingDecision.selectedModel) {
+        res.status(422).json({
+          error: 'need_clarification',
+          message: 'Câu hỏi chưa đủ rõ để chọn mô hình. Vui lòng cho biết môn học hoặc bài đang làm.',
+          routing: routingDecision,
+        });
+        return;
+      }
+      actualModelId = routingDecision.selectedModel;
+    }
+
+    if (!actualModelId && subject && subject_model_map && typeof subject_model_map === 'object') {
+      routingDecision = routeVerifiedSubject(subject, subject_model_map as SubjectModelMap);
+      actualModelId = routingDecision.selectedModel;
+    }
 
     // If modelRegistryId is provided, fetch the Active version's HF ID
     if (modelRegistryId && !actualModelId) {
@@ -256,7 +289,15 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     }
 
     const data: any = await inferResponse.json();
-    res.json(data); // Phản hồi gồm { "result": "..." }
+    res.json({
+      ...data,
+      routing: routingDecision || {
+        subject: subject || null,
+        selectedModel: actualModelId,
+        fallbackUsed: false,
+        strategy: 'direct-model',
+      },
+    });
 
   } catch (error: any) {
     console.error('Inference AI Proxy Error:', error);
@@ -403,7 +444,7 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
         };
         const finalChunk = JSON.stringify({
           is_final: true,
-          input_parameters
+          input_parameters,
         });
         res.write(`data: ${finalChunk}\n\n`);
         res.end();
@@ -450,7 +491,10 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       top_p,
       repetition_penalty,
       provider,
-      history
+      history,
+      routing_mode,
+      subject_model_map,
+      session_id,
     } = req.body;
 
     if (!text_input) {
@@ -459,6 +503,26 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     }
 
     let actualModelId = hf_model_id;
+    let routingDecision: HybridRoutingDecision | null = null;
+    if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
+      routingDecision = await decideHybridRoute({
+        ownerId,
+        question: text_input,
+        history: normalizeHistory(history),
+        mode: routing_mode as RoutingMode,
+        sessionId: session_id,
+        modelMap: subject_model_map,
+      });
+      if (routingDecision.needClarification || !routingDecision.selectedModel) {
+        res.status(422).json({
+          error: 'need_clarification',
+          message: 'Câu hỏi chưa đủ rõ để chọn mô hình. Vui lòng cho biết môn học hoặc bài đang làm.',
+          routing: routingDecision,
+        });
+        return;
+      }
+      actualModelId = routingDecision.selectedModel;
+    }
 
     // If modelRegistryId is provided, fetch the Active (Use) version's HF ID
     if (modelRegistryId && !actualModelId) {
@@ -565,7 +629,8 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
         };
         const finalChunk = JSON.stringify({
           is_final: true,
-          input_parameters
+          input_parameters,
+          routing: routingDecision,
         });
         res.write(`data: ${finalChunk}\n\n`);
         res.end();

@@ -9,6 +9,8 @@ import { GroqProvider } from './providers/GroqProvider';
 import { OpenRouterProvider } from './providers/OpenRouterProvider';
 import { CLIProxyProvider } from './providers/CLIProxyProvider';
 import { CircuitBreakerProvider } from './providers/CircuitBreakerProvider';
+import { FixedModelProvider } from './providers/FixedModelProvider';
+import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
 
 export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'groq';
 
@@ -122,6 +124,17 @@ class ApiKeyService {
       }
     }
     
+    // Research modes use one OpenRouter account and fixed model IDs so repeated
+    // experiments cannot silently switch provider/model versions.
+    const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
+    if (openRouterKey && (norm.includes('gemini') || norm.includes('deepseek') || norm.includes('openai'))) {
+      const mode = norm.includes('deepseek') ? 'deepseek' : norm.includes('openai') ? 'openai' : 'gemini';
+      return new FixedModelProvider(
+        new OpenRouterProvider(openRouterKey, isJson),
+        model || RESEARCH_MODEL_CATALOG[mode],
+      );
+    }
+
     if (norm.includes('gemini')) {
       const key = await this.getApiKeyForUser(userId, 'gemini');
       if (key && key.startsWith('AIzaSy')) {
@@ -129,10 +142,12 @@ class ApiKeyService {
       }
       
       // Fallback: If the Gemini key is invalid/missing but we have OpenRouter key, use OpenRouter
-      const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
       if (openRouterKey || process.env.OPENROUTER_API_KEY) {
         console.log('[ApiKeyService] Gemini key is invalid. Falling back to OpenRouter.');
-        return new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY);
+        return new FixedModelProvider(
+          new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY, isJson),
+          RESEARCH_MODEL_CATALOG.gemini,
+        );
       }
       
       // Secondary fallback to Groq
@@ -151,7 +166,7 @@ class ApiKeyService {
       return new GroqProvider(key);
     } else if (norm.includes('openrouter')) {
       const key = await this.getApiKeyForUser(userId, 'openrouter');
-      return new OpenRouterProvider(key);
+      return new FixedModelProvider(new OpenRouterProvider(key, isJson), model || RESEARCH_MODEL_CATALOG.gemini);
     } else {
       const key = await this.getApiKeyForUser(userId, 'openai');
       return new OpenAIProvider(key);

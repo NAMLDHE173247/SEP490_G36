@@ -152,6 +152,8 @@ async function hfRepoCheckpointProbe(
 // ---------------------------------------------------------------------------
 export const startTraining = async (req: Request, res: Response) => {
   let zipTempDir: string | null = null;
+  let validationDatasetPath: string | undefined;
+  let validationDatasetName: string | undefined;
   try {
     const ownerId = getAuthUserId(req);
     if (!ownerId) {
@@ -213,6 +215,8 @@ export const startTraining = async (req: Request, res: Response) => {
         const extracted = extractForTraining(datasetFile.path);
         zipMetadata = extracted.metadata;
         zipTempDir = extracted.tempDir;
+        validationDatasetPath = extracted.validationFilePath;
+        validationDatasetName = extracted.validationFileName;
 
         // Replace multer file properties with the extracted JSON file
         datasetFile.path = extracted.dataFilePath;
@@ -233,29 +237,37 @@ export const startTraining = async (req: Request, res: Response) => {
 
     // ── Local File/Cloud File Column Validation ──────────────────────────────────────────
     const validationFilePath = datasetFile ? datasetFile.path : (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset) ? cloudLoadedDataset : null);
+    let detectedTotalRecords = 0;
+    let detectedTotalTokens = 0;
     if (validationFilePath) {
       try {
         const fileContent = fs.readFileSync(validationFilePath, { encoding: 'utf-8', flag: 'r' });
         const nameToCheck = datasetFile ? datasetFile.originalname : path.basename(validationFilePath);
+        detectedTotalTokens = Math.max(1, Math.round(fileContent.length / 4));
 
         let columns: string[] = [];
         if (nameToCheck.endsWith('.json') || nameToCheck.endsWith('.jsonl')) {
           try {
             const parsed = JSON.parse(fileContent);
             const item = Array.isArray(parsed) ? parsed[0] : parsed;
+            detectedTotalRecords = Array.isArray(parsed) ? parsed.length : 1;
             if (item && typeof item === 'object') {
               columns = Object.keys(item);
             }
           } catch {
             // Try JSONL
-            const firstLine = fileContent.split('\n')[0];
+            const jsonlLines = fileContent.split('\n').filter(line => line.trim());
+            detectedTotalRecords = jsonlLines.length;
+            const firstLine = jsonlLines[0];
             const parsed = JSON.parse(firstLine);
             if (parsed && typeof parsed === 'object') {
               columns = Object.keys(parsed);
             }
           }
         } else if (nameToCheck.endsWith('.csv')) {
-          const firstLine = fileContent.split('\n')[0];
+          const csvLines = fileContent.split('\n').filter(line => line.trim());
+          detectedTotalRecords = Math.max(0, csvLines.length - 1);
+          const firstLine = csvLines[0];
           columns = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
         }
 
@@ -305,7 +317,13 @@ export const startTraining = async (req: Request, res: Response) => {
 
     // ── Generate job ID ─────────────────────────────────────────────────────
     const job_id = `job_${uuidv4()}`;
+    const effectiveSystemPrompt = String(
+      systemPrompt ||
+      zipMetadata?.systemPrompt ||
+      'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.'
+    ).trim();
     console.log(`[Backend] Starting job ${job_id} → model=${model_name} epochs=${epochsNum}`);
+    console.log(`[Backend] Train system_prompt chars=${effectiveSystemPrompt.length} preview="${effectiveSystemPrompt.slice(0, 90)}"`);
 
     if (hf_token) {
       console.log(`[Backend] HF Token detected: ${hf_token.substring(0, 4)}****`);
@@ -337,7 +355,7 @@ export const startTraining = async (req: Request, res: Response) => {
       push_to_hub: push_to_hub === 'true' || push_to_hub === true,
       hf_repo_id: hf_repo_id || '',
       hf_token: hf_token || '',
-      system_prompt: systemPrompt || '',
+      system_prompt: effectiveSystemPrompt,
       // Google Drive for checkpoint saving
       drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
       service_account: parsedGoogleCredentials,
@@ -365,6 +383,15 @@ export const startTraining = async (req: Request, res: Response) => {
         contentType: datasetFile.mimetype || 'application/octet-stream',
         knownLength: datasetFile.size,
       });
+      if (validationDatasetPath) {
+        const validationStats = fs.statSync(validationDatasetPath);
+        form.append('validation_file', fs.createReadStream(validationDatasetPath), {
+          filename: validationDatasetName || 'validation_dataset.json',
+          contentType: 'application/json',
+          knownLength: validationStats.size,
+        });
+        config.validation_dataset_provided = true;
+      }
     } else if (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset)) {
       const stats = fs.statSync(cloudLoadedDataset);
       form.append('file', fs.createReadStream(cloudLoadedDataset), {
@@ -413,9 +440,21 @@ export const startTraining = async (req: Request, res: Response) => {
       // Move the file instead of deleting it
       fs.rename(srcPath, savedDatasetPath, (err) => {
         if (err) {
-          console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
-          savedDatasetPath = undefined;
-          fs.unlink(srcPath, () => { }); // Fallback to delete
+          if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+            fs.copyFile(srcPath, savedDatasetPath!, (copyErr) => {
+              if (copyErr) {
+                console.warn(`[Backend] Could not copy dataset file: ${srcPath}`, copyErr);
+                savedDatasetPath = undefined;
+              } else {
+                console.log(`[Backend] Dataset copied persistently for Resume: ${savedDatasetPath}`);
+              }
+              fs.unlink(srcPath, () => { });
+            });
+          } else {
+            console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
+            savedDatasetPath = undefined;
+            fs.unlink(srcPath, () => { }); // Fallback to delete
+          }
         } else {
           console.log(`[Backend] Dataset saved persistently for Resume: ${savedDatasetPath}`);
         }
@@ -430,7 +469,7 @@ export const startTraining = async (req: Request, res: Response) => {
         projectName: typeof projectName === 'string' ? projectName : 'AutoTrain Job',
         baseModel: model_name,
         // Dataset & Prompt traceability from ZIP metadata
-        systemPrompt: systemPrompt || zipMetadata?.systemPrompt || '',
+        systemPrompt: effectiveSystemPrompt,
         systemPromptVersion: systemPromptVersion || zipMetadata?.systemPromptVersion || '',
         datasetVersionId: zipMetadata?.datasetVersionId || undefined,
         datasetSource: (datasetSource as string) || (datasetFile ? 'local' : cloudLoadedDataset ? 'cloud' : 'hub'),
@@ -469,8 +508,8 @@ export const startTraining = async (req: Request, res: Response) => {
         datasetPath: savedDatasetPath,
         datasetFileId: datasetFile?.filename,
         workerUrl: workerUrl,
-        totalTokens: parseInt(totalTokens as string) || 0,
-        totalRecords: parseInt(totalRecords as string) || 0,
+        totalTokens: parseInt(totalTokens as string) || detectedTotalTokens,
+        totalRecords: parseInt(totalRecords as string) || detectedTotalRecords,
       });
       console.log(`[Backend] Initial TrainingHistory created for job ${job_id}`);
     } catch (dbErr) {
@@ -661,6 +700,7 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
           {
             status: data.status,
             completedAt: new Date(),
+            trainingDuration: Math.max(0, Date.now() - new Date(history.startedAt).getTime()),
             finalMetrics: finalMetrics,
             ...(data.latest_checkpoint ? { latest_checkpoint_file_id: data.latest_checkpoint } : {})
           }

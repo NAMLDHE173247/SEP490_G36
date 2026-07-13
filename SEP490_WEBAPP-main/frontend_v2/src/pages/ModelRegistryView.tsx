@@ -34,6 +34,21 @@ interface ModelVersionType {
   };
   notes?: string;
   hfRepoId?: string;
+  modelEvalId?: string;
+  evaluationResult?: Record<string, any>;
+  training?: {
+    jobId?: string;
+    projectName?: string;
+    baseModel?: string;
+    datasetName?: string;
+    datasetVersionId?: string;
+    systemPromptVersion?: string;
+    totalRecords?: number;
+    totalTokens?: number;
+    trainingDuration?: number;
+    completedAt?: string;
+    finalMetrics?: Record<string, any>;
+  };
   createdBy?: string;
   createdAt: string;
 }
@@ -43,6 +58,8 @@ interface ModelRegistryType {
   name: string;
   description?: string;
   baseModel: string;
+  subject?: 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+  routerEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
   versionsCount: number;
@@ -66,7 +83,9 @@ function ModelRegistryView() {
   const [newName, setNewName] = useState('');
   const [newBaseModel, setNewBaseModel] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [newSubject, setNewSubject] = useState<ModelRegistryType['subject']>('UNKNOWN');
   const [creating, setCreating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   // Fetch all model registries (enriched with versions from the backend)
   const fetchRegistries = useCallback(async () => {
@@ -101,13 +120,16 @@ function ModelRegistryView() {
       await api.post('/model-registry', {
         name: newName.trim(),
         baseModel: newBaseModel.trim(),
-        description: newDescription.trim()
+        description: newDescription.trim(),
+        subject: newSubject,
+        routerEnabled: true,
       });
       
       // Reset forms
       setNewName('');
       setNewBaseModel('');
       setNewDescription('');
+      setNewSubject('UNKNOWN');
       setShowCreateModal(false);
       
       // Refresh registry list
@@ -117,6 +139,29 @@ function ModelRegistryView() {
       toast.error('Lỗi tạo Model Registry: ' + (err.response?.data?.message || err.message), { id: toastId });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleSyncTrainingHistory = async () => {
+    setSyncing(true);
+    const toastId = toast.loading('Đang đồng bộ các model đã train thật...');
+    try {
+      const response = await api.post('/model-registry/sync-training-history', {});
+      await fetchRegistries();
+      const {
+        registriesCreated = 0,
+        versionsCreated = 0,
+        versionsSkipped = 0,
+        skippedWithoutRepository = 0,
+      } = response.data || {};
+      toast.success(
+        `Đã thêm ${registriesCreated} registry và ${versionsCreated} phiên bản; bỏ qua ${versionsSkipped} bản đã có${skippedWithoutRepository ? `, ${skippedWithoutRepository} job chưa có HF Repository` : ''}.`,
+        { id: toastId, duration: 6000 },
+      );
+    } catch (err: any) {
+      toast.error(`Không đồng bộ được: ${err.response?.data?.message || err.message}`, { id: toastId });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -182,17 +227,8 @@ function ModelRegistryView() {
       tags.push({ label: 'Local', type: 'disabled' });
     }
 
-    const categories = ['production'];
-    const nameLower = model.name.toLowerCase();
-    if (nameLower.includes('chat') || nameLower.includes('llama')) {
-      categories.push('chat', 'llm');
-    } else if (nameLower.includes('code') || nameLower.includes('neo') || nameLower.includes('coder')) {
-      categories.push('code', 'generation');
-    } else if (nameLower.includes('instruct') || nameLower.includes('mistral')) {
-      categories.push('instruct', 'reasoning');
-    } else {
-      categories.push('model');
-    }
+    const categories = [model.subject && model.subject !== 'UNKNOWN' ? model.subject.toLowerCase() : 'unclassified'];
+    categories.push(model.routerEnabled === false ? 'router-disabled' : 'router-ready');
 
     return { tags, categories };
   };
@@ -237,9 +273,14 @@ function ModelRegistryView() {
           <h1>Model Registry</h1>
           <p>Duyệt, quản lý phiên bản và theo dõi các chỉ số đánh giá của Model</p>
         </div>
-        <button className="btn-primary-upload" onClick={() => setShowCreateModal(true)}>
-          <Plus size={16} /> Tạo Registry mới
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button className="btn-outline" onClick={handleSyncTrainingHistory} disabled={syncing}>
+            <RefreshCw size={16} /> {syncing ? 'Đang đồng bộ...' : 'Đồng bộ từ lịch sử train'}
+          </button>
+          <button className="btn-primary-upload" onClick={() => setShowCreateModal(true)}>
+            <Plus size={16} /> Tạo Registry mới
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -297,7 +338,10 @@ function ModelRegistryView() {
         <div style={{ textAlign: 'center', padding: '64px', color: 'var(--text-muted)', border: '1px dashed var(--border)', borderRadius: '12px', background: 'white' }}>
           <Package size={48} style={{ margin: '0 auto 16px auto', strokeWidth: 1.5, color: '#94a3b8' }} />
           <h3>Không tìm thấy model nào</h3>
-          <p style={{ fontSize: '13px', marginTop: '4px' }}>Thử thay đổi bộ lọc hoặc tạo một Model Registry mới.</p>
+          <p style={{ fontSize: '13px', marginTop: '4px' }}>Tạo registry mới hoặc đồng bộ trực tiếp từ các training job đã hoàn thành.</p>
+          <button className="btn-outline" style={{ marginTop: '16px' }} onClick={handleSyncTrainingHistory} disabled={syncing}>
+            <RefreshCw size={16} /> Đồng bộ model thật
+          </button>
         </div>
       ) : (
         <div className="models-list">
@@ -309,15 +353,16 @@ function ModelRegistryView() {
             // Compute values for stats row
             const activeVersionName = activeVersion ? activeVersion.version : 'N/A';
             const versionsCountText = `${model.versionsCount} version${model.versionsCount !== 1 ? 's' : ''}`;
-            const latencyText = activeVersion?.metrics?.latency || 'N/A';
+            const latencyText = activeVersion?.metrics?.avgLatencyMs !== undefined
+              ? `${Math.round(activeVersion.metrics.avgLatencyMs)}ms`
+              : (activeVersion?.metrics?.latency || 'N/A');
             
-            // Format accuracy representation
-            let accuracyText = 'N/A';
-            if (activeVersion?.metrics?.accuracy !== undefined) {
-              accuracyText = `${activeVersion.metrics.accuracy}%`;
-            } else if (activeVersion?.metrics?.overallScore !== undefined) {
-              accuracyText = `${activeVersion.metrics.overallScore.toFixed(1)}%`;
-            }
+            const evalOverallText = activeVersion?.metrics?.overallScore !== undefined
+              ? `${activeVersion.metrics.overallScore.toFixed(1)}%`
+              : 'Chua eval';
+            const trainLossText = activeVersion?.metrics?.loss !== undefined
+              ? activeVersion.metrics.loss.toFixed(4)
+              : 'N/A';
             
             const sizeText = activeVersion?.metrics?.size || 'N/A';
 
@@ -365,14 +410,14 @@ function ModelRegistryView() {
                       <div className="stat-sub-value text-success">Phản hồi trung bình</div>
                     </div>
                     <div className="stat-column">
-                      <div className="stat-label-icon"><BarChart2 size={14} /> Accuracy</div>
-                      <div className="stat-main-value">{accuracyText}</div>
-                      <div className="stat-sub-value">Điểm Val / Eval</div>
+                      <div className="stat-label-icon"><BarChart2 size={14} /> Eval Overall</div>
+                      <div className="stat-main-value">{evalOverallText}</div>
+                      <div className="stat-sub-value">Official judge score</div>
                     </div>
                     <div className="stat-column">
-                      <div className="stat-label-icon"><HardDrive size={14} /> Kích thước</div>
-                      <div className="stat-main-value">{sizeText}</div>
-                      <div className="stat-sub-value">Dung lượng file</div>
+                      <div className="stat-label-icon"><HardDrive size={14} /> Train Loss</div>
+                      <div className="stat-main-value">{trainLossText}</div>
+                      <div className="stat-sub-value">{sizeText !== 'N/A' ? sizeText : 'SFT metric'}</div>
                     </div>
                   </div>
 
@@ -399,10 +444,12 @@ function ModelRegistryView() {
                             <tr>
                               <th>Phiên bản</th>
                               <th>Trạng thái hoạt động</th>
-                              <th>Độ chính xác (Accuracy)</th>
-                              <th>Loss</th>
-                              <th>Độ trễ (Latency)</th>
-                              <th>Kích thước</th>
+                              <th>Eval Overall</th>
+                              <th>Train Loss</th>
+                              <th>Latency</th>
+                              <th>Dataset</th>
+                              <th>Records / Tokens</th>
+                              <th>Eval ID</th>
                               <th>HF Repository</th>
                               <th>Ghi chú</th>
                               <th>Ngày tạo</th>
@@ -412,9 +459,15 @@ function ModelRegistryView() {
                           <tbody>
                             {model.versions.map((ver) => {
                               const isActive = ver.status === 'Use';
-                              const formattedAccuracy = ver.metrics?.accuracy !== undefined 
-                                ? `${ver.metrics.accuracy}%` 
-                                : (ver.metrics?.overallScore !== undefined ? `${ver.metrics.overallScore.toFixed(1)}%` : '-');
+                              const formattedOverall = ver.metrics?.overallScore !== undefined
+                                ? `${ver.metrics.overallScore.toFixed(1)}%`
+                                : '-';
+                              const recordsText = ver.training?.totalRecords
+                                ? ver.training.totalRecords.toLocaleString('vi-VN')
+                                : '-';
+                              const tokensText = ver.training?.totalTokens
+                                ? ver.training.totalTokens.toLocaleString('vi-VN')
+                                : '-';
 
                               return (
                                 <tr key={ver._id} className={isActive ? 'active-version-row' : ''}>
@@ -425,10 +478,28 @@ function ModelRegistryView() {
                                       {isActive ? 'Đang dùng' : 'Không dùng'}
                                     </span>
                                   </td>
-                                  <td style={{ fontWeight: 'bold' }}>{formattedAccuracy}</td>
+                                  <td style={{ fontWeight: 'bold' }}>{formattedOverall}</td>
                                   <td>{ver.metrics?.loss?.toFixed(4) || '-'}</td>
-                                  <td>{ver.metrics?.latency || '-'}</td>
-                                  <td>{ver.metrics?.size || '-'}</td>
+                                  <td>{ver.metrics?.avgLatencyMs ? `${Math.round(ver.metrics.avgLatencyMs)}ms` : (ver.metrics?.latency || '-')}</td>
+                                  <td>
+                                    <div style={{ fontWeight: 600 }}>{ver.training?.datasetName || '-'}</div>
+                                    <div className="text-muted" style={{ fontSize: '11px' }}>
+                                      Prompt: {ver.training?.systemPromptVersion || ver.promptVersion || 'Default'}
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <div>{recordsText} records</div>
+                                    <div className="text-muted" style={{ fontSize: '11px' }}>{tokensText} tokens</div>
+                                  </td>
+                                  <td>
+                                    {ver.modelEvalId ? (
+                                      <span title={ver.modelEvalId} className="text-primary font-semibold">
+                                        {ver.modelEvalId.slice(-8)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted">Chưa eval</span>
+                                    )}
+                                  </td>
                                   <td>
                                     {ver.hfRepoId ? (
                                       <a 
@@ -530,6 +601,21 @@ function ModelRegistryView() {
                     onChange={(e) => setNewBaseModel(e.target.value)}
                     required
                   />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="reg-subject">Môn chuyên trách</label>
+                  <select
+                    id="reg-subject"
+                    className="form-input"
+                    value={newSubject}
+                    onChange={(e) => setNewSubject(e.target.value as ModelRegistryType['subject'])}
+                  >
+                    <option value="UNKNOWN">Chưa phân loại</option>
+                    <option value="MATH">Toán</option>
+                    <option value="PHYSICS">Vật lý</option>
+                    <option value="CHEMISTRY">Hóa học</option>
+                    <option value="GENERAL">Tổng quát / fallback</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label htmlFor="reg-desc">Mô tả chi tiết</label>

@@ -67,7 +67,9 @@ const StepConfig: React.FC<StepConfigProps> = ({
   onBack,
   toast,
 }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Keep the full training configuration visible for reproducible research
+  // runs (Version 1 exposed these fields by default).
+  const [showAdvanced, setShowAdvanced] = useState(true);
   const [showHfPush, setShowHfPush] = useState(false);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [savePresetName, setSavePresetName] = useState('');
@@ -85,10 +87,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
   }, [config.baseModel]);
 
   const isCustomActive = config.baseModel === 'custom' || !isPredefinedModel;
-  const isOnlineModel = useMemo(() => {
-    const onlineModelIds = ['qwen-3.7-plus', 'zai-org/GLM-4.7', 'stepfun-ai/Step-3.5-Flash'];
-    return onlineModelIds.includes(config.baseModel);
-  }, [config.baseModel]);
+  const isOnlineModel = false;
 
   const [customModelInput, setCustomModelInput] = useState(isPredefinedModel ? '' : config.baseModel);
   const [isValidatingModel, setIsValidatingModel] = useState(false);

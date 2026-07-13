@@ -505,6 +505,7 @@ export const apiService = {
             parsed = JSON.parse(line.slice(6));
           } catch { continue; }
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.is_final && typeof data?.onFinalInfo === 'function') data.onFinalInfo(parsed);
           const text = parsed.response ?? parsed.text;
           if (typeof text === 'string' && text && onChunkCallback) onChunkCallback(text);
         }
@@ -555,6 +556,8 @@ export const apiService = {
   safeSplit: async (payload: {
     data: any[];
     test_percentage?: number;
+    validation_percentage?: number;
+    stratify_by_subject?: boolean;
     threshold?: number;
     max_attempts?: number;
     seed?: number;

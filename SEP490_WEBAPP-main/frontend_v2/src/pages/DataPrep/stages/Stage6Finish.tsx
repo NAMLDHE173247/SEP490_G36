@@ -165,9 +165,26 @@ export const Stage6Finish: React.FC = () => {
     }
     setIsSplitting(true);
     try {
-      const formattedData = conversationsList.map(c => ({
-        conversation_id: c.id,
-        messages: c.messages.flatMap((m: any) => {
+      // Use the canonical training export as the source of truth. The stage
+      // conversation list may not contain subject_final, which would silently
+      // turn every item into UNGROUPED/GENERAL during subject-stratified split.
+      let splitSource: any[] = conversationsList;
+      try {
+        const labeledExport = await loadLabeledExportSource();
+        if (Array.isArray(labeledExport) && labeledExport.length > 0) splitSource = labeledExport;
+      } catch (exportError) {
+        console.warn('[Split] Falling back to stage conversation list:', exportError);
+      }
+
+      const formattedData = splitSource.map((c: any) => ({
+        conversation_id: c.conversation_id || c.id,
+        subject:
+          c.subject ||
+          c.subjectLabelWithHuman ||
+          c.subjectLabelWithAI ||
+          c.subjectLabelDefault ||
+          'UNGROUPED',
+        messages: (c.messages || []).flatMap((m: any) => {
           if (m.role && typeof m.content === 'string') {
             return [{ role: m.role, content: m.content }];
           }
@@ -184,6 +201,8 @@ export const Stage6Finish: React.FC = () => {
       const res = await apiService.safeSplit({
         data: formattedData,
         test_percentage: splitTestPercentage,
+        validation_percentage: splitValPercentage,
+        stratify_by_subject: true,
         threshold: splitThreshold,
         max_attempts: splitMaxAttempts,
         seed: 42
@@ -197,7 +216,7 @@ export const Stage6Finish: React.FC = () => {
           let id = apiItem.conversation_id || apiItem.id;
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || '';
-            const match = conversationsList.find((c: any) => {
+            const match = splitSource.find((c: any) => {
               if (!c.messages || c.messages.length === 0) return false;
               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
               return cFirstContent === firstContent;
@@ -211,6 +230,7 @@ export const Stage6Finish: React.FC = () => {
         apiResponse = {
           ...res,
           train: injectIds(res.train),
+          val: injectIds(res.val || []),
           test: injectIds(res.test)
         };
       } else if (res && typeof res === 'object' && res.trainIndices) {
@@ -219,7 +239,7 @@ export const Stage6Finish: React.FC = () => {
           let id = apiItem.conversation_id || apiItem.id;
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || apiItem.messages[0].user || '';
-            const match = conversationsList.find((c: any) => {
+            const match = splitSource.find((c: any) => {
               if (!c.messages || c.messages.length === 0) return false;
               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
               return cFirstContent === firstContent;
@@ -230,8 +250,8 @@ export const Stage6Finish: React.FC = () => {
           return { ...apiItem, conversation_id: id };
         });
 
-        const trainData = res.trainIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
-        const testData = res.testIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
+        const trainData = res.trainIndices.map((idx: number) => splitSource[idx] || formattedData[idx]);
+        const testData = res.testIndices.map((idx: number) => splitSource[idx] || formattedData[idx]);
 
         apiResponse = {
           ...res,
@@ -245,14 +265,14 @@ export const Stage6Finish: React.FC = () => {
         };
       }
 
-      // === Plan A: Tách tập val từ train ===
-      const rawTrain: any[] = apiResponse.train || [];
-      const totalRemaining = 100 - splitTestPercentage;
-      const valFraction = totalRemaining > 0 ? splitValPercentage / totalRemaining : 0;
-      const valCount = Math.max(0, Math.round(rawTrain.length * valFraction));
-      const valData = rawTrain.slice(rawTrain.length - valCount);
-      const trainData = rawTrain.slice(0, rawTrain.length - valCount);
+      // Validation phải được GPU Split Guard trả về; frontend không tự cắt
+      // một đoạn từ train vì cách đó không kiểm tra leakage và không stratify.
+      const trainData: any[] = apiResponse.train || [];
+      const valData: any[] = apiResponse.val || [];
       const testData: any[] = apiResponse.test || [];
+      if (valData.length === 0) {
+        throw new Error('Safe Split API did not return a locked validation partition.');
+      }
 
       setSplitResult({
         ...apiResponse,
@@ -288,7 +308,9 @@ export const Stage6Finish: React.FC = () => {
       addToMap(trainData, 'train');
       addToMap(valData,   'val');
       addToMap(testData,  'test');
-      const subjectRows = Array.from(subjectMap.entries())
+      const subjectRows = Array.isArray(apiResponse.subject_distribution)
+        ? apiResponse.subject_distribution
+        : Array.from(subjectMap.entries())
         .map(([subject, counts]) => ({ subject, ...counts, total: counts.train + counts.val + counts.test }))
         .sort((a, b) => b.total - a.total);
       setSplitBySubject(subjectRows);
@@ -334,10 +356,10 @@ export const Stage6Finish: React.FC = () => {
     }
 
     // Determine what to display (prefer AI score if available, otherwise human)
-    if (avgAI !== null) {
+    if (avgAI !== null && avgAI !== undefined) {
       return { score: avgAI, evaluatedBy: 'Avg AI', label: label || (avgAI < 6.0 ? 'Needs improvement' : 'Good') };
     }
-    if (humanScore !== null) {
+    if (humanScore !== null && humanScore !== undefined) {
       return { score: humanScore, evaluatedBy: 'Staff', label: label || (humanScore < 6.0 ? 'Needs improvement' : 'Good') };
     }
     
@@ -400,6 +422,7 @@ export const Stage6Finish: React.FC = () => {
         messages,
         labels: conv.labels || { sample: [], messages: [] },
         conversation_id: conv.conversation_id || conv.id,
+        subject: conv.subject || conv.subjectLabelWithHuman || conv.subjectLabelWithAI || 'UNGROUPED',
       };
     }).filter(item => item.messages.length > 1); // Keep only items with actual conversation
   };
@@ -427,30 +450,115 @@ export const Stage6Finish: React.FC = () => {
       return;
     }
 
-    const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
-    const valIds  = new Set((splitResult.val  || []).map((c: any) => c.conversation_id || c.id));
-    const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
-
-    let trainData = sourceData.filter((c: any) =>  trainIds.has(c.conversation_id || c.id));
-    let valData   = sourceData.filter((c: any) =>  valIds.has(c.conversation_id || c.id));
-    let testData  = sourceData.filter((c: any) =>  testIds.has(c.conversation_id || c.id));
-
-    // Loại bỏ mẫu bị exclude thủ công
-    trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
-    valData   = valData.filter((c: any)   => !excludedSamples.has(c.conversation_id || c.id));
-    testData  = testData.filter((c: any)  => !excludedSamples.has(c.conversation_id || c.id));
-
     const zip = new JSZip();
-    zip.file('train.json', JSON.stringify(toChatML(trainData), null, 2));
-    if (valData.length > 0) {
-      zip.file('val.json', JSON.stringify(toChatML(valData), null, 2));
+    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const filePrefix = (subject: string) => {
+      const normalized = normalize(subject);
+      if (normalized === 'MATH' || normalized === 'MATHEMATICS') return 'math';
+      if (normalized === 'PHYSICAL' || normalized === 'PHYSICS') return 'physical';
+      if (normalized === 'GENERAL' || normalized === 'OUT_OF_SCOPE' || normalized === 'UNGROUPED') return 'general';
+      return normalized.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+    };
+    const idsFor = (partition: any[], subject: string) => new Set(
+      partition
+        .filter(item => normalize(item.subject) === normalize(subject))
+        .map(item => String(item.conversation_id || item.id))
+    );
+    const select = (partition: any[], subject: string) => {
+      const ids = idsFor(partition, subject);
+      return sourceData.filter(item =>
+        ids.has(String(item.conversation_id || item.id)) &&
+        !excludedSamples.has(String(item.conversation_id || item.id))
+      );
+    };
+
+    const exportedSubjects: Array<Record<string, any>> = [];
+    for (const row of splitBySubject) {
+      const prefix = filePrefix(row.subject);
+      const trainData = select(splitResult.train || [], row.subject);
+      const valData = select(splitResult.val || [], row.subject);
+      const testData = select(splitResult.test || [], row.subject);
+      if (trainData.length) zip.file(`${prefix}.train.json`, JSON.stringify(toChatML(trainData), null, 2));
+      if (valData.length) zip.file(`${prefix}.validation.json`, JSON.stringify(toChatML(valData), null, 2));
+      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toChatML(testData), null, 2));
+      exportedSubjects.push({
+        subject: normalize(row.subject),
+        prefix,
+        train: trainData.length,
+        validation: valData.length,
+        test: testData.length,
+      });
     }
-    if (testData.length > 0) {
-      zip.file('test.json', JSON.stringify(toChatML(testData), null, 2));
-    }
+    zip.file('_metadata.json', JSON.stringify({
+      projectName,
+      datasetVersionId: localStorage.getItem('current_version_id'),
+      splitStrategy: splitResult.split_strategy || 'semantic-guard',
+      seed: splitResult.seed ?? 42,
+      threshold: splitResult.threshold ?? splitThreshold,
+      fileConvention: '<subject>.train.json | <subject>.validation.json | <subject>.test.json',
+      subjects: exportedSubjects,
+      exportedAt: new Date().toISOString(),
+    }, null, 2));
 
     const content = await zip.generateAsync({ type: 'blob' });
-    saveAs(content, `${projectName || 'dataset'}_split.zip`);
+    saveAs(content, `${projectName || 'dataset'}_multi_subject_split.zip`);
+  };
+
+  const handleDownloadSubjectSplit = async (requestedSubject: string) => {
+    if (!splitResult?.train || !splitResult?.val || !splitResult?.test) {
+      alert('Hãy chạy Split Guard trước khi export theo môn.');
+      return;
+    }
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn.');
+      return;
+    }
+
+    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const subject = normalize(requestedSubject);
+    const idsFor = (partition: any[]) => new Set(
+      partition
+        .filter(item => normalize(item.subject) === subject)
+        .map(item => String(item.conversation_id || item.id))
+    );
+    const select = (partition: any[]) => {
+      const ids = idsFor(partition);
+      return sourceData.filter(item =>
+        ids.has(String(item.conversation_id || item.id)) &&
+        !excludedSamples.has(String(item.conversation_id || item.id))
+      );
+    };
+
+    const trainData = select(splitResult.train);
+    const valData = select(splitResult.val);
+    const testData = select(splitResult.test);
+    if (!trainData.length || !valData.length || !testData.length) {
+      alert(`Môn ${requestedSubject} chưa có đủ cả Train/Validation/Test.`);
+      return;
+    }
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(toChatML(trainData), null, 2));
+    zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
+    zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
+    zip.file('_metadata.json', JSON.stringify({
+      projectName,
+      datasetVersionId: localStorage.getItem('current_version_id'),
+      subject,
+      splitStrategy: splitResult.split_strategy,
+      seed: splitResult.seed ?? 42,
+      threshold: splitResult.threshold ?? splitThreshold,
+      totalTrain: trainData.length,
+      totalValidation: valData.length,
+      totalTest: testData.length,
+      exportedAt: new Date().toISOString(),
+    }, null, 2));
+    const content = await zip.generateAsync({ type: 'blob' });
+    const safeSubject = subject.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+    saveAs(content, `${projectName || 'dataset'}_${safeSubject}_split.zip`);
   };
 
   const [exportMinScore, setExportMinScore] = useState(6.0);
@@ -468,22 +576,30 @@ export const Stage6Finish: React.FC = () => {
       return;
     }
     let trainData = sourceData;
+    let valData: any[] = [];
     let testData: any[] = [];
 
     if (splitResult) {
       const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
+      const valIds = new Set((splitResult.val || []).map((c: any) => c.conversation_id || c.id));
       const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
 
       trainData = sourceData.filter((c: any) => trainIds.has(c.conversation_id || c.id));
+      valData = sourceData.filter((c: any) => valIds.has(c.conversation_id || c.id));
       testData = sourceData.filter((c: any) => testIds.has(c.conversation_id || c.id));
     }
 
     // Filter out excluded samples first
     trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+    valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
     testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
     // Filter by overall score
     trainData = trainData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
+    valData = valData.filter((c: any) => {
       const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
       return s !== null && s >= exportMinScore;
     });
@@ -493,9 +609,12 @@ export const Stage6Finish: React.FC = () => {
     });
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
-    if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
+    zip.file('train_dataset.json', JSON.stringify(toChatML(trainData), null, 2));
+    if (valData.length > 0) {
+      zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
+    }
+    if (testData.length > 0) {
+      zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });
@@ -519,14 +638,17 @@ export const Stage6Finish: React.FC = () => {
     try {
       // Prepare dataset content
       let trainData = splitResult.train;
+      let valData = splitResult.val || [];
       let testData = splitResult.test || [];
 
       // Filter out excluded items
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+      valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
         train: toChatML(trainData),
+        validation: toChatML(valData),
         test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
@@ -561,13 +683,16 @@ export const Stage6Finish: React.FC = () => {
     try {
       // Prepare dataset content
       let trainData = splitResult.train;
+      let valData = splitResult.val || [];
       let testData = splitResult.test || [];
 
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+      valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
         train: toChatML(trainData),
+        validation: toChatML(valData),
         test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
@@ -1094,6 +1219,7 @@ export const Stage6Finish: React.FC = () => {
                       <th style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981' }}>Val</th>
                       <th style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6' }}>Test</th>
                       <th style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>Tổng</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>Dataset</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1111,6 +1237,15 @@ export const Stage6Finish: React.FC = () => {
                         <td style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981', fontWeight: 600 }}>{row.val}</td>
                         <td style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6', fontWeight: 600 }}>{row.test}</td>
                         <td style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>{row.total}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                          <button
+                            className="s6-trial-btn"
+                            onClick={() => handleDownloadSubjectSplit(row.subject)}
+                            title={`Export dataset riêng cho môn ${row.subject}`}
+                          >
+                            <Download size={13} /> ZIP
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1342,8 +1477,9 @@ export const Stage6Finish: React.FC = () => {
                   </tr>
                 ) : previewRows.map((row, idx) => {
                   const scoreData = getOverallScoreData(row.id, row.sampleObjectId);
-                  const scoreText = scoreData.score !== null ? scoreData.score.toFixed(1) : '-';
-                  const reason = scoreData.score !== null ? scoreData.label : '-';
+                  const hasScore = typeof scoreData.score === 'number' && !isNaN(scoreData.score);
+                  const scoreText = hasScore ? scoreData.score.toFixed(1) : '-';
+                  const reason = hasScore ? scoreData.label : '-';
                   return (
                     <tr key={idx}>
                       <td>
@@ -1377,7 +1513,7 @@ export const Stage6Finish: React.FC = () => {
           {/* Download Cards Row */}
           <div className="ex-download-row">
             <div className="ex-download-card">
-              <h4>Download Train / Val / Test Split</h4>
+              <h4>Download Multi-subject Split</h4>
               <p className="ex-download-stat">
                 <span style={{ color: '#7c3aed' }}>Train: {splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}</span>
                 {' / '}
@@ -1385,12 +1521,12 @@ export const Stage6Finish: React.FC = () => {
                 {' / '}
                 <span style={{ color: '#3b82f6' }}>Test: {splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}</span>
               </p>
-              <p className="ex-download-note">ZIP chứa <code>train.json</code>, <code>val.json</code>, <code>test.json</code>. Export bị khoá nếu chưa chạy Split Guard.</p>
+              <p className="ex-download-note">ZIP tổng chứa <code>math.train.json</code>, <code>math.validation.json</code>, <code>math.test.json</code>, <code>physical.train.json</code>... Dùng nút ZIP trong bảng Subject Distribution để tải gói upload AutoTrain riêng cho từng môn.</p>
               <button
                 className="ex-btn-green"
                 onClick={handleDownloadSplit}
               >
-                <Download size={14} /> Download train/val/test ZIP
+                <Download size={14} /> Download all subject files
               </button>
             </div>
             <div className="ex-download-card">

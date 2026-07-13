@@ -228,13 +228,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       setConfig((prev) => ({
         ...prev,
         epochs: String(preset.epochs || '3'),
-        batchSize: String(preset.batchSize || '2'),
-        learningRate: String(preset.learningRate || '0.00003'),
-        blockSize: String(preset.blockSize || '512'),
+        batchSize: String(preset.batchSize || '1'),
+        learningRate: String(preset.learningRate || '0.0002'),
+        blockSize: String(preset.blockSize || '1024'),
         modelMaxLength: String(preset.modelMaxLength || '1024'),
-        r: String(preset.r || '8'),
-        loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '8'),
-        loraDropout: String(preset.lora_dropout || preset.loraDropout || '0.05'),
+        r: String(preset.r || '16'),
+        loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '32'),
+        loraDropout: String(preset.lora_dropout ?? preset.loraDropout ?? '0'),
         gradAccum: String(preset.gradient_accumulation_steps || preset.gradAccum || '4'),
         warmupSteps: String(preset.warmup_steps || preset.warmupSteps || '5'),
         weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),
@@ -249,13 +249,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     (name: string) => {
       const newPreset = {
         epochs: parseInt(config.epochs) || 3,
-        batchSize: parseInt(config.batchSize) || 2,
-        learningRate: parseFloat(config.learningRate) || 3e-5,
-        blockSize: parseInt(config.blockSize) || 512,
+        batchSize: parseInt(config.batchSize) || 1,
+        learningRate: parseFloat(config.learningRate) || 2e-4,
+        blockSize: parseInt(config.blockSize) || 1024,
         modelMaxLength: parseInt(config.modelMaxLength) || 1024,
-        r: parseInt(config.r) || 8,
-        lora_alpha: parseInt(config.loraAlpha) || 8,
-        lora_dropout: parseFloat(config.loraDropout) || 0.05,
+        r: parseInt(config.r) || 16,
+        lora_alpha: parseInt(config.loraAlpha) || 32,
+        lora_dropout: Number.isFinite(parseFloat(config.loraDropout)) ? parseFloat(config.loraDropout) : 0,
         gradient_accumulation_steps: parseInt(config.gradAccum) || 4,
         warmup_steps: parseInt(config.warmupSteps) || 5,
         weight_decay: parseFloat(config.weightDecay) || 0.01,
@@ -363,6 +363,16 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        const previousLogs = globalTrainingState.activeJobs[jobId]?.logs || [];
+        const receivedLogs = Array.isArray(data.logs) ? data.logs : [];
+        const fallbackErrorLogs = receivedLogs.length === 0 && data.error
+          ? [
+              `[ERROR] ${data.error}`,
+              ...(data.technical_error && data.technical_error !== data.error
+                ? [data.technical_error]
+                : []),
+            ]
+          : [];
 
         // Update Job metrics and status immutably
         globalTrainingState.activeJobs = {
@@ -379,7 +389,9 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
             eval_loss: data.metrics?.eval_loss,
             vram_used: data.metrics?.vram,
             gpu_util: data.metrics?.gpu_util ? `${data.metrics.gpu_util}%` : undefined,
-            logs: data.logs || (globalTrainingState.activeJobs[jobId] ? globalTrainingState.activeJobs[jobId].logs : []) || [],
+            error: data.error,
+            technical_error: data.technical_error,
+            logs: receivedLogs.length > 0 ? receivedLogs : (fallbackErrorLogs.length > 0 ? fallbackErrorLogs : previousLogs),
           }
         };
 

@@ -676,6 +676,7 @@ function ChatPanel({
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride ?? "";
+      const isHybrid = provider === "hybrid";
       const isLocal = provider === "local" || provider === "registry";
       if (!text.trim() || loading) return;
       if (isLocal && (!hfHubId.trim() || !modelLoaded)) return;
@@ -701,7 +702,7 @@ function ChatPanel({
 
       const startTime = Date.now();
       let aiContent = "";
-      setMessages((prev) => [...prev, { role: "ai", content: "", model: isLocal ? hfHubId : provider }]);
+      setMessages((prev) => [...prev, { role: "ai", content: "", model: isHybrid ? "Hybrid Router" : isLocal ? hfHubId : provider }]);
 
       try {
         const options = {
@@ -714,9 +715,19 @@ function ChatPanel({
           top_k: params.topK === "" ? undefined : params.topK,
           top_p: params.topP === "" ? undefined : params.topP,
           repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
-          provider: provider === "local" || provider === "registry" ? undefined : provider,
+          provider: provider === "local" || provider === "registry" || isHybrid ? undefined : provider,
+          routing_mode: isHybrid ? "hybrid" : undefined,
+          session_id: currentSessionId || undefined,
           signal: abortController.signal,
           onFinalInfo: (info: any) => {
+            if (info.routing) {
+              onLog?.({
+                message: `Hybrid route: ${info.routing.subject} → ${info.routing.selectedModel || 'clarification'}`,
+                type: "info",
+                instanceId,
+                data: info.routing,
+              });
+            }
             if (info.input_parameters) {
               setMessages((prev) => {
                 const arr = [...prev];
@@ -730,7 +741,7 @@ function ChatPanel({
 
         await apiService.inferStream({
           text_input: text,
-          hf_hub_id: hfHubId || undefined,
+          hf_hub_id: isHybrid ? undefined : (hfHubId || undefined),
           ...options,
         }, (chunk: string) => {
           aiContent += chunk;
@@ -854,6 +865,13 @@ function ChatPanel({
   };
 
   const handleConfirmModel = async (modelOverride?: string) => {
+    if (provider === "hybrid") {
+      setActiveModelId("Hybrid Router");
+      setModelLoaded(true);
+      setLoadError(null);
+      toast.success("Hybrid Router đã sẵn sàng");
+      return;
+    }
     const isLocalOrRegistry = provider === "local" || provider === "registry";
     const modelToLoad = modelOverride || hfHubId;
 
@@ -1075,13 +1093,20 @@ function ChatPanel({
           >
             <option value="local">Manual ID</option>
             <option value="registry">Model Registry</option>
+            <option value="hybrid">Tự động · Hybrid Router</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="deepseek">DeepSeek V3 · OpenRouter</option>
+            <option value="gemini">Gemini 2.5 Flash · OpenRouter</option>
+            <option value="openai">GPT-4o mini · OpenRouter</option>
             <option value="groq">Groq</option>
-            <option value="deepseek">DeepSeek</option>
             <option value="oauth_gateway">OAuth Gateway</option>
           </select>
 
-          {provider === "registry" ? (
+          {provider === "hybrid" ? (
+            <div style={{ width: '320px', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              Rule-first → Gemini fallback → Math/Physics SLM
+            </div>
+          ) : provider === "registry" ? (
             <select
               value={selectedRegistryId}
               onChange={(e) => handleRegistryChange(e.target.value)}

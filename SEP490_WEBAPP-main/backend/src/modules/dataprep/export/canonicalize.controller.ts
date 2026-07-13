@@ -31,13 +31,30 @@ export class CanonicalizeController {
         DatasetCanonicalLabel.find({ datasetVersionId: versionId, sampleId: { $in: itemIds } }).sort({ createdAt: 1 }).lean(),
         ConversationRewriteHistory.find({ datasetVersionId: versionId, approvedText: { $nin: ['', null] } }).lean(),
       ]);
-      if (canonicalLabels.length === 0) {
+      let activeCanonical = canonicalLabels;
+      if (activeCanonical.length === 0) {
+        const hardLabels = await LabelAssignment.find({
+          sampleId: { $in: itemIds },
+          type: 'hard',
+        }).lean();
+        if (hardLabels.length > 0) {
+          activeCanonical = hardLabels.map((hl: any) => ({
+            sampleId: hl.sampleId,
+            targetScope: hl.targetScope || 'sample',
+            messageIndex: hl.messageIndex ?? null,
+            messageRole: hl.messageRole ?? null,
+            labels: hl.name ? [hl.name] : [],
+          })) as any[];
+        }
+      }
+
+      if (activeCanonical.length === 0) {
         res.status(409).json({ error: 'Dataset has no published canonical labels. Canonicalize it before training export.' });
         return;
       }
 
       const labelsBySample = new Map<string, any[]>();
-      for (const label of canonicalLabels) {
+      for (const label of activeCanonical) {
         const key = String(label.sampleId);
         const rows = labelsBySample.get(key) || [];
         rows.push(label);
@@ -431,12 +448,31 @@ export class CanonicalizeController {
 
       // Pre-load canonical labels và rewrites vào Maps cho lookup nhanh
       const canonicalLabels = await DatasetCanonicalLabel.find({ datasetVersionId: versionId }).lean();
-      if (canonicalLabels.length === 0) {
+      let activeCanonical = canonicalLabels;
+      if (activeCanonical.length === 0) {
+        const items = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).select('_id').lean();
+        const itemIds = items.map(item => item._id);
+        const hardLabels = await LabelAssignment.find({
+          sampleId: { $in: itemIds },
+          type: 'hard',
+        }).lean();
+        if (hardLabels.length > 0) {
+          activeCanonical = hardLabels.map((hl: any) => ({
+            sampleId: hl.sampleId,
+            targetScope: hl.targetScope || 'sample',
+            messageIndex: hl.messageIndex ?? null,
+            messageRole: hl.messageRole ?? null,
+            labels: hl.name ? [hl.name] : [],
+          })) as any[];
+        }
+      }
+
+      if (activeCanonical.length === 0) {
         res.status(409).json({ error: 'Dataset has no published canonical labels. Canonicalize it before export.' });
         return;
       }
       const canonicalMap = new Map<string, any[]>();
-      for (const cl of canonicalLabels) {
+      for (const cl of activeCanonical) {
         const key = String(cl.sampleId);
         if (!canonicalMap.has(key)) canonicalMap.set(key, []);
         canonicalMap.get(key)!.push(cl);

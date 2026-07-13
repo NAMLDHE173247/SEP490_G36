@@ -12,6 +12,8 @@ import { TrainingHistory } from '../models/TrainingHistory';
 import { isZipFile, extractForEvaluation, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
+import { apiKeyService } from '../services/apiKeyService';
+import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
 dotenv.config();
 
 function getOwnerFilter(req: Request): { ownerId?: string } {
@@ -22,7 +24,7 @@ function getOwnerFilter(req: Request): { ownerId?: string } {
 // ---------------------------------------------------------------------------
 // Helper: lấy GPU status — kiểm tra trước khi dispatch eval
 // ---------------------------------------------------------------------------
-async function getGpuStatus(): Promise<{
+type GpuStatus = {
   can_create_eval: boolean;
   active_evals: number;
   max_evals: number;
@@ -30,14 +32,23 @@ async function getGpuStatus(): Promise<{
   vram_total_mb: number;
   vram_used_mb: number;
   gpu_util: number;
-} | null> {
-  try {
-    const resp = await fetch(`${configService.getGpuUrl()}/api/system-eval/resources`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json() as any;
+};
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
+  const headers = { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' };
+  // Older workers expose /api/system/resources while newer workers expose the
+  // eval-specific endpoint. Supporting both prevents a harmless route mismatch
+  // from being recorded as a failed evaluation.
+  for (const endpoint of ['/api/system-eval/resources', '/api/system/resources']) {
+    try {
+      const resp = await fetch(`${configService.getGpuUrl()}${endpoint}`, {
+        headers,
+        signal: AbortSignal.timeout(7000),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json() as any;
     // console.log('[Backend] GPU status response:', data);
 
     // Ensure all required fields are present, calculate missing ones
@@ -51,11 +62,24 @@ async function getGpuStatus(): Promise<{
       gpu_util: data.gpu_util ?? 0,
     };
 
-    return result;
-  } catch (err) {
-    console.error('[Backend] GPU status error:', err);
-    return null;
+      return result;
+    } catch (err) {
+      console.warn(`[Backend] GPU status check failed at ${endpoint}:`, err);
+    }
   }
+  return null;
+}
+
+async function getGpuStatus(): Promise<GpuStatus | null> {
+  // LocalTunnel/Colab can briefly return 502/503 while the worker finishes a
+  // model unload. Do not turn one transient response into a permanent FAILED
+  // evaluation row.
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const status = await fetchGpuStatusOnce();
+    if (status) return status;
+    if (attempt < 3) await wait(attempt * 1000);
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +115,12 @@ function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
       conv_index:      Number(r.conv_index ?? 0),
       num_turns:       Number(r.num_turns ?? 0),
       avg_latency_ms:  Number(r.avg_latency_ms ?? 0),
+      subject:         String(r.subject ?? 'UNGROUPED'),
+      selected_model:  r.selected_model ? String(r.selected_model) : undefined,
+      route_strategy:  r.route_strategy ? String(r.route_strategy) : undefined,
+      input_tokens:    Number(r.input_tokens ?? 0),
+      output_tokens:   Number(r.output_tokens ?? 0),
+      total_tokens:    Number(r.total_tokens ?? 0),
       replay_turns:     Array.isArray(r.replay_turns) ? r.replay_turns : [],
       criteria_scores: r.criteria_scores ?? {},
       criteria_reasons: r.criteria_reasons ?? {},
@@ -129,6 +159,20 @@ function normalizeEvalResult(result: any) {
   };
 }
 
+/** A Judge transport/parser failure must never be persisted as a score of 0. */
+function getJudgeValidationError(results: IEvalResult[]): string | null {
+  const failureMarkers = ['judge_error', 'parse_miss', 'no_api_key', 'judge failed'];
+  for (const item of results) {
+    for (const reason of Object.values(item.criteria_reasons || {})) {
+      const value = String(reason || '').toLowerCase();
+      if (failureMarkers.some(marker => value.includes(marker))) {
+        return `AI Judge không chấm hợp lệ (conversation #${item.conv_index}): ${String(reason).slice(0, 240)}`;
+      }
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/model-eval/run/:jobId
 // FE upload file đánh giá → BE forward sang GPU service POST /api/eval/start
@@ -149,7 +193,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
     if (!history) {
       return res.status(404).json({ error: 'Job không tồn tại trong database' });
     }
-    if (history.status !== 'COMPLETED') {
+    if (!['COMPLETED', 'EVALUATING'].includes(history.status)) {
       return res.status(400).json({
         error: `Job phải ở trạng thái COMPLETED để đánh giá (hiện tại: ${history.status})`,
       });
@@ -165,6 +209,9 @@ export const runEvaluation = async (req: Request, res: Response) => {
     if (!evalFile) {
       return res.status(400).json({ error: 'Thiếu file đánh giá (eval_file)' });
     }
+    // Preserve the user-visible source name before a ZIP may replace the
+    // multer file fields with its extracted test file.
+    const uploadedEvalFileName = evalFile.originalname;
 
     // ── ZIP Extraction ─────────────────────────────────────────────────────────
     let zipMetadata: DatasetMetadata | null = null;
@@ -196,14 +243,39 @@ export const runEvaluation = async (req: Request, res: Response) => {
     console.log(`[Backend] base_model_hf_repo from req.body: '${req.body.base_model_hf_repo}'`);
     console.log(`[Backend] req.body keys:`, Object.keys(req.body));
 
+    const judgeApiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    if (!judgeApiKey) {
+      fs.unlink(evalFile.path, () => {});
+      return res.status(400).json({
+        error: 'missing_openrouter_key',
+        message: 'Hãy cấu hình OpenRouter API key trước khi chạy Gemini Judge.',
+      });
+    }
+
+    const evalSystemPrompt = String(
+      history.systemPrompt ||
+      zipMetadata?.systemPrompt ||
+      'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.'
+    ).trim();
+    console.log(`[Backend] Eval system_prompt chars=${evalSystemPrompt.length} preview="${evalSystemPrompt.slice(0, 90)}"`);
+    console.log('[Backend] Eval generation: max_new_tokens=192 temperature=0.2 top_p=0.9 repetition_penalty=1.15');
+
     const config = {
       eval_job_id,
       job_id: jobId,
       hf_repo_id: history.hfRepoId,
       hf_token: history.hfToken || '',
       model_max_length: history.parameters?.modelMaxLength || 2048,
-      judge_model:          req.body.judge_model || req.body['judge_model'] || 'claude-sonnet-4-5-20251001',
+      judge_model:          RESEARCH_MODEL_CATALOG.judge,
+      judge_provider:       'openrouter',
+      judge_api_key:        judgeApiKey,
       base_model_hf_repo:   req.body.base_model_hf_repo || '',
+      system_prompt:        evalSystemPrompt,
+      max_new_tokens:       192,
+      temperature:          0.2,
+      top_p:                0.9,
+      repetition_penalty:   1.15,
+      eval_file_name:       zipMetadata?.datasetVersionName || uploadedEvalFileName,
     };
 
     // 4. Tạo Evaluation record trong MongoDB với status PENDING
@@ -220,10 +292,10 @@ export const runEvaluation = async (req: Request, res: Response) => {
       baseModelRepo:config.base_model_hf_repo || undefined,
       judgeModel:   config.judge_model,
       // Dataset & Prompt traceability from ZIP metadata
-      systemPrompt:       zipMetadata?.systemPrompt || '',
+      systemPrompt:       evalSystemPrompt,
       systemPromptVersion:zipMetadata?.systemPromptVersion || '',
       datasetVersionId:   zipMetadata?.datasetVersionId || '',
-      datasetVersionName: zipMetadata?.datasetVersionName || '',
+      datasetVersionName: zipMetadata?.datasetVersionName || uploadedEvalFileName,
       summary: {
         overall: 0,
         group_a: 0, group_b: 0, group_c: 0, group_d: 0,
@@ -232,7 +304,6 @@ export const runEvaluation = async (req: Request, res: Response) => {
         max_possible: 5,
       },
       startedAt: new Date(),
-      completedAt: new Date(),
     });
 
     const form = new FormData();
@@ -247,12 +318,18 @@ export const runEvaluation = async (req: Request, res: Response) => {
     const gpuStatus = await getGpuStatus();
     if (!gpuStatus) {
       fs.unlink(evalFile.path, () => {});
-      await ModelEvaluation.deleteOne({ modelEvalId: eval_job_id, ownerId });
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        { status: 'FAILED', error: 'GPU service không phản hồi trước khi dispatch evaluation.', failureStage: 'gpu_preflight', completedAt: new Date() },
+      );
       return res.status(503).json({ error: 'gpu_offline', message: 'GPU service không phản hồi' });
     }
     if (!gpuStatus.can_create_eval) {
       fs.unlink(evalFile.path, () => {});
-      await ModelEvaluation.deleteOne({ modelEvalId: eval_job_id, ownerId });
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        { status: 'FAILED', error: `GPU đang bận (${gpuStatus.active_evals}/${gpuStatus.max_evals} slots).`, failureStage: 'gpu_capacity', completedAt: new Date() },
+      );
       return res.status(503).json({
         error: 'worker_busy',
         message: `GPU đang bận (${gpuStatus.active_evals}/${gpuStatus.max_evals} slots, VRAM free: ${Math.round(gpuStatus.vram_free_mb / 1024)}GB)`,
@@ -269,7 +346,10 @@ export const runEvaluation = async (req: Request, res: Response) => {
     if (gpuResponse.status === 409) {
       // Race condition: GPU vừa nhận job khác trong khoảng thời gian ngắn
       fs.unlink(evalFile.path, () => {});
-      await ModelEvaluation.deleteOne({ modelEvalId: eval_job_id, ownerId });
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        { status: 'FAILED', error: 'GPU vừa nhận job khác nên không còn slot trống.', failureStage: 'gpu_dispatch', completedAt: new Date() },
+      );
       return res.status(503).json({ error: 'worker_busy', message: 'GPU vừa nhận job khác, vui lòng thử lại' });
     }
 
@@ -282,6 +362,15 @@ export const runEvaluation = async (req: Request, res: Response) => {
     } catch {
       // Dọn file tạm nếu GPU lỗi
       fs.unlink(evalFile.path, () => { });
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        {
+          status: 'FAILED',
+          error: `GPU service trả về dữ liệu không phải JSON: ${responseText.slice(0, 300)}`,
+          failureStage: 'gpu_dispatch_response',
+          completedAt: new Date(),
+        },
+      );
       return res.status(502).json({
         error: 'GPU service trả về non-JSON',
         raw: responseText.slice(0, 500),
@@ -290,9 +379,23 @@ export const runEvaluation = async (req: Request, res: Response) => {
 
     if (!gpuResponse.ok) {
       fs.unlink(evalFile.path, () => { });
-      await ModelEvaluation.deleteOne({ modelEvalId: eval_job_id, ownerId });
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        {
+          status: 'FAILED',
+          error: String(gpuData?.message || gpuData?.error || `GPU trả về HTTP ${gpuResponse.status}`).slice(0, 1000),
+          failureStage: 'gpu_dispatch',
+          gpuResult: gpuData,
+          completedAt: new Date(),
+        },
+      );
       return res.status(gpuResponse.status).json(gpuData);
     }
+
+    await ModelEvaluation.updateOne(
+      { modelEvalId: eval_job_id, ownerId },
+      { status: 'RUNNING' }
+    );
 
     // 8. Xóa file tạm (GPU đã lưu bản của nó rồi)
     fs.unlink(evalFile.path, (err) => {
@@ -301,9 +404,6 @@ export const runEvaluation = async (req: Request, res: Response) => {
 
     // Clean up ZIP temp dir if used
     if (zipTempDir) cleanupTempDir(zipTempDir);
-
-    // 9. Update TrainingHistory status → EVALUATING
-    await TrainingHistory.updateOne({ jobId, ownerId }, { status: 'EVALUATING' });
 
     return res.status(201).json({
       eval_job_id,
@@ -348,12 +448,55 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  res.write(`data: ${JSON.stringify({
+    status: 'RUNNING',
+    progress: 0,
+    stage_label: 'Ket noi backend',
+    stage_detail: 'Da ket noi SSE, dang hoi GPU worker...',
+  })}\n\n`);
+
+  // A tunnel/worker outage returns 503 repeatedly. Do not keep a phantom
+  // evaluation alive and flood the browser log forever.
+  let consecutiveGpuStatusErrors = 0;
   const intervalId = setInterval(async () => {
     try {
       const response = await fetch(`${configService.getGpuUrl()}/api/eval/status/${evalJobId}`, {
         headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
       });
       const text = await response.text();
+      if (!response.ok) {
+        consecutiveGpuStatusErrors += 1;
+        const terminalGpuError = response.status === 404 || consecutiveGpuStatusErrors >= 3;
+        const statusPayload = {
+          status: terminalGpuError ? 'FAILED' : (response.status === 404 ? 'NOT_FOUND' : 'GPU_STATUS_ERROR'),
+          progress: 0,
+          stage_label: terminalGpuError ? 'GPU worker khong phan hoi' : (response.status === 404 ? 'GPU khong tim thay job' : 'Loi GPU status'),
+          stage_detail:
+            response.status === 404
+              ? 'Backend con ban ghi eval nhung GPU worker khong con tien trinh nay. Neu GPU vua restart, can chay lai evaluation.'
+              : `GPU status endpoint tra ve HTTP ${response.status} (${consecutiveGpuStatusErrors}/3).`,
+          error: text?.slice(0, 300),
+        };
+        res.write(`data: ${JSON.stringify(statusPayload)}\n\n`);
+        if (terminalGpuError) {
+          clearInterval(intervalId);
+          await ModelEvaluation.updateOne(
+            { modelEvalId: evalJobId, ownerId },
+            {
+              status: 'FAILED',
+              error: statusPayload.error || statusPayload.stage_detail,
+              failureStage: 'gpu_status',
+              gpuResult: statusPayload,
+              completedAt: new Date(),
+            },
+          );
+          res.write(`event: end\ndata: ${JSON.stringify(statusPayload)}\n\n`);
+          res.end();
+        }
+        return;
+      }
+      consecutiveGpuStatusErrors = 0;
+
       let data: any;
       try {
         data = JSON.parse(text);
@@ -361,17 +504,42 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
         return; // bỏ qua tick này nếu GPU trả HTML/error
       }
 
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (['PENDING', 'RUNNING', 'EVALUATING'].includes(data.status)) {
+        await ModelEvaluation.updateOne(
+          { modelEvalId: evalJobId, ownerId },
+          { status: data.status }
+        );
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        return;
+      }
 
       if (['COMPLETED', 'FAILED'].includes(data.status)) {
         clearInterval(intervalId);
 
         if (data.status === 'COMPLETED') {
           // Lấy kết quả từ GPU rồi lưu MongoDB
-          await _fetchAndSaveResult(evalJobId, ownerId);
+          const persisted = await _fetchAndSaveResult(evalJobId, ownerId);
+          if (!persisted.saved) {
+            data = {
+              ...data,
+              status: 'FAILED',
+              error: persisted.error || 'Kết quả AI Judge không hợp lệ',
+              stage_label: 'Kết quả không hợp lệ',
+              stage_detail: 'AI Judge gặp lỗi nên run này không được dùng để chấm điểm hoặc so sánh.',
+            };
+          }
         } else {
           // FAILED — cập nhật DB
-          await ModelEvaluation.updateOne({ modelEvalId: evalJobId, ownerId }, { status: 'FAILED' });
+          await ModelEvaluation.updateOne(
+            { modelEvalId: evalJobId, ownerId },
+            {
+              status: 'FAILED',
+              error: String(data.error || data.message || data.stage_detail || 'GPU worker báo evaluation thất bại.').slice(0, 1000),
+              failureStage: data.stage_label || data.stage || 'gpu_runtime',
+              gpuResult: data,
+              completedAt: new Date(),
+            },
+          );
           // Tìm jobId để update TrainingHistory
           const evalDoc = await ModelEvaluation.findOne({ modelEvalId: evalJobId, ownerId });
           if (evalDoc) {
@@ -382,6 +550,9 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
           }
         }
 
+        // Only notify the browser after MongoDB has the final result. Otherwise
+        // the detail screen can open against a half-saved eval record.
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
         res.write(`event: end\ndata: ${JSON.stringify(data)}\n\n`);
         res.end();
       }
@@ -395,11 +566,26 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   req.on('close', () => clearInterval(intervalId));
 };
 
+export const getActiveEvaluation = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const evaluation = await ModelEvaluation.findOne({
+    ownerId,
+    status: { $in: ['PENDING', 'RUNNING', 'EVALUATING'] },
+  })
+    .sort({ startedAt: -1 })
+    .select('modelEvalId jobId status startedAt')
+    .lean();
+
+  return res.json(evaluation || null);
+};
+
 // ---------------------------------------------------------------------------
 // Helper nội bộ: lấy kết quả từ GPU → lưu Evaluation MongoDB
 //               → TrainingHistory: status COMPLETED (train xong), auto-pin nếu chưa có
 // ---------------------------------------------------------------------------
-async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<void> {
+async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<{ saved: boolean; error?: string }> {
   try {
     const resp = await fetch(`${configService.getGpuUrl()}/api/eval/result/${evalJobId}`, {
       headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
@@ -407,17 +593,36 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
 
     if (!resp.ok) {
       console.error(`[Backend] GPU /api/eval/result trả về ${resp.status}`);
-      return;
+      return { saved: false, error: `GPU result HTTP ${resp.status}` };
     }
 
     const result = (await resp.json()) as Record<string, any>;
 
     if (!result || result.status === 'PENDING') {
       console.warn(`[Backend] Eval result chưa sẵn sàng cho ${evalJobId}`);
-      return;
+      return { saved: false, error: 'GPU result chưa sẵn sàng' };
     }
 
     const normalized = normalizeEvalResult(result);
+    const judgeValidationError = getJudgeValidationError(normalized.results);
+    if (judgeValidationError) {
+      await ModelEvaluation.updateOne(
+        { modelEvalId: evalJobId, ownerId },
+        {
+          status: 'FAILED',
+          error: judgeValidationError,
+          failureStage: 'judge_validation',
+          gpuResult: { ...result, validation_error: judgeValidationError },
+          completedAt: new Date(),
+        }
+      );
+      const failedEval = await ModelEvaluation.findOne({ modelEvalId: evalJobId, ownerId }).lean();
+      if (failedEval) {
+        await TrainingHistory.updateOne({ jobId: failedEval.jobId, ownerId }, { status: 'COMPLETED' });
+      }
+      console.error(`[Backend] Eval ${evalJobId} rejected: ${judgeValidationError}`);
+      return { saved: false, error: judgeValidationError };
+    }
 
     // Lưu vào Evaluation collection
     await ModelEvaluation.findOneAndUpdate(
@@ -453,8 +658,10 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
     await TrainingHistory.updateOne({ jobId: result.jobId, ownerId }, updateFields);
 
     console.log(`[Backend] ✅ Eval result saved for ${evalJobId}, job ${result.jobId} → COMPLETED + pin nếu cần`);
+    return { saved: true };
   } catch (err: any) {
     console.error(`[Backend] _fetchAndSaveResult error for ${evalJobId}:`, err.message);
+    return { saved: false, error: err.message };
   }
 }
 
@@ -488,6 +695,10 @@ export const saveEvalResult = async (req: Request, res: Response) => {
     }
 
     const normalized = normalizeEvalResult(result);
+    const judgeValidationError = getJudgeValidationError(normalized.results);
+    if (judgeValidationError) {
+      return res.status(422).json({ error: judgeValidationError, status: 'FAILED' });
+    }
 
     await ModelEvaluation.findOneAndUpdate(
       { modelEvalId: result.modelEvalId, ownerId },
@@ -564,18 +775,22 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
   try {
     const ownerFilter = getOwnerFilter(req);
 
+    const evaluatedJobIds = await ModelEvaluation.distinct('jobId', ownerFilter);
     const histories = await TrainingHistory.find({
       ...ownerFilter,
-      pinnedEvalId: { $exists: true, $ne: null },
-    }).lean();
+      jobId: { $in: evaluatedJobIds },
+    }).sort({ completedAt: -1 }).lean();
 
     const result = await Promise.all(
       histories.map(async (h) => {
+        const latestAttempt = await ModelEvaluation.findOne({ ...ownerFilter, jobId: h.jobId })
+          .sort({ createdAt: -1 })
+          .lean();
         const latestEval = await ModelEvaluation.findOne({ ...ownerFilter, jobId: h.jobId, status: 'COMPLETED' })
           .sort({ completedAt: -1 })
           .lean();
 
-        let displayEval = latestEval;
+        let displayEval = latestEval || latestAttempt;
         if (h.pinnedEvalId) {
           const pinned = await ModelEvaluation.findOne({
             ...ownerFilter,
@@ -597,18 +812,24 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
           /** ID eval dùng cho điểm + nút View — ưu tiên eval Official (pinned), không có thì mới nhất */
           modelEvalId,
           pinnedEvalId: h.pinnedEvalId ?? null,
+          status: displayEval?.status ?? latestAttempt?.status ?? 'UNKNOWN',
+          error: displayEval?.error ?? null,
+          failureStage: displayEval?.failureStage ?? null,
+          latestAttemptId: latestAttempt?.modelEvalId ?? null,
+          latestAttemptStatus: latestAttempt?.status ?? null,
+          latestAttemptError: latestAttempt?.error ?? null,
           judgeModel: displayEval?.judgeModel ?? null,
           totalConversations: displayEval?.totalConversations ?? 0,
           flags: displayEval?.flags ?? [],
           scores: {
-            overall:  displayEval?.summary?.overall  ?? null,
-            group_a:  displayEval?.summary?.group_a  ?? null,
-            group_b:  displayEval?.summary?.group_b  ?? null,
-            group_c:  displayEval?.summary?.group_c  ?? null,
-            group_d:  displayEval?.summary?.group_d  ?? null,
-            criteria: displayEval?.summary?.criteria ?? null,
-            avg_latency_ms: displayEval?.summary?.avg_latency_ms ?? null,
-            non_scoring:    displayEval?.summary?.non_scoring    ?? null,
+            overall:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
+            group_a:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
+            group_b:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
+            group_c:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_c ?? null : null,
+            group_d:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_d ?? null : null,
+            criteria: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.criteria ?? null : null,
+            avg_latency_ms: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.avg_latency_ms ?? null : null,
+            non_scoring:    displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
           },
         };
       })
@@ -633,9 +854,9 @@ export const getEvalHistory = async (req: Request, res: Response) => {
     // Lấy pinnedEvalId từ TrainingHistory
     const history = await TrainingHistory.findOne({ jobId, ...ownerFilter }).select('pinnedEvalId projectName baseModel').lean();
 
-    const evals = await ModelEvaluation.find({ ...ownerFilter, jobId, status: 'COMPLETED' })
-      .sort({ completedAt: -1 })
-      .select('modelEvalId jobId status totalConversations judgeModel summary startedAt completedAt systemPromptVersion datasetVersionName')
+    const evals = await ModelEvaluation.find({ ...ownerFilter, jobId })
+      .sort({ createdAt: -1 })
+      .select('modelEvalId jobId status error failureStage totalConversations judgeModel summary startedAt completedAt createdAt systemPromptVersion datasetVersionName')
       .lean();
 
     // Gắn isPinned vào từng eval
