@@ -27,13 +27,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: SEP490_WEBAPP-main/frontend_v2/package-lock.json
 
       - name: Install dependencies and build with .env.production
         working-directory: SEP490_WEBAPP-main/frontend_v2
         run: |
-          npm ci --legacy-peer-deps
+          npm install --legacy-peer-deps
           npm run build
 
       - name: Deploy to Azure Web App
