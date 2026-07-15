@@ -1,4 +1,7 @@
-export type RoutingSubject = 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+// Subject labels are dataset/model-registry driven.  The built-in labels are
+// only defaults, not a closed enum: a deployment can add HISTORY, BIOLOGY,
+// or another domain without a code migration.
+export type RoutingSubject = string;
 export type RoutingIntent = 'solve_problem' | 'explain_concept' | 'give_hint' | 'check_answer' | 'diagnose_error' | 'ask_follow_up' | 'unknown';
 export type RoutingMode = 'oracle' | 'rule' | 'llm' | 'hybrid' | 'direct';
 

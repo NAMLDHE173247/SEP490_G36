@@ -7,7 +7,7 @@ import { ModelEvaluation } from '../models/Evaluation';
 import fs from 'fs';
 import { getAuthUserId } from '../utils/auth';
 
-type RegistrySubject = 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+type RegistrySubject = string;
 
 const asFiniteNumber = (value: unknown): number | null => {
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -58,6 +58,7 @@ const inferSubject = (...values: unknown[]): RegistrySubject => {
   if (/(math|mathematics|toan|algebra|geometry)/.test(text)) return 'MATH';
   if (/(physics|physical|phys|vat ly|ly hoc)/.test(text)) return 'PHYSICS';
   if (/(chemistry|chemical|chem|hoa hoc)/.test(text)) return 'CHEMISTRY';
+  if (/(history|lich su)/.test(text)) return 'HISTORY';
   if (/(general|multi|router|mixed)/.test(text)) return 'GENERAL';
   return 'UNKNOWN';
 };

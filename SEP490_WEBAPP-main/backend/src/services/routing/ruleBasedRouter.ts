@@ -1,6 +1,6 @@
 import { RouterSignal, RoutingContext, RoutingIntent, RoutingSubject } from './routingTypes';
 
-const SUBJECT_TERMS: Record<Exclude<RoutingSubject, 'GENERAL' | 'UNKNOWN'>, Array<[string, number]>> = {
+const SUBJECT_TERMS: Record<string, Array<[string, number]>> = {
   MATH: [
     ['đạo hàm', 5], ['tích phân', 5], ['phương trình bậc hai', 5], ['xác suất', 5],
     ['ma trận', 5], ['logarit', 5], ['hàm số', 4], ['tam giác', 3], ['phân số', 3],
@@ -16,6 +16,11 @@ const SUBJECT_TERMS: Record<Exclude<RoutingSubject, 'GENERAL' | 'UNKNOWN'>, Arra
     ['phản ứng hóa học', 5], ['phương trình hóa học', 5], ['oxi hóa', 5], ['kết tủa', 5],
     ['bazơ', 5], ['axit', 5], ['số mol', 5], ['nồng độ mol', 5], ['ph', 4],
     ['nguyên tử', 3], ['phân tử', 3], ['hóa trị', 4],
+  ],
+  HISTORY: [
+    ['lịch sử', 5], ['triều đại', 4], ['khởi nghĩa', 5], ['chiến dịch', 5],
+    ['cách mạng', 5], ['văn lang', 5], ['âu lạc', 5], ['cổ loa', 5],
+    ['bạch đằng', 5], ['thăng long', 5], ['điện biên phủ', 5], ['hiệp định', 4],
   ],
 };
 
@@ -41,7 +46,7 @@ export const ruleBasedRoute = (context: RoutingContext): RouterSignal => {
   const historyText = context.history.slice(-4).map(item => normalize(item.content)).join(' ');
   const isFollowUp = question.split(/\s+/).length <= 8 && ['đó', 'này', 'trên', 'tiếp', 'vậy'].some(term => question.includes(term));
   const text = isFollowUp ? `${historyText} ${question}` : question;
-  const scores = new Map<RoutingSubject, number>([['MATH', 0], ['PHYSICS', 0], ['CHEMISTRY', 0]]);
+  const scores = new Map<RoutingSubject, number>(Object.keys(SUBJECT_TERMS).map(subject => [subject, 0]));
   const matches = new Map<RoutingSubject, string[]>();
 
   for (const [subject, terms] of Object.entries(SUBJECT_TERMS) as Array<[RoutingSubject, Array<[string, number]>]>) {

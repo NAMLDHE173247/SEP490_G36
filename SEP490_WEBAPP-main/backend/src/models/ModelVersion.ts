@@ -12,7 +12,7 @@ export interface IModelVersion extends Document {
   trainingHistoryId?: mongoose.Types.ObjectId;
   evaluationId?: mongoose.Types.ObjectId;
   hfRepoId?: string;
-  subject?: 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+  subject?: string;
   routerEnabled?: boolean;
   status: ModelVersionStatus;
   metrics?: {
@@ -43,7 +43,7 @@ const ModelVersionSchema = new Schema<IModelVersion>(
     trainingHistoryId: { type: Schema.Types.ObjectId, ref: 'TrainingHistory' },
     evaluationId: { type: Schema.Types.ObjectId, ref: 'ModelEvaluation' },
     hfRepoId: { type: String },
-    subject: { type: String, enum: ['MATH', 'PHYSICS', 'CHEMISTRY', 'GENERAL', 'UNKNOWN'] },
+    subject: { type: String, uppercase: true, trim: true },
     routerEnabled: { type: Boolean, default: true },
     status: {
       type: String,

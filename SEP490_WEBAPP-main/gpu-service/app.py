@@ -1393,14 +1393,84 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
         else:
             with open(eval_file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            conversations = data if isinstance(data, list) else [data]
+            
+            if isinstance(data, dict):
+                is_replay = data.get("eval_mode") == "hybrid_router_end_to_end"
+                if not is_replay and "conversations" in data and isinstance(data["conversations"], list):
+                    if len(data["conversations"]) > 0 and "replay_turns" in data["conversations"][0]:
+                        is_replay = True
+                
+                if is_replay:
+                    conversations = data.get("conversations", [])
+                    _eval_log(job_id, "[Eval] Phát hiện file Replay Hybrid End-to-End.")
+                else:
+                    conversations = [data]
+            else:
+                conversations = data if isinstance(data, list) else [data]
     except Exception as e:
         _eval_log(job_id, f"[Eval] Lỗi đọc file: {e}")
         return
 
     # Normalize
     valid_convs = []
+    ft_pre_generated_replays = []
+    is_pre_generated_replay = False
+
     for c in conversations:
+        # Hỗ trợ format Replay D
+        if "replay_turns" in c:
+            is_pre_generated_replay = True
+            valid_convs.append({
+                "subject": c.get("gold_subject", "UNGROUPED"),
+                **c
+            })
+            
+            user_turns = []
+            asst_turns = []
+            latencies = []
+            turns_for_judge = []
+            frontend_replay_turns = []
+            
+            # replay_turns is typically an alternating list of user and assistant messages
+            current_user = ""
+            for t in c.get("replay_turns", []):
+                if t.get("role") == "user":
+                    current_user = t.get("content", "")
+                    user_turns.append(current_user)
+                elif t.get("role") == "assistant":
+                    asst_content = t.get("content", "")
+                    asst_turns.append(asst_content)
+                    lat = t.get("generation_latency_ms", 0) + t.get("router_latency_ms", 0)
+                    latencies.append(lat)
+                    if current_user:
+                        turns_for_judge.append({
+                            "user": current_user,
+                            "model_response": asst_content
+                        })
+                        frontend_replay_turns.append({
+                            "user": current_user,
+                            "model": asst_content,
+                            "latency_ms": lat,
+                            "input_tokens": 0,
+                            "output_tokens": 0,
+                            "total_tokens": 0
+                        })
+                        current_user = ""
+
+            avg_lat = sum(latencies)/len(latencies) if latencies else 0
+            
+            ft_pre_generated_replays.append({
+                "system_prompt": system_prompt,
+                "turns": turns_for_judge,
+                "assistant_turns": asst_turns,
+                "replay_turns": frontend_replay_turns,
+                "avg_latency_ms": round(avg_lat, 2),
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+            })
+            continue
+
         msgs = c.get("messages", [])
         if any(m.get("role") == "user" for m in msgs):
             cleaned = []
@@ -1423,50 +1493,57 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
     _eval_log(job_id, f"[Eval Config] system_prompt_chars={len((system_prompt or '').strip())} max_new_tokens={max_new_tokens} temperature={temperature} top_p={top_p} repetition_penalty={repetition_penalty}")
 
     # 2. Warmup FT model
-    _eval_log(job_id, "[⚙️] Warming up GPU...")
-    active_model.eval()
-    FastLanguageModel.for_inference(active_model)
-    try:
-        _d = tokenizer(["Xin chào"], return_tensors="pt").to("cuda")
-        active_model.generate(**_d, max_new_tokens=5, pad_token_id=tokenizer.eos_token_id)
-    except Exception:
-        pass
-    _eval_progress(eval_job_id, "warmup", "GPU ready")
-
-    # 3. Replay
-    if is_paired:
-        base_replay = _run_single_replay(
-            job_id, eval_job_id, valid_convs,
-            base_model, base_tokenizer,
-            stage_key="replay_base", label="Replay Base",
-            system_prompt=system_prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-        )
-        ft_replay = _run_single_replay(
-            job_id, eval_job_id, valid_convs,
-            active_model, tokenizer,
-            stage_key="replay_ft", label="Replay FT",
-            system_prompt=system_prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-        )
-    else:
-        ft_replay = _run_single_replay(
-            job_id, eval_job_id, valid_convs,
-            active_model, tokenizer,
-            stage_key="replay", label="Replay",
-            system_prompt=system_prompt,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
-        )
+    if is_pre_generated_replay:
+        _eval_log(job_id, "[⚙️] Bỏ qua suy luận, sử dụng dữ liệu replay có sẵn.")
+        ft_replay = ft_pre_generated_replays
         base_replay = None
+        eval_mode = "hybrid_router_end_to_end" # override
+        _eval_progress(eval_job_id, "warmup", "GPU ready (bỏ qua)")
+    else:
+        _eval_log(job_id, "[⚙️] Warming up GPU...")
+        active_model.eval()
+        FastLanguageModel.for_inference(active_model)
+        try:
+            _d = tokenizer(["Xin chào"], return_tensors="pt").to("cuda")
+            active_model.generate(**_d, max_new_tokens=5, pad_token_id=tokenizer.eos_token_id)
+        except Exception:
+            pass
+        _eval_progress(eval_job_id, "warmup", "GPU ready")
+
+        # 3. Replay
+        if is_paired:
+            base_replay = _run_single_replay(
+                job_id, eval_job_id, valid_convs,
+                base_model, base_tokenizer,
+                stage_key="replay_base", label="Replay Base",
+                system_prompt=system_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+            ft_replay = _run_single_replay(
+                job_id, eval_job_id, valid_convs,
+                active_model, tokenizer,
+                stage_key="replay_ft", label="Replay FT",
+                system_prompt=system_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+        else:
+            ft_replay = _run_single_replay(
+                job_id, eval_job_id, valid_convs,
+                active_model, tokenizer,
+                stage_key="replay", label="Replay",
+                system_prompt=system_prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+            )
+            base_replay = None
 
     # 4. Judge — dùng _run_batch_judge (BATCH_SIZE conv/call)
     ft_per_conv = _run_batch_judge(

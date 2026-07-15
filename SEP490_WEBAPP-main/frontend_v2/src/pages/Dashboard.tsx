@@ -27,6 +27,7 @@ import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
+import RouterBenchmarkView from './RouterBenchmarkView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -76,6 +77,7 @@ function Dashboard() {
     { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Router Benchmark', label: 'Router Benchmark', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
@@ -190,6 +192,8 @@ function Dashboard() {
         return <ModelRegistryView />;
       case 'Model Eval':
         return <ModelEvalView />;
+      case 'Router Benchmark':
+        return <RouterBenchmarkView />;
       case 'Version Data Prep':
         return <VersionDataPrepView />;
       case 'Assign Labeling':

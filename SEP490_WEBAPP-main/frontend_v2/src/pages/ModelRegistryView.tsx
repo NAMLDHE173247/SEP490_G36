@@ -58,7 +58,7 @@ interface ModelRegistryType {
   name: string;
   description?: string;
   baseModel: string;
-  subject?: 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+  subject?: string;
   routerEnabled?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -604,18 +604,13 @@ function ModelRegistryView() {
                 </div>
                 <div className="form-group">
                   <label htmlFor="reg-subject">Môn chuyên trách</label>
-                  <select
+                  <input
                     id="reg-subject"
                     className="form-input"
                     value={newSubject}
-                    onChange={(e) => setNewSubject(e.target.value as ModelRegistryType['subject'])}
-                  >
-                    <option value="UNKNOWN">Chưa phân loại</option>
-                    <option value="MATH">Toán</option>
-                    <option value="PHYSICS">Vật lý</option>
-                    <option value="CHEMISTRY">Hóa học</option>
-                    <option value="GENERAL">Tổng quát / fallback</option>
-                  </select>
+                    placeholder="Ví dụ: MATH, PHYSICS, HISTORY, BIOLOGY"
+                    onChange={(e) => setNewSubject(e.target.value.trim().toUpperCase() || 'UNKNOWN')}
+                  />
                 </div>
                 <div className="form-group">
                   <label htmlFor="reg-desc">Mô tả chi tiết</label>

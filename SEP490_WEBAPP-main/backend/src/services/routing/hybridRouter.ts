@@ -44,7 +44,7 @@ export const hybridRoute = async (args: {
     return finish({ ...rule, needClarification: true, reason: `${rule.reason} LLM Router chưa được cấu hình.` }, 'clarification', false);
   }
 
-  const llm = await llmBasedRoute(args.context, args.llmProvider, args.llmModel);
+  const llm = await llmBasedRoute(args.context, args.llmProvider, args.llmModel, Object.keys(args.modelMap));
   if (llm.confidence >= thresholds.llmConfidence && !llm.needClarification) {
     return finish(llm, 'llm', true, llm);
   }

@@ -5,7 +5,7 @@ export interface IModelRegistry extends Document {
   name: string;
   description?: string;
   baseModel: string;
-  subject: 'MATH' | 'PHYSICS' | 'CHEMISTRY' | 'GENERAL' | 'UNKNOWN';
+  subject: string;
   routerEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -17,7 +17,7 @@ const ModelRegistrySchema = new Schema<IModelRegistry>(
     name: { type: String, required: true, trim: true },
     description: { type: String },
     baseModel: { type: String, required: true },
-    subject: { type: String, enum: ['MATH', 'PHYSICS', 'CHEMISTRY', 'GENERAL', 'UNKNOWN'], default: 'UNKNOWN', index: true },
+    subject: { type: String, default: 'UNKNOWN', index: true, uppercase: true, trim: true },
     routerEnabled: { type: Boolean, default: true },
   },
   {

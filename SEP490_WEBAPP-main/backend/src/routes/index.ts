@@ -54,7 +54,7 @@ import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
 import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys, getCliProxyStatus, getCliProxyModels, startCliProxyOAuth, getCliProxyOAuthStatus, listCliProxyAccounts, disconnectCliProxyAccount } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
-import { decideRoute, evaluateRouter, getRouterMetrics } from '../controllers/routerController';
+import { decideRoute, evaluateRouter, getRouterMetrics, runEndToEndRouterEval } from '../controllers/routerController';
 import { isManager } from '../utils/auth';
 
 
@@ -142,6 +142,7 @@ router.post('/model/load', authMiddleware, requireManager, loadModel);
 router.post('/infer/stop/:slotId', authMiddleware, stopInference);
 router.post('/router/decide', authMiddleware, decideRoute);
 router.post('/router/evaluate', authMiddleware, requireManager, evaluateRouter);
+router.post('/router/end-to-end', authMiddleware, requireManager, runEndToEndRouterEval);
 router.get('/router/metrics', authMiddleware, requireManager, getRouterMetrics);
 router.post('/model/unload/:slotId', authMiddleware, requireManager, unloadModel);
 router.post('/chat/history', authMiddleware, saveChatHistory);
