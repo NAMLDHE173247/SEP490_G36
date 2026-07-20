@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 import fs from 'fs';
-import path from 'path';
 import dotenv from 'dotenv';
 import axios from 'axios';
 

@@ -1,0 +1,1636 @@
+{
+  "schema_version": "router_dataset_v2",
+  "dataset_role": "router_calibration_train",
+  "provenance": {
+    "source": "synthetic_router_v2",
+    "warning": "Synthetic development data; independently review labels before final research claims."
+  },
+  "case_count": 90,
+  "subject_distribution": {
+    "ENGLISH": 30,
+    "MATH": 30,
+    "HISTORY": 30
+  },
+  "cases": [
+    {
+      "id": "train-english-v2-001",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-002",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-003",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một email ngắn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một email ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-004",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-005",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài đọc.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài đọc."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-006",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài viết.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài viết."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-007",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-008",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-009",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-010",
+      "split": "TRAIN",
+      "question": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong câu trả lời thi.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao dùng thì hiện tại tiếp diễn trong câu 'She is reading now'? Em hãy giải thích trong bối cảnh của trong câu trả lời thi."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-011",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-012",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-013",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một email ngắn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một email ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-014",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-015",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài đọc.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài đọc."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-016",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài viết.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài viết."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-017",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-018",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-019",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-020",
+      "split": "TRAIN",
+      "question": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong câu trả lời thi.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Chọn dạng đúng: 'My brother ___ football every Sunday.' Em hãy giải thích trong bối cảnh của trong câu trả lời thi."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-021",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài tập trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-022",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-023",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một email ngắn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một email ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-024",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi nói chuyện với bạn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-025",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài đọc.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài đọc."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-026",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài viết.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài viết."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-027",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi làm bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-028",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của khi kiểm tra bản dịch."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-029",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong một bài học trực tuyến."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-english-v2-030",
+      "split": "TRAIN",
+      "question": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong câu trả lời thi.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Khi nào dùng 'did' thay vì 'have done' trong câu hỏi? Em hãy giải thích trong bối cảnh của trong câu trả lời thi."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-001",
+      "split": "TRAIN",
+      "question": "Giải phương trình 2x - 3 = 13.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 2x - 3 = 13."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-002",
+      "split": "TRAIN",
+      "question": "Giải phương trình 3x - 4 = 14.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 3x - 4 = 14."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-003",
+      "split": "TRAIN",
+      "question": "Giải phương trình 4x - 5 = 15.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 4x - 5 = 15."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-004",
+      "split": "TRAIN",
+      "question": "Giải phương trình 5x - 6 = 16.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 5x - 6 = 16."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-005",
+      "split": "TRAIN",
+      "question": "Giải phương trình 6x - 7 = 17.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 6x - 7 = 17."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-006",
+      "split": "TRAIN",
+      "question": "Giải phương trình 7x - 8 = 18.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 7x - 8 = 18."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-007",
+      "split": "TRAIN",
+      "question": "Giải phương trình 8x - 9 = 19.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 8x - 9 = 19."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-008",
+      "split": "TRAIN",
+      "question": "Giải phương trình 9x - 10 = 20.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 9x - 10 = 20."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-009",
+      "split": "TRAIN",
+      "question": "Giải phương trình 10x - 11 = 21.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 10x - 11 = 21."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-010",
+      "split": "TRAIN",
+      "question": "Giải phương trình 11x - 12 = 22.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải phương trình 11x - 12 = 22."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-011",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 10x + 21 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 10x + 21 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-012",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 11x + 23 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 11x + 23 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-013",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 12x + 25 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 12x + 25 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-014",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 13x + 27 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 13x + 27 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-015",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 14x + 29 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 14x + 29 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-016",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 15x + 31 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 15x + 31 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-017",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 16x + 33 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 16x + 33 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-018",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 17x + 35 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 17x + 35 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-019",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 18x + 37 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 18x + 37 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-020",
+      "split": "TRAIN",
+      "question": "Tìm nghiệm của phương trình x² - 19x + 39 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 19x + 39 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-021",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 20; x - y = 6.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 20; x - y = 6."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-022",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 21; x - y = 7.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 21; x - y = 7."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-023",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 22; x - y = 8.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 22; x - y = 8."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-024",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 23; x - y = 9.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 23; x - y = 9."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-025",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 24; x - y = 10.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 24; x - y = 10."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-026",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 25; x - y = 11.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 25; x - y = 11."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-027",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 26; x - y = 12.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 26; x - y = 12."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-028",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 27; x - y = 13.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 27; x - y = 13."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-029",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 28; x - y = 14.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 28; x - y = 14."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-math-v2-030",
+      "split": "TRAIN",
+      "question": "Giải hệ x + y = 29; x - y = 15.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giải hệ x + y = 29; x - y = 15."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-001",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-002",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-003",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-004",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-005",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-006",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-007",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-008",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-009",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi ôn lại bài học.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của khi ôn lại bài học."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-010",
+      "split": "TRAIN",
+      "question": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Những nguyên nhân chính của Cách mạng tháng Tám ở Việt Nam là gì? Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-011",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-012",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-013",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-014",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-015",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-016",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-017",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-018",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-019",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi ôn lại bài học.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của khi ôn lại bài học."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-020",
+      "split": "TRAIN",
+      "question": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao chiến thắng trên sông Bạch Đằng gắn với Ngô Quyền? Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-021",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho một câu hỏi ngắn."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-022",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi ôn tập cho bài kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-023",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong bài tập lập dòng thời gian."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-024",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho bài phân tích sử liệu."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-025",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong thảo luận trên lớp."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-026",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi so sánh hai sự kiện."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-027",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho đoạn văn bài tập về nhà."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-028",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của trong câu trả lời có dẫn chứng."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-029",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi ôn lại bài học.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của khi ôn lại bài học."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "train-history-v2-030",
+      "split": "TRAIN",
+      "question": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sắp xếp các triều đại Lý, Trần và Lê theo thứ tự thời gian. Em hãy giải thích trong bối cảnh của cho bài luận kiểm tra."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    }
+  ]
+}

@@ -201,7 +201,10 @@ export const startTraining = async (req: Request, res: Response) => {
     console.log('[Backend] Received columnMapping:', columnMapping);
     console.log('[Backend] Received column_mapping:', column_mapping);
 
-    const finalColumnMapping = columnMapping || column_mapping || 'text';
+    // Older saved AutoTrain jobs defaulted to `text`.  Conversation datasets
+    // use the ChatML-compatible `messages` field, so recover safely when that
+    // stale default is sent with a messages-only file.
+    let finalColumnMapping = columnMapping || column_mapping || 'text';
     console.log('[Backend] Using finalColumnMapping:', finalColumnMapping);
 
     const datasetFile = req.file; // populated by multer when a file is uploaded
@@ -269,6 +272,16 @@ export const startTraining = async (req: Request, res: Response) => {
           detectedTotalRecords = Math.max(0, csvLines.length - 1);
           const firstLine = csvLines[0];
           columns = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        }
+
+        if (
+          columns.length > 0 &&
+          !columns.includes(finalColumnMapping) &&
+          finalColumnMapping === 'text' &&
+          columns.includes('messages')
+        ) {
+          finalColumnMapping = 'messages';
+          console.log('[Backend] Auto-corrected stale text mapping to messages.');
         }
 
         if (columns.length > 0 && !columns.includes(finalColumnMapping)) {

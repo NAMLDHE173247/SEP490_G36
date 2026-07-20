@@ -32,12 +32,12 @@ import 'katex/dist/katex.min.css';
 import { apiService } from '../services/api';
 import { getCliProxyModels } from '../services/configApi';
 import '../styles/chat.css';
-import { BatchTestingModal } from '../components/BatchTestingModal';
+import { BatchModelTarget, BatchTestingModal } from '../components/BatchTestingModal';
 import { TypingIndicator } from '../components/TypingIndicator';
 
 // Constants
 const BASE_MODEL_OPTIONS = [
-  "Qwen/Qwen3-0.6B",
+  "Qwen/Qwen2.5-0.5B-Instruct",
   "meta-llama/Llama-3.1-8B-Instruct",
   "unsloth/gpt-oss-20b",
   "unsloth/gpt-oss-20b-unsloth-bnb-4bit",
@@ -424,6 +424,7 @@ interface ChatPanelProps {
   externalInput?: { text: string; ts: number } | null;
   isCompareMode?: boolean;
   onModelLoadedChange?: (loaded: boolean) => void;
+  onActiveModelChange?: (target: BatchModelTarget) => void;
   onIsInferringChange?: (inferring: boolean) => void;
   externalParams?: InferenceParams;
   onLog?: (log: Omit<LogEntry, "ts">) => void;
@@ -435,6 +436,7 @@ function ChatPanel({
   externalInput,
   isCompareMode = false,
   onModelLoadedChange,
+  onActiveModelChange,
   onIsInferringChange,
   externalParams,
   onLog,
@@ -500,6 +502,15 @@ function ChatPanel({
   }, []);
 
   useEffect(() => { onModelLoadedChange?.(modelLoaded); }, [modelLoaded, onModelLoadedChange]);
+  useEffect(() => {
+    onActiveModelChange?.({
+      modelId: modelLoaded ? activeModelId : "",
+      provider,
+      instanceId,
+      label: `Model ${instanceId}`,
+      registryId: provider === "registry" ? selectedRegistryId : undefined,
+    });
+  }, [activeModelId, modelLoaded, onActiveModelChange, provider, selectedRegistryId]);
   useEffect(() => { onIsInferringChange?.(isInferring); }, [isInferring, onIsInferringChange]);
 
   const fetchChatSessions = async () => {
@@ -1430,6 +1441,7 @@ function ChatView() {
   const [showBatchTesting, setShowBatchTesting] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showInferencePopup, setShowInferencePopup] = useState(false);
+  const [batchTargets, setBatchTargets] = useState<BatchModelTarget[]>([]);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Model loading and inference states for compare mode validation
@@ -1451,6 +1463,13 @@ function ChatView() {
 
   const handleLog = useCallback((log: Omit<LogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ...log, ts: Date.now() }]);
+  }, []);
+
+  const handleBatchTargetChange = useCallback((target: BatchModelTarget) => {
+    setBatchTargets((previous) => {
+      const withoutCurrent = previous.filter((item) => item.instanceId !== target.instanceId);
+      return [...withoutCurrent, target];
+    });
   }, []);
 
   const handleSend = () => {
@@ -1619,10 +1638,13 @@ function ChatView() {
         {showBatchTesting && (
           <BatchTestingModal
             onClose={() => setShowBatchTesting(false)}
-            activeModelId=""
-            provider="local"
+            activeModelId={batchTargets.find((target) => target.instanceId === 1)?.modelId || ""}
+            provider={batchTargets.find((target) => target.instanceId === 1)?.provider || "local"}
             params={params}
             instanceId={1}
+            selectedRegistryId={batchTargets.find((target) => target.instanceId === 1)?.registryId}
+            targets={mode === "compare" ? batchTargets : batchTargets.filter((target) => target.instanceId === 1)}
+            requiredTargetCount={mode === "compare" ? compareCount : 1}
           />
         )}
 
@@ -1636,6 +1658,7 @@ function ChatView() {
                 externalInput={sendTrigger}
                 isCompareMode={false}
                 onModelLoadedChange={setModel1Loaded}
+                onActiveModelChange={handleBatchTargetChange}
                 onIsInferringChange={setModel1Inferring}
                 externalParams={params}
                 onLog={handleLog}
@@ -1654,6 +1677,7 @@ function ChatView() {
                     else if (index === 1) setModel2Loaded(loaded);
                     else if (index === 2) setModel3Loaded(loaded);
                   }}
+                  onActiveModelChange={handleBatchTargetChange}
                   onIsInferringChange={(inferring) => {
                     if (index === 0) setModel1Inferring(inferring);
                     else if (index === 1) setModel2Inferring(inferring);

@@ -55,6 +55,7 @@ const getEvaluationMetrics = (evaluation: any, current: Record<string, any> = {}
 
 const inferSubject = (...values: unknown[]): RegistrySubject => {
   const text = values.filter(Boolean).join(' ').toLowerCase();
+  if (/(english|tieng anh|language|grammar|vocabulary)/.test(text)) return 'ENGLISH';
   if (/(math|mathematics|toan|algebra|geometry)/.test(text)) return 'MATH';
   if (/(physics|physical|phys|vat ly|ly hoc)/.test(text)) return 'PHYSICS';
   if (/(chemistry|chemical|chem|hoa hoc)/.test(text)) return 'CHEMISTRY';

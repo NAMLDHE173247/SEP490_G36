@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
+import JSZip from 'jszip';
 import {
   Zap,
   History,
@@ -31,6 +32,7 @@ import {
   EMPTY_PREVIEW,
   DEFAULT_PRESETS,
   estimateTrainingTime,
+  formatRowPreview,
   TrainingJob,
   LossPoint,
 } from '../components/autotrain/types';
@@ -59,6 +61,35 @@ const getAuthHeaders = (): Record<string, string> => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+const AUTOTRAIN_CONFIG_STORAGE_KEY = 'autotrain_last_config_v1';
+const AUTOTRAIN_PRESET_STORAGE_KEY = 'autotrain_selected_preset_v1';
+
+const loadPersistedTrainingConfig = (): TrainingConfig => {
+  if (typeof window === 'undefined') return DEFAULT_TRAINING_CONFIG;
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUTOTRAIN_CONFIG_STORAGE_KEY) || '{}');
+    return {
+      ...DEFAULT_TRAINING_CONFIG,
+      ...saved,
+      // Browser File objects and secrets must never be persisted.
+      localFile: null,
+      apiKey: '',
+      hfToken: '',
+    };
+  } catch {
+    return DEFAULT_TRAINING_CONFIG;
+  }
+};
+
+const persistTrainingConfig = (config: TrainingConfig): void => {
+  if (typeof window === 'undefined') return;
+  const { localFile, apiKey, hfToken, ...safeConfig } = config;
+  void localFile;
+  void apiKey;
+  void hfToken;
+  localStorage.setItem(AUTOTRAIN_CONFIG_STORAGE_KEY, JSON.stringify(safeConfig));
+};
+
 interface AutoTrainViewProps {
   setActiveTab: (tab: string) => void;
 }
@@ -80,9 +111,12 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   const [isStarting, setIsStarting] = useState(false);
 
   // ── Config & Preset States ──
-  const [config, setConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
+  const [config, setConfig] = useState<TrainingConfig>(loadPersistedTrainingConfig);
   const [previewData, setPreviewData] = useState<PreviewData>(EMPTY_PREVIEW);
-  const [selectedPresetName, setSelectedPresetName] = useState('Standard (Recommended ~15 min)');
+  const [selectedPresetName, setSelectedPresetName] = useState(() => {
+    if (typeof window === 'undefined') return 'Standard (Recommended ~15 min)';
+    return localStorage.getItem(AUTOTRAIN_PRESET_STORAGE_KEY) || 'Standard (Recommended ~15 min)';
+  });
   const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
 
   // ── Worker Resources ──
@@ -121,6 +155,64 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       }
     }
   }, []);
+
+  // If Data Prep created an Evaluation Pack, prepare its SFT train/validation
+  // ZIP in memory. The AutoTrain wizard opens with the dataset already loaded;
+  // the user does not need to download and re-upload an intermediate file.
+  useEffect(() => {
+    if (config.localFile) return;
+    const rawPack = localStorage.getItem('hybrid_evaluation_pack_v1');
+    if (!rawPack) return;
+
+    try {
+      const pack = JSON.parse(rawPack);
+      const trainRows = Array.isArray(pack?.sft?.train) ? pack.sft.train : [];
+      const validationRows = Array.isArray(pack?.sft?.validation) ? pack.sft.validation : [];
+      if (!trainRows.length) return;
+
+      void (async () => {
+        const zip = new JSZip();
+        zip.file('train_dataset.json', JSON.stringify(trainRows, null, 2));
+        zip.file('validation_dataset.json', JSON.stringify(validationRows, null, 2));
+        zip.file('_metadata.json', JSON.stringify({
+          datasetVersionId: pack.dataset_version_id,
+          totalTrain: trainRows.length,
+          totalValidation: validationRows.length,
+          evaluationPackSchema: pack.schema_version,
+        }, null, 2));
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const file = new File([blob], `evaluation_pack_train_${pack.dataset_version_id || 'latest'}.zip`, { type: 'application/zip' });
+        setConfig(current => ({
+          ...current,
+          datasetSource: 'local',
+          localFile: file,
+          columnMapping: 'messages',
+          projectName: current.projectName === 'my-first-lm-project'
+            ? `Evaluation Pack ${pack.dataset_version_id || 'latest'}`
+            : current.projectName,
+        }));
+        setPreviewData({
+          rows: trainRows.slice(0, 5).map((row: any) => formatRowPreview(row)),
+          totalRecords: trainRows.length,
+          totalTokens: Math.round(JSON.stringify(trainRows).length / 4),
+          headers: ['messages'],
+          qualityChecks: [{ level: 'ok', message: `Evaluation Pack đã nạp ${trainRows.length} mẫu train và ${validationRows.length} mẫu validation.` }],
+        });
+      })().catch(error => console.warn('[AutoTrain] Could not prepare Evaluation Pack:', error));
+    } catch (error) {
+      console.warn('[AutoTrain] Invalid Evaluation Pack:', error);
+    }
+  }, [config.localFile]);
+
+  // Persist the selected training configuration for reproducible experiments.
+  // The actual submitted configuration is also stored in TrainingHistory by the backend.
+  useEffect(() => {
+    persistTrainingConfig(config);
+  }, [config]);
+
+  useEffect(() => {
+    localStorage.setItem(AUTOTRAIN_PRESET_STORAGE_KEY, selectedPresetName);
+  }, [selectedPresetName]);
 
   // Fetch worker resource status on interval
   useEffect(() => {
@@ -229,12 +321,12 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         ...prev,
         epochs: String(preset.epochs || '3'),
         batchSize: String(preset.batchSize || '1'),
-        learningRate: String(preset.learningRate || '0.0002'),
+        learningRate: String(preset.learningRate || '0.00005'),
         blockSize: String(preset.blockSize || '1024'),
         modelMaxLength: String(preset.modelMaxLength || '1024'),
         r: String(preset.r || '16'),
         loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '32'),
-        loraDropout: String(preset.lora_dropout ?? preset.loraDropout ?? '0'),
+        loraDropout: String(preset.lora_dropout ?? preset.loraDropout ?? '0.05'),
         gradAccum: String(preset.gradient_accumulation_steps || preset.gradAccum || '4'),
         warmupSteps: String(preset.warmup_steps || preset.warmupSteps || '5'),
         weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),

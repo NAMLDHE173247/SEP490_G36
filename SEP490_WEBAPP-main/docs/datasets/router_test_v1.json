@@ -1,0 +1,1133 @@
+{
+  "schema_version": "router_dataset_v1",
+  "dataset_role": "router_heldout_benchmark_test",
+  "provenance": {
+    "source": "synthetic_template_v1",
+    "warning": "Synthetic data for functional testing/calibration. Review labels and replace or extend with independently authored data before final research claims."
+  },
+  "case_count": 60,
+  "subject_distribution": {
+    "MATH": 20,
+    "PHYSICS": 20,
+    "CHEMISTRY": 20
+  },
+  "challenge_distribution": {
+    "standard": 30,
+    "typo": 9,
+    "abbreviation": 6,
+    "follow_up": 9,
+    "ambiguous": 6
+  },
+  "cases": [
+    {
+      "id": "test-math-001",
+      "split": "TEST",
+      "question": "Tìm nghiệm của phương trình x² - 7x + 12 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm nghiệm của phương trình x² - 7x + 12 = 0."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-002",
+      "split": "TEST",
+      "question": "Một cửa hàng giảm 15% giá một chiếc áo 480000 đồng. Giá sau giảm là bao nhiêu?",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một cửa hàng giảm 15% giá một chiếc áo 480000 đồng. Giá sau giảm là bao nhiêu?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-003",
+      "split": "TEST",
+      "question": "Phân biệt hàm số bậc nhất và hàm số bậc hai giúp em.",
+      "gold_subject": "MATH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Phân biệt hàm số bậc nhất và hàm số bậc hai giúp em."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-004",
+      "split": "TEST",
+      "question": "Gợi ý cho em cách chứng minh hai tam giác đồng dạng.",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Gợi ý cho em cách chứng minh hai tam giác đồng dạng."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-005",
+      "split": "TEST",
+      "question": "Em tính xác suất gieo được số chẵn là 1/3, có đúng không?",
+      "gold_subject": "MATH",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em tính xác suất gieo được số chẵn là 1/3, có đúng không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-006",
+      "split": "TEST",
+      "question": "Một hình tròn bán kính 5 cm. Tính chu vi theo π.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một hình tròn bán kính 5 cm. Tính chu vi theo π."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-007",
+      "split": "TEST",
+      "question": "Em biến x² - 9 thành (x - 9)(x + 9). Lỗi ở đâu?",
+      "gold_subject": "MATH",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em biến x² - 9 thành (x - 9)(x + 9). Lỗi ở đâu?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-008",
+      "split": "TEST",
+      "question": "Tìm giá trị nhỏ nhất của biểu thức x² - 6x + 11.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tìm giá trị nhỏ nhất của biểu thức x² - 6x + 11."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-009",
+      "split": "TEST",
+      "question": "Vì sao mẫu số của phân thức không được bằng 0?",
+      "gold_subject": "MATH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao mẫu số của phân thức không được bằng 0?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-010",
+      "split": "TEST",
+      "question": "Một cấp số cộng có u1 = 3 và công sai 4. Tính u10.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một cấp số cộng có u1 = 3 và công sai 4. Tính u10."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-011",
+      "split": "TEST",
+      "question": "tim x biet 3x+8=26 nha",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "tim x biet 3x+8=26 nha"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-012",
+      "split": "TEST",
+      "question": "em dang roi o buoc phan tich da thuc",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em dang roi o buoc phan tich da thuc"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-013",
+      "split": "TEST",
+      "question": "em tinh 25 phan tram cua 360 la 80 dung k",
+      "gold_subject": "MATH",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em tinh 25 phan tram cua 360 la 80 dung k"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-014",
+      "split": "TEST",
+      "question": "Cho em hỏi cách giải BPT bậc nhất một ẩn.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Cho em hỏi cách giải BPT bậc nhất một ẩn."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-015",
+      "split": "TEST",
+      "question": "ĐKXĐ của PTS là gì ạ?",
+      "gold_subject": "MATH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "ĐKXĐ của PTS là gì ạ?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-016",
+      "split": "TEST",
+      "question": "Sau khi tìm được hai nghiệm, em chọn nghiệm nào?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Giải phương trình bậc hai x² - 5x + 6 = 0."
+        },
+        {
+          "role": "assistant",
+          "content": "Em có thể phân tích thành nhân tử."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sau khi tìm được hai nghiệm, em chọn nghiệm nào?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-017",
+      "split": "TEST",
+      "question": "Vậy số π có cần đổi sang 3,14 không?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang tính chu vi hình tròn."
+        },
+        {
+          "role": "assistant",
+          "content": "Công thức là C = 2πr."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy số π có cần đổi sang 3,14 không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-018",
+      "split": "TEST",
+      "question": "Em đã đưa về cùng mẫu rồi, bước kế tiếp là gì?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang cộng hai phân thức."
+        },
+        {
+          "role": "assistant",
+          "content": "Em đã quy đồng mẫu số."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em đã đưa về cùng mẫu rồi, bước kế tiếp là gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-019",
+      "split": "TEST",
+      "question": "Em có một bài đại số nhưng đề thiếu số liệu, phải làm sao?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em có một bài đại số nhưng đề thiếu số liệu, phải làm sao?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-math-020",
+      "split": "TEST",
+      "question": "Bài toán này em không rõ cần tìm x hay tìm y.",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bài toán này em không rõ cần tìm x hay tìm y."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-001",
+      "split": "TEST",
+      "question": "Một người chạy 400 m trong 80 giây. Tính tốc độ trung bình theo m/s.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một người chạy 400 m trong 80 giây. Tính tốc độ trung bình theo m/s."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-002",
+      "split": "TEST",
+      "question": "Một bóng đèn 12 V có cường độ dòng điện 0,5 A. Tính công suất.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một bóng đèn 12 V có cường độ dòng điện 0,5 A. Tính công suất."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-003",
+      "split": "TEST",
+      "question": "Phân biệt khối lượng với trọng lượng.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Phân biệt khối lượng với trọng lượng."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-004",
+      "split": "TEST",
+      "question": "Gợi ý cách giải bài hai lực cân bằng.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Gợi ý cách giải bài hai lực cân bằng."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-005",
+      "split": "TEST",
+      "question": "Em đổi 72 km/h thành 25 m/s, đúng chưa?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em đổi 72 km/h thành 25 m/s, đúng chưa?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-006",
+      "split": "TEST",
+      "question": "Một vật 4 kg chịu lực kéo 20 N, bỏ qua ma sát. Tính gia tốc.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một vật 4 kg chịu lực kéo 20 N, bỏ qua ma sát. Tính gia tốc."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-007",
+      "split": "TEST",
+      "question": "Em tính công bằng F chia s. Em sai công thức ở đâu?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em tính công bằng F chia s. Em sai công thức ở đâu?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-008",
+      "split": "TEST",
+      "question": "Dòng điện 2 A chạy qua điện trở 6 Ω. Tính hiệu điện thế.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Dòng điện 2 A chạy qua điện trở 6 Ω. Tính hiệu điện thế."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-009",
+      "split": "TEST",
+      "question": "Vì sao khi lên cao áp suất khí quyển giảm?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao khi lên cao áp suất khí quyển giảm?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-010",
+      "split": "TEST",
+      "question": "Một vật rơi tự do trong 3 giây, lấy g = 10 m/s². Tính vận tốc cuối.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Một vật rơi tự do trong 3 giây, lấy g = 10 m/s². Tính vận tốc cuối."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-011",
+      "split": "TEST",
+      "question": "mot xe di 150km trong 3h tinh toc do",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "mot xe di 150km trong 3h tinh toc do"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-012",
+      "split": "TEST",
+      "question": "em ko biet ve bieu do luc",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em ko biet ve bieu do luc"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-013",
+      "split": "TEST",
+      "question": "em tinh U=IR ra 18V co dung ko",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em tinh U=IR ra 18V co dung ko"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-014",
+      "split": "TEST",
+      "question": "CT tính công cơ học A là gì?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "CT tính công cơ học A là gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-015",
+      "split": "TEST",
+      "question": "ĐV của HĐT là gì?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "ĐV của HĐT là gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-016",
+      "split": "TEST",
+      "question": "Sau khi có vận tốc, em có cần đổi lại sang km/h không?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "PHYSICS",
+      "history": [
+        {
+          "role": "user",
+          "content": "Một người chạy 400 m trong 80 giây."
+        },
+        {
+          "role": "assistant",
+          "content": "Em chia quãng đường cho thời gian để có m/s."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sau khi có vận tốc, em có cần đổi lại sang km/h không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-017",
+      "split": "TEST",
+      "question": "Nếu có ma sát thì phương trình lực thay đổi chỗ nào?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "PHYSICS",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang tính gia tốc của vật bị kéo."
+        },
+        {
+          "role": "assistant",
+          "content": "Trước hết hãy viết tổng các lực theo chiều chuyển động."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Nếu có ma sát thì phương trình lực thay đổi chỗ nào?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-018",
+      "split": "TEST",
+      "question": "Vậy điện trở có đổi khi tăng điện áp không?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "PHYSICS",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em vừa dùng định luật Ôm cho dây dẫn ở nhiệt độ không đổi."
+        },
+        {
+          "role": "assistant",
+          "content": "Em đã tính được cường độ dòng điện."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy điện trở có đổi khi tăng điện áp không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-019",
+      "split": "TEST",
+      "question": "Đề bài điện này thiếu một đại lượng, em cần hỏi lại gì?",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Đề bài điện này thiếu một đại lượng, em cần hỏi lại gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-physics-020",
+      "split": "TEST",
+      "question": "Em có bài cơ học nhưng chưa rõ vật đang chuyển động kiểu nào.",
+      "gold_subject": "PHYSICS",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em có bài cơ học nhưng chưa rõ vật đang chuyển động kiểu nào."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-001",
+      "split": "TEST",
+      "question": "Cân bằng phương trình: Al + HCl → AlCl₃ + H₂.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Cân bằng phương trình: Al + HCl → AlCl₃ + H₂."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-002",
+      "split": "TEST",
+      "question": "Tính số mol của 44 g CO₂, biết M(CO₂) = 44 g/mol.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tính số mol của 44 g CO₂, biết M(CO₂) = 44 g/mol."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-003",
+      "split": "TEST",
+      "question": "Phân biệt hiện tượng vật lý và hiện tượng hóa học.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Phân biệt hiện tượng vật lý và hiện tượng hóa học."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-004",
+      "split": "TEST",
+      "question": "Gợi ý cho em cách tính nồng độ phần trăm của dung dịch.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Gợi ý cho em cách tính nồng độ phần trăm của dung dịch."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-005",
+      "split": "TEST",
+      "question": "Em kết luận quỳ tím hóa đỏ là dung dịch bazơ, có đúng không?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em kết luận quỳ tím hóa đỏ là dung dịch bazơ, có đúng không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-006",
+      "split": "TEST",
+      "question": "Cho 0,25 mol H₂SO₄. Tính số mol nguyên tử H có trong lượng chất này.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Cho 0,25 mol H₂SO₄. Tính số mol nguyên tử H có trong lượng chất này."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-007",
+      "split": "TEST",
+      "question": "Em viết phản ứng CaCO₃ + HCl tạo ra CaCl, em sai ở đâu?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em viết phản ứng CaCO₃ + HCl tạo ra CaCl, em sai ở đâu?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-008",
+      "split": "TEST",
+      "question": "Hòa tan 5,85 g NaCl vào nước để được 500 ml dung dịch. Tính CM.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hòa tan 5,85 g NaCl vào nước để được 500 ml dung dịch. Tính CM."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-009",
+      "split": "TEST",
+      "question": "Vì sao không được đổ nước vào axit đặc?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vì sao không được đổ nước vào axit đặc?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-010",
+      "split": "TEST",
+      "question": "Đốt cháy 2 mol H₂ cần bao nhiêu mol O₂ theo phương trình 2H₂ + O₂ → 2H₂O?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Đốt cháy 2 mol H₂ cần bao nhiêu mol O₂ theo phương trình 2H₂ + O₂ → 2H₂O?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-011",
+      "split": "TEST",
+      "question": "tinh so mol cua 36g nuoc nhu the nao",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "tinh so mol cua 36g nuoc nhu the nao"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-012",
+      "split": "TEST",
+      "question": "em ko biet can bang pthh",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em ko biet can bang pthh"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-013",
+      "split": "TEST",
+      "question": "pH=7 co phai axit ko?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "pH=7 co phai axit ko?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-014",
+      "split": "TEST",
+      "question": "Hướng dẫn tính CM của dd NaCl.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Hướng dẫn tính CM của dd NaCl."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-015",
+      "split": "TEST",
+      "question": "PTHH có ý nghĩa gì trong bài mol?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "PTHH có ý nghĩa gì trong bài mol?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-016",
+      "split": "TEST",
+      "question": "Sau khi cân bằng xong, em lấy tỉ lệ mol ở đâu?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "CHEMISTRY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang giải bài theo phương trình hóa học."
+        },
+        {
+          "role": "assistant",
+          "content": "Trước hết em cần cân bằng phương trình phản ứng."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sau khi cân bằng xong, em lấy tỉ lệ mol ở đâu?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-017",
+      "split": "TEST",
+      "question": "Vậy số mol chất tan và số mol dung môi có giống nhau không?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "CHEMISTRY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang học nồng độ dung dịch."
+        },
+        {
+          "role": "assistant",
+          "content": "Em cần phân biệt chất tan, dung môi và dung dịch."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy số mol chất tan và số mol dung môi có giống nhau không?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-018",
+      "split": "TEST",
+      "question": "Nếu quỳ tím không đổi màu thì em kết luận gì?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "CHEMISTRY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em dùng quỳ tím để nhận biết dung dịch."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy quan sát màu quỳ trước và sau khi thử."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Nếu quỳ tím không đổi màu thì em kết luận gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-019",
+      "split": "TEST",
+      "question": "Em có bài hóa về dung dịch nhưng không rõ cần tính đại lượng nào.",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em có bài hóa về dung dịch nhưng không rõ cần tính đại lượng nào."
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    },
+    {
+      "id": "test-chemistry-020",
+      "split": "TEST",
+      "question": "PTHH em chép chưa đủ chất, giờ em nên làm gì?",
+      "gold_subject": "CHEMISTRY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "PTHH em chép chưa đủ chất, giờ em nên làm gì?"
+        }
+      ],
+      "provenance": "synthetic_template_v1"
+    }
+  ]
+}

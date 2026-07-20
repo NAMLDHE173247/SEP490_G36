@@ -5,10 +5,11 @@ import { ModelVersion, ModelVersionStatus } from '../../models/ModelVersion';
 import { RoutingDecisionLog } from '../../models/RoutingDecisionLog';
 import { apiKeyService } from '../apiKeyService';
 import { hybridRoute } from './hybridRouter';
-import { HybridRoutingDecision, RoutingContext, RoutingMode, RoutingSubject } from './routingTypes';
+import { HybridRoutingDecision, RoutingContext, RoutingMode, RoutingSubject, RoutingThresholds } from './routingTypes';
 
 const inferLegacySubject = (name: string): RoutingSubject => {
   const value = name.toLowerCase();
+  if (/english|tieng anh|language/.test(value)) return 'ENGLISH';
   if (/math|toán|toan/.test(value)) return 'MATH';
   if (/phys|physical|vật lý|vat ly/.test(value)) return 'PHYSICS';
   if (/chem|hóa|hoa hoc/.test(value)) return 'CHEMISTRY';
@@ -40,10 +41,12 @@ export const decideHybridRoute = async (args: {
   ownerId: string;
   question: string;
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  previousSubject?: RoutingSubject;
   mode?: RoutingMode;
   sessionId?: string;
   modelMap?: Record<string, string>;
   persistLog?: boolean;
+  thresholds?: Partial<RoutingThresholds>;
 }): Promise<HybridRoutingDecision> => {
   const mode = args.mode || 'hybrid';
   const modelMap = { ...(await getActiveSubjectModelMap(args.ownerId)), ...(args.modelMap || {}) };
@@ -52,8 +55,12 @@ export const decideHybridRoute = async (args: {
     try { provider = await apiKeyService.createProvider(args.ownerId, 'openrouter', true, 'google/gemini-2.5-flash'); }
     catch { provider = undefined; }
   }
-  const context: RoutingContext = { question: args.question, history: args.history || [] };
-  const decision = await hybridRoute({ context, mode, modelMap, llmProvider: provider });
+  const context: RoutingContext = {
+    question: args.question,
+    history: args.history || [],
+    previousSubject: args.previousSubject,
+  };
+  const decision = await hybridRoute({ context, mode, modelMap, llmProvider: provider, thresholds: args.thresholds });
 
   if (args.persistLog !== false && mongoose.Types.ObjectId.isValid(args.ownerId)) {
     await RoutingDecisionLog.create({

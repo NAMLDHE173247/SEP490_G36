@@ -285,6 +285,24 @@ export default function ModelEvalView() {
       } else if (versions.length > 0) {
         setSelectedVersionId(versions[0]._id);
       }
+
+      // Reuse the Data Prep Evaluation Pack automatically. The user only
+      // needs to create it once; Model Eval receives its master test subset
+      // as an in-memory File and no manual JSON upload is required.
+      try {
+        const rawPack = localStorage.getItem('hybrid_evaluation_pack_v1');
+        const pack = rawPack ? JSON.parse(rawPack) : null;
+        const evalCases = Array.isArray(pack?.model_eval?.test) ? pack.model_eval.test : [];
+        if (evalCases.length > 0) {
+          const blob = new Blob([JSON.stringify(evalCases, null, 2)], { type: 'application/json' });
+          const packFile = new File([blob], `evaluation_pack_model_eval_${pack.dataset_version_id || 'latest'}.json`, { type: 'application/json' });
+          setDatasetSource('file');
+          setUploadedFile(packFile);
+          toast.success(`Đã tự nạp ${evalCases.length} cases từ Evaluation Pack cho Model Eval`);
+        }
+      } catch (packError) {
+        console.warn('[Model Eval] Could not load Data Prep Evaluation Pack:', packError);
+      }
     } catch (err) {
       console.error('Failed to load evaluation setup options:', err);
       toast.error('Lỗi tải cấu hình tạo evaluation');

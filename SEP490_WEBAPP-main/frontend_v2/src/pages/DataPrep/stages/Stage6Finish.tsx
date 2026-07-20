@@ -8,6 +8,70 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import './Stage6Finish.css';
 
+const EVALUATION_PACK_STORAGE_KEY = 'hybrid_evaluation_pack_v1';
+const ROUTER_INTENTS = new Set([
+  'solve_problem', 'explain_concept', 'give_hint', 'check_answer',
+  'diagnose_error', 'ask_follow_up', 'ask_clarification'
+]);
+
+const normalizeEvaluationSubject = (value: any): string => {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (['MATH', 'MATHEMATICS'].includes(normalized)) return 'MATH';
+  if (['ENGLISH', 'EN'].includes(normalized)) return 'ENGLISH';
+  if (['HISTORY', 'HIST'].includes(normalized)) return 'HISTORY';
+  if (['PHYSICS', 'PHYSICAL'].includes(normalized)) return 'PHYSICS';
+  if (['CHEMISTRY', 'CHEM'].includes(normalized)) return 'CHEMISTRY';
+  if (['GENERAL', 'OTHER', 'UNGROUPED', 'OUT_OF_SCOPE'].includes(normalized)) return 'GENERAL';
+  return normalized || 'GENERAL';
+};
+
+const toEvaluationMessages = (row: any): Array<{ role: string; content: string; labels?: string[] }> => {
+  if (Array.isArray(row?.messages)) {
+    return row.messages
+      .filter((message: any) => message?.role && String(message.content || '').trim())
+      .map((message: any) => ({
+        role: String(message.role),
+        content: String(message.content),
+        ...(Array.isArray(message.labels) ? { labels: message.labels.map((label: any) => String(label)) } : {}),
+      }));
+  }
+  if (Array.isArray(row?.conversations)) {
+    return row.conversations
+      .map((message: any) => ({
+        role: message.from === 'human' ? 'user' : message.from === 'gpt' ? 'assistant' : String(message.from || ''),
+        content: String(message.value || ''),
+      }))
+      .filter((message: any) => message.role && message.content.trim());
+  }
+  return [];
+};
+
+const collectEvaluationLabels = (row: any, messages: Array<{ labels?: string[] }>): string[] => {
+  const sampleLabels = Array.isArray(row?.labels?.sample) ? row.labels.sample : [];
+  const messageLabels = Array.isArray(row?.labels?.messages)
+    ? row.labels.messages.flatMap((entry: any) => Array.isArray(entry?.labels) ? entry.labels : [])
+    : [];
+  return [...sampleLabels, ...messageLabels, ...messages.flatMap(message => message.labels || [])]
+    .map(label => String(label).trim().toLowerCase().replace(/\s+/g, '_'));
+};
+
+const getEvaluationIntent = (row: any, messages: Array<{ labels?: string[] }>): string | undefined => {
+  const candidates = [row?.gold_intent, row?.intent, ...collectEvaluationLabels(row, messages)];
+  return candidates
+    .map(value => String(value || '').trim().toLowerCase().replace(/\s+/g, '_'))
+    .find(value => ROUTER_INTENTS.has(value));
+};
+
+const needsEvaluationClarification = (question: string, row: any): boolean => {
+  if (typeof row?.gold_need_clarification === 'boolean') return row.gold_need_clarification;
+  const normalized = question.trim().toLowerCase();
+  return normalized.length < 32 || /^(giúp em|giup em|help me|i don't understand|em không hiểu|em khong hieu|english grammar|bài này|bai nay|this lesson)/i.test(normalized);
+};
+
+const inferEvaluationLanguage = (text: string): 'vi' | 'en' => {
+  return /[ăâđêôơưáàảãạéèẻẽẹíìỉĩịóòỏõọúùủũụýỳỷỹỵ]/i.test(text) ? 'vi' : 'en';
+};
+
 export const Stage6Finish: React.FC = () => {
   const dataPrep = useDataPrep();
   const {
@@ -435,6 +499,153 @@ export const Stage6Finish: React.FC = () => {
       throw new Error('Dataset chưa có hard label nào. Hãy kiểm tra Staff đã Submit và Supervisor đã hoàn tất review.');
     }
     return result.data || [];
+  };
+
+  /**
+   * Build one browser-persisted Evaluation Pack from the locked Safe Split.
+   * This removes the need to hand-create/upload separate router and Model Eval files.
+   * The response text is intentionally marked as a pilot reference: a final paper
+   * evaluation still needs an independently reviewed reference answer.
+   */
+  const handleCreateEvaluationPack = async () => {
+    if (!splitResult?.train || !splitResult?.val || !splitResult?.test) {
+      alert('Hãy chạy Safe Split thành công trước khi tạo Evaluation Pack.');
+      return;
+    }
+
+    try {
+      const sourceData = await loadLabeledExportSource();
+      const sourceById = new Map<string, any>();
+      sourceData.forEach((row: any, index: number) => {
+        const id = String(row?.conversation_id || row?.id || `conv_${index + 1}`);
+        sourceById.set(id, row);
+      });
+
+      const buildRows = (partitionRows: any[], split: 'TRAIN' | 'VALIDATION' | 'TEST') => {
+        return (partitionRows || []).map((partitionRow: any, index: number) => {
+          const id = String(partitionRow?.conversation_id || partitionRow?.id || `case-${split.toLowerCase()}-${index + 1}`);
+          const source = sourceById.get(id) || partitionRow;
+          const sourceMessages = toEvaluationMessages(source);
+          const messages = sourceMessages.length > 0 ? sourceMessages : toEvaluationMessages(partitionRow);
+          const userMessages = messages.filter(message => message.role === 'user');
+          const lastUserIndex = Math.max(0, messages.map(message => message.role).lastIndexOf('user'));
+          const question = String(userMessages[userMessages.length - 1]?.content || '').trim();
+          const subject = normalizeEvaluationSubject(source?.subject || partitionRow?.subject);
+          const intent = getEvaluationIntent(source, messages);
+          const assistantAnswer = [...messages].reverse().find(message => message.role === 'assistant')?.content || '';
+          const history = messages.slice(0, lastUserIndex).filter(message => message.role === 'user' || message.role === 'assistant');
+          const turns = userMessages.map(message => message.content);
+          const baseCase: any = {
+            id,
+            split,
+            question,
+            history,
+            previous_subject: null,
+            gold_subject: subject,
+            gold_need_clarification: needsEvaluationClarification(question, source),
+            challenge_type: history.length > 0 ? 'follow_up' : 'baseline',
+            expected_language: inferEvaluationLanguage(question),
+            provenance: `dataprep_version_${localStorage.getItem('current_version_id') || 'unknown'}`,
+            review_status: 'needs_human_review',
+          };
+          if (intent) baseCase.gold_intent = intent;
+          if (turns.length > 0) {
+            baseCase.turns = turns;
+            baseCase.turn_gold_subjects = turns.map(() => subject);
+          }
+
+          return {
+            sourceRow: source,
+            routerCase: baseCase,
+            modelEvalCase: {
+              ...baseCase,
+              messages: messages.map(message => ({ role: message.role, content: message.content })),
+              reference_answer: String(assistantAnswer),
+              gold_key_points: [],
+              socratic_expectation: {
+                may_reveal_final_answer: false,
+                expected_scaffold: String(assistantAnswer),
+              },
+              reference_source: 'dataset_assistant_response',
+            },
+          };
+        }).filter(item => item.routerCase.question.length > 0);
+      };
+
+      const trainRows = buildRows(splitResult.train, 'TRAIN');
+      const validationRows = buildRows(splitResult.val, 'VALIDATION');
+      const testRows = buildRows(splitResult.test, 'TEST');
+      const versionId = localStorage.getItem('current_version_id');
+      const pack = {
+        schema_version: 'evaluation-pack-v1',
+        dataset_role: 'dataprep_derived_evaluation_pack',
+        created_at: new Date().toISOString(),
+        dataset_version_id: versionId,
+        split_strategy: splitResult.split_strategy || 'safe-split',
+        counts: { train: trainRows.length, validation: validationRows.length, test: testRows.length },
+        warnings: [
+          'Pilot pack generated from the Data Prep dataset version.',
+          'Router labels are copied from available Data Prep labels or generated heuristically when missing.',
+          'reference_answer currently comes from the dataset assistant response; independently review before final RP5.',
+        ],
+        sft: {
+          train: trainRows.map(row => row.sourceRow),
+          validation: validationRows.map(row => row.sourceRow),
+          test: testRows.map(row => row.sourceRow),
+        },
+        router: {
+          calibration: trainRows.map(row => row.routerCase),
+          validation: validationRows.map(row => row.routerCase),
+          test: testRows.map(row => row.routerCase),
+        },
+        model_eval: {
+          test: testRows.map(row => row.modelEvalCase),
+        },
+      };
+
+      localStorage.setItem(EVALUATION_PACK_STORAGE_KEY, JSON.stringify(pack));
+
+      // Also provide a real ZIP artifact. It is compatible with the existing
+      // AutoTrain and Model Eval ZIP readers and keeps all derived partitions
+      // traceable to the same Data Prep version.
+      const zip = new JSZip();
+      zip.file('train_dataset.json', JSON.stringify(pack.sft.train, null, 2));
+      zip.file('validation_dataset.json', JSON.stringify(pack.sft.validation, null, 2));
+      zip.file('test_dataset.json', JSON.stringify(pack.model_eval.test, null, 2));
+      const subjectsForPack = ['ENGLISH', 'MATH', 'HISTORY'];
+      subjectsForPack.forEach(subject => {
+        const subjectTrain = pack.sft.train.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
+        const subjectValidation = pack.sft.validation.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
+        zip.file(`subjects/${subject.toLowerCase()}_train.json`, JSON.stringify(subjectTrain, null, 2));
+        zip.file(`subjects/${subject.toLowerCase()}_validation.json`, JSON.stringify(subjectValidation, null, 2));
+      });
+      // General is the pooled baseline: it sees all approved subject data.
+      zip.file('subjects/general_train.json', JSON.stringify(pack.sft.train, null, 2));
+      zip.file('subjects/general_validation.json', JSON.stringify(pack.sft.validation, null, 2));
+      zip.file('router_calibration.json', JSON.stringify(pack.router.calibration, null, 2));
+      zip.file('router_validation.json', JSON.stringify(pack.router.validation, null, 2));
+      zip.file('router_test.json', JSON.stringify(pack.router.test, null, 2));
+      zip.file('model_eval_test.json', JSON.stringify(pack.model_eval.test, null, 2));
+      zip.file('_metadata.json', JSON.stringify({
+        projectName,
+        datasetVersionId: versionId,
+        totalTrain: trainRows.length,
+        totalValidation: validationRows.length,
+        totalTest: testRows.length,
+        exportedAt: pack.created_at,
+        evaluationPackSchema: pack.schema_version,
+      }, null, 2));
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, `evaluation_pack_${versionId || 'latest'}.zip`);
+
+      // Training must happen before routing can be benchmarked. Navigate to
+      // AutoTrain now; Router Benchmark will be used after HF registration.
+      window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'AutoTrain' }));
+      alert(`Đã tạo và tải Evaluation Pack.\nTrain: ${trainRows.length} | Validation: ${validationRows.length} | Test: ${testRows.length}\nBước tiếp theo: train/register model trong AutoTrain. Sau đó mở Router Benchmark.`);
+    } catch (error: any) {
+      console.error('[Evaluation Pack] generation failed:', error);
+      alert(error?.response?.data?.error || error?.message || 'Không thể tạo Evaluation Pack.');
+    }
   };
 
   const handleDownloadSplit = async () => {
@@ -1508,6 +1719,25 @@ export const Stage6Finish: React.FC = () => {
               <span className="ex-page-info">Page {activePage} / {totalPages}</span>
               <button className="ex-page-btn" onClick={() => setExportPage(Math.min(totalPages, exportPage + 1))}>Next</button>
             </div>
+          </div>
+
+          {/* Evaluation Pack: connects Data Prep directly to Router Benchmark */}
+          <div className="ex-download-card" style={{ marginTop: 16, border: '1px solid #c7d2fe', background: '#eef2ff' }}>
+            <h4 style={{ color: '#3730a3' }}>Evaluation Pack cho Router + Model Eval</h4>
+            <p className="ex-download-note">
+              Tạo và tải ZIP gồm bộ SFT, Router calibration/test và Model Eval từ Dataset Version hiện tại.
+            </p>
+            <p className="ex-download-note" style={{ color: '#92400e' }}>
+              Đây là pilot pack để chạy thử. Các reference answer cần được review độc lập trước khi dùng làm kết quả RP5 chính thức.
+            </p>
+            <button
+              className="ex-btn-purple"
+              onClick={handleCreateEvaluationPack}
+              disabled={!splitResult?.train || !splitResult?.val || !splitResult?.test}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
+            >
+              <FileJson size={14} /> Tạo Pack, tải ZIP và mở AutoTrain
+            </button>
           </div>
 
           {/* Download Cards Row */}

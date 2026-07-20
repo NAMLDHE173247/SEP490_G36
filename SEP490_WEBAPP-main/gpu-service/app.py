@@ -3688,6 +3688,20 @@ def load_model():
         lock.release()
 
 
+@app.route('/api/model/status', methods=['GET'])
+def model_slot_status():
+    """Expose non-sensitive slot occupancy for cache-aware routing benchmarks."""
+    slots = {}
+    for slot_id in sorted(_slot_locks.keys()):
+        current = _model_slots.get(slot_id)
+        slots[str(slot_id)] = {
+            "loaded": current is not None,
+            "model_id": current["model_id"] if current else None,
+            "busy": _slot_locks[slot_id].locked(),
+        }
+    return jsonify({"status": "success", "slots": slots}), 200
+
+
 @app.route('/api/model/unload/<int:slot_id>', methods=['POST'])
 def unload_model(slot_id):
     lock = _slot_locks.get(slot_id)
@@ -3788,6 +3802,7 @@ def infer_model_stream():
             text=instruction_text,
             return_tensors="pt",
         ).to("cuda")
+        input_token_count = int(inputs["input_ids"].shape[-1])
 
         streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
 
@@ -3818,8 +3833,21 @@ def infer_model_stream():
             for text in stream_without_thinking(streamer):
                 full_response.append(text)
                 yield f"data: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"
-            inference_logs_db[inference_id]["generated_text"] = "".join(full_response)
+            generated_text = "".join(full_response)
+            # Count with the exact tokenizer loaded for this model.  Emitting
+            # this as a final SSE event lets benchmark clients record measured
+            # token use instead of estimating it from characters or words.
+            output_token_count = len(tokenizer.encode(generated_text, add_special_tokens=False))
+            usage = {
+                "input_tokens": input_token_count,
+                "output_tokens": output_token_count,
+                "total_tokens": input_token_count + output_token_count,
+                "accounting": "model_tokenizer",
+            }
+            inference_logs_db[inference_id]["generated_text"] = generated_text
+            inference_logs_db[inference_id]["usage"] = usage
             inference_logs_db[inference_id]["status"] = "completed"
+            yield f"data: {json.dumps({'usage': usage, 'inference_id': inference_id}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
         return Response(generate_stream(), mimetype='text/event-stream')

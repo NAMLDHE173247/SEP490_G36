@@ -1,0 +1,90 @@
+{
+  "artifact_type": "router_benchmark_ui_summary",
+  "recorded_at": "2026-07-19",
+  "source": "User-supplied Router Benchmark UI output",
+  "test_file": "docs/datasets/router_test_v2.json",
+  "case_count": 60,
+  "repetitions": 1,
+  "modes": ["rule", "llm", "hybrid"],
+  "thresholds": {
+    "rule_confidence": 0.8,
+    "rule_margin": 0.25,
+    "llm_confidence": 0.7
+  },
+  "results": {
+    "rule": {
+      "primary_subject_accuracy": 0.22,
+      "macro_f1": 0.20,
+      "intent_accuracy": 0.18,
+      "exact_match_accuracy": 0.07,
+      "wrong_route_rate": 0.78,
+      "avg_router_latency_ms": 2,
+      "llm_call_rate": 0.0,
+      "router_llm_calls": "0/60",
+      "routing_stability": null,
+      "router_token_usage": null,
+      "per_subject": {
+        "ENGLISH": {"precision": 1.0, "recall": 0.40, "f1": 0.57, "support": 20},
+        "HISTORY": {"precision": 1.0, "recall": 0.20, "f1": 0.33, "support": 20},
+        "MATH": {"precision": 1.0, "recall": 0.05, "f1": 0.10, "support": 20}
+      },
+      "errors": {
+        "incorrect_clarification_or_abstention": 41,
+        "rule_router_misroute": 6
+      }
+    },
+    "llm": {
+      "primary_subject_accuracy": 0.77,
+      "macro_f1": 0.65,
+      "intent_accuracy": 0.52,
+      "exact_match_accuracy": 0.43,
+      "wrong_route_rate": 0.23,
+      "avg_router_latency_ms": 1142,
+      "llm_call_rate": 1.0,
+      "router_llm_calls": "60/60",
+      "routing_stability": null,
+      "router_token_usage": null,
+      "per_subject": {
+        "ENGLISH": {"precision": 1.0, "recall": 0.90, "f1": 0.95, "support": 20},
+        "HISTORY": {"precision": 1.0, "recall": 0.60, "f1": 0.75, "support": 20},
+        "MATH": {"precision": 1.0, "recall": 0.80, "f1": 0.89, "support": 20}
+      },
+      "errors": {
+        "incorrect_clarification_or_abstention": 14
+      }
+    },
+    "hybrid": {
+      "primary_subject_accuracy": 0.78,
+      "macro_f1": 0.52,
+      "intent_accuracy": 0.52,
+      "exact_match_accuracy": 0.45,
+      "wrong_route_rate": 0.22,
+      "avg_router_latency_ms": 823,
+      "llm_call_rate": 0.70,
+      "router_llm_calls": "42/60",
+      "routing_stability": null,
+      "router_token_usage": null,
+      "per_subject": {
+        "ENGLISH": {"precision": 1.0, "recall": 0.95, "f1": 0.97, "support": 20},
+        "HISTORY": {"precision": 1.0, "recall": 0.60, "f1": 0.75, "support": 20},
+        "MATH": {"precision": 1.0, "recall": 0.80, "f1": 0.89, "support": 20}
+      },
+      "errors": {
+        "incorrect_clarification_or_abstention": 7,
+        "rule_router_misroute": 6
+      }
+    }
+  },
+  "derived_comparisons": {
+    "hybrid_vs_rule_accuracy_percentage_points": 56,
+    "hybrid_vs_llm_accuracy_percentage_points": 1,
+    "hybrid_vs_llm_latency_reduction_fraction": 0.2793,
+    "hybrid_vs_llm_llm_call_reduction_fraction": 0.30
+  },
+  "limitations": [
+    "Rounded percentages were transcribed from the UI; per-case export was not supplied.",
+    "A single repetition does not support a stability claim.",
+    "Provider token accounting was unavailable in the displayed result.",
+    "The hold-out set contains ENGLISH, MATH, and HISTORY only; GENERAL is not evaluated."
+  ]
+}

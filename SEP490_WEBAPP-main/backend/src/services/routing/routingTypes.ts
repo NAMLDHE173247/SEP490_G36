@@ -21,6 +21,7 @@ export interface RouterSignal {
   isInterdisciplinary: boolean;
   matchedTerms: string[];
   reason: string;
+  tokenUsage?: { inputTokens: number; outputTokens: number; totalTokens: number } | null;
 }
 
 export interface HybridRoutingDecision extends RouterSignal {

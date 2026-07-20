@@ -1,0 +1,23 @@
+{
+  "version": "v2",
+  "subjects": [
+    "ENGLISH",
+    "MATH",
+    "HISTORY"
+  ],
+  "specialist_train": {
+    "ENGLISH": "specialist_english_train_v2.json",
+    "MATH": "specialist_math_train_v2.json",
+    "HISTORY": "specialist_history_train_v2.json"
+  },
+  "general_train": "general_tutor_train_v2.json",
+  "router_train": "router_train_v2.json",
+  "router_test": "router_test_v2.json",
+  "counts": {
+    "specialist_train_per_subject": 200,
+    "general_train_total": 600,
+    "router_train_total": 90,
+    "router_test_total": 60
+  },
+  "note": "Synthetic curriculum data for pipeline validation; replace or supplement with independently authored data for final claims."
+}

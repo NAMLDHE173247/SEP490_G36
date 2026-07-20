@@ -1,0 +1,103 @@
+[
+  {
+    "id": "MATH-SMOKE-001",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Có bao nhiêu cách lập một nhóm 3 người từ 12 học sinh nếu vai trò của các thành viên là như nhau?",
+    "gold_answer": "220",
+    "gold_key_concepts": ["không xét thứ tự", "tổ hợp", "C(12,3)"],
+    "gold_response_type": "direct_answer_with_brief_reason"
+  },
+  {
+    "id": "MATH-SMOKE-002",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Giải phương trình 4x - 7 = 29 và cho biết cách kiểm tra kết quả.",
+    "gold_answer": "x = 9",
+    "gold_key_concepts": ["cộng 7 hai vế", "chia 4", "thay ngược"],
+    "gold_response_type": "worked_answer_with_self_check"
+  },
+  {
+    "id": "MATH-SMOKE-003",
+    "subject": "MATH",
+    "intent": "diagnose_error",
+    "question": "Em giải 3x + 5 = 26 và được x = 8. Em sai ở đâu?",
+    "gold_answer": "x = 7",
+    "gold_key_concepts": ["26 - 5 = 21", "21 / 3 = 7", "chỉ rõ lỗi"],
+    "gold_response_type": "error_diagnosis"
+  },
+  {
+    "id": "MATH-SMOKE-004",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "15% của 260 bằng bao nhiêu? Trả lời ngắn gọn và nêu phép tính.",
+    "gold_answer": "39",
+    "gold_key_concepts": ["0.15 x 260", "39"],
+    "gold_response_type": "direct_answer"
+  },
+  {
+    "id": "MATH-SMOKE-005",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Một tam giác có đáy 13 cm và chiều cao tương ứng 8 cm. Diện tích là bao nhiêu và đơn vị là gì?",
+    "gold_answer": "52 cm^2",
+    "gold_key_concepts": ["1/2 x 13 x 8", "52", "cm^2"],
+    "gold_response_type": "direct_answer_with_unit"
+  },
+  {
+    "id": "MATH-SMOKE-006",
+    "subject": "MATH",
+    "intent": "explain_concept",
+    "question": "Vì sao khi chia hai vế của bất phương trình cho một số âm thì phải đổi chiều dấu? Hãy dùng một ví dụ số đơn giản.",
+    "gold_answer": "Phép nhân hoặc chia cho số âm đảo thứ tự trên trục số; ví dụ 2 < 5 nhưng -2 > -5.",
+    "gold_key_concepts": ["đảo thứ tự", "trục số", "ví dụ đúng"],
+    "gold_response_type": "concept_explanation"
+  },
+  {
+    "id": "MATH-SMOKE-007",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Tính đạo hàm của f(x) = 3x^2 - 4x + 7.",
+    "gold_answer": "f'(x) = 6x - 4",
+    "gold_key_concepts": ["quy tắc lũy thừa", "đạo hàm hằng số bằng 0", "6x - 4"],
+    "gold_response_type": "direct_answer_with_brief_reason"
+  },
+  {
+    "id": "MATH-SMOKE-008",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Gieo một con xúc xắc cân đối một lần. Xác suất xuất hiện số chẵn là bao nhiêu?",
+    "gold_answer": "1/2",
+    "gold_key_concepts": ["2, 4, 6", "3 kết quả thuận lợi", "6 kết quả có thể", "1/2"],
+    "gold_response_type": "direct_answer_with_brief_reason"
+  },
+  {
+    "id": "MATH-SMOKE-009",
+    "subject": "MATH",
+    "intent": "ask_follow_up",
+    "question": "Em vẫn chưa hiểu vì sao phải chia cho 6.",
+    "history": [
+      {
+        "role": "user",
+        "content": "Em đang đếm số cách chọn 3 học sinh từ 7 học sinh và đã tính 7 x 6 x 5 = 210."
+      },
+      {
+        "role": "assistant",
+        "content": "Phép nhân đó đang đếm các thứ tự khác nhau của cùng một nhóm."
+      }
+    ],
+    "previous_subject": "MATH",
+    "gold_answer": "Chia cho 3! = 6 vì mỗi nhóm ba người bị đếm 6 lần theo sáu hoán vị.",
+    "gold_key_concepts": ["3!", "6 hoán vị", "đếm trùng"],
+    "gold_response_type": "grounded_follow_up"
+  },
+  {
+    "id": "MATH-SMOKE-010",
+    "subject": "MATH",
+    "intent": "give_hint",
+    "question": "Em không biết bắt đầu bài tìm khoảng cách giữa A(2, -1) và B(8, 7) từ đâu. Chỉ cho em bước đầu tiên.",
+    "gold_answer": "Tính chênh lệch tọa độ: delta x = 6 và delta y = 8, sau đó dùng công thức khoảng cách.",
+    "gold_key_concepts": ["delta x = 6", "delta y = 8", "công thức khoảng cách"],
+    "gold_response_type": "single_step_hint"
+  }
+]

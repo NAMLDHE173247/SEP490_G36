@@ -182,6 +182,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     const {
       text_input,
       hf_model_id,
+      hf_hub_id, // Compatibility with ChatView's local-model payload
       modelRegistryId, // New: support registry for single inference
       system_prompt,
       max_new_tokens,
@@ -194,6 +195,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       subject,
       subject_model_map,
       routing_mode,
+      previous_subject,
       session_id,
     } = req.body;
 
@@ -202,7 +204,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    let actualModelId = hf_model_id;
+    let actualModelId = hf_model_id || hf_hub_id;
     let routingDecision: ReturnType<typeof routeVerifiedSubject> | HybridRoutingDecision | null = null;
 
     if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
@@ -210,6 +212,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
         ownerId,
         question: text_input,
         history: normalizeHistory(history),
+        previousSubject: typeof previous_subject === 'string' ? previous_subject : undefined,
         mode: routing_mode as RoutingMode,
         sessionId: session_id,
         modelMap: subject_model_map,
@@ -483,6 +486,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     const {
       text_input,
       hf_model_id,
+      hf_hub_id, // Compatibility with ChatView's streaming payload
       modelRegistryId, // New: support registry for single inference stream
       system_prompt,
       max_new_tokens,
@@ -493,6 +497,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       provider,
       history,
       routing_mode,
+      previous_subject,
       subject_model_map,
       session_id,
     } = req.body;
@@ -502,13 +507,14 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    let actualModelId = hf_model_id;
+    let actualModelId = hf_model_id || hf_hub_id;
     let routingDecision: HybridRoutingDecision | null = null;
     if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
       routingDecision = await decideHybridRoute({
         ownerId,
         question: text_input,
         history: normalizeHistory(history),
+        previousSubject: typeof previous_subject === 'string' ? previous_subject : undefined,
         mode: routing_mode as RoutingMode,
         sessionId: session_id,
         modelMap: subject_model_map,

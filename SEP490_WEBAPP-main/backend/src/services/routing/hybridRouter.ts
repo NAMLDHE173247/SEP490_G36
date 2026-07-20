@@ -45,9 +45,18 @@ export const hybridRoute = async (args: {
   }
 
   const llm = await llmBasedRoute(args.context, args.llmProvider, args.llmModel, Object.keys(args.modelMap));
-  if (llm.confidence >= thresholds.llmConfidence && !llm.needClarification) {
+  const sameSubject = llm.subject === rule.subject;
+  const llmIsStrong = llm.confidence >= thresholds.llmConfidence && !llm.needClarification;
+  const ruleIsUsable = rule.subject !== 'UNKNOWN' && !rule.needClarification;
+  // When both routers are confident but disagree, prefer the semantic router
+  // only when it has a meaningful confidence advantage; otherwise ask for
+  // clarification instead of silently hiding a routing conflict.
+  const llmWinsConflict = llmIsStrong && (!ruleIsUsable || sameSubject || llm.confidence >= rule.confidence + 0.1);
+  if (llmWinsConflict) {
     return finish(llm, 'llm', true, llm);
   }
+
+  if (ruleIsUsable && sameSubject) return finish({ ...rule, reason: `${rule.reason}; LLM xác nhận cùng subject.` }, 'hybrid', true, llm);
 
   return finish({
     ...llm,

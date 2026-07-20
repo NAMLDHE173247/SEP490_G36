@@ -48,12 +48,12 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
 
   epochs: '3',
   batchSize: '1',
-  learningRate: '0.0002',
+  learningRate: '0.00005',
   blockSize: '1024',
   modelMaxLength: '1024',
   r: '16',
   loraAlpha: '32',
-  loraDropout: '0',
+  loraDropout: '0.05',
   gradAccum: '4',
   warmupSteps: '5',
   weightDecay: '0.01',
@@ -161,8 +161,8 @@ export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
     warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
   },
   "Standard (Recommended ~15 min)": {
-    epochs: 3, batchSize: 1, learningRate: 0.0002, blockSize: 1024, modelMaxLength: 1024,
-    r: 16, lora_alpha: 32, lora_dropout: 0.0, gradient_accumulation_steps: 4,
+    epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 1024, modelMaxLength: 1024,
+    r: 16, lora_alpha: 32, lora_dropout: 0.05, gradient_accumulation_steps: 4,
     warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
   },
   "High Quality (~45 min)": {

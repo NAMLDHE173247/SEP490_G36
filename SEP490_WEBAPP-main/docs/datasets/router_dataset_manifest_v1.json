@@ -1,0 +1,24 @@
+{
+  "schema_version": "router_dataset_v1",
+  "train_case_count": 90,
+  "test_case_count": 60,
+  "train_subject_distribution": {
+    "MATH": 30,
+    "PHYSICS": 30,
+    "CHEMISTRY": 30
+  },
+  "test_subject_distribution": {
+    "MATH": 20,
+    "PHYSICS": 20,
+    "CHEMISTRY": 20
+  },
+  "test_challenge_distribution": {
+    "standard": 30,
+    "typo": 9,
+    "abbreviation": 6,
+    "follow_up": 9,
+    "ambiguous": 6
+  },
+  "train_test_exact_question_overlap": 0,
+  "recommended_protocol": "Do not tune thresholds on router_test_v1.json. Use router_train_v1.json for calibration and keep router_test_v1.json held out until final benchmark."
+}
