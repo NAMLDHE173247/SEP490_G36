@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { getAuthToken } from '../services/authSession';
+import { apiService } from '../services/api';
 import '../styles/autotrain.css';
 
 // ── Component Imports ──
@@ -203,6 +204,27 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       console.warn('[AutoTrain] Invalid Evaluation Pack:', error);
     }
   }, [config.localFile]);
+
+  // Auto-fetch system prompt from DataPrep Step 12 if available.
+  // We want to keep it synced with the latest prompt from Data Prep.
+  useEffect(() => {
+    const fetchLatestPrompt = async () => {
+      try {
+        const data = await apiService.getDatasetPrompts();
+        if (data?.prompts?.length > 0) {
+          const latest = data.prompts[0]; // newest first
+          // Sync if different from current
+          if (config.systemPrompt !== latest.content) {
+            handleConfigChange({ systemPrompt: latest.content });
+            triggerToast(`System prompt đã được đồng bộ từ Data Prep: "${latest.name}"`, 'info');
+          }
+        }
+      } catch (err) {
+        console.warn('[AutoTrain] Could not auto-load system prompt from Data Prep:', err);
+      }
+    };
+    fetchLatestPrompt();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Persist the selected training configuration for reproducible experiments.
   // The actual submitted configuration is also stored in TrainingHistory by the backend.
