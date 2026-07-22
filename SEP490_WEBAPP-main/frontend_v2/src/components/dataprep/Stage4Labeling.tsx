@@ -458,7 +458,7 @@ export const Stage4Labeling: React.FC = () => {
   const getSeededSubject = (sampleId: string) => {
     const num = parseInt(sampleId.replace('conv_', '').replace('sample_', ''));
     if (isNaN(num)) return 'MATH';
-    const subjects = ['MATH', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE'];
+    const subjects = ['MATH', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE', 'ENGLISH', 'HISTORY', 'GEOGRAPHY', 'CODING'];
     return subjects[(num - 1) % subjects.length];
   };
 

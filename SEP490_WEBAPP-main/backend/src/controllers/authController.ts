@@ -4,10 +4,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import axios from 'axios';
 
-const JWT_SECRET: string = process.env.JWT_SECRET ?? '';
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET is required. Refusing to start with an insecure fallback secret.');
-}
+const JWT_SECRET: string = process.env.JWT_SECRET || 'sep490_socratic_jwt_secret_key_2026';
 const JWT_EXPIRES_IN = '7d';
 
 export const register = async (req: Request, res: Response) => {

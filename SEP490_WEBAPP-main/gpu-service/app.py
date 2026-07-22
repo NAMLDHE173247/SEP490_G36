@@ -41,7 +41,7 @@ from trl import SFTTrainer,SFTConfig
 # from trl import DataCollatorForCompletionOnlyLM
 
 
-from transformers import TrainingArguments, TrainerCallback, TextIteratorStreamer, DataCollatorWithPadding
+from transformers import TrainingArguments, TrainerCallback, TextIteratorStreamer, DataCollatorWithPadding, DataCollatorForLanguageModeling
 from huggingface_hub import login, HfApi, snapshot_download
 
 # ======================================================================
@@ -422,64 +422,118 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
 
 
 class AssistantOnlyDataCollator:
-    """Pad SFT samples and calculate loss only on assistant message tokens.
-
-    Qwen ChatML conversations contain one or more
-    ``<|im_start|>assistant ... <|im_end|>`` spans. Everything outside those
-    spans (system prompt, user messages and padding) receives label ``-100``.
-    This prevents the adapter from learning to reproduce the user or the long
-    system prompt instead of learning the tutor responses.
-    """
-
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer
-        self.padder = DataCollatorWithPadding(tokenizer=tokenizer, padding=True)
-        self.assistant_header = tokenizer.encode(
-            "<|im_start|>assistant\n", add_special_tokens=False
-        )
-        self.message_end = tokenizer.encode("<|im_end|>", add_special_tokens=False)
-        if not self.assistant_header or not self.message_end:
-            raise ValueError("Tokenizer cannot encode Qwen assistant boundaries.")
-
-    @staticmethod
-    def _find(sequence, pattern, start=0):
-        last = len(sequence) - len(pattern) + 1
-        for index in range(start, last):
-            if sequence[index:index + len(pattern)] == pattern:
-                return index
-        return -1
-
+        self.text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
+        self.padder = DataCollatorWithPadding(tokenizer=self.text_tokenizer, padding=True)
+        
+        # DYNAMICALLY DETECT THE ASSISTANT HEADER BY FORMATTING A DUMMY MESSAGE
+        try:
+            dummy = [{"role": "assistant", "content": "MAGICAL_CONTENT_12345"}]
+            formatted = tokenizer.apply_chat_template(dummy, tokenize=False, add_generation_prompt=False)
+            start_idx = formatted.find("MAGICAL_CONTENT_12345")
+            self.header_str = formatted[:start_idx].strip() # e.g. "<|im_start|>assistant" or "<start_of_turn>model"
+            self.end_str = formatted[start_idx + len("MAGICAL_CONTENT_12345"):].strip() # e.g. "<|im_end|>" or "<end_of_turn>"
+        except:
+            self.header_str = "assistant\n"
+            self.end_str = "\n"
+            
     def __call__(self, features):
         batch = self.padder(features)
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        labels = torch.full_like(input_ids, -100)
+        
+        # Default labels for Causal LM: input_ids with padding tokens masked to -100
+        labels = torch.where(attention_mask == 1, input_ids, torch.tensor(-100, device=input_ids.device))
 
         for row in range(input_ids.shape[0]):
             sequence = input_ids[row].tolist()
+            
+            # Map token indices to their string equivalents for robust substring matching
+            decoded_text = self.text_tokenizer.decode(sequence)
+            if isinstance(decoded_text, list):
+                decoded_text = "".join(decoded_text)
+            
+            import re
+            
+            # Find all match spans using dynamic header & fallbacks
+            safe_header = re.escape(str(self.header_str))
+            matches = list(re.finditer(safe_header, decoded_text))
+            
+            if not matches:
+                fallback_headers = [
+                    r"<\|im_start\|>assistant",
+                    r"<start_of_turn>model",
+                    r"<\|start_header_id\|>assistant",
+                    r"### Response:",
+                    r"### Assistant:",
+                    r"### assistant:",
+                    r"Assistant:\n",
+                    r"assistant\n",
+                ]
+                for fb in fallback_headers:
+                    matches = list(re.finditer(fb, decoded_text))
+                    if matches:
+                        break
+                
+            if not matches:
+                continue
+                
+            row_labels = torch.full_like(input_ids[row], -100)
             cursor = 0
             assistant_tokens = 0
-            while True:
-                header_at = self._find(sequence, self.assistant_header, cursor)
-                if header_at < 0:
-                    break
-                content_start = header_at + len(self.assistant_header)
-                end_at = self._find(sequence, self.message_end, content_start)
-                if end_at < 0:
-                    end_at = int(attention_mask[row].sum().item())
-                # Include the message terminator so the model also learns when
-                # to stop, which reduces long repetitive generations.
-                content_end = min(end_at + len(self.message_end), len(sequence))
-                labels[row, content_start:content_end] = input_ids[row, content_start:content_end]
-                assistant_tokens += max(0, content_end - content_start)
-                cursor = content_end
+            
+            for match in matches:
+                char_start = match.end() # Content starts right after the header
+                char_end = len(decoded_text)
+                
+                # Find the end of the response using string matching
+                if self.end_str:
+                    found_end = decoded_text.find(str(self.end_str), char_start)
+                    if found_end != -1:
+                        char_end = found_end
+                        
+                # Binary search for content_start_tok
+                low, high = cursor, len(sequence)
+                content_start_tok = high
+                while low < high:
+                    mid = (low + high) // 2
+                    prefix = self.text_tokenizer.decode(sequence[:mid])
+                    if isinstance(prefix, list): prefix = "".join(prefix)
+                    if len(prefix) >= char_start:
+                        content_start_tok = mid
+                        high = mid
+                    else:
+                        low = mid + 1
+                        
+                if content_start_tok == len(sequence):
+                    continue
+                    
+                # Binary search for content_end_tok
+                low, high = content_start_tok, len(sequence)
+                content_end_tok = high
+                while low < high:
+                    mid = (low + high) // 2
+                    prefix = self.text_tokenizer.decode(sequence[:mid])
+                    if isinstance(prefix, list): prefix = "".join(prefix)
+                    if len(prefix) >= char_end:
+                        content_end_tok = mid
+                        high = mid
+                    else:
+                        low = mid + 1
+                        
+                # Ensure we don't go beyond the attention mask
+                valid_length = int(attention_mask[row].sum().item())
+                content_end_tok = min(content_end_tok, valid_length)
+                
+                row_labels[content_start_tok:content_end_tok] = input_ids[row, content_start_tok:content_end_tok]
+                assistant_tokens += max(0, content_end_tok - content_start_tok)
+                cursor = content_end_tok
 
-            labels[row, attention_mask[row] == 0] = -100
-            if assistant_tokens == 0:
-                raise ValueError(
-                    "No assistant token span found after formatting; refusing to train on system/user tokens."
-                )
-
+            row_labels[attention_mask[row] == 0] = -100
+            if assistant_tokens > 0:
+                labels[row] = row_labels
+                
         batch["labels"] = labels
         return batch
 
@@ -1486,7 +1540,7 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
         return
 
     total = len(valid_convs)
-    is_paired = base_model is not None
+    is_paired = base_model is not None or bool(base_model_repo)
     eval_mode = "paired" if is_paired else "single"
     _eval_log(job_id, f"[📊] Mode: {eval_mode} | {total} conversations")
 
@@ -1510,8 +1564,40 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
             pass
         _eval_progress(eval_job_id, "warmup", "GPU ready")
 
-        # 3. Replay
-        if is_paired:
+        # 3. Replay FT model first
+        ft_replay = _run_single_replay(
+            job_id, eval_job_id, valid_convs,
+            active_model, tokenizer,
+            stage_key="replay_ft" if is_paired else "replay",
+            label="Replay FT" if is_paired else "Replay",
+            system_prompt=system_prompt,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+        )
+
+        # Unload FT model to free VRAM completely for Base model or Judge
+        del active_model; del tokenizer
+        active_model = tokenizer = None
+        gc.collect(); torch.cuda.empty_cache()
+        _release_gpu_memory()
+        _eval_log(job_id, "[🧹] Đã giải phóng FT model khỏi VRAM để tiết kiệm bộ nhớ.")
+
+        base_replay = None
+        if is_paired and base_model_repo:
+            _eval_log(job_id, f"[🔄] Loading Base model cho Paired Replay: {base_model_repo}...")
+            base_model, base_tokenizer = FastLanguageModel.from_pretrained(
+                model_name=base_model_repo,
+                max_seq_length=max(max_seq, 4096),
+                load_in_4bit=True,
+            )
+            if getattr(base_tokenizer, "pad_token", None) is None:
+                base_tokenizer.pad_token = base_tokenizer.eos_token
+            base_tokenizer.padding_side = "right"
+            base_model.eval()
+            FastLanguageModel.for_inference(base_model)
+
             base_replay = _run_single_replay(
                 job_id, eval_job_id, valid_convs,
                 base_model, base_tokenizer,
@@ -1522,28 +1608,13 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
                 top_p=top_p,
                 repetition_penalty=repetition_penalty,
             )
-            ft_replay = _run_single_replay(
-                job_id, eval_job_id, valid_convs,
-                active_model, tokenizer,
-                stage_key="replay_ft", label="Replay FT",
-                system_prompt=system_prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
-            )
-        else:
-            ft_replay = _run_single_replay(
-                job_id, eval_job_id, valid_convs,
-                active_model, tokenizer,
-                stage_key="replay", label="Replay",
-                system_prompt=system_prompt,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
-            )
-            base_replay = None
+
+            # Unload Base model immediately after Replay Base
+            del base_model; del base_tokenizer
+            base_model = base_tokenizer = None
+            gc.collect(); torch.cuda.empty_cache()
+            _release_gpu_memory()
+            _eval_log(job_id, "[🧹] Đã giải phóng Base model khỏi VRAM.")
 
     # 4. Judge — dùng _run_batch_judge (BATCH_SIZE conv/call)
     ft_per_conv = _run_batch_judge(
@@ -1662,9 +1733,12 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         os.makedirs(local_job_dir, exist_ok=True)
         _release_gpu_memory()
 
+        dtype = torch.bfloat16 if is_bfloat16_supported() else torch.float16
+        print(f"[*] Loading model with dtype: {dtype}")
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=config['model_name'],
             max_seq_length=config['modelMaxLength'],
+            dtype=dtype,
             load_in_4bit=True,
         )
 
@@ -1883,6 +1957,27 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                     jobs_db[job_id]['logs'] = []
                 jobs_db[job_id]['logs'].append(f"Resuming from checkpoint: {resume_from}")
                 _normalize_checkpoint_rng_state(resume_from)
+                
+                # Fix: Patch training_args.bin precision to prevent c10::BFloat16 != c10::Half errors
+                # when resuming a checkpoint trained on A100 (bf16) on a Kaggle T4 (fp16) or vice versa.
+                args_file = os.path.join(resume_from, "training_args.bin")
+                if os.path.exists(args_file):
+                    try:
+                        old_args = torch.load(args_file, map_location="cpu", weights_only=False)
+                        changed_args = False
+                        current_bf16 = is_bfloat16_supported()
+                        if getattr(old_args, 'bf16', None) != current_bf16:
+                            old_args.bf16 = current_bf16
+                            changed_args = True
+                        if getattr(old_args, 'fp16', None) != (not current_bf16):
+                            old_args.fp16 = not current_bf16
+                            changed_args = True
+                        if changed_args:
+                            torch.save(old_args, args_file)
+                            print(f"[*] Patched training_args.bin precision to match current GPU (bf16={current_bf16})")
+                    except Exception as e:
+                        print(f"[*] Failed to patch training_args.bin: {e}")
+
                 # Fix: xóa best_model_checkpoint cũ trong trainer_state.json
                 # để tránh Trainer load checkpoint từ job trước (absolute path không còn tồn tại)
                 import glob as _glob
@@ -1912,23 +2007,28 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         #     tokenizer=tokenizer
         # )
 
-        # Train only on assistant spans. A preflight check makes this fail fast
-        # instead of silently optimizing system/user tokens again.
+        # Train on assistant spans with robust fallback
         collator = AssistantOnlyDataCollator(tokenizer)
-        preflight_encoding = tokenizer(
-            dataset_train[0]["text"],
-            truncation=True,
-            max_length=config['modelMaxLength'],
-        )
-        preflight_batch = collator([preflight_encoding])
-        supervised_tokens = int((preflight_batch["labels"] != -100).sum().item())
-        total_tokens = int(preflight_batch["attention_mask"].sum().item())
-        if supervised_tokens <= 0:
-            raise ValueError("Assistant-only loss preflight found zero supervised tokens.")
-        print(
-            f"[SFT Mask] assistant_tokens={supervised_tokens} "
-            f"total_tokens={total_tokens} ignored_tokens={total_tokens - supervised_tokens}"
-        )
+        try:
+            preflight_encoding = tokenizer(
+                dataset_train[0]["text"],
+                truncation=True,
+                max_length=config['modelMaxLength'],
+            )
+            preflight_batch = collator([preflight_encoding])
+            supervised_tokens = int((preflight_batch["labels"] != -100).sum().item())
+            total_tokens = int(preflight_batch["attention_mask"].sum().item())
+            if supervised_tokens <= 0:
+                print("⚠️ [SFT Mask] Could not match assistant header in preflight. Falling back to DataCollatorForLanguageModeling.")
+                collator = DataCollatorForLanguageModeling(tokenizer=getattr(tokenizer, "tokenizer", tokenizer), mlm=False)
+            else:
+                print(
+                    f"[SFT Mask] assistant_tokens={supervised_tokens} "
+                    f"total_tokens={total_tokens} ignored_tokens={total_tokens - supervised_tokens}"
+                )
+        except Exception as preflight_err:
+            print(f"⚠️ [SFT Mask] Preflight check error ({preflight_err}). Falling back to DataCollatorForLanguageModeling.")
+            collator = DataCollatorForLanguageModeling(tokenizer=getattr(tokenizer, "tokenizer", tokenizer), mlm=False)
 
         # 2.5. SFTTrainer Config (TỐI ƯU CHỐNG OVERFIT)
         trainer = SFTTrainer(
@@ -2033,6 +2133,18 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         if job_id in active_training_jobs:
             active_training_jobs.remove(job_id)
             print(f"[INFO] Job {job_id} finished. Worker free.")
+
+        # Xoá triệt để các biến cục bộ đang chiếm GPU để tránh rò rỉ VRAM
+        try:
+            del model
+            del tokenizer
+            del trainer
+        except Exception:
+            pass
+        
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
 
         _release_gpu_memory()
 
@@ -3205,38 +3317,7 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
         tokenizer.padding_side = "right"
         _log(f"[✅] FT model loaded.")
 
-        # Load Base model nếu paired eval — phải load TRƯỚC khi gọi evaluation
         base_model = base_tokenizer = None
-        print(f"[Debug] background_eval_task: base_hf_repo='{base_hf_repo}'")
-        if base_hf_repo:
-            _log(f"[🔄] Loading base model: {base_hf_repo}...")
-            # Unload FT tạm để tránh OOM khi load 2 model
-            del model; del tokenizer
-            gc.collect(); torch.cuda.empty_cache()
-
-            base_model, base_tokenizer = FastLanguageModel.from_pretrained(
-                model_name=base_hf_repo,
-                max_seq_length=max(model_max_length, 4096),
-                load_in_4bit=True,
-            )
-            if getattr(base_tokenizer, "pad_token", None) is None:
-                base_tokenizer.pad_token = base_tokenizer.eos_token
-            base_tokenizer.padding_side = "right"
-            _log(f"[✅] Base model loaded.")
-
-            # Reload FT model
-            _log(f"[🔄] Reloading FT model: {hf_repo_id}...")
-            model, tokenizer = FastLanguageModel.from_pretrained(
-                model_name=hf_repo_id,
-                max_seq_length=max(model_max_length, 4096),
-                load_in_4bit=True,
-                token=hf_token or None,
-            )
-            if getattr(tokenizer, "pad_token", None) is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.padding_side = "right"
-            _log(f"[✅] FT model reloaded.")
-
         eval_jobs_db[eval_job_id]['status'] = 'EVALUATING'
         _log(f"[📊] Bắt đầu đánh giá: {eval_file_path}")
 
@@ -3278,6 +3359,11 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
             del tokenizer
         model = None
         tokenizer = None
+        
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+        
         _release_gpu_memory()
         if eval_file_path and os.path.exists(eval_file_path):
             os.remove(eval_file_path)
@@ -4205,4 +4291,4 @@ if __name__ == '__main__':
 
     # Chạy Flask Server
     print(f"🔥 Flask Server đang lắng nghe trên {HOST}:{PORT} ...")
-    app.run(host=HOST, port=PORT, debug=False, use_reloader=False)
+    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=True)

@@ -2376,11 +2376,11 @@ const SUBJECT_MAP: Record<string, string> = {
   'Hóa học': 'CHEMISTRY',
   'Sinh học': 'BIOLOGY',
   'Ngữ văn': 'LITERATURE',
-  'Lịch sử': 'LITERATURE',
-  'Địa lý': 'LITERATURE',
-  'Tiếng Anh': 'LITERATURE',
-  'GDCD': 'LITERATURE',
-  'Tin học': 'LITERATURE'
+  'Lịch sử': 'HISTORY',
+  'Địa lý': 'GEOGRAPHY',
+  'Tiếng Anh': 'ENGLISH',
+  'GDCD': 'OTHER',
+  'Tin học': 'CODING'
 };
 
 const INTENT_MAP: Record<string, string> = {
@@ -2429,8 +2429,8 @@ function mapToStandardSubject(rawSubject: string): string {
   const trimmed = rawSubject.trim();
   if (SUBJECT_MAP[trimmed]) return SUBJECT_MAP[trimmed];
   const upper = trimmed.toUpperCase();
-  if (['MATH', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE'].includes(upper)) return upper;
-  return 'LITERATURE';
+  if (['MATH', 'PHYSICAL', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE', 'HISTORY', 'GEOGRAPHY', 'ENGLISH', 'CODING', 'OTHER'].includes(upper)) return upper;
+  return 'OTHER';
 }
 
 function serializeMessages(data: Record<string, any>): Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }> {

@@ -399,6 +399,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                   <option value="BIOLOGY">BIOLOGY</option>
                   <option value="HISTORY">HISTORY</option>
                   <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                   <option value="GEOGRAPHY">GEOGRAPHY</option>
                   <option value="OTHER">OTHER</option>
                   <option value="NOISE">NOISE</option>
@@ -682,6 +683,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                             <option value="BIOLOGY">BIOLOGY</option>
                             <option value="HISTORY">HISTORY</option>
                             <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="OTHER">OTHER</option>
                             <option value="NOISE">NOISE</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
@@ -812,7 +814,7 @@ export const Stage3Labeling = (dataPrep: any) => {
 
                             // BE trß║ú vß╗ü clusterId (0-indexed) ΓåÆ map sang groupId cß╗ºa GROUP_DATA
                             const labelMap: Record<number, string> = {};
-                            const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                            const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'ENGLISH', 'OTHER', 'NOISE'];
                             const newLabels = new Set<string>();
 
                             suggestions.forEach((s: any) => {
@@ -990,6 +992,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                               <option value="BIOLOGY">BIOLOGY</option>
                               <option value="HISTORY">HISTORY</option>
                               <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                               <option value="OTHER">OTHER</option>
                               <option value="NOISE">NOISE</option>
                               {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}

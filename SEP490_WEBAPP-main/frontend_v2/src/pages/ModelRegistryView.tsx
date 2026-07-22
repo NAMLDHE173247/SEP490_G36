@@ -32,6 +32,7 @@ interface ModelVersionType {
     overallScore?: number;
     [key: string]: any;
   };
+  promptVersion?: string;
   notes?: string;
   hfRepoId?: string;
   modelEvalId?: string;

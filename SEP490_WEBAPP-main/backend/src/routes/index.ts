@@ -90,10 +90,17 @@ const requireAdmin: express.RequestHandler = (req, res, next) => {
   next();
 };
 
-// Cấu hình multer cho upload
+import path from 'path';
+import fs from 'fs';
+
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 // Cấu hình multer cho upload
 const upload = multer({
-  dest: 'uploads/',
+  dest: uploadsDir,
   limits: {
     fileSize: 50 * 1024 * 1024, // 50MB
   },

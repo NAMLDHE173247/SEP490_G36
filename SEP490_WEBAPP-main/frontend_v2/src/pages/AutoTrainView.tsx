@@ -524,7 +524,20 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     };
 
     es.onerror = () => {
-      closeTracking(jobId, 'ERROR');
+      // Instead of instantly failing on transient SSE disconnects (e.g. LocalTunnel hiccups),
+      // verify actual job status from backend API before declaring job ERROR.
+      axios.get(`/api/train/status/${jobId}`, { headers: getAuthHeaders() })
+        .then((res) => {
+          const status = res.data?.status;
+          if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(status)) {
+            closeTracking(jobId, status);
+          } else {
+            console.warn(`[SSE Stream] Transient stream disconnect on job ${jobId}. Browser will auto-reconnect.`);
+          }
+        })
+        .catch(() => {
+          closeTracking(jobId, 'ERROR');
+        });
     };
 
     globalTrainingState.notify();

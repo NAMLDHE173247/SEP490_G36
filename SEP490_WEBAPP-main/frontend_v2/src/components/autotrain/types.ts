@@ -37,7 +37,7 @@ export interface TrainingConfig {
 
 export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   projectName: 'my-first-lm-project',
-  baseModel: 'Qwen/Qwen2.5-0.5B-Instruct',
+  baseModel: 'Qwen/Qwen2.5-7B-Instruct',
   datasetSource: 'local',
   localFile: null,
   selectedHfDataset: '',
@@ -106,21 +106,29 @@ export interface ModelGroup {
 
 export const BASE_MODEL_GROUPS: ModelGroup[] = [
   {
-    category: "Lightweight (Quick experiments)",
+    category: "Môn Lịch sử & KHXH",
     models: [
-      { id: "Qwen/Qwen2.5-0.5B-Instruct", name: "Qwen 2.5 (0.5B) — Runs on any machine" },
-      { id: "sshleifer/tiny-gpt2", name: "Tiny GPT-2 — Ultra fast" },
-      { id: "lightonai/LightOnOCR-2-1B", name: "LightOn OCR (1B)" }
+      { id: "unsloth/phi-4-bnb-4bit", name: "Phi-4 (14B) — Argument Mining / Socratic Chatbot" },
+      { id: "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit", name: "Llama 3.1 (8B) — Critical Thinking (SocratiQ)" },
+      { id: "unsloth/Qwen2.5-14B-Instruct-bnb-4bit", name: "Qwen 2.5 (14B) — 128K Context Window" },
+      { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Cân bằng Tốc độ & Chuẩn Socratic" }
     ]
   },
   {
-    category: "Standard (Recommended)",
+    category: "Môn Tiếng Anh",
     models: [
-      { id: "meta-llama/Llama-3.1-8B-Instruct", name: "Llama 3.1 (8B) — Great reasoning" },
-      { id: "Qwen/Qwen2.5-Coder-7B-Instruct", name: "Qwen 2.5 Coder — Programming specialist" },
-      { id: "unsloth/gpt-oss-20b-unsloth-bnb-4bit", name: "GPT OSS 20B (4-bit) — VRAM optimized" },
-      { id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4", name: "Nemotron 3 Nano (30B)" },
-      { id: "MiniMaxAI/MiniMax-M2.1", name: "MiniMax M2.1" }
+      { id: "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit", name: "Llama 3.1 / 3.2 (8B) — English Socratic Tutor & Grammar Analysis" },
+      { id: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", name: "Llama 3.2 (3B) — Lightweight English Socratic Tutor" },
+      { id: "unsloth/Llama-3.2-1B-Instruct-bnb-4bit", name: "Llama 3.2 (1B) — Fast Edge English Tutor" },
+      { id: "google/gemma-3-4b-it", name: "Gemma 3 (4B/12B) — SocraticBench Top Performer" },
+      { id: "unsloth/Mistral-Small-24B-Instruct-2501-bnb-4bit", name: "Mistral-Small 3.1 (24B) — Quản lý hội thoại tinh tế" },
+      { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Chẩn đoán ngữ pháp tiếng Anh" }
+    ]
+  },
+  {
+    category: "Môn Toán học",
+    models: [
+      { id: "unsloth/Qwen2.5-Math-7B-Instruct-bnb-4bit", name: "Qwen 2.5 Math (7B) — Chuyên giải Toán" }
     ]
   }
 ];
@@ -134,7 +142,8 @@ export interface PromptTemplate {
 export const SYSTEM_PROMPT_TEMPLATES: PromptTemplate[] = [
   { label: "Friendly Math Tutor", text: "You are a friendly Math tutor who always explains step by step clearly for elementary students." },
   { label: "Strict Literature Teacher", text: "You are a strict Literature teacher grading assignments. Point out grammar and writing style errors in detail." },
-  { label: "Socratic Method", text: "You are a Socratic method teacher. Never give answers directly — ask guiding questions so students discover answers themselves." }
+  { label: "Socratic Method (Vietnamese)", text: "Bạn là một giáo viên theo phương pháp Socratic. Không bao giờ đưa ra câu trả lời trực tiếp — hãy đặt các câu hỏi gợi mở để học sinh tự tìm ra đáp án." },
+  { label: "English Socratic Tutor (Llama 3.2 8B)", text: "You are a professional English language tutor. Guide the student through Socratic questioning to correct their English grammar, vocabulary, and writing without providing direct answers immediately." }
 ];
 
 // ── Parameter Presets ──

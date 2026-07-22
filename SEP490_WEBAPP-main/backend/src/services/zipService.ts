@@ -1,7 +1,6 @@
 import AdmZip from 'adm-zip';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 
 export interface DatasetMetadata {
   projectName?: string;
@@ -70,8 +69,12 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
     return aliases.some((alias) => stem === alias || stem.endsWith(`_${alias}`));
   };
 
-  // Create a temp directory for extraction
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dataset-zip-'));
+  // Create a temp directory for extraction inside local uploads folder on Drive D to avoid C: ENOSPC errors
+  const uploadBaseDir = path.join(__dirname, '../../uploads');
+  if (!fs.existsSync(uploadBaseDir)) {
+    fs.mkdirSync(uploadBaseDir, { recursive: true });
+  }
+  const tempDir = fs.mkdtempSync(path.join(uploadBaseDir, 'dataset-zip-'));
 
   // 1. Look for _metadata.json
   let metadata: DatasetMetadata | null = null;

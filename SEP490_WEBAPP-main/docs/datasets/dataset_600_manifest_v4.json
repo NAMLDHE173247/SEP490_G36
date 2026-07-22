@@ -1,0 +1,15 @@
+{
+  "version": "v4",
+  "source": "dataset_600_quality_v4.json",
+  "subjects": [
+    "ENGLISH",
+    "MATH",
+    "HISTORY"
+  ],
+  "counts": {
+    "total": 600,
+    "per_subject": 200
+  },
+  "purpose": "Raw source for Data Prep; create train/validation/test splits downstream.",
+  "warning": "Synthetic curriculum data; human-review a sample before research claims."
+}

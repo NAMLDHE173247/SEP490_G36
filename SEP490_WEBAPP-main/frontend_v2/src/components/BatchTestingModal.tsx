@@ -141,7 +141,7 @@ export function BatchTestingModal({ onClose, activeModelId, provider, params, in
             }, (chunk: string) => {
               streamResponse += chunk;
             });
-            aiResponse = streamResponse || (typeof res === 'string' ? res : JSON.stringify(res || {}));
+            aiResponse = streamResponse;
             error = null;
             break;
           } catch (err: any) {

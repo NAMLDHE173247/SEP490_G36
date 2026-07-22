@@ -536,7 +536,13 @@ export const startTraining = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Backend] startTraining error:', err);
     if (zipTempDir) cleanupTempDir(zipTempDir);
-    return res.status(500).json({ error: err.message || 'Failed to start training' });
+    const msg = err?.message || 'Failed to start training';
+    if (msg.includes('fetch') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND')) {
+      return res.status(503).json({
+        error: 'Không thể kết nối tới GPU Service (Colab/Kaggle). Vui lòng kiểm tra lại URL GPU Worker trong phần Cài đặt.'
+      });
+    }
+    return res.status(500).json({ error: msg });
   }
 };
 
@@ -550,6 +556,20 @@ export const getActiveTrainingJobs = async (req: Request, res: Response) => {
     if (!ownerId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    // Auto-expire stale jobs older than 15 minutes that were interrupted or crashed
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    await TrainingHistory.updateMany(
+      {
+        ownerId,
+        status: { $in: ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'] },
+        startedAt: { $lt: fifteenMinsAgo }
+      },
+      {
+        status: 'ERROR',
+        completedAt: new Date()
+      }
+    ).catch(err => console.warn('[Backend] Cleanup stale jobs error:', err));
 
     const activeJobs = await TrainingHistory.find({
       ownerId,
