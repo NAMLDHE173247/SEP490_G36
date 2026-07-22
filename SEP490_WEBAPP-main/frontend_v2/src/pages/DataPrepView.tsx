@@ -2936,6 +2936,7 @@ function DataPrepInner() {
                             <option value="">-- Select --</option>
                             <option value="MATH">MATH</option>
                             <option value="CODING">CODING</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="PHYSICS">PHYSICS</option>
                             <option value="CHEMISTRY">CHEMISTRY</option>
                             <option value="BIOLOGY">BIOLOGY</option>
@@ -3060,7 +3061,7 @@ function DataPrepInner() {
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
                           const labelMap: Record<number, string> = {};
-                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'ENGLISH', 'OTHER', 'NOISE'];
+                          const predefinedLabels = ['MATH', 'CODING', 'ENGLISH', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
                           const newLabels = new Set<string>();
 
                           suggestions.forEach((s: any) => {
@@ -3180,6 +3181,7 @@ function DataPrepInner() {
                               <option value="">-- Select --</option>
                               <option value="MATH">MATH</option>
                               <option value="CODING">CODING</option>
+                              <option value="ENGLISH">ENGLISH</option>
                               <option value="PHYSICS">PHYSICS</option>
                               <option value="PHYSICAL">PHYSICAL</option>
                               <option value="CHEMISTRY">CHEMISTRY</option>
