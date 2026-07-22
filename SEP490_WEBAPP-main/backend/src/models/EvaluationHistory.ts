@@ -14,7 +14,7 @@ export interface IEvaluationScore {
 export interface IEvaluationHistory extends Document {
   ownerId: Types.ObjectId;
   sampleId: Types.ObjectId;
-  evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'none';
+  evaluatedBy: 'manual' | 'gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq' | 'none';
   results: IEvaluationScore;
   createdAt: Date;
   updatedAt?: Date;
@@ -48,7 +48,7 @@ const EvaluationHistorySchema = new Schema<IEvaluationHistory>(
       required: true,
       index: true,
     },
-    evaluatedBy: { type: String, required: true, enum: ['manual', 'gemini', 'openai', 'deepseek', 'none'] },
+    evaluatedBy: { type: String, required: true, enum: ['manual', 'gemini', 'openai', 'deepseek', 'openrouter', 'groq', 'none'] },
     results: { type: EvaluationScoreSchema, required: true },
   },
   {

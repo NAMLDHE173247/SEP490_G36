@@ -1,0 +1,1184 @@
+{
+  "schema_version": "router_dataset_v2",
+  "dataset_role": "router_holdout_test",
+  "provenance": {
+    "source": "synthetic_router_v2",
+    "warning": "Synthetic hold-out data; do not tune thresholds on this set."
+  },
+  "case_count": 60,
+  "subject_distribution": {
+    "ENGLISH": 20,
+    "MATH": 20,
+    "HISTORY": 20
+  },
+  "challenge_distribution": {
+    "standard": 24,
+    "typo": 9,
+    "abbreviation": 9,
+    "follow_up": 9,
+    "ambiguous": 9
+  },
+  "cases": [
+    {
+      "id": "test-english-v2-001",
+      "split": "TEST",
+      "question": "Why is 'She go to school' incorrect?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Why is 'She go to school' incorrect?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-002",
+      "split": "TEST",
+      "question": "Choose between 'since' and 'for' in 'I have studied English ___ 2022.'",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Choose between 'since' and 'for' in 'I have studied English ___ 2022.'"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-003",
+      "split": "TEST",
+      "question": "Explain the difference between 'must' and 'should'.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Explain the difference between 'must' and 'should'."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-004",
+      "split": "TEST",
+      "question": "How do I write a short opinion paragraph in English?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "How do I write a short opinion paragraph in English?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-005",
+      "split": "TEST",
+      "question": "Change 'They built the bridge' into the passive voice.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Change 'They built the bridge' into the passive voice."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-006",
+      "split": "TEST",
+      "question": "What does 'take part in' mean?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "What does 'take part in' mean?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-007",
+      "split": "TEST",
+      "question": "Is 'an university' correct?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Is 'an university' correct?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-008",
+      "split": "TEST",
+      "question": "How can I identify the main idea of a reading passage?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "How can I identify the main idea of a reading passage?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-009",
+      "split": "TEST",
+      "question": "why she go school by bus",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "why she go school by bus"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-010",
+      "split": "TEST",
+      "question": "em ko biet dung thi hien tai hoan thanh",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em ko biet dung thi hien tai hoan thanh"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-011",
+      "split": "TEST",
+      "question": "hoc tu vung tieng anh sao cho nho lau",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "hoc tu vung tieng anh sao cho nho lau"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-012",
+      "split": "TEST",
+      "question": "CT nao cho cau bi dong?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "CT nao cho cau bi dong?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-013",
+      "split": "TEST",
+      "question": "Vocab 'look after' nghia gi?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vocab 'look after' nghia gi?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-014",
+      "split": "TEST",
+      "question": "Cach viet para opinion?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Cach viet para opinion?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-015",
+      "split": "TEST",
+      "question": "Then what should I check in the next sentence?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "ENGLISH",
+      "history": [
+        {
+          "role": "user",
+          "content": "I am correcting my paragraph."
+        },
+        {
+          "role": "assistant",
+          "content": "Check the subject and verb in each sentence."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Then what should I check in the next sentence?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-016",
+      "split": "TEST",
+      "question": "Vậy dùng thì nào tiếp theo?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "ENGLISH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang viết về một việc bắt đầu trong quá khứ và còn tiếp diễn."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy chú ý mốc thời gian và tính liên tục của hành động."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy dùng thì nào tiếp theo?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-017",
+      "split": "TEST",
+      "question": "Is this word formal enough here?",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "ENGLISH",
+      "history": [
+        {
+          "role": "user",
+          "content": "I am writing an email to my teacher."
+        },
+        {
+          "role": "assistant",
+          "content": "Use a polite greeting and avoid slang."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Is this word formal enough here?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-018",
+      "split": "TEST",
+      "question": "Help me with my English homework.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Help me with my English homework."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-019",
+      "split": "TEST",
+      "question": "English grammar",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "English grammar"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-english-v2-020",
+      "split": "TEST",
+      "question": "I don't understand this lesson.",
+      "gold_subject": "ENGLISH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "I don't understand this lesson."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-001",
+      "split": "TEST",
+      "question": "Solve 4x - 7 = 13.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Solve 4x - 7 = 13."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-002",
+      "split": "TEST",
+      "question": "Find the area of a triangle with base 12 cm and height 9 cm.",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Find the area of a triangle with base 12 cm and height 9 cm."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-003",
+      "split": "TEST",
+      "question": "Why does an inequality sign reverse when dividing by a negative number?",
+      "gold_subject": "MATH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Why does an inequality sign reverse when dividing by a negative number?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-004",
+      "split": "TEST",
+      "question": "Is the answer x = 5 correct for 2x + 3 = 13?",
+      "gold_subject": "MATH",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Is the answer x = 5 correct for 2x + 3 = 13?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-005",
+      "split": "TEST",
+      "question": "Give me a hint for solving x² - 5x + 6 = 0.",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Give me a hint for solving x² - 5x + 6 = 0."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-006",
+      "split": "TEST",
+      "question": "A die is rolled once. What is P(number > 4)?",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "A die is rolled once. What is P(number > 4)?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-007",
+      "split": "TEST",
+      "question": "I expanded (a+b)² as a²+b². Where is the mistake?",
+      "gold_subject": "MATH",
+      "gold_intent": "diagnose_error",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "I expanded (a+b)² as a²+b². Where is the mistake?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-008",
+      "split": "TEST",
+      "question": "What is the next term of 3, 7, 11, ...?",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "What is the next term of 3, 7, 11, ...?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-009",
+      "split": "TEST",
+      "question": "giai pt 5x-10=0",
+      "gold_subject": "MATH",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "giai pt 5x-10=0"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-010",
+      "split": "TEST",
+      "question": "em ko biet tinh dien tich tam giac",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em ko biet tinh dien tich tam giac"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-011",
+      "split": "TEST",
+      "question": "tai sao chia so am phai doi dau",
+      "gold_subject": "MATH",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "tai sao chia so am phai doi dau"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-012",
+      "split": "TEST",
+      "question": "CT dien tich tam giac?",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "CT dien tich tam giac?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-013",
+      "split": "TEST",
+      "question": "giai BPT bac nhat",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "giai BPT bac nhat"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-014",
+      "split": "TEST",
+      "question": "Tim delta cua PT bac 2",
+      "gold_subject": "MATH",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Tim delta cua PT bac 2"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-015",
+      "split": "TEST",
+      "question": "Vậy em thay số vào công thức nào?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang giải một bài tam giác vuông."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy xác định hai cạnh góc vuông trước."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy em thay số vào công thức nào?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-016",
+      "split": "TEST",
+      "question": "Kết quả này có cần đổi đơn vị không?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em vừa tính diện tích theo cm."
+        },
+        {
+          "role": "assistant",
+          "content": "Kiểm tra đơn vị của đáy và chiều cao."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Kết quả này có cần đổi đơn vị không?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-017",
+      "split": "TEST",
+      "question": "Bước tiếp theo là cộng hay trừ hai vế?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "MATH",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang cô lập x trong phương trình."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy xem hạng tử nào đang đứng cùng x."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bước tiếp theo là cộng hay trừ hai vế?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-018",
+      "split": "TEST",
+      "question": "Giúp em làm bài này.",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giúp em làm bài này."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-019",
+      "split": "TEST",
+      "question": "Bài toán này làm thế nào?",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Bài toán này làm thế nào?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-math-v2-020",
+      "split": "TEST",
+      "question": "Em không hiểu phần này.",
+      "gold_subject": "MATH",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em không hiểu phần này."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-001",
+      "split": "TEST",
+      "question": "Why was the Dien Bien Phu victory important?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Why was the Dien Bien Phu victory important?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-002",
+      "split": "TEST",
+      "question": "Arrange the Ly, Tran and Le dynasties chronologically.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "solve_problem",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Arrange the Ly, Tran and Le dynasties chronologically."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-003",
+      "split": "TEST",
+      "question": "What were the causes of the August Revolution?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "What were the causes of the August Revolution?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-004",
+      "split": "TEST",
+      "question": "How do I identify bias in a historical source?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "How do I identify bias in a historical source?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-005",
+      "split": "TEST",
+      "question": "Which happened first: the August Revolution or Dien Bien Phu?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Which happened first: the August Revolution or Dien Bien Phu?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-006",
+      "split": "TEST",
+      "question": "What was the significance of the Geneva Accords?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "What was the significance of the Geneva Accords?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-007",
+      "split": "TEST",
+      "question": "Compare a primary source with a secondary source.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Compare a primary source with a secondary source."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-008",
+      "split": "TEST",
+      "question": "Give me a structure for a chronological history paragraph.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "standard",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Give me a structure for a chronological history paragraph."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-009",
+      "split": "TEST",
+      "question": "dien bien phu thang nam nao",
+      "gold_subject": "HISTORY",
+      "gold_intent": "check_answer",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "dien bien phu thang nam nao"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-010",
+      "split": "TEST",
+      "question": "nguyen nhan cach mang thang tam",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "nguyen nhan cach mang thang tam"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-011",
+      "split": "TEST",
+      "question": "em ko biet hoc su the nao",
+      "gold_subject": "HISTORY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "typo",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "em ko biet hoc su the nao"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-012",
+      "split": "TEST",
+      "question": "CM T8 co y nghia gi?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "CM T8 co y nghia gi?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-013",
+      "split": "TEST",
+      "question": "LSVN thoi Tran co gi noi bat?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "explain_concept",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "LSVN thoi Tran co gi noi bat?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-014",
+      "split": "TEST",
+      "question": "PTLS cua mot su kien viet sao?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "give_hint",
+      "gold_need_clarification": false,
+      "challenge_type": "abbreviation",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "PTLS cua mot su kien viet sao?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-015",
+      "split": "TEST",
+      "question": "Vậy nguyên nhân trực tiếp là gì?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "HISTORY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang phân tích một cuộc cách mạng."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy tách nguyên nhân lâu dài và hoàn cảnh trực tiếp."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Vậy nguyên nhân trực tiếp là gì?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-016",
+      "split": "TEST",
+      "question": "Sự kiện này xảy ra trước hay sau năm 1945?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "HISTORY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang lập dòng thời gian lịch sử Việt Nam."
+        },
+        {
+          "role": "assistant",
+          "content": "Đặt các mốc năm cạnh nhau để so sánh."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Sự kiện này xảy ra trước hay sau năm 1945?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-017",
+      "split": "TEST",
+      "question": "Nguồn này có đáng tin không?",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": false,
+      "challenge_type": "follow_up",
+      "previous_subject": "HISTORY",
+      "history": [
+        {
+          "role": "user",
+          "content": "Em đang đọc một trích đoạn hồi ký."
+        },
+        {
+          "role": "assistant",
+          "content": "Hãy kiểm tra tác giả, thời điểm và mục đích của nguồn."
+        }
+      ],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Nguồn này có đáng tin không?"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-018",
+      "split": "TEST",
+      "question": "Giúp em học bài lịch sử này.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Giúp em học bài lịch sử này."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-019",
+      "split": "TEST",
+      "question": "Lịch sử Việt Nam",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Lịch sử Việt Nam"
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    },
+    {
+      "id": "test-history-v2-020",
+      "split": "TEST",
+      "question": "Em không nhớ sự kiện này.",
+      "gold_subject": "HISTORY",
+      "gold_intent": "ask_follow_up",
+      "gold_need_clarification": true,
+      "challenge_type": "ambiguous",
+      "previous_subject": null,
+      "history": [],
+      "messages": [
+        {
+          "role": "user",
+          "content": "Em không nhớ sự kiện này."
+        }
+      ],
+      "provenance": "synthetic_router_v2"
+    }
+  ]
+}

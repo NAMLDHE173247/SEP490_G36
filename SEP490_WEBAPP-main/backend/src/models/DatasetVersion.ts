@@ -1,5 +1,24 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+// ─── Thống kê kết quả một lần chạy Clean ─────────────────────────────────────
+export interface ICleanStats {
+  originalCount: number;      // Tổng record trước khi clean
+  finalCount: number;         // Tổng record còn lại sau clean
+  removedTotal: number;       // Tổng record bị loại
+  breakdown: {
+    removedBoilerplate?:    number; // Loại do boilerplate / error keyword
+    removedTooShort?:       number; // Loại do quá ngắn
+    removedTooLong?:        number; // Loại do quá dài
+    removedDuplicates?:     number; // Loại do trùng lặp
+    removedUnclosedThink?:  number; // Loại do <think> không đóng
+    removedNoise?:          number; // Loại do DBSCAN noise
+    removedNearDuplicate?:  number; // Loại do quá gần tâm cụm (deduplicate)
+    [key: string]: number | undefined;
+  };
+  cleanParams: Record<string, unknown>; // Tham số đã dùng (threshold, minChars…)
+  cleanedAt: string;           // ISO timestamp lúc thực hiện clean
+}
+
 export interface IDatasetVersion extends Document {
   projectId: mongoose.Types.ObjectId;
   ownerId: mongoose.Types.ObjectId;
@@ -11,16 +30,17 @@ export interface IDatasetVersion extends Document {
   versionNo?: number;
   versionName: string;
   operationType?:
-    | 'upload'
-    | 'clean'
-    | 'cluster'
-    | 'labeling_base'
-    | 'classification_balanced'
-    | 'evaluation_filtered'
-    | 'refine_approved'
-    | 'manual_edit'
-    | 'legacy';
+  | 'upload'
+  | 'clean'
+  | 'cluster'
+  | 'labeling_base'
+  | 'classification_balanced'
+  | 'evaluation_filtered'
+  | 'refine_approved'
+  | 'manual_edit'
+  | 'legacy';
   operationParams?: Record<string, unknown>;
+  cleanStats?: ICleanStats;   // Thống kê kết quả bước Clean (persist để tra cứu sau)
   prepareResumeStep?: number;
   promptId?: mongoose.Types.ObjectId;
   promptContentSnapshot?: string;
@@ -57,6 +77,7 @@ const DatasetVersionSchema = new Schema<IDatasetVersion>(
       default: 'legacy',
     },
     operationParams: { type: Schema.Types.Mixed },
+    cleanStats: { type: Schema.Types.Mixed, default: undefined }, // ICleanStats — xem interface bên trên
     prepareResumeStep: { type: Number, min: 1, max: 14, default: 5 },
     promptId: { type: mongoose.Schema.Types.ObjectId, ref: 'PromptLibraryItem' },
     promptContentSnapshot: { type: String },

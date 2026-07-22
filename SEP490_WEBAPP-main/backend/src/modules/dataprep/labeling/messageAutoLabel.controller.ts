@@ -1,19 +1,12 @@
 import { Request, Response } from 'express';
 import { getAuthUserId } from '../../../utils/auth';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
+import { apiKeyService } from '../../../services/apiKeyService';
 import { MessageAutoLabelingService } from './messageAutoLabel.service';
 
-function getService(provider?: string) {
-  const normalized = String(provider || '').toLowerCase();
-  if (normalized === 'openai') {
-    return new MessageAutoLabelingService(new OpenAIProvider());
-  }
-  if (normalized === 'deepseek') {
-    return new MessageAutoLabelingService(new DeepseekProvider());
-  }
-  return new MessageAutoLabelingService(new GeminiProvider());
+async function getService(userId: string | null | undefined, provider?: string) {
+  const normalized = String(provider || 'gemini').toLowerCase();
+  const llmProvider = await apiKeyService.createProvider(userId, normalized, true);
+  return new MessageAutoLabelingService(llmProvider);
 }
 
 export class MessageAutoLabelingController {
@@ -31,7 +24,7 @@ export class MessageAutoLabelingController {
         provider?: 'gemini' | 'openai' | 'deepseek';
       };
 
-      const service = getService(provider);
+      const service = await getService(ownerId, provider);
       const suggestions = await service.preview(sampleId, ownerId, messages || []);
 
       res.json({ suggestions });
@@ -63,7 +56,7 @@ export class MessageAutoLabelingController {
         messages?: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
       };
 
-      const service = getService('gemini');
+      const service = await getService(ownerId, 'gemini');
       const result = await service.save(sampleId, ownerId, suggestions || [], messages || []);
 
       res.json({
@@ -95,7 +88,7 @@ export class MessageAutoLabelingController {
         concurrency?: number;
       };
 
-      const service = getService(provider);
+      const service = await getService(ownerId, provider);
       const result = await service.previewAndSaveBatch(ownerId, samples || [], concurrency);
       res.json(result);
     } catch (error: any) {

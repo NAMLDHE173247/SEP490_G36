@@ -53,23 +53,19 @@ export function useStage4Data(versionId: string | null) {
     setIsLoading(true);
     setError(null);
     try {
-      const [statusData, statsData, qualityData, jobData] = await Promise.all([
+      const [statusData, statsData, qualityData, jobData, evalResults] = await Promise.all([
         stage4Api.getLabelingStatus(vId).catch(() => null),
         stage4Api.getStatistics(vId).catch(() => null),
         stage4Api.getQualitySamples(vId).catch(() => null),
         stage4Api.getLatestJob(vId).catch(() => null),
+        stage4Api.getMultiEvalResults(vId).catch(() => []),
       ]);
 
       setLabelingStatus(statusData);
       setStatistics(statsData);
       setQualityResult(qualityData);
       setLatestJob(jobData);
-
-      if (qualityData && qualityData.items && qualityData.items.length > 0) {
-        // Also fetch multi eval results
-        const evalResults = await stage4Api.getMultiEvalResults(vId).catch(() => []);
-        setResults(evalResults);
-      }
+      setResults(evalResults);
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to load Stage 4 data');
     } finally {
@@ -171,10 +167,10 @@ export function useStage4Data(versionId: string | null) {
     }
   };
 
-  const runMultiEval = async (models: string[], contextWindow: string) => {
+  const runMultiEval = async (models: string[], contextWindow: string, conflictThreshold?: number) => {
     if (!versionId) return;
     try {
-      const response = await stage4Api.runMultiEval(versionId, models, contextWindow);
+      const response = await stage4Api.runMultiEval(versionId, models, contextWindow, conflictThreshold);
       setLatestJob(response.job);
       if (response.job && response.job._id) {
         startPolling(versionId, response.job._id);
@@ -268,5 +264,6 @@ export function useStage4Data(versionId: string | null) {
     adjudicateQuality,
     adjudicateMultiEvalResult,
     refreshData,
+    setQualityResult,
   };
 }

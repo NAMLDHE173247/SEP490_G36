@@ -1,11 +1,76 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Check, Eye, X, Settings, Database, Plus, Search, HelpCircle, BarChart2, RefreshCw, AlertCircle, Calendar, Download, FileText, Sparkles, MessageSquare, ChevronLeft, ChevronRight, Play, DownloadCloud, FileJson, CheckCircle2, RotateCcw, Upload } from 'lucide-react';
-import { useDataPrep, SUB_STEPS_STAGE6, PROMPT_VERSIONS, EXPORT_ROWS } from '../DataPrepContext';
+import { useDataPrep, SUB_STEPS_STAGE6, PROMPT_VERSIONS } from '../DataPrepContext';
+import { useStage4Data } from '../../../hooks/useStage4Data';
 import { Tooltip, getPageNumbers } from '../utils';
 import { apiService } from '../../../services/api';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import './Stage6Finish.css';
+
+const EVALUATION_PACK_STORAGE_KEY = 'hybrid_evaluation_pack_v1';
+const ROUTER_INTENTS = new Set([
+  'solve_problem', 'explain_concept', 'give_hint', 'check_answer',
+  'diagnose_error', 'ask_follow_up', 'ask_clarification'
+]);
+
+const normalizeEvaluationSubject = (value: any): string => {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (['MATH', 'MATHEMATICS'].includes(normalized)) return 'MATH';
+  if (['ENGLISH', 'EN'].includes(normalized)) return 'ENGLISH';
+  if (['HISTORY', 'HIST'].includes(normalized)) return 'HISTORY';
+  if (['PHYSICS', 'PHYSICAL'].includes(normalized)) return 'PHYSICS';
+  if (['CHEMISTRY', 'CHEM'].includes(normalized)) return 'CHEMISTRY';
+  if (['GENERAL', 'OTHER', 'UNGROUPED', 'OUT_OF_SCOPE'].includes(normalized)) return 'GENERAL';
+  return normalized || 'GENERAL';
+};
+
+const toEvaluationMessages = (row: any): Array<{ role: string; content: string; labels?: string[] }> => {
+  if (Array.isArray(row?.messages)) {
+    return row.messages
+      .filter((message: any) => message?.role && String(message.content || '').trim())
+      .map((message: any) => ({
+        role: String(message.role),
+        content: String(message.content),
+        ...(Array.isArray(message.labels) ? { labels: message.labels.map((label: any) => String(label)) } : {}),
+      }));
+  }
+  if (Array.isArray(row?.conversations)) {
+    return row.conversations
+      .map((message: any) => ({
+        role: message.from === 'human' ? 'user' : message.from === 'gpt' ? 'assistant' : String(message.from || ''),
+        content: String(message.value || ''),
+      }))
+      .filter((message: any) => message.role && message.content.trim());
+  }
+  return [];
+};
+
+const collectEvaluationLabels = (row: any, messages: Array<{ labels?: string[] }>): string[] => {
+  const sampleLabels = Array.isArray(row?.labels?.sample) ? row.labels.sample : [];
+  const messageLabels = Array.isArray(row?.labels?.messages)
+    ? row.labels.messages.flatMap((entry: any) => Array.isArray(entry?.labels) ? entry.labels : [])
+    : [];
+  return [...sampleLabels, ...messageLabels, ...messages.flatMap(message => message.labels || [])]
+    .map(label => String(label).trim().toLowerCase().replace(/\s+/g, '_'));
+};
+
+const getEvaluationIntent = (row: any, messages: Array<{ labels?: string[] }>): string | undefined => {
+  const candidates = [row?.gold_intent, row?.intent, ...collectEvaluationLabels(row, messages)];
+  return candidates
+    .map(value => String(value || '').trim().toLowerCase().replace(/\s+/g, '_'))
+    .find(value => ROUTER_INTENTS.has(value));
+};
+
+const needsEvaluationClarification = (question: string, row: any): boolean => {
+  if (typeof row?.gold_need_clarification === 'boolean') return row.gold_need_clarification;
+  const normalized = question.trim().toLowerCase();
+  return normalized.length < 32 || /^(giúp em|giup em|help me|i don't understand|em không hiểu|em khong hieu|english grammar|bài này|bai nay|this lesson)/i.test(normalized);
+};
+
+const inferEvaluationLanguage = (text: string): 'vi' | 'en' => {
+  return /[ăâđêôơưáàảãạéèẻẽẹíìỉĩịóòỏõọúùủũụýỳỷỹỵ]/i.test(text) ? 'vi' : 'en';
+};
 
 export const Stage6Finish: React.FC = () => {
   const dataPrep = useDataPrep();
@@ -26,6 +91,9 @@ export const Stage6Finish: React.FC = () => {
     sepQualityLabels
   } = dataPrep;
 
+  const activeVersionId = localStorage.getItem('current_version_id');
+  const { results, qualityResult } = useStage4Data(activeVersionId);
+
   // Local States
   const [downloadFormat, setDownloadFormat] = useState('json');
   const [showConfirmPush, setShowConfirmPush] = useState(false);
@@ -34,22 +102,28 @@ export const Stage6Finish: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
 
-  const [promptVersions, setPromptVersions] = useState<any[]>(PROMPT_VERSIONS);
+  const [promptVersions, setPromptVersions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isRunningTrial, setIsRunningTrial] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const historyPerPage = 5;
 
-  const [trialProvider, setTrialProvider] = useState<'gemini' | 'deepseek'>('gemini');
+  const [trialProvider, setTrialProvider] = useState<'openrouter' | 'deepseek'>('openrouter');
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitResult, setSplitResult] = useState<any>(null);
 
-  const [splitTestPercentage, setSplitTestPercentage] = useState(50);
+  const [splitTestPercentage, setSplitTestPercentage] = useState(20);
+  const [splitValPercentage, setSplitValPercentage] = useState(10);
   const [splitThreshold, setSplitThreshold] = useState(0.85);
   const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
   const [excludedSamples, setExcludedSamples] = useState<Set<string>>(new Set());
   const [conflictDetailIdx, setConflictDetailIdx] = useState<number | null>(null);
+
+  // === Plan B: phân bổ theo môn ===
+  const [splitBySubject, setSplitBySubject] = useState<Array<{
+    subject: string; train: number; val: number; test: number; total: number;
+  }>>([]);
 
   // Hugging Face states
   const [hfToken, setHfToken] = useState('');
@@ -71,11 +145,11 @@ export const Stage6Finish: React.FC = () => {
         }));
         setPromptVersions(formatted);
       } else {
-        setPromptVersions(PROMPT_VERSIONS);
+        setPromptVersions([]);
       }
     } catch (error) {
       console.error('Failed to fetch system prompts:', error);
-      setPromptVersions(PROMPT_VERSIONS);
+      setPromptVersions([]);
     } finally {
       setIsLoadingVersions(false);
     }
@@ -87,8 +161,8 @@ export const Stage6Finish: React.FC = () => {
 
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep6) return true;
-    if (num === 13 && promptText && promptText.trim() !== '') return true;
-    if (num === 14 && splitResult) return true;
+    if (num === 12 && promptText && promptText.trim() !== '') return true;
+    if (num === 13 && splitResult) return true;
     return false;
   };
 
@@ -130,7 +204,7 @@ export const Stage6Finish: React.FC = () => {
     setIsRunningTrial(true);
     setTrialResponse('Đang gọi API chạy thử prompt...');
     try {
-      let modelId = 'gemini-flash-latest';
+      let modelId = 'meta-llama/llama-3.1-8b-instruct:free';
       if (trialProvider === 'deepseek') modelId = 'deepseek-chat';
 
       const res = await apiService.infer({
@@ -155,9 +229,26 @@ export const Stage6Finish: React.FC = () => {
     }
     setIsSplitting(true);
     try {
-      const formattedData = conversationsList.map(c => ({
-        conversation_id: c.id,
-        messages: c.messages.flatMap((m: any) => {
+      // Use the canonical training export as the source of truth. The stage
+      // conversation list may not contain subject_final, which would silently
+      // turn every item into UNGROUPED/GENERAL during subject-stratified split.
+      let splitSource: any[] = conversationsList;
+      try {
+        const labeledExport = await loadLabeledExportSource();
+        if (Array.isArray(labeledExport) && labeledExport.length > 0) splitSource = labeledExport;
+      } catch (exportError) {
+        console.warn('[Split] Falling back to stage conversation list:', exportError);
+      }
+
+      const formattedData = splitSource.map((c: any) => ({
+        conversation_id: c.conversation_id || c.id,
+        subject:
+          c.subject ||
+          c.subjectLabelWithHuman ||
+          c.subjectLabelWithAI ||
+          c.subjectLabelDefault ||
+          'UNGROUPED',
+        messages: (c.messages || []).flatMap((m: any) => {
           if (m.role && typeof m.content === 'string') {
             return [{ role: m.role, content: m.content }];
           }
@@ -174,62 +265,36 @@ export const Stage6Finish: React.FC = () => {
       const res = await apiService.safeSplit({
         data: formattedData,
         test_percentage: splitTestPercentage,
+        validation_percentage: splitValPercentage,
+        stratify_by_subject: true,
         threshold: splitThreshold,
         max_attempts: splitMaxAttempts,
         seed: 42
       });
       let apiResponse = res;
       if (Array.isArray(res)) {
-        // Colab API returned a flat array without train/test split.
-        // We will perform the split client-side.
-        const total = res.length;
-        const testCount = splitTestPercentage > 0 ? Math.max(1, Math.round(total * (splitTestPercentage / 100))) : 0;
-        const trainCount = total - testCount;
-
-        // Re-inject original IDs by matching first message content
-        const recoveredData = res.map(apiItem => {
-          let id = apiItem.conversation_id || apiItem.id;
-          if (!id && apiItem.messages && apiItem.messages.length > 0) {
-            const firstContent = apiItem.messages[0].content || '';
-            const match = conversationsList.find((c: any) => {
-              if (!c.messages || c.messages.length === 0) return false;
-              const cFirstContent = c.messages[0].content || c.messages[0].user || '';
-              return cFirstContent === firstContent;
-            });
-            if (match) id = match.conversation_id || match.id;
-          }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
-        });
-
-        const shuffled = [...recoveredData].sort(() => 0.5 - Math.random());
-        apiResponse = {
-          train: shuffled.slice(0, trainCount),
-          test: shuffled.slice(trainCount),
-          train_count: trainCount,
-          test_count: testCount,
-          attempts: 1,
-          conflicts: 0,
-          max_similarity: "N/A"
-        };
+        throw new Error('Safe Split API returned an unsupported response without verified train/test partitions.');
       } else if (res && typeof res === 'object' && res.train) {
         // It returned { train, test }. Let's ensure IDs are present
         const injectIds = (arr: any[]) => (arr || []).map(apiItem => {
           let id = apiItem.conversation_id || apiItem.id;
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || '';
-            const match = conversationsList.find((c: any) => {
+            const match = splitSource.find((c: any) => {
               if (!c.messages || c.messages.length === 0) return false;
               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
               return cFirstContent === firstContent;
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
+          if (!id) throw new Error('Safe Split response contains an item without a traceable conversation ID.');
+          return { ...apiItem, conversation_id: id };
         });
 
         apiResponse = {
           ...res,
           train: injectIds(res.train),
+          val: injectIds(res.val || []),
           test: injectIds(res.test)
         };
       } else if (res && typeof res === 'object' && res.trainIndices) {
@@ -238,18 +303,19 @@ export const Stage6Finish: React.FC = () => {
           let id = apiItem.conversation_id || apiItem.id;
           if (!id && apiItem.messages && apiItem.messages.length > 0) {
             const firstContent = apiItem.messages[0].content || apiItem.messages[0].user || '';
-            const match = conversationsList.find((c: any) => {
+            const match = splitSource.find((c: any) => {
               if (!c.messages || c.messages.length === 0) return false;
               const cFirstContent = c.messages[0].content || c.messages[0].user || '';
               return cFirstContent === firstContent;
             });
             if (match) id = match.conversation_id || match.id;
           }
-          return { ...apiItem, conversation_id: id || `conv_recov_${Math.random().toString(36).substr(2, 9)}` };
+          if (!id) throw new Error('Safe Split response contains an item without a traceable conversation ID.');
+          return { ...apiItem, conversation_id: id };
         });
 
-        const trainData = res.trainIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
-        const testData = res.testIndices.map((idx: number) => conversationsList[idx] || formattedData[idx]);
+        const trainData = res.trainIndices.map((idx: number) => splitSource[idx] || formattedData[idx]);
+        const testData = res.testIndices.map((idx: number) => splitSource[idx] || formattedData[idx]);
 
         apiResponse = {
           ...res,
@@ -263,52 +329,110 @@ export const Stage6Finish: React.FC = () => {
         };
       }
 
+      // Validation phải được GPU Split Guard trả về; frontend không tự cắt
+      // một đoạn từ train vì cách đó không kiểm tra leakage và không stratify.
+      const trainData: any[] = apiResponse.train || [];
+      const valData: any[] = apiResponse.val || [];
+      const testData: any[] = apiResponse.test || [];
+      if (valData.length === 0) {
+        throw new Error('Safe Split API did not return a locked validation partition.');
+      }
+
       setSplitResult({
         ...apiResponse,
-        train_count: apiResponse.train_count ?? apiResponse.train?.length ?? 0,
-        test_count: apiResponse.test_count ?? apiResponse.test?.length ?? 0,
+        train: trainData,
+        val: valData,
+        train_count: trainData.length,
+        val_count: valData.length,
+        test_count: testData.length,
         attempts: apiResponse.attempts ?? 1,
         conflicts: apiResponse.conflicts ?? 0,
         max_similarity: apiResponse.max_similarity ?? "N/A"
       });
-      alert('Đã tạo train/test split an toàn thành công!');
+
+      // === Plan B: Tính phân bổ theo môn học ===
+      const subjectMap = new Map<string, { train: number; val: number; test: number }>();
+      const addToMap = (items: any[], partition: 'train' | 'val' | 'test') => {
+        for (const item of items) {
+          // subject có thể nằm trực tiếp trên item (từ conversationsList)
+          const convMatch = conversationsList?.find(
+            (c: any) => String(c.id || c.conversation_id) === String(item.conversation_id || item.id)
+          );
+          const subj: string =
+            (convMatch as any)?.subject ||
+            (convMatch as any)?.subjectLabelWithAI ||
+            (convMatch as any)?.subjectLabelDefault ||
+            (item as any)?.subject ||
+            'Ungrouped';
+          const entry = subjectMap.get(subj) || { train: 0, val: 0, test: 0 };
+          entry[partition]++;
+          subjectMap.set(subj, entry);
+        }
+      };
+      addToMap(trainData, 'train');
+      addToMap(valData,   'val');
+      addToMap(testData,  'test');
+      const subjectRows = Array.isArray(apiResponse.subject_distribution)
+        ? apiResponse.subject_distribution
+        : Array.from(subjectMap.entries())
+        .map(([subject, counts]) => ({ subject, ...counts, total: counts.train + counts.val + counts.test }))
+        .sort((a, b) => b.total - a.total);
+      setSplitBySubject(subjectRows);
+
+      alert(`Đã tạo train/val/test split an toàn thành công!\nTrain: ${trainData.length} | Val: ${valData.length} | Test: ${testData.length}`);
     } catch (error: any) {
       console.error('Lỗi khi phân chia dữ liệu:', error);
-      // Fallback local calculations if Colab Colab/GPU service is offline
-      const total = conversationsList.length;
-      const testCount = splitTestPercentage > 0 ? Math.max(1, Math.round(total * (splitTestPercentage / 100))) : 0;
-      const trainCount = total - testCount;
-
-      const shuffled = [...conversationsList].sort(() => 0.5 - Math.random());
-      const trainData = shuffled.slice(0, trainCount);
-      const testData = shuffled.slice(trainCount);
-
-      setSplitResult({
-        train: trainData,
-        test: testData,
-        train_count: trainCount,
-        test_count: testCount,
-        attempts: 1,
-        conflicts: Math.floor(Math.random() * 4 + 1),
-        max_similarity: (0.82 + Math.random() * 0.12).toFixed(2),
-        overlap_info: []
-      });
+      setSplitResult(null);
+      alert(error?.response?.data?.error || error.message || 'Safe Split failed. Export is blocked until leakage validation succeeds.');
     } finally {
       setIsSplitting(false);
     }
   };
 
-  // Deterministic mock score generator for the demo
-  const getOverallScore = (cId: string) => {
-    if (sepQualityRatings && sepQualityRatings[cId] && typeof sepQualityRatings[cId].overall === 'number') {
-      return sepQualityRatings[cId].overall;
+  // Real score from AI / Staff, or null if not evaluated
+  const getOverallScoreData = (cId: string, sampleObjectId?: string) => {
+    const candidates = [cId, sampleObjectId].filter(Boolean).map(String);
+    
+    // 1. Try to find AI Score
+    let avgAI = null;
+    if (results) {
+      const getResultSampleId = (r: any) => String(r.sampleId?._id || r.sampleId || r.sampleIdRef?._id || r.sampleIdRef?.sampleId || '');
+      const resMatch = results.find(r => candidates.includes(getResultSampleId(r)) || candidates.includes(String(r.sampleIdRef?.sampleId || '')));
+      if (resMatch) {
+        const modelScores = resMatch.modelScores || {};
+        const openrouter = resMatch.scores?.openrouter || resMatch.scores?.OpenRouter || modelScores.openrouter?.overall || resMatch.scores?.gemini || resMatch.scores?.Gemini || modelScores.gemini?.overall || null;
+        const deepseek = resMatch.scores?.deepseek || resMatch.scores?.Deepseek || modelScores.deepseek?.overall || null;
+        const groq = resMatch.scores?.groq || resMatch.scores?.Groq || modelScores.groq?.overall || resMatch.scores?.openai || resMatch.scores?.OpenAI || modelScores.openai?.overall || null;
+        const aiVals = [openrouter, deepseek, groq].filter(v => v != null) as number[];
+        avgAI = resMatch.averageOverall ?? resMatch.averageScore ?? (aiVals.length ? aiVals.reduce((a, b) => a + b, 0) / aiVals.length : null);
+      }
     }
-    // Generate deterministic score between 4.0 and 9.5 based on ID
-    if (!cId) return 8.5;
-    let hash = 0;
-    for (let i = 0; i < cId.length; i++) hash = cId.charCodeAt(i) + ((hash << 5) - hash);
-    const normalized = (Math.abs(hash) % 56) / 10; // 0.0 to 5.5
-    return 4.0 + normalized; // 4.0 to 9.5
+
+    // 2. Try to find Human Score
+    let humanScore = null;
+    let label = null;
+    if (qualityResult?.items) {
+      const humanItem = qualityResult.items.find((i: any) => candidates.includes(String(i.sampleId)) || candidates.includes(String(i._id)));
+      if (humanItem) {
+        humanScore = typeof humanItem.humanScore === 'number' ? humanItem.humanScore : humanItem.ratings?.human;
+        label = humanItem.finalClassification || humanItem.qualityClassification || humanItem.bucket;
+      }
+    }
+
+    // Determine what to display (prefer AI score if available, otherwise human)
+    if (avgAI !== null && avgAI !== undefined) {
+      return { score: avgAI, evaluatedBy: 'Avg AI', label: label || (avgAI < 6.0 ? 'Needs improvement' : 'Good') };
+    }
+    if (humanScore !== null && humanScore !== undefined) {
+      return { score: humanScore, evaluatedBy: 'Staff', label: label || (humanScore < 6.0 ? 'Needs improvement' : 'Good') };
+    }
+    
+    // Fallback
+    if (sepQualityRatings && sepQualityRatings[cId] && typeof sepQualityRatings[cId].overall === 'number') {
+      return { score: sepQualityRatings[cId].overall, evaluatedBy: 'Manual', label: '-' };
+    }
+    
+    return { score: null, evaluatedBy: '-', label: '-' };
   };
 
   // Helper: get full conversation messages by id
@@ -358,62 +482,350 @@ export const Stage6Finish: React.FC = () => {
         }
       }
 
-      return { messages };
+      return {
+        messages,
+        labels: conv.labels || { sample: [], messages: [] },
+        conversation_id: conv.conversation_id || conv.id,
+        subject: conv.subject || conv.subjectLabelWithHuman || conv.subjectLabelWithAI || 'UNGROUPED',
+      };
     }).filter(item => item.messages.length > 1); // Keep only items with actual conversation
   };
 
-  const handleDownloadSplit = async () => {
-    let trainData = conversationsList;
-    let testData: any[] = [];
+  const loadLabeledExportSource = async () => {
+    const versionId = localStorage.getItem('current_version_id');
+    if (!versionId) throw new Error('Không tìm thấy Dataset Version đang làm việc.');
+    const result = await apiService.getTrainingExportData(versionId);
+    if (result.total > 0 && result.labeledSamples === 0) {
+      throw new Error('Dataset chưa có hard label nào. Hãy kiểm tra Staff đã Submit và Supervisor đã hoàn tất review.');
+    }
+    return result.data || [];
+  };
 
-    if (splitResult) {
-      const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
-      const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
-
-      trainData = conversationsList.filter((c: any) => trainIds.has(c.conversation_id || c.id));
-      testData = conversationsList.filter((c: any) => testIds.has(c.conversation_id || c.id));
+  /**
+   * Build one browser-persisted Evaluation Pack from the locked Safe Split.
+   * This removes the need to hand-create/upload separate router and Model Eval files.
+   * The response text is intentionally marked as a pilot reference: a final paper
+   * evaluation still needs an independently reviewed reference answer.
+   */
+  const handleCreateEvaluationPack = async () => {
+    if (!splitResult?.train || !splitResult?.val || !splitResult?.test) {
+      alert('Hãy chạy Safe Split thành công trước khi tạo Evaluation Pack.');
+      return;
     }
 
-    // Filter out excluded samples
-    trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
-    testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+    try {
+      const sourceData = await loadLabeledExportSource();
+      const sourceById = new Map<string, any>();
+      sourceData.forEach((row: any, index: number) => {
+        const id = String(row?.conversation_id || row?.id || `conv_${index + 1}`);
+        sourceById.set(id, row);
+      });
+
+      const buildRows = (partitionRows: any[], split: 'TRAIN' | 'VALIDATION' | 'TEST') => {
+        return (partitionRows || []).map((partitionRow: any, index: number) => {
+          const id = String(partitionRow?.conversation_id || partitionRow?.id || `case-${split.toLowerCase()}-${index + 1}`);
+          const source = sourceById.get(id) || partitionRow;
+          const sourceMessages = toEvaluationMessages(source);
+          const messages = sourceMessages.length > 0 ? sourceMessages : toEvaluationMessages(partitionRow);
+          const userMessages = messages.filter(message => message.role === 'user');
+          const lastUserIndex = Math.max(0, messages.map(message => message.role).lastIndexOf('user'));
+          const question = String(userMessages[userMessages.length - 1]?.content || '').trim();
+          const subject = normalizeEvaluationSubject(source?.subject || partitionRow?.subject);
+          const intent = getEvaluationIntent(source, messages);
+          const assistantAnswer = [...messages].reverse().find(message => message.role === 'assistant')?.content || '';
+          const history = messages.slice(0, lastUserIndex).filter(message => message.role === 'user' || message.role === 'assistant');
+          const turns = userMessages.map(message => message.content);
+          const baseCase: any = {
+            id,
+            split,
+            question,
+            history,
+            previous_subject: null,
+            gold_subject: subject,
+            gold_need_clarification: needsEvaluationClarification(question, source),
+            challenge_type: history.length > 0 ? 'follow_up' : 'baseline',
+            expected_language: inferEvaluationLanguage(question),
+            provenance: `dataprep_version_${localStorage.getItem('current_version_id') || 'unknown'}`,
+            review_status: 'needs_human_review',
+          };
+          if (intent) baseCase.gold_intent = intent;
+          if (turns.length > 0) {
+            baseCase.turns = turns;
+            baseCase.turn_gold_subjects = turns.map(() => subject);
+          }
+
+          return {
+            sourceRow: source,
+            routerCase: baseCase,
+            modelEvalCase: {
+              ...baseCase,
+              messages: messages.map(message => ({ role: message.role, content: message.content })),
+              reference_answer: String(assistantAnswer),
+              gold_key_points: [],
+              socratic_expectation: {
+                may_reveal_final_answer: false,
+                expected_scaffold: String(assistantAnswer),
+              },
+              reference_source: 'dataset_assistant_response',
+            },
+          };
+        }).filter(item => item.routerCase.question.length > 0);
+      };
+
+      const trainRows = buildRows(splitResult.train, 'TRAIN');
+      const validationRows = buildRows(splitResult.val, 'VALIDATION');
+      const testRows = buildRows(splitResult.test, 'TEST');
+      const versionId = localStorage.getItem('current_version_id');
+      const pack = {
+        schema_version: 'evaluation-pack-v1',
+        dataset_role: 'dataprep_derived_evaluation_pack',
+        created_at: new Date().toISOString(),
+        dataset_version_id: versionId,
+        split_strategy: splitResult.split_strategy || 'safe-split',
+        counts: { train: trainRows.length, validation: validationRows.length, test: testRows.length },
+        warnings: [
+          'Pilot pack generated from the Data Prep dataset version.',
+          'Router labels are copied from available Data Prep labels or generated heuristically when missing.',
+          'reference_answer currently comes from the dataset assistant response; independently review before final RP5.',
+        ],
+        sft: {
+          train: trainRows.map(row => row.sourceRow),
+          validation: validationRows.map(row => row.sourceRow),
+          test: testRows.map(row => row.sourceRow),
+        },
+        router: {
+          calibration: trainRows.map(row => row.routerCase),
+          validation: validationRows.map(row => row.routerCase),
+          test: testRows.map(row => row.routerCase),
+        },
+        model_eval: {
+          test: testRows.map(row => row.modelEvalCase),
+        },
+      };
+
+      localStorage.setItem(EVALUATION_PACK_STORAGE_KEY, JSON.stringify(pack));
+
+      // Also provide a real ZIP artifact. It is compatible with the existing
+      // AutoTrain and Model Eval ZIP readers and keeps all derived partitions
+      // traceable to the same Data Prep version.
+      const zip = new JSZip();
+      zip.file('train_dataset.json', JSON.stringify(pack.sft.train, null, 2));
+      zip.file('validation_dataset.json', JSON.stringify(pack.sft.validation, null, 2));
+      zip.file('test_dataset.json', JSON.stringify(pack.model_eval.test, null, 2));
+      const subjectsForPack = ['ENGLISH', 'MATH', 'HISTORY'];
+      subjectsForPack.forEach(subject => {
+        const subjectTrain = pack.sft.train.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
+        const subjectValidation = pack.sft.validation.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
+        zip.file(`subjects/${subject.toLowerCase()}_train.json`, JSON.stringify(subjectTrain, null, 2));
+        zip.file(`subjects/${subject.toLowerCase()}_validation.json`, JSON.stringify(subjectValidation, null, 2));
+      });
+      // General is the pooled baseline: it sees all approved subject data.
+      zip.file('subjects/general_train.json', JSON.stringify(pack.sft.train, null, 2));
+      zip.file('subjects/general_validation.json', JSON.stringify(pack.sft.validation, null, 2));
+      zip.file('router_calibration.json', JSON.stringify(pack.router.calibration, null, 2));
+      zip.file('router_validation.json', JSON.stringify(pack.router.validation, null, 2));
+      zip.file('router_test.json', JSON.stringify(pack.router.test, null, 2));
+      zip.file('model_eval_test.json', JSON.stringify(pack.model_eval.test, null, 2));
+      zip.file('_metadata.json', JSON.stringify({
+        projectName,
+        datasetVersionId: versionId,
+        totalTrain: trainRows.length,
+        totalValidation: validationRows.length,
+        totalTest: testRows.length,
+        exportedAt: pack.created_at,
+        evaluationPackSchema: pack.schema_version,
+      }, null, 2));
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      saveAs(zipBlob, `evaluation_pack_${versionId || 'latest'}.zip`);
+
+      // Training must happen before routing can be benchmarked. Navigate to
+      // AutoTrain now; Router Benchmark will be used after HF registration.
+      window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'AutoTrain' }));
+      alert(`Đã tạo và tải Evaluation Pack.\nTrain: ${trainRows.length} | Validation: ${validationRows.length} | Test: ${testRows.length}\nBước tiếp theo: train/register model trong AutoTrain. Sau đó mở Router Benchmark.`);
+    } catch (error: any) {
+      console.error('[Evaluation Pack] generation failed:', error);
+      alert(error?.response?.data?.error || error?.message || 'Không thể tạo Evaluation Pack.');
+    }
+  };
+
+  const handleDownloadSplit = async () => {
+    if (!splitResult?.train || !splitResult?.test) {
+      alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
+      return;
+    }
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn từ server.');
+      return;
+    }
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
-    if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
+    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const filePrefix = (subject: string) => {
+      const normalized = normalize(subject);
+      if (normalized === 'MATH' || normalized === 'MATHEMATICS') return 'math';
+      if (normalized === 'PHYSICAL' || normalized === 'PHYSICS') return 'physical';
+      if (normalized === 'GENERAL' || normalized === 'OUT_OF_SCOPE' || normalized === 'UNGROUPED') return 'general';
+      return normalized.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+    };
+    const idsFor = (partition: any[], subject: string) => new Set(
+      partition
+        .filter(item => normalize(item.subject) === normalize(subject))
+        .map(item => String(item.conversation_id || item.id))
+    );
+    const select = (partition: any[], subject: string) => {
+      const ids = idsFor(partition, subject);
+      return sourceData.filter(item =>
+        ids.has(String(item.conversation_id || item.id)) &&
+        !excludedSamples.has(String(item.conversation_id || item.id))
+      );
+    };
+
+    const exportedSubjects: Array<Record<string, any>> = [];
+    for (const row of splitBySubject) {
+      const prefix = filePrefix(row.subject);
+      const trainData = select(splitResult.train || [], row.subject);
+      const valData = select(splitResult.val || [], row.subject);
+      const testData = select(splitResult.test || [], row.subject);
+      if (trainData.length) zip.file(`${prefix}.train.json`, JSON.stringify(toChatML(trainData), null, 2));
+      if (valData.length) zip.file(`${prefix}.validation.json`, JSON.stringify(toChatML(valData), null, 2));
+      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toChatML(testData), null, 2));
+      exportedSubjects.push({
+        subject: normalize(row.subject),
+        prefix,
+        train: trainData.length,
+        validation: valData.length,
+        test: testData.length,
+      });
+    }
+    zip.file('_metadata.json', JSON.stringify({
+      projectName,
+      datasetVersionId: localStorage.getItem('current_version_id'),
+      splitStrategy: splitResult.split_strategy || 'semantic-guard',
+      seed: splitResult.seed ?? 42,
+      threshold: splitResult.threshold ?? splitThreshold,
+      fileConvention: '<subject>.train.json | <subject>.validation.json | <subject>.test.json',
+      subjects: exportedSubjects,
+      exportedAt: new Date().toISOString(),
+    }, null, 2));
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, `${projectName || 'dataset'}_multi_subject_split.zip`);
+  };
+
+  const handleDownloadSubjectSplit = async (requestedSubject: string) => {
+    if (!splitResult?.train || !splitResult?.val || !splitResult?.test) {
+      alert('Hãy chạy Split Guard trước khi export theo môn.');
+      return;
+    }
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn.');
+      return;
     }
 
-    const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, `${projectName || 'dataset'}_split.zip`);
+    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const subject = normalize(requestedSubject);
+    const idsFor = (partition: any[]) => new Set(
+      partition
+        .filter(item => normalize(item.subject) === subject)
+        .map(item => String(item.conversation_id || item.id))
+    );
+    const select = (partition: any[]) => {
+      const ids = idsFor(partition);
+      return sourceData.filter(item =>
+        ids.has(String(item.conversation_id || item.id)) &&
+        !excludedSamples.has(String(item.conversation_id || item.id))
+      );
+    };
+
+    const trainData = select(splitResult.train);
+    const valData = select(splitResult.val);
+    const testData = select(splitResult.test);
+    if (!trainData.length || !valData.length || !testData.length) {
+      alert(`Môn ${requestedSubject} chưa có đủ cả Train/Validation/Test.`);
+      return;
+    }
+
+    const zip = new JSZip();
+    zip.file('train_dataset.json', JSON.stringify(toChatML(trainData), null, 2));
+    zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
+    zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
+    zip.file('_metadata.json', JSON.stringify({
+      projectName,
+      datasetVersionId: localStorage.getItem('current_version_id'),
+      subject,
+      splitStrategy: splitResult.split_strategy,
+      seed: splitResult.seed ?? 42,
+      threshold: splitResult.threshold ?? splitThreshold,
+      totalTrain: trainData.length,
+      totalValidation: valData.length,
+      totalTest: testData.length,
+      exportedAt: new Date().toISOString(),
+    }, null, 2));
+    const content = await zip.generateAsync({ type: 'blob' });
+    const safeSubject = subject.toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+    saveAs(content, `${projectName || 'dataset'}_${safeSubject}_split.zip`);
   };
 
   const [exportMinScore, setExportMinScore] = useState(6.0);
 
   const handleDownloadFiltered = async () => {
-    let trainData = conversationsList;
+    if (!splitResult?.train || !splitResult?.test) {
+      alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
+      return;
+    }
+    let sourceData: any[];
+    try {
+      sourceData = await loadLabeledExportSource();
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error.message || 'Không thể tải dữ liệu đã gán nhãn từ server.');
+      return;
+    }
+    let trainData = sourceData;
+    let valData: any[] = [];
     let testData: any[] = [];
 
     if (splitResult) {
       const trainIds = new Set((splitResult.train || []).map((c: any) => c.conversation_id || c.id));
+      const valIds = new Set((splitResult.val || []).map((c: any) => c.conversation_id || c.id));
       const testIds = new Set((splitResult.test || []).map((c: any) => c.conversation_id || c.id));
 
-      trainData = conversationsList.filter((c: any) => trainIds.has(c.conversation_id || c.id));
-      testData = conversationsList.filter((c: any) => testIds.has(c.conversation_id || c.id));
+      trainData = sourceData.filter((c: any) => trainIds.has(c.conversation_id || c.id));
+      valData = sourceData.filter((c: any) => valIds.has(c.conversation_id || c.id));
+      testData = sourceData.filter((c: any) => testIds.has(c.conversation_id || c.id));
     }
 
     // Filter out excluded samples first
     trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+    valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
     testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
     // Filter by overall score
-    trainData = trainData.filter((c: any) => getOverallScore(c.conversation_id || c.id) >= exportMinScore);
-    testData = testData.filter((c: any) => getOverallScore(c.conversation_id || c.id) >= exportMinScore);
+    trainData = trainData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
+    valData = valData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
+    testData = testData.filter((c: any) => {
+      const s = getOverallScoreData(c.conversation_id || c.id, c.sampleObjectId).score;
+      return s !== null && s >= exportMinScore;
+    });
 
     const zip = new JSZip();
-    zip.file("train.json", JSON.stringify(toChatML(trainData), null, 2));
-    if (testData && testData.length > 0) {
-      zip.file("test.json", JSON.stringify(toChatML(testData), null, 2));
+    zip.file('train_dataset.json', JSON.stringify(toChatML(trainData), null, 2));
+    if (valData.length > 0) {
+      zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
+    }
+    if (testData.length > 0) {
+      zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });
@@ -437,14 +849,17 @@ export const Stage6Finish: React.FC = () => {
     try {
       // Prepare dataset content
       let trainData = splitResult.train;
+      let valData = splitResult.val || [];
       let testData = splitResult.test || [];
 
       // Filter out excluded items
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+      valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
         train: toChatML(trainData),
+        validation: toChatML(valData),
         test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
@@ -479,13 +894,16 @@ export const Stage6Finish: React.FC = () => {
     try {
       // Prepare dataset content
       let trainData = splitResult.train;
+      let valData = splitResult.val || [];
       let testData = splitResult.test || [];
 
       trainData = trainData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
+      valData = valData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
       testData = testData.filter((c: any) => !excludedSamples.has(c.conversation_id || c.id));
 
       const datasetObject = {
         train: toChatML(trainData),
+        validation: toChatML(valData),
         test: toChatML(testData)
       };
       const content = JSON.stringify(datasetObject, null, 2);
@@ -550,12 +968,33 @@ export const Stage6Finish: React.FC = () => {
   const activePage = Math.min(exportPage, totalPages);
 
   const previewRows = conversationsList && conversationsList.length > 0
-    ? conversationsList.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage).map(c => ({
-      id: c.id || c.conversation_id,
-      user: c.messages[0]?.user || '',
-      assistant: c.messages[0]?.assistant || '',
-    }))
-    : EXPORT_ROWS.map((r: any, idx: number) => ({ id: `ex_${idx}`, ...r }));
+    ? conversationsList.slice((activePage - 1) * itemsPerPage, activePage * itemsPerPage).map(c => {
+        let sys = promptText || '';
+        let usr = '';
+        let ast = '';
+        if (c.messages && c.messages.length > 0) {
+          const firstMsg = c.messages[0];
+          if (firstMsg.user !== undefined || firstMsg.assistant !== undefined) {
+            usr = firstMsg.user || '';
+            ast = firstMsg.assistant || '';
+          } else {
+            const userMsg = c.messages.find((m: any) => m.role === 'user');
+            const astMsg = c.messages.find((m: any) => m.role === 'assistant');
+            const sysMsg = c.messages.find((m: any) => m.role === 'system');
+            if (userMsg) usr = userMsg.content;
+            if (astMsg) ast = astMsg.content;
+            if (sysMsg) sys = sysMsg.content;
+          }
+        }
+        return {
+          id: c.id || c.conversation_id,
+          sampleObjectId: c.sampleObjectId,
+          system: sys,
+          user: usr,
+          assistant: ast,
+        };
+      })
+    : [];
 
   return (
     <div className="dataprep-stage2">
@@ -577,8 +1016,8 @@ export const Stage6Finish: React.FC = () => {
         ))}
       </div>
 
-      {/* Sub-step 13: System Prompt */}
-      {currentSubStep6 === 13 && (
+      {/* Sub-step 12: System Prompt */}
+      {currentSubStep6 === 12 && (
         <div className="s6-prompt">
           <div className="s6-prompt-title">
             <h3>System Prompt Versioning</h3>
@@ -718,7 +1157,7 @@ export const Stage6Finish: React.FC = () => {
                   style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none' }}
                 >
                   <option value="deepseek">Deepseek</option>
-                  <option value="gemini">Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
                 </select>
                 <button
                   className="s6-trial-btn"
@@ -776,14 +1215,14 @@ export const Stage6Finish: React.FC = () => {
         </div>
       )}
 
-      {/* Sub-step 14: Split Guard */}
-      {currentSubStep6 === 14 && (
+      {/* Sub-step 13: Split Guard */}
+      {currentSubStep6 === 13 && (
         <div className="sg-container">
           {/* Header */}
           <div className="sg-header">
             <div>
               <h3>Split Guard</h3>
-              <p>Generate a train/test split with semantic conflict checking handled by the GPU service.</p>
+              <p>Generate a train / val / test split with semantic conflict checking handled by the GPU service.</p>
             </div>
             <button
               className="s6-trial-btn"
@@ -806,21 +1245,47 @@ export const Stage6Finish: React.FC = () => {
           <div className="sg-config-row">
             <div className="sg-config-card">
               <span className="sg-config-label">TOTAL SAMPLES</span>
-              <span className="sg-config-value">{conversationsList?.length || 72}</span>
+              <span className="sg-config-value">{conversationsList?.length || 0}</span>
             </div>
             <div className="sg-config-card">
               <div className="sg-config-label-row">
-                <span className="sg-config-label">TEST PERCENTAGE</span>
+                <span className="sg-config-label">TEST %</span>
                 <span className="sg-config-pct">{splitTestPercentage}%</span>
               </div>
               <input
                 type="range"
-                min="10"
-                max="90"
+                min="5"
+                max={Math.max(5, 90 - splitValPercentage)}
                 value={splitTestPercentage}
                 onChange={e => setSplitTestPercentage(Number(e.target.value))}
                 className="sg-slider sg-slider-purple"
               />
+            </div>
+            <div className="sg-config-card">
+              <div className="sg-config-label-row">
+                <span className="sg-config-label">VAL %</span>
+                <span className="sg-config-pct" style={{ color: '#10b981' }}>{splitValPercentage}%</span>
+              </div>
+              <input
+                type="range"
+                min="5"
+                max={Math.max(5, 90 - splitTestPercentage)}
+                value={splitValPercentage}
+                onChange={e => setSplitValPercentage(Number(e.target.value))}
+                className="sg-slider"
+                style={{ accentColor: '#10b981' }}
+              />
+            </div>
+            <div className="sg-config-card">
+              <div className="sg-config-label-row">
+                <span className="sg-config-label">TRAIN %</span>
+                <span className="sg-config-pct" style={{ color: '#7c3aed' }}>
+                  {Math.max(0, 100 - splitTestPercentage - splitValPercentage)}%
+                </span>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: 4 }}>
+                Tự tính = 100% − Test − Val
+              </div>
             </div>
             <div className="sg-config-card">
               <div className="sg-config-label-row">
@@ -856,11 +1321,21 @@ export const Stage6Finish: React.FC = () => {
             <div className="sg-result-stats">
               <div className="sg-result-stat">
                 <span className="sg-result-label">TRAIN</span>
-                <span className="sg-result-value">{splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'}</span>
+                <span className="sg-result-value" style={{ color: '#7c3aed' }}>
+                  {splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}
+                </span>
+              </div>
+              <div className="sg-result-stat">
+                <span className="sg-result-label">VAL</span>
+                <span className="sg-result-value" style={{ color: '#10b981' }}>
+                  {splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}
+                </span>
               </div>
               <div className="sg-result-stat">
                 <span className="sg-result-label">TEST</span>
-                <span className="sg-result-value">{splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}</span>
+                <span className="sg-result-value" style={{ color: '#3b82f6' }}>
+                  {splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}
+                </span>
               </div>
               <div className="sg-result-stat">
                 <span className="sg-result-label">ATTEMPTS</span>
@@ -880,27 +1355,37 @@ export const Stage6Finish: React.FC = () => {
           {/* Venn Diagram */}
           <div className="sg-venn-card">
             <h4>Semantic Overlap Visualization</h4>
-            <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
+            <p className="sg-venn-sub">Visual representation of semantic similarity between <span style={{ color: '#7c3aed' }}>Train</span>, <span style={{ color: '#10b981' }}>Val</span> and <span style={{ color: '#3b82f6' }}>Test</span> sets.</p>
             <div className="sg-venn-wrap">
-              <svg viewBox="0 0 400 220" className="sg-venn-svg">
+              <svg viewBox="0 0 520 220" className="sg-venn-svg">
                 {/* Train circle */}
-                <circle cx="155" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                <circle cx="120" cy="110" r="80" fill="rgba(124,58,237,0.12)" stroke="#7c3aed" strokeWidth="2" />
+                {/* Val circle */}
+                <circle cx="260" cy="110" r="80" fill="rgba(16,185,129,0.12)" stroke="#10b981" strokeWidth="2" />
                 {/* Test circle */}
-                <circle cx="245" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
-                {/* Overlap area - dashed */}
-                <ellipse cx="200" cy="110" rx="35" ry="55" fill="rgba(239,68,68,0.08)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
-                {/* Labels */}
-                <text x="115" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
-                <text x="115" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">
-                  {splitResult ? `${splitResult.train_count || splitResult.train?.length || 0} unique` : '- unique'}
+                <circle cx="400" cy="110" r="80" fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth="2" />
+                {/* Overlap Train-Val dashed */}
+                <ellipse cx="190" cy="110" rx="28" ry="50" fill="rgba(239,68,68,0.07)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                {/* Overlap Val-Test dashed */}
+                <ellipse cx="330" cy="110" rx="28" ry="50" fill="rgba(239,68,68,0.07)" stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4 3" />
+                {/* Labels Train */}
+                <text x="95" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#7c3aed">TRAIN</text>
+                <text x="95" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#7c3aed">
+                  {splitResult ? `${splitResult.train_count ?? splitResult.train?.length ?? 0}` : '-'}
                 </text>
-                <text x="285" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
-                <text x="285" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">
-                  {splitResult ? `${splitResult.test_count || splitResult.test?.length || 0} unique` : '- unique'}
+                {/* Labels Val */}
+                <text x="260" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#10b981">VAL</text>
+                <text x="260" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#10b981">
+                  {splitResult ? `${splitResult.val_count ?? splitResult.val?.length ?? 0}` : '-'}
                 </text>
-                <text x="200" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#ef4444">OVERLAP</text>
-                <text x="200" y="120" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">
-                  {splitResult ? `${splitResult.conflicts} conflicts` : '- conflicts'}
+                {/* Labels Test */}
+                <text x="425" y="105" textAnchor="middle" className="sg-venn-text-main" fill="#3b82f6">TEST</text>
+                <text x="425" y="122" textAnchor="middle" className="sg-venn-text-sub" fill="#3b82f6">
+                  {splitResult ? `${splitResult.test_count ?? splitResult.test?.length ?? 0}` : '-'}
+                </text>
+                {/* Conflicts label */}
+                <text x="190" y="175" textAnchor="middle" className="sg-venn-text-sub" fill="#ef4444">
+                  {splitResult ? `${splitResult.conflicts} conflicts` : ''}
                 </text>
               </svg>
             </div>
@@ -908,19 +1393,77 @@ export const Stage6Finish: React.FC = () => {
             {/* Summary Cards */}
             <div className="sg-summary-row">
               <div className="sg-summary-card sg-summary-train">
-                <span className="sg-summary-value">{splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'}</span>
-                <span className="sg-summary-label">Train Only</span>
+                <span className="sg-summary-value">{splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Train</span>
+              </div>
+              <div className="sg-summary-card" style={{ borderColor: '#10b981', background: 'rgba(16,185,129,0.08)' }}>
+                <span className="sg-summary-value" style={{ color: '#10b981' }}>{splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Val</span>
               </div>
               <div className="sg-summary-card sg-summary-conflict">
                 <span className="sg-summary-value">{splitResult ? splitResult.conflicts : '-'}</span>
                 <span className="sg-summary-label">Semantic Conflicts</span>
               </div>
               <div className="sg-summary-card sg-summary-test">
-                <span className="sg-summary-value">{splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}</span>
-                <span className="sg-summary-label">Test Only</span>
+                <span className="sg-summary-value">{splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}</span>
+                <span className="sg-summary-label">Test</span>
               </div>
             </div>
           </div>
+
+          {/* === Plan B: Subject Distribution Table === */}
+          {splitBySubject.length > 0 && (
+            <div className="sg-exclusion-card" style={{ marginTop: 16 }}>
+              <div className="sg-exclusion-header">
+                <div>
+                  <h4>Subject Distribution</h4>
+                  <p>Phân bổ Train / Val / Test theo từng môn học sau khi split.</p>
+                </div>
+                <span className="sg-excluded-count">{splitBySubject.length} môn</span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'rgba(124,58,237,0.06)', borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#475569' }}>Môn học</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed' }}>Train</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981' }}>Val</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6' }}>Test</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>Tổng</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>Dataset</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {splitBySubject.map((row, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 12px', fontWeight: 500, color: '#1e293b' }}>
+                          <span style={{
+                            display: 'inline-block', width: 8, height: 8,
+                            borderRadius: '50%', background: '#7c3aed',
+                            marginRight: 8, opacity: 0.7
+                          }} />
+                          {row.subject}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#7c3aed', fontWeight: 600 }}>{row.train}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#10b981', fontWeight: 600 }}>{row.val}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#3b82f6', fontWeight: 600 }}>{row.test}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>{row.total}</td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                          <button
+                            className="s6-trial-btn"
+                            onClick={() => handleDownloadSubjectSplit(row.subject)}
+                            title={`Export dataset riêng cho môn ${row.subject}`}
+                          >
+                            <Download size={13} /> ZIP
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Manual Exclusion Tool */}
           <div className="sg-exclusion-card">
@@ -1106,8 +1649,8 @@ export const Stage6Finish: React.FC = () => {
         </div>
       )}
 
-      {/* Sub-step 15: Export */}
-      {currentSubStep6 === 15 && (
+      {/* Sub-step 14: Export */}
+      {currentSubStep6 === 14 && (
         <div className="ex-container">
           {/* Dataset Preview */}
           <div className="ex-preview-card">
@@ -1139,23 +1682,32 @@ export const Stage6Finish: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {previewRows.map((row, idx) => {
-                  const score = getOverallScore(row.id);
-                  const reason = score < 6.0 ? 'Needs improvement' : '-';
+                {previewRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ textAlign: 'center', padding: '20px' }}>Không có dữ liệu</td>
+                  </tr>
+                ) : previewRows.map((row, idx) => {
+                  const scoreData = getOverallScoreData(row.id, row.sampleObjectId);
+                  const hasScore = typeof scoreData.score === 'number' && !isNaN(scoreData.score);
+                  const scoreText = hasScore ? scoreData.score.toFixed(1) : '-';
+                  const reason = hasScore ? scoreData.label : '-';
                   return (
                     <tr key={idx}>
-                      <td>-</td>
                       <td>
-                        <span className="ex-cell-text">{row.user}</span>
-                        <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.user); }}>Read more</a>
+                        <span className="ex-cell-text">{row.system || '-'}</span>
+                        { row.system && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.system); }}>Read more</a> }
                       </td>
                       <td>
-                        <span className="ex-cell-text">{row.assistant}</span>
-                        <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.assistant); }}>Read more</a>
+                        <span className="ex-cell-text">{row.user || '-'}</span>
+                        { row.user && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.user); }}>Read more</a> }
                       </td>
-                      <td>{score.toFixed(1)}</td>
+                      <td>
+                        <span className="ex-cell-text">{row.assistant || '-'}</span>
+                        { row.assistant && <a href="#" className="ex-read-more" onClick={(e) => { e.preventDefault(); alert(row.assistant); }}>Read more</a> }
+                      </td>
+                      <td>{scoreText}</td>
                       <td>{reason !== '-' ? <span className="ex-cell-text">{reason}</span> : '-'}</td>
-                      <td>Auto</td>
+                      <td>{scoreData.evaluatedBy}</td>
                     </tr>
                   );
                 })}
@@ -1169,20 +1721,42 @@ export const Stage6Finish: React.FC = () => {
             </div>
           </div>
 
+          {/* Evaluation Pack: connects Data Prep directly to Router Benchmark */}
+          <div className="ex-download-card" style={{ marginTop: 16, border: '1px solid #c7d2fe', background: '#eef2ff' }}>
+            <h4 style={{ color: '#3730a3' }}>Evaluation Pack cho Router + Model Eval</h4>
+            <p className="ex-download-note">
+              Tạo và tải ZIP gồm bộ SFT, Router calibration/test và Model Eval từ Dataset Version hiện tại.
+            </p>
+            <p className="ex-download-note" style={{ color: '#92400e' }}>
+              Đây là pilot pack để chạy thử. Các reference answer cần được review độc lập trước khi dùng làm kết quả RP5 chính thức.
+            </p>
+            <button
+              className="ex-btn-purple"
+              onClick={handleCreateEvaluationPack}
+              disabled={!splitResult?.train || !splitResult?.val || !splitResult?.test}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}
+            >
+              <FileJson size={14} /> Tạo Pack, tải ZIP và mở AutoTrain
+            </button>
+          </div>
+
           {/* Download Cards Row */}
           <div className="ex-download-row">
             <div className="ex-download-card">
-              <h4>Download cooked Train/Test Split</h4>
+              <h4>Download Multi-subject Split</h4>
               <p className="ex-download-stat">
-                Train: {splitResult ? (splitResult.train_count || splitResult.train?.length || 0) : '-'} /
-                Test: {splitResult ? (splitResult.test_count || splitResult.test?.length || 0) : '-'}
+                <span style={{ color: '#7c3aed' }}>Train: {splitResult ? (splitResult.train_count ?? splitResult.train?.length ?? 0) : '-'}</span>
+                {' / '}
+                <span style={{ color: '#10b981' }}>Val: {splitResult ? (splitResult.val_count ?? splitResult.val?.length ?? 0) : '-'}</span>
+                {' / '}
+                <span style={{ color: '#3b82f6' }}>Test: {splitResult ? (splitResult.test_count ?? splitResult.test?.length ?? 0) : '-'}</span>
               </p>
-              <p className="ex-download-note">Export uses the safe split generated in the previous step. Handson-splitting is disabled here.</p>
+              <p className="ex-download-note">ZIP tổng chứa <code>math.train.json</code>, <code>math.validation.json</code>, <code>math.test.json</code>, <code>physical.train.json</code>... Dùng nút ZIP trong bảng Subject Distribution để tải gói upload AutoTrain riêng cho từng môn.</p>
               <button
                 className="ex-btn-green"
                 onClick={handleDownloadSplit}
               >
-                <Download size={14} /> Download train/test ZIP
+                <Download size={14} /> Download all subject files
               </button>
             </div>
             <div className="ex-download-card">
@@ -1339,7 +1913,7 @@ export const Stage6Finish: React.FC = () => {
       {/* Action Buttons */}
       <div className="dataprep-actions-row">
         <button className="dataprep-btn-back" onClick={() => {
-          if (currentSubStep6 > 13) {
+          if (currentSubStep6 > 12) {
             setCurrentSubStep6(currentSubStep6 - 1);
           } else {
             setCurrentStage(4);
@@ -1352,7 +1926,7 @@ export const Stage6Finish: React.FC = () => {
           window.location.reload();
         }}><RotateCcw size={14} /> Reset & Upload New</button>
         <button className="dataprep-btn-next" onClick={() => {
-          if (currentSubStep6 < 15) {
+          if (currentSubStep6 < 14) {
             setCurrentSubStep6(currentSubStep6 + 1);
           }
         }}>

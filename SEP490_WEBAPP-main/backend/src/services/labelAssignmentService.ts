@@ -8,6 +8,7 @@ import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { DatasetAssignmentAdjudication } from '../models/DatasetAssignmentAdjudication';
 import { DatasetCanonicalLabel } from '../models/DatasetCanonicalLabel';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
+import { CheckerActivityLog } from '../models/CheckerActivityLog';
 import { User } from '../models/User';
 import { QUALITY_AUTO_REJECT_MARKER } from '../modules/dataprep/quality/quality.constants';
 
@@ -19,6 +20,7 @@ export const HARD_LABELS = [
   'LITERATURE',
   'BIOLOGY',
   'OUT_OF_SCOPE',
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -30,6 +32,13 @@ export const HARD_LABELS = [
   'OFF_TOPIC',
   'NEXT_SECTION',
   'WAIT_READY',
+  // V2 Socratic student intents (đồng bộ với bộ nhãn của Staff)
+  'DISCOURAGED',
+  'READY_NEXT',
+  'CONFIRM_UNDERSTANDING',
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -41,12 +50,14 @@ export const HARD_LABELS = [
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ] as const;
 
 export type LabelScope = 'sample' | 'message';
 export type LabelQueryScope = 'sample' | 'message' | 'all';
 export type LabelRole = 'user' | 'assistant';
 export type LabelType = 'hard' | 'soft';
+export type LabelSource = 'ai' | 'human' | 'default' | 'system';
 
 export type LabelAssignmentAggregate = {
   _id: string;
@@ -57,6 +68,7 @@ export type LabelAssignmentAggregate = {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
   createdAt: Date | null;
   updatedAt: Date | null;
   assignedUserCount: number;
@@ -108,7 +120,7 @@ function sampleScopeMatch(): Record<string, any> {
 function buildTargetKey(targetScope: LabelScope, messageIndex?: number | null, messageRole?: LabelRole | null): string {
   return targetScope === 'message'
     ? `message:${Number(messageIndex)}:${String(messageRole || '')}`
-    : 'sample';
+    : `sample:${Number.isInteger(Number(messageIndex)) ? Number(messageIndex) : 0}`;
 }
 
 export function normalizeTargetScope(value: unknown): LabelScope {
@@ -160,6 +172,7 @@ async function ensureLabelAssignmentsForSampleObjectIds(sampleIds: mongoose.Type
         messageIndex: Number.isInteger(Number(label.messageIndex)) ? Number(label.messageIndex) : null,
         messageRole: label.messageRole === 'user' || label.messageRole === 'assistant' ? label.messageRole : null,
         targetTextSnapshot: label.targetTextSnapshot ? String(label.targetTextSnapshot) : undefined,
+        source: 'human',
         createdBy: new mongoose.Types.ObjectId(userId),
         legacyLabelId: label._id,
       });
@@ -265,6 +278,7 @@ function mergeAggregateDocs(
         messageIndex: Number.isInteger(Number(doc.messageIndex)) ? Number(doc.messageIndex) : undefined,
         messageRole: doc.messageRole === 'user' || doc.messageRole === 'assistant' ? doc.messageRole : undefined,
         targetTextSnapshot: doc.targetTextSnapshot ? String(doc.targetTextSnapshot) : undefined,
+        source: doc.source || 'human',
         createdAt: doc.createdAt ? new Date(doc.createdAt) : null,
         updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : null,
         assignedUserCount: 0,
@@ -313,6 +327,7 @@ function mapCanonicalRowsToAggregateDocs(rows: any[]): any[] {
         messageIndex: Number.isInteger(Number(row.messageIndex)) ? Number(row.messageIndex) : null,
         messageRole: row.messageRole === 'user' || row.messageRole === 'assistant' ? row.messageRole : null,
         targetTextSnapshot: row.targetTextSnapshot ? String(row.targetTextSnapshot) : undefined,
+        source: 'system',
         createdBy: row.publishedBy,
         createdAt: row.publishedAt || row.updatedAt || row.createdAt || null,
         updatedAt: row.updatedAt || row.publishedAt || row.createdAt || null,
@@ -432,13 +447,13 @@ export async function getAggregatedLabelsForSample(
   );
   const users = contributorIds.length
     ? await User.find({ _id: { $in: contributorIds.map((id) => new mongoose.Types.ObjectId(id)) } })
-        .select('_id name email')
+        .select('_id name email role')
         .lean()
     : [];
   const userMap = new Map(
     users.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -454,6 +469,7 @@ export async function assignLabelToSample(params: {
   messageIndex?: number;
   messageRole?: LabelRole;
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -472,6 +488,7 @@ export async function assignLabelToSample(params: {
     {
       $setOnInsert: {
         targetTextSnapshot: params.targetTextSnapshot,
+        source: params.source || 'human',
       },
     },
     { upsert: true, returnDocument: 'after' }
@@ -540,6 +557,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
   messageRole?: LabelRole;
   labels: string[];
   targetTextSnapshot?: string;
+  source?: LabelSource;
 }) {
   const sample = await resolveSample(params.sampleId);
   await ensureLabelAssignmentsForSamples([params.sampleId]);
@@ -597,6 +615,7 @@ export async function replaceHardLabelsForUserOnTarget(params: {
       messageIndex: params.targetScope === 'message' ? Number(params.messageIndex) : null,
       messageRole: params.targetScope === 'message' ? params.messageRole : null,
       targetTextSnapshot: params.targetTextSnapshot,
+      source: params.source || 'human',
     }));
     await LabelAssignment.insertMany(docs, { ordered: false });
     await Promise.all(
@@ -625,8 +644,9 @@ export async function insertAssignments(docs: any[]) {
   if (!docs.length) {
     return;
   }
+  const docsWithSource = docs.map((doc) => ({ source: 'human', ...doc }));
   try {
-    await LabelAssignment.insertMany(docs, { ordered: false });
+    await LabelAssignment.insertMany(docsWithSource, { ordered: false });
   } catch (error: any) {
     if (error?.code !== 11000) {
       throw error;
@@ -718,36 +738,6 @@ export async function getAggregatedSampleLabels(sampleIds: mongoose.Types.Object
   ]);
 }
 
-async function getAggregatedHardSampleLabels(sampleIds: mongoose.Types.ObjectId[]) {
-  await ensureLabelAssignmentsForSamples(sampleIds.map((id) => String(id)));
-  return LabelAssignment.aggregate([
-    { $match: { sampleId: { $in: sampleIds }, type: 'hard' } },
-    {
-      $group: {
-        _id: {
-          sampleId: '$sampleId',
-          name: '$name',
-          type: '$type',
-          targetScope: '$targetScope',
-          messageIndex: '$messageIndex',
-          messageRole: '$messageRole',
-        },
-        contributors: { $addToSet: '$createdBy' },
-      },
-    },
-    {
-      $project: {
-        sampleId: '$_id.sampleId',
-        name: '$_id.name',
-        type: '$_id.type',
-        targetScope: '$_id.targetScope',
-        messageIndex: '$_id.messageIndex',
-        messageRole: '$_id.messageRole',
-        assignedUserCount: { $size: '$contributors' },
-      },
-    },
-  ]);
-}
 
 export async function getCanonicalSampleLabelsForVersion(
   datasetVersionId: string | mongoose.Types.ObjectId,
@@ -789,26 +779,143 @@ export async function getEffectiveSampleLabelsForVersion(
   const versionOid = typeof datasetVersionId === 'string'
     ? new mongoose.Types.ObjectId(datasetVersionId)
     : datasetVersionId;
-  const hasAssignments = Boolean(
-    await DatasetSampleAssignment.exists({ datasetVersionId: versionOid })
-  );
 
-  if (!hasAssignments) {
-    return getAggregatedHardSampleLabels(sampleIds) as Promise<EffectiveLabelAggregate[]>;
-  }
-
+  // 1. Get all canonical/published labels
   const canonical = await getCanonicalSampleLabelsForVersion(versionOid, sampleIds);
-  const aggregated = await getAggregatedHardSampleLabels(sampleIds);
 
+  // 2. Load all raw hard label assignments
+  await ensureLabelAssignmentsForSamples(sampleIds.map(id => String(id)));
+  const hardAssignments = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'hard'
+  }).lean();
+
+  // 3. Find unique creators and get their roles
+  const creatorIds = Array.from(new Set(hardAssignments.map(a => String(a.createdBy))));
+  const creators = creatorIds.length
+    ? await User.find({ _id: { $in: creatorIds } }).select('_id role').lean()
+    : [];
+  const creatorRoleMap = new Map<string, string>(creators.map((c: any) => [String(c._id), c.role || 'staff']));
+
+  // 4. Load assignee count per sample to know if it's overlap/multi-staff
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: versionOid,
+    sampleId: { $in: sampleIds },
+    active: true
+  }).select('sampleId assigneeId').lean();
+
+  const sampleAssigneeCount = new Map<string, number>();
+  assignments.forEach((asg: any) => {
+    const sid = String(asg.sampleId);
+    sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+  });
+
+  // 5. Group hard assignments by sample + target key
+  // Target key: targetScope:messageIndex:messageRole
+  const groupedHard = new Map<string, any[]>();
+  hardAssignments.forEach((a: any) => {
+    const targetKey = `${String(a.sampleId)}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`;
+    const list = groupedHard.get(targetKey) || [];
+    list.push(a);
+    groupedHard.set(targetKey, list);
+  });
+
+  // 6. For each group, determine the effective labels
   const canonicalKeys = new Set(canonical.map(c => 
     `${c.sampleId}:${c.targetScope}:${c.messageIndex ?? ''}:${c.messageRole ?? ''}`
   ));
 
-  const effectiveAggregated = (aggregated as any).filter((a: any) => 
-    !canonicalKeys.has(`${a.sampleId}:${a.targetScope}:${a.messageIndex ?? ''}:${a.messageRole ?? ''}`)
-  );
+  const effectiveHard: EffectiveLabelAggregate[] = [];
+  
+  groupedHard.forEach((docs, targetKey) => {
+    // If it's already in canonical, discard hard assignments
+    if (canonicalKeys.has(targetKey)) {
+      return;
+    }
 
-  return [...canonical, ...effectiveAggregated];
+    // Partition docs by role
+    const checkerDocs = docs.filter(d => {
+      const role = creatorRoleMap.get(String(d.createdBy));
+      return role === 'checker' || role === 'supervisor' || role === 'admin';
+    });
+
+    const sid = String(docs[0].sampleId);
+    const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+
+    if (checkerDocs.length > 0) {
+      // If checker/supervisor/admin has labeled, use their labels ONLY!
+      const counts = new Map<string, Set<string>>();
+      checkerDocs.forEach((d) => {
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = counts.get(name) || new Set<string>();
+          list.add(String(d.createdBy));
+          counts.set(name, list);
+        }
+      });
+      counts.forEach((contributors, name) => {
+        effectiveHard.push({
+          sampleId: docs[0].sampleId,
+          name,
+          type: 'hard',
+          targetScope: docs[0].targetScope,
+          messageIndex: docs[0].messageIndex,
+          messageRole: docs[0].messageRole,
+          assignedUserCount: contributors.size
+        });
+      });
+    } else {
+      // No checker label yet. Check if staff annotators agreed, or if assigneeCount < 2
+      const staffDocs = docs.filter(d => !checkerDocs.includes(d));
+      const userLabelsMap = new Map<string, string[]>();
+      staffDocs.forEach((d) => {
+        const userId = String(d.createdBy);
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name) {
+          const list = userLabelsMap.get(userId) || [];
+          if (!list.includes(name)) list.push(name);
+          userLabelsMap.set(userId, list);
+        }
+      });
+
+      const uniqueStaffCount = userLabelsMap.size;
+      let staffAgreed = false;
+      if (uniqueStaffCount > 0) {
+        const lists = Array.from(userLabelsMap.values());
+        const firstList = lists[0].slice().sort();
+        staffAgreed = lists.every(list => {
+          if (list.length !== firstList.length) return false;
+          const sorted = list.slice().sort();
+          return sorted.every((val, index) => val === firstList[index]);
+        });
+      }
+
+      if (staffAgreed || assigneeCount < 2) {
+        const counts = new Map<string, Set<string>>();
+        staffDocs.forEach((d) => {
+          const name = String(d.name || '').trim().toUpperCase();
+          if (name) {
+            const list = counts.get(name) || new Set<string>();
+            list.add(String(d.createdBy));
+            counts.set(name, list);
+          }
+        });
+        counts.forEach((contributors, name) => {
+          effectiveHard.push({
+            sampleId: docs[0].sampleId,
+            name,
+            type: 'hard',
+            targetScope: docs[0].targetScope,
+            messageIndex: docs[0].messageIndex,
+            messageRole: docs[0].messageRole,
+            assignedUserCount: contributors.size
+          });
+        });
+      }
+    }
+  });
+
+  return [...canonical, ...effectiveHard];
 }
 
 export async function getEffectiveHardRejectedSampleIdsForVersion(
@@ -883,7 +990,7 @@ function getLogicalMessagesForSample(sample: any): Array<{ messageIndex: number;
 
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -908,6 +1015,7 @@ const DRAFT_ACTION_MAP: Record<string, string> = {
 };
 
 const USER_INTENT_SET = new Set([
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -922,6 +1030,9 @@ const USER_INTENT_SET = new Set([
 ]);
 
 const ASSISTANT_ACTION_SET = new Set([
+  'CONFIRM_CORRECT_ANSWER',
+  'IDENTIFY_INCORRECT_ANSWER',
+  'CORRECT_MISTAKE',
   'PRAISING',
   'SCAFFOLDING',
   'HINTING',
@@ -933,6 +1044,7 @@ const ASSISTANT_ACTION_SET = new Set([
   'REDIRECTING',
   'TRANSITIONING',
   'WAITING',
+  'DIRECT_ANSWER',
 ]);
 
 const SUBJECT_CODE_SET = new Set([
@@ -997,10 +1109,25 @@ function buildRequiredTargets(sample: any): DecisionTarget[] {
 
   return [
     {
-      key: buildTargetKey('sample'),
+      key: buildTargetKey('sample', 0),
       targetScope: 'sample',
+      messageIndex: 0,
       labels: [],
-      targetTextSnapshot: conversationContent.slice(0, 2000),
+      targetTextSnapshot: `Mon hoc\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 1),
+      targetScope: 'sample',
+      messageIndex: 1,
+      labels: [],
+      targetTextSnapshot: `Muc do hoan thien\n${conversationContent}`.slice(0, 2000),
+    },
+    {
+      key: buildTargetKey('sample', 2),
+      targetScope: 'sample',
+      messageIndex: 2,
+      labels: [],
+      targetTextSnapshot: `Chat luong hoi thoai\n${conversationContent}`.slice(0, 2000),
     },
     ...getLogicalMessagesForSample(sample).map((message) => ({
       key: buildTargetKey('message', message.messageIndex, message.role),
@@ -1139,7 +1266,7 @@ function computeAgreement(annotatorSets: Array<{ annotatorId: string; labels: st
   return Number((scores.reduce((sum, value) => sum + value, 0) / scores.length).toFixed(4));
 }
 
-async function syncAdjudicationForTarget(params: {
+export async function syncAdjudicationForTarget(params: {
   datasetVersionId: mongoose.Types.ObjectId;
   sampleId: mongoose.Types.ObjectId;
   targetScope: LabelScope;
@@ -1157,7 +1284,7 @@ async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
       status: { $ne: 'published' },
     });
@@ -1168,7 +1295,7 @@ async function syncAdjudicationForTarget(params: {
     datasetVersionId: params.datasetVersionId,
     sampleId: params.sampleId,
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   })
     .select('status')
@@ -1179,7 +1306,7 @@ async function syncAdjudicationForTarget(params: {
       datasetVersionId: params.datasetVersionId,
       sampleId: params.sampleId,
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1228,27 +1355,27 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   const sampleOid = new mongoose.Types.ObjectId(sampleId);
   const versionOid = new mongoose.Types.ObjectId(datasetVersionId);
   await ensureLabelAssignmentsForSamples([sampleId]);
-  const version = await DatasetVersion.findById(versionOid).select('ownerId').lean();
+  const version = await DatasetVersion.findById(versionOid).select('ownerId similarityThreshold').lean();
   const ownerId = String((version as any)?.ownerId || '');
+  const similarityThreshold = Number.isFinite(Number((version as any)?.similarityThreshold)) ? Number((version as any).similarityThreshold) : 0.6;
 
   const assignments = await DatasetSampleAssignment.find({
-    datasetVersionId: versionOid,
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
     sampleId: sampleOid,
   }).lean();
 
-  const assigneeIds = Array.from(new Set(assignments.map((item: any) => String(item.assigneeId)).filter(Boolean)));
+  const assigneeIds = assignments
+    .filter((sa: any) => sa.reviewStatus === 'submitted' || sa.reviewStatus === 'approved')
+    .map((sa: any) => String(sa.assigneeId));
   const allSampleAssignments = await LabelAssignment.find({
     sampleId: sampleOid,
     type: { $in: ['hard', 'soft'] },
   }).lean();
-  const labelAuthorIds = allSampleAssignments
-    .map((item: any) => String(item.createdBy || ''))
-    .filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const comparisonAnnotatorIds = Array.from(new Set(
-    [...assigneeIds, ...labelAuthorIds, ownerId].filter(Boolean)
-  )).filter((id) => mongoose.Types.ObjectId.isValid(id));
-  const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard');
-  const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample');
+  // Staff–Staff conflict is only meaningful after at least two assigned Staff
+  // have submitted this same sample. Owner/canonical labels are not annotators.
+  const comparisonAnnotatorIds = assigneeIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard' && comparisonAnnotatorIds.includes(String(item.createdBy)));
+  const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample' && comparisonAnnotatorIds.includes(String(item.createdBy)));
   const sampleMessages = Array.isArray((sample as any).data?.messages) ? (sample as any).data.messages : [];
   const softDerivedAssignments: any[] = [];
   softAssignments.forEach((doc: any) => {
@@ -1260,12 +1387,17 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       saved = null;
     }
     if (!saved || typeof saved !== 'object') return;
-    ['subject', 'completion', 'quality'].forEach((field) => {
+    const sampleFields = [
+      ['subject', 0],
+      ['completion', 1],
+      ['quality', 2],
+    ] as const;
+    sampleFields.forEach(([field, fieldIndex]) => {
       if (saved[field]) {
         softDerivedAssignments.push({
           ...doc,
           targetScope: 'sample',
-          messageIndex: null,
+          messageIndex: fieldIndex,
           messageRole: null,
           name: String(saved[field]),
         });
@@ -1276,25 +1408,32 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         const messageIndex = Number(idx);
         if (!Number.isInteger(messageIndex) || !value) return;
         const role = sampleMessages[messageIndex]?.role === 'assistant' ? 'assistant' : 'user';
-        const labelName = role === 'assistant' ? value.action : value.intent;
-        if (!labelName) return;
-        softDerivedAssignments.push({
-          ...doc,
-          targetScope: 'message',
-          messageIndex,
-          messageRole: role,
-          name: String(labelName),
-        });
+        const labelValue = role === 'assistant' ? value.action : value.intent;
+        const labelNames = Array.isArray(labelValue) ? labelValue : labelValue ? [labelValue] : [];
+        labelNames.filter(Boolean).forEach((labelName: any) => softDerivedAssignments.push({
+          ...doc, targetScope: 'message', messageIndex, messageRole: role, name: String(labelName),
+        }));
       });
     }
   });
-  const userRows = comparisonAnnotatorIds.length
-    ? await User.find({ _id: { $in: comparisonAnnotatorIds.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email').lean()
+  const canonicalLabels = await DatasetCanonicalLabel.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).lean();
+
+  const checkerUserIds = canonicalLabels.map(c => String(c.publishedBy)).filter(Boolean);
+  const allUserIdsToLoad = Array.from(new Set([
+    ...comparisonAnnotatorIds,
+    ...checkerUserIds
+  ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const userRows = allUserIdsToLoad.length
+    ? await User.find({ _id: { $in: allUserIdsToLoad.map((id) => new mongoose.Types.ObjectId(id)) } }).select('_id name email role').lean()
     : [];
   const userMap = new Map(
     userRows.map((user: any) => [
       String(user._id),
-      { id: String(user._id), name: String(user.name || ''), email: String(user.email || '') },
+      { id: String(user._id), name: String(user.name || ''), email: String(user.email || ''), role: String(user.role || 'staff') },
     ])
   );
 
@@ -1322,52 +1461,123 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
   });
 
   const requiredTargets = buildRequiredTargets(sample);
-  const targetSummaries = await Promise.all(
-    requiredTargets.map(async (target) => {
-      const targetKey = target.key;
-      const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Map<string, string>>();
-      const annotatorSets = comparisonAnnotatorIds
-        .map((annotatorId) => {
-          const labelMap = perUserMap.get(annotatorId) || new Map<string, string>();
-          const labels = Array.from(labelMap.keys()).sort();
-          const displayLabels = labels.map((code) => labelMap.get(code) || code);
-          return { annotatorId, labels, displayLabels };
-        })
-        .filter((item) => item.labels.length > 0);
+  const existingAdjs = await DatasetAssignmentAdjudication.find({
+    datasetVersionId: versionOid,
+    sampleId: sampleOid,
+  }).select('status targetScope messageIndex messageRole').lean();
 
-      const { labelCounts, majorityLabels } = computeMajorityLabels(annotatorSets);
-      const agreementScore = computeAgreement(annotatorSets);
-      await syncAdjudicationForTarget({
-        datasetVersionId: versionOid,
-        sampleId: sampleOid,
-        targetScope: target.targetScope,
-        messageIndex: target.messageIndex ?? null,
-        messageRole: target.messageRole ?? null,
-        annotatorSets,
-        agreementScore,
-        majorityLabels,
-        labelCounts,
+  const bulkOps: any[] = [];
+  const targetSummaries = requiredTargets.map((target) => {
+    const targetKey = target.key;
+    const perUserMap = decisionsByTarget.get(targetKey) || new Map<string, Map<string, string>>();
+    const annotatorSets = comparisonAnnotatorIds
+      .map((annotatorId) => {
+        const labelMap = perUserMap.get(annotatorId) || new Map<string, string>();
+        const labels = Array.from(labelMap.keys()).sort();
+        const displayLabels = labels.map((code) => labelMap.get(code) || code);
+        return { annotatorId, labels, displayLabels };
+      })
+      .filter((item) => item.labels.length > 0);
+
+    const { labelCounts, majorityLabels } = computeMajorityLabels(annotatorSets);
+    const agreementScore = computeAgreement(annotatorSets);
+    
+    // Compute bulk operations
+    const threshold = similarityThreshold;
+    const msgIdx = target.messageIndex ?? null;
+    const msgRole = target.messageRole ?? null;
+    const existing = existingAdjs.find((a: any) => a.targetScope === target.targetScope && a.messageIndex === msgIdx && a.messageRole === msgRole);
+    
+    const canonical = canonicalLabels.find((c: any) => 
+      c.targetScope === target.targetScope && 
+      c.messageIndex === msgIdx && 
+      c.messageRole === msgRole
+    );
+
+    const hasUrgentPriority = assignments.some((a) => a.priority === 'urgent');
+    const isUrgentPending = hasUrgentPriority && (!existing || existing.status !== 'published') && !canonical;
+
+    if (agreementScore === null || (agreementScore >= threshold && !isUrgentPending)) {
+      if (existing && existing.status !== 'published') {
+        bulkOps.push({
+          deleteOne: {
+            filter: { _id: existing._id }
+          }
+        });
+      }
+    } else {
+      bulkOps.push({
+        updateOne: {
+          filter: {
+            datasetVersionId: versionOid,
+            sampleId: sampleOid,
+            targetScope: target.targetScope,
+            messageIndex: msgIdx,
+            messageRole: msgRole,
+          },
+          update: {
+            $set: {
+              status: existing?.status === 'published' ? 'published' : existing?.status === 'resolved_unpublished' ? 'resolved_unpublished' : 'pending',
+              threshold,
+              agreementScore: agreementScore !== null ? agreementScore : 1.0,
+              majorityLabels,
+              labelCounts,
+              annotatorSets,
+            },
+            $setOnInsert: {
+              finalLabels: [],
+              note: '',
+            },
+            ...(existing?.status === 'published' || existing?.status === 'resolved_unpublished' ? {} : {
+              $unset: { resolvedBy: 1, resolvedAt: 1, publishedBy: 1, publishedAt: 1 }
+            })
+          },
+          upsert: true
+        }
       });
+    }
 
-      return {
-        targetKey,
-        targetScope: target.targetScope,
-        messageIndex: target.messageIndex,
-        messageRole: target.messageRole,
-        targetTextSnapshot: target.targetTextSnapshot,
-        agreementScore,
-        hasConflict: agreementScore !== null && agreementScore < 0.6,
-        labelCounts,
-        majorityLabels,
-        annotators: annotatorSets.map((item) => ({
-          annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
-          labels: item.labels,
-          displayLabels: item.displayLabels,
-          isOwner: item.annotatorId === ownerId,
-        })),
-      };
-    })
-  );
+    const targetAnnotators = annotatorSets.map((item) => ({
+      annotator: userMap.get(item.annotatorId) || { id: item.annotatorId, name: '', email: '' },
+      labels: item.labels,
+      displayLabels: item.displayLabels,
+      isOwner: item.annotatorId === ownerId,
+      isCanonical: false,
+    }));
+
+    if (canonical) {
+      const checkerId = String(canonical.publishedBy);
+      const checkerUser = userMap.get(checkerId) || { id: checkerId, name: 'Checker', email: 'checker@system.com' };
+      targetAnnotators.push({
+        annotator: { ...checkerUser, role: 'checker' } as any,
+        labels: canonical.labels,
+        displayLabels: canonical.labels.map(l => {
+          const { display } = resolveStaffLabelName(l, msgRole, target.targetScope);
+          return display || l;
+        }),
+        isOwner: false,
+        isCanonical: true,
+      });
+    }
+
+    return {
+      targetKey,
+      targetScope: target.targetScope,
+      messageIndex: target.messageIndex,
+      messageRole: target.messageRole,
+      targetTextSnapshot: target.targetTextSnapshot,
+      agreementScore,
+      hasConflict: (agreementScore !== null && agreementScore < similarityThreshold) || isUrgentPending,
+      labelCounts,
+      majorityLabels,
+      annotators: targetAnnotators,
+    };
+  });
+
+  if (bulkOps.length > 0) {
+    await DatasetAssignmentAdjudication.bulkWrite(bulkOps);
+  }
+
 
   const adjudications = await DatasetAssignmentAdjudication.find({
     datasetVersionId: versionOid,
@@ -1411,6 +1621,8 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
       id: String(sample._id),
       sampleKey: String(sample.sampleId || ''),
       preview: requiredTargets.map((target) => target.targetTextSnapshot || '').join(' ').trim().slice(0, 180),
+      sampleIndex: typeof assignments[0]?.sampleIndex === 'number' ? assignments[0].sampleIndex : 0,
+      data: (sample as any).data,
     },
     agreementScore: targetScores.length
       ? Number((targetScores.reduce((sum, value) => sum + value, 0) / targetScores.length).toFixed(4))
@@ -1503,7 +1715,7 @@ export async function resolveAssignmentAdjudication(params: {
       datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
       sampleId: new mongoose.Types.ObjectId(params.sampleId),
       targetScope: params.targetScope,
-      messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
     },
     {
@@ -1543,7 +1755,7 @@ export async function publishAssignmentAdjudication(params: {
     datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
     sampleId: new mongoose.Types.ObjectId(params.sampleId),
     targetScope: params.targetScope,
-    messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+    messageIndex: params.messageIndex ?? null,
     messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
   };
 
@@ -1563,11 +1775,11 @@ export async function publishAssignmentAdjudication(params: {
         datasetVersionId: sample.datasetVersionId,
         sampleId: sample._id,
         targetScope: params.targetScope,
-        messageIndex: params.targetScope === 'message' ? params.messageIndex ?? null : null,
+        messageIndex: params.messageIndex ?? null,
         messageRole: params.targetScope === 'message' ? params.messageRole ?? null : null,
         labels: adjudication.finalLabels,
         targetTextSnapshot: String((adjudication as any).targetTextSnapshot || ''),
-        sourceType: 'owner_manual_resolution',
+        sourceType: 'checker_adjudication',
         resolutionRef: adjudication._id,
         sourceAnnotatorIds: Array.isArray(adjudication.annotatorSets)
           ? adjudication.annotatorSets.map((item: any) => String(item.annotatorId || '')).filter(Boolean)
@@ -1599,7 +1811,7 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
   minAgreement?: number;
 }) {
   const versionOid = new mongoose.Types.ObjectId(datasetVersionId);
-  const assignmentRows = await DatasetSampleAssignment.find({ datasetVersionId: versionOid })
+  const assignmentRows = await DatasetSampleAssignment.find({ datasetVersionId: { $in: [versionOid, String(versionOid)] } })
     .sort({ sampleIndex: 1 })
     .lean();
 
@@ -1615,6 +1827,12 @@ export async function buildAssignmentConflictList(datasetVersionId: string, filt
     }
     const sampleIndex = Number(assignmentsForSample[0]?.sampleIndex || 0);
     if (filters?.sampleIndex && sampleIndex !== filters.sampleIndex) {
+      continue;
+    }
+
+    const submittedCount = assignmentsForSample.filter((row: any) => row.reviewStatus === 'submitted' || row.reviewStatus === 'approved').length;
+
+    if (submittedCount < 2) {
       continue;
     }
     const comparison = await buildAssignmentSampleComparison(datasetVersionId, sampleId);
@@ -1739,49 +1957,96 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
   ]);
   const latestActivityMap = new Map(latestActivityRows.map((row: any) => [String(row._id), row.latestActivityAt]));
 
-  const userRows = await Promise.all(
-    assigneeIds.map(async (assigneeId) => {
-      const progress = await calculateAssignmentProgressFromAssignments(versionOid, assigneeId);
-      const submission = submissionMap.get(assigneeId) as any;
-      const assignedSamples = assignments.filter((row: any) => String(row.assigneeId) === assigneeId).length;
-      const draftLabeledSamples = Number(submission?.labeledCount || 0);
-      const targetsPerSample = progress.assignedSamples > 0 && progress.requiredMessages > 0
-        ? progress.requiredMessages / progress.assignedSamples
-        : 1;
-      const draftCompletedTargets = Math.min(progress.requiredMessages, Math.round(draftLabeledSamples * targetsPerSample));
-      const completedTargets = Math.max(progress.completedMessages, draftCompletedTargets);
-      const completionPercent = progress.requiredMessages > 0
-        ? Math.round((completedTargets / progress.requiredMessages) * 100)
-        : (assignedSamples > 0 ? Math.round((draftLabeledSamples / assignedSamples) * 100) : 0);
-      const hourCount = activityRows.filter((row: any) => String(row.annotatorId) === assigneeId && row.activityType === 'assign').length;
-      return {
-        user: {
-          id: assigneeId,
-          name: String((userMap.get(assigneeId) as any)?.name || ''),
-          email: String((userMap.get(assigneeId) as any)?.email || ''),
-        },
-        assignedSamples,
-        completedTargets,
-        totalTargets: progress.requiredMessages,
-        completionPercent,
-        labelsPerHour: hourCount,
-        latestActivityAt: latestActivityMap.get(assigneeId) || null,
-        reviewAvailable: String(submission?.status || '') === 'submitted'
-          || String(submission?.status || '') === 'approved',
-        submission: submission
-          ? {
-              status: ['submitted', 'approved'].includes(String(submission.status || 'draft')) ? 'submitted' : 'draft',
-              submittedAt: submission.submittedAt || null,
-              name: submission.name || null,
-              labeledCount: draftLabeledSamples,
-              humanScore: submission.humanScoreCount > 0
-                ? Number((submission.humanScoreTotal / submission.humanScoreCount).toFixed(1))
-                : null,
-            }
-          : null,
-      };
-    })
-  );
+  const allLabels = await LabelAssignment.find({
+    sampleId: { $in: sampleIds },
+    type: 'hard'
+  }).select('sampleId createdBy targetScope messageIndex messageRole name').lean();
+
+  const samplesForDashboard = await ProcessedDatasetItem.find({ _id: { $in: sampleIds } }).lean();
+  const sampleMapForDashboard = new Map(samplesForDashboard.map((sample: any) => [String(sample._id), sample]));
+
+  const completedMapByUser = new Map<string, Map<string, Set<string>>>();
+  allLabels.forEach((decision: any) => {
+    const userId = String(decision.createdBy);
+    const sampleKey = String(decision.sampleId);
+    const targetKey = buildTargetKey(
+      decision.targetScope === 'message' ? 'message' : 'sample',
+      Number.isInteger(Number(decision.messageIndex)) ? Number(decision.messageIndex) : null,
+      decision.messageRole === 'user' || decision.messageRole === 'assistant' ? decision.messageRole : null
+    );
+    if (!completedMapByUser.has(userId)) completedMapByUser.set(userId, new Map());
+    const userMap = completedMapByUser.get(userId)!;
+    if (!userMap.has(sampleKey)) userMap.set(sampleKey, new Set());
+    userMap.get(sampleKey)!.add(targetKey);
+  });
+
+  const userRows = assigneeIds.map((assigneeId) => {
+    const userAssignments = assignments.filter((row: any) => String(row.assigneeId) === assigneeId);
+    const userCompletedMap = completedMapByUser.get(assigneeId) || new Map();
+    
+    let requiredTargets = 0;
+    let completedTargets = 0;
+
+    userAssignments.forEach((assignment: any) => {
+      const sample = sampleMapForDashboard.get(String(assignment.sampleId));
+      if (!sample) return;
+
+      const required = buildRequiredTargets(sample);
+      const completedTargetsForSample = userCompletedMap.get(String(sample._id)) || new Set<string>();
+      required.forEach((target) => {
+        requiredTargets += 1;
+        if (completedTargetsForSample.has(target.key)) {
+          completedTargets += 1;
+        }
+      });
+    });
+
+    const progress = {
+      assignedSamples: userAssignments.length,
+      requiredMessages: requiredTargets,
+      completedMessages: completedTargets,
+    };
+
+    const submission = submissionMap.get(assigneeId) as any;
+    const assignedSamples = userAssignments.length;
+    const draftLabeledSamples = Number(submission?.labeledCount || 0);
+    const targetsPerSample = progress.assignedSamples > 0 && progress.requiredMessages > 0
+      ? progress.requiredMessages / progress.assignedSamples
+      : 1;
+    const draftCompletedTargets = Math.min(progress.requiredMessages, Math.round(draftLabeledSamples * targetsPerSample));
+    const finalCompletedTargets = Math.max(progress.completedMessages, draftCompletedTargets);
+    const completionPercent = progress.requiredMessages > 0
+      ? Math.round((finalCompletedTargets / progress.requiredMessages) * 100)
+      : (assignedSamples > 0 ? Math.round((draftLabeledSamples / assignedSamples) * 100) : 0);
+    const hourCount = activityRows.filter((row: any) => String(row.annotatorId) === assigneeId && row.activityType === 'assign').length;
+    
+    return {
+      user: {
+        id: assigneeId,
+        name: String((userMap.get(assigneeId) as any)?.name || ''),
+        email: String((userMap.get(assigneeId) as any)?.email || ''),
+      },
+      assignedSamples,
+      completedTargets: finalCompletedTargets,
+      totalTargets: progress.requiredMessages,
+      completionPercent,
+      labelsPerHour: hourCount,
+      latestActivityAt: latestActivityMap.get(assigneeId) || null,
+      reviewAvailable: String(submission?.status || '') === 'submitted'
+        || String(submission?.status || '') === 'approved',
+      submission: submission
+        ? {
+            status: ['submitted', 'approved'].includes(String(submission.status || 'draft')) ? 'submitted' : 'draft',
+            submittedAt: submission.submittedAt || null,
+            name: submission.name || null,
+            labeledCount: draftLabeledSamples,
+            humanScore: submission.humanScoreCount > 0
+              ? Number((submission.humanScoreTotal / submission.humanScoreCount).toFixed(1))
+              : null,
+          }
+        : null,
+    };
+  });
 
   const conflicts = await buildAssignmentConflictList(datasetVersionId);
   const adjudications = await DatasetAssignmentAdjudication.find({ datasetVersionId: versionOid }).select('status').lean();
@@ -1804,4 +2069,111 @@ export async function buildAssignmentDashboard(datasetVersionId: string) {
     conflicts: conflicts.filter((item) => item.status !== 'published'),
     refreshedAt: new Date().toISOString(),
   };
+}
+
+export async function autoResolveSampleIfConsensus(datasetVersionId: string | mongoose.Types.ObjectId, sampleId: string | mongoose.Types.ObjectId) {
+  const versionOid = new mongoose.Types.ObjectId(String(datasetVersionId));
+  const sampleOid = new mongoose.Types.ObjectId(String(sampleId));
+
+  const version = await DatasetVersion.findById(versionOid).lean();
+  if (!version) return;
+
+  const assignments = await DatasetSampleAssignment.find({
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
+    sampleId: sampleOid,
+    active: { $ne: false },
+  }).lean();
+
+  if (assignments.length === 0) return;
+
+  const totalAssigned = assignments.length;
+  const submittedAssignments = assignments.filter(
+    (a) => a.reviewStatus === 'submitted' || a.reviewStatus === 'approved'
+  );
+  const totalSubmitted = submittedAssignments.length;
+
+  // Only run consensus matching when all assigned staff have submitted their results.
+  if (totalSubmitted < totalAssigned) {
+    return;
+  }
+
+  // Do not auto-resolve if the task/sample has an urgent priority
+  const hasUrgentPriority = assignments.some((a) => a.priority === 'urgent');
+  if (hasUrgentPriority) {
+    return;
+  }
+
+  // Get the comparison of all annotator sets
+  const comparison = await buildAssignmentSampleComparison(String(datasetVersionId), String(sampleId));
+
+  for (const target of comparison.targets) {
+    if (!target.hasConflict) continue;
+
+    // Filter to only count active staff annotators
+    const staffAnnotators = target.annotators.filter((a) => !a.isCanonical && !a.isOwner);
+    if (staffAnnotators.length === 0) continue;
+
+    // Count occurrences of each unique label set
+    const labelSetCounts = new Map<string, { count: number; labels: string[] }>();
+    staffAnnotators.forEach((ann) => {
+      const key = [...ann.labels].sort().join(',');
+      if (!labelSetCounts.has(key)) {
+        labelSetCounts.set(key, { count: 0, labels: ann.labels });
+      }
+      labelSetCounts.get(key)!.count += 1;
+    });
+
+    let maxCount = 0;
+    let consensusLabels: string[] = [];
+    for (const { count, labels } of labelSetCounts.values()) {
+      if (count > maxCount) {
+        maxCount = count;
+        consensusLabels = labels;
+      }
+    }
+
+    // Check if consensus meets the 2/3 threshold: maxCount / totalAssigned >= 2 / 3
+    if (maxCount * 3 >= totalAssigned * 2) {
+      // Auto-resolve and publish
+      await resolveAssignmentAdjudication({
+        datasetVersionId: String(datasetVersionId),
+        sampleId: String(sampleId),
+        targetScope: target.targetScope,
+        messageIndex: target.messageIndex,
+        messageRole: target.messageRole,
+        finalLabels: consensusLabels,
+        note: 'Auto-resolved: 2/3 or more Staff gave identical results.',
+        resolvedBy: String(version.ownerId),
+      });
+
+      await publishAssignmentAdjudication({
+        datasetVersionId: String(datasetVersionId),
+        sampleId: String(sampleId),
+        targetScope: target.targetScope,
+        messageIndex: target.messageIndex,
+        messageRole: target.messageRole,
+        publishedBy: String(version.ownerId),
+      });
+
+      // Log the auto-resolution activity
+      const sampleIndexStr = comparison.sample?.sampleIndex !== undefined ? `#${comparison.sample.sampleIndex}` : '';
+      const scopeText = target.targetScope === 'message' && target.messageIndex !== undefined
+        ? ` (tin nhắn #${target.messageIndex + 1} - ${target.messageRole === 'user' ? 'Người dùng' : 'Trợ lý'})`
+        : '';
+      
+      const user = await User.findById(version.ownerId).select('name email').lean();
+      await CheckerActivityLog.create({
+        datasetVersionId: versionOid,
+        sampleId: sampleOid,
+        userId: version.ownerId,
+        userName: user?.name || 'System',
+        userEmail: user?.email || 'system@resolve.com',
+        action: 'publish',
+        targetScope: target.targetScope || null,
+        messageIndex: target.messageIndex || null,
+        messageRole: target.messageRole || null,
+        details: `Tự động chốt nhãn (Auto-Resolve 2/3): [${consensusLabels.join(', ')}] cho mẫu ${sampleIndexStr}${scopeText}`,
+      });
+    }
+  }
 }

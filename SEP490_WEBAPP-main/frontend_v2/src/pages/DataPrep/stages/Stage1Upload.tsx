@@ -49,6 +49,19 @@ export const Stage1Upload = () => {
   return (
 (
     <>
+      <div className="dataprep-field-group" style={{ marginBottom: 16 }}>
+        <label htmlFor="dp-project-select">Project <span style={{ color: '#ef4444' }}>*</span></label>
+        <select id="dp-project-select" className="dataprep-input" value={selectedProjectId} onChange={(e) => handleSelectProject(e.target.value)}>
+          <option value="">— Chọn Project có sẵn —</option>
+          {(projects || []).map((p: any) => <option key={p._id} value={p._id}>{p.name}</option>)}
+        </select>
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <input className="dataprep-input" placeholder="Hoặc nhập tên Project mới..." value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleCreateProject(); }} style={{ flex: 1 }} />
+          <button type="button" className="upload-select-btn" onClick={handleCreateProject} disabled={creatingProject || !newProjectName.trim()}><Plus size={16} /> {creatingProject ? 'Đang tạo...' : 'Tạo Project'}</button>
+        </div>
+        {projectError && <div style={{ color: '#ef4444', fontSize: 13, marginTop: 6 }}><AlertCircle size={14} /> {projectError}</div>}
+      </div>
+
       {/* File upload section */}
       <input
         ref={fileInputRef}
@@ -60,11 +73,12 @@ export const Stage1Upload = () => {
 
       {!file ? (
         /* ── Upload zone (no file selected) ── */
-        <div className="dataprep-upload-zone" onClick={() => fileInputRef.current?.click()}>
+        <div className="dataprep-upload-zone" onClick={() => selectedProjectId && fileInputRef.current?.click()} style={{ opacity: selectedProjectId ? 1 : 0.55, cursor: selectedProjectId ? 'pointer' : 'not-allowed' }}>
           <Upload size={36} className="upload-icon" />
           <div className="upload-title">Drop your file here, or click to browse</div>
           <div className="upload-sub">Supports .jsonl, .json, .csv files up to 100MB</div>
-          <button className="upload-select-btn" type="button">Select File</button>
+          <button className="upload-select-btn" type="button" disabled={!selectedProjectId}>Select File</button>
+          {!selectedProjectId && <div className="upload-sub" style={{ color: '#f59e0b' }}>Hãy chọn hoặc tạo Project trước khi tải file.</div>}
         </div>
       ) : (
         /* ── File selected: show full Stage 1 UI ── */
@@ -97,8 +111,8 @@ export const Stage1Upload = () => {
             </button>
           </div>
 
-          {/* Project (bắt buộc) — mọi dataset & task sẽ nằm trong Project này */}
-          <div className="dataprep-field-group">
+          {/* Project is selected before upload; keep the old detail block hidden to avoid duplicate controls. */}
+          <div className="dataprep-field-group" style={{ display: 'none' }}>
             <label htmlFor="dp-project-select">
               Project <span style={{ color: '#ef4444' }}>*</span>
             </label>
@@ -192,7 +206,7 @@ export const Stage1Upload = () => {
           </div>
 
           {/* Convert Button */}
-          <button className="dataprep-convert-btn" onClick={handleConvert}>
+          <button className="dataprep-convert-btn" onClick={handleConvert} disabled={!selectedProjectId}>
             <Scissors size={20} />
             Convert Dataset
           </button>

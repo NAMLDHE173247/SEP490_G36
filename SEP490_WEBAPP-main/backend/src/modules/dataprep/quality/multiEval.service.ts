@@ -4,11 +4,12 @@ import { MultiModelEvaluationResult, ILlmScorecard } from '../../../models/Multi
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
 import { DatasetVersion } from '../../../models/DatasetVersion';
-import { GeminiProvider } from '../../../services/providers/GeminiProvider';
-import { OpenAIProvider } from '../../../services/providers/OpenAIProvider';
-import { DeepseekProvider } from '../../../services/providers/DeepseekProvider';
 import { MULTI_MODEL_JUDGE_SYSTEM_PROMPT, REFINEMENT_SYSTEM_PROMPT } from '../../../constants/prompts';
 import { QualityService } from './quality.service';
+import { apiKeyService } from '../../../services/apiKeyService';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 
 export class MultiEvalService {
   private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -25,22 +26,17 @@ export class MultiEvalService {
     }
   }
 
-  private getProvider(modelName: string) {
+  private async getProvider(modelName: string, userId: string | null | undefined) {
     const name = String(modelName).toLowerCase();
-    if (name === 'openai') {
-      return new OpenAIProvider();
-    }
-    if (name === 'deepseek') {
-      return new DeepseekProvider();
-    }
-    return new GeminiProvider();
+    return apiKeyService.createProvider(userId, name, true);
   }
 
   async runJob(
     versionId: string,
     startedBy: string,
-    models: ('gemini' | 'openai' | 'deepseek')[],
-    contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2'
+    models: ('gemini' | 'openai' | 'deepseek' | 'openrouter' | 'groq')[],
+    contextWindow: 'No Context' | 'n - 1' | 'n - 2 to n' | 'n - 1 to n + 1' | 'n - 2 to n + 2',
+    conflictThreshold = 2
   ) {
     if (!mongoose.Types.ObjectId.isValid(versionId)) {
       throw Object.assign(new Error('Dataset version ID không hợp lệ.'), { statusCode: 400 });
@@ -74,7 +70,7 @@ export class MultiEvalService {
     });
 
     // Start background execution
-    this.executeJobInBackground(job.id, versionId, models, contextWindow);
+    this.executeJobInBackground(job.id, versionId, models, contextWindow, conflictThreshold);
 
     return job;
   }
@@ -83,7 +79,8 @@ export class MultiEvalService {
     jobId: string,
     versionId: string,
     models: string[],
-    contextWindowSetting: string
+    contextWindowSetting: string,
+    conflictThreshold: number
   ) {
     try {
       const job = await MultiModelEvaluationJob.findById(jobId);
@@ -140,6 +137,49 @@ export class MultiEvalService {
         // Mark sample as processing in job progress
         job.progress.processing = 1;
         await job.save();
+
+        // Check if sample has severe error flag from Stage 3
+        const qualityItem = qualityResult.items.find((i: any) => String(i._id) === String(sample._id));
+        const isSevereError = qualityItem && qualityItem.bucket === 'Reject' && 
+          String(qualityItem.conflictReason || '').startsWith('Bị gắn cờ lỗi nghiêm trọng từ Stage 3:');
+
+        if (isSevereError) {
+          const modelScores = new Map<string, any>();
+          models.forEach((modelName) => {
+            modelScores.set(modelName, {
+              status: 'success',
+              socratic: null,
+              encouragement: null,
+              factuality: null,
+              languageQuality: null,
+              consistency: null,
+              completeness: null,
+              readiness: null,
+              overall: 0,
+              reason: 'Tự động loại bỏ (Reject) do mẫu bị gắn cờ lỗi nghiêm trọng từ Stage 3 bởi con người.',
+              recommendation: 'Reject',
+            });
+          });
+
+          await MultiModelEvaluationResult.create({
+            jobId,
+            datasetVersionId: versionId,
+            sampleId: sample._id,
+            modelScores,
+            averageOverall: 0,
+            humanScore: 0,
+            finalRecommendation: 'Reject',
+            hasConflict: false,
+            targetIdx: 0,
+            contextSize: 0,
+            autoRefined: false,
+          });
+
+          evaluatedCount += 1;
+          job.progress.evaluated = evaluatedCount + failedCount;
+          await job.save();
+          continue; // Skip AI model calls entirely
+        }
 
         // 1. Identify which message index to evaluate.
         const rewriteHistories = await ConversationRewriteHistory.find({
@@ -213,7 +253,7 @@ export class MultiEvalService {
           const modelNames = models;
           const evaluationPromises = modelNames.map(async (modelName) => {
             try {
-              const provider = this.getProvider(modelName);
+              const provider = await this.getProvider(modelName, job.startedBy?.toString());
               const inputData = {
                 contextWindow,
                 originalMessageIndex: targetIdx,
@@ -242,6 +282,7 @@ export class MultiEvalService {
               }
 
               const scorecard: ILlmScorecard = {
+                status: 'success',
                 socratic: parsed.socratic !== undefined ? Number(parsed.socratic) : null,
                 encouragement: parsed.encouragement !== undefined ? Number(parsed.encouragement) : null,
                 factuality: parsed.factuality !== undefined ? Number(parsed.factuality) : null,
@@ -270,15 +311,28 @@ export class MultiEvalService {
 
                 scorecard.overall = scores.length > 0
                   ? Math.round((scores.reduce((s, c) => s + c, 0) / scores.length) * 10) / 10
-                  : 5;
+                  : 0;
               }
+
+              // Apply Veto Rule: Overall score cannot exceed Factuality score
+              if (typeof scorecard.factuality === 'number' && scorecard.overall > scorecard.factuality) {
+                scorecard.overall = scorecard.factuality;
+              }
+
+
+              if (!scorecard.overall) throw new Error('Model trả về kết quả không hợp lệ hoặc thiếu điểm đánh giá.');
 
               return { modelName, scorecard };
             } catch (err: any) {
               console.error(`[MultiEval] Model ${modelName} call failed:`, err.message);
+              const detail = String(err?.message || 'Unknown API error');
+              const quotaExceeded = detail.includes('429') || detail.toLowerCase().includes('quota');
               return {
                 modelName,
                 scorecard: {
+                  status: 'unavailable' as const,
+                  errorCode: quotaExceeded ? 'QUOTA_EXCEEDED' : 'MODEL_UNAVAILABLE',
+                  errorDetail: detail.slice(0, 4000),
                   socratic: null,
                   encouragement: null,
                   factuality: null,
@@ -286,8 +340,8 @@ export class MultiEvalService {
                   consistency: null,
                   completeness: null,
                   readiness: null,
-                  overall: 5,
-                  reason: `Lỗi API khi gọi model ${modelName}: ${err.message}`,
+                  overall: 0,
+                  reason: quotaExceeded ? 'Model tạm không khả dụng do hết quota API.' : 'Không thể nhận kết quả từ model.',
                   recommendation: 'Need Rewrite' as const,
                 }
               };
@@ -301,7 +355,7 @@ export class MultiEvalService {
           });
 
           // 4. Calculate overall statistics, conflict status & auto-select the best model
-          const scores = Object.values(modelScores);
+          const scores = Object.values(modelScores).filter(score => score.status !== 'unavailable');
           const averageOverall = scores.length > 0
             ? Math.round((scores.reduce((sum, s) => sum + s.overall, 0) / scores.length) * 10) / 10
             : 0;
@@ -312,6 +366,7 @@ export class MultiEvalService {
           let maxReliability = -Infinity;
 
           for (const [modelName, scorecard] of Object.entries(modelScores)) {
+            if (scorecard.status === 'unavailable') continue;
             const metricsCount = [
               scorecard.socratic,
               scorecard.encouragement,
@@ -337,13 +392,14 @@ export class MultiEvalService {
 
           // Detect Conflict
           const humanScore = humanScoresMap.get(String(sample._id)) ?? null;
-          const hasConflict = this.detectConflict(modelScores, humanScore);
+          const hasStaffMismatch = failedTargetMap.has(String(sample._id)) || failedTargetMap.has(String((sample as any).sampleId));
+          const hasConflict = this.detectConflict(modelScores, humanScore, conflictThreshold, hasStaffMismatch);
           if (hasConflict) {
             conflictCount += 1;
           }
 
           // Resolve Final Recommendation proposal
-          let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = 'Pass';
+          let finalRecommendation: 'Pass' | 'Need Rewrite' | 'Reject' = scores.length ? 'Pass' : 'Need Rewrite';
           const recs = scores.map((s) => s.recommendation);
           if (recs.includes('Reject')) {
             finalRecommendation = 'Reject';
@@ -356,7 +412,7 @@ export class MultiEvalService {
           // Auto Rewrite Logic
           if (finalRecommendation === 'Need Rewrite' && bestModelSelected && bestModelScorecard?.reason) {
             try {
-              const refineProvider = this.getProvider(bestModelSelected);
+              const refineProvider = await this.getProvider(bestModelSelected, job.startedBy?.toString());
               const assistantString = contextWindow.map((m: any) => `[${m.role.toUpperCase()}${m.isTarget ? ' (TARGET)' : ''}]: ${m.content}`).join('\n\n');
               const payload = [{
                 index: 0,
@@ -446,9 +502,12 @@ export class MultiEvalService {
     }
   }
 
-  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null): boolean {
-    const models = Object.keys(scorecards);
-    if (models.length <= 1 && humanScore === null) return false;
+  private detectConflict(scorecards: Record<string, ILlmScorecard>, humanScore: number | null = null, conflictThreshold = 2, hasStaffMismatch = false): boolean {
+    const models = Object.keys(scorecards).filter(model => scorecards[model].status !== 'unavailable');
+    if (models.length <= 1 && humanScore === null && !hasStaffMismatch) return false;
+
+    if (hasStaffMismatch) return true;
+
 
     let hasPass = false;
     let hasReject = false;
@@ -461,6 +520,10 @@ export class MultiEvalService {
       if (typeof card.overall === 'number' && !isNaN(card.overall)) {
         overallScores.push(card.overall);
       }
+      // Layer 1 - Factuality < 4 automatically flags conflict
+      if (typeof card.factuality === 'number' && card.factuality < 4) {
+        return true;
+      }
     }
 
     // Conflict 1: Disagreement between Pass and Reject
@@ -472,7 +535,7 @@ export class MultiEvalService {
     if (overallScores.length > 1) {
       const maxScore = Math.max(...overallScores);
       const minScore = Math.min(...overallScores);
-      if (maxScore - minScore > 1.5) {
+      if (maxScore - minScore >= conflictThreshold) {
         return true;
       }
     }
@@ -480,7 +543,7 @@ export class MultiEvalService {
     // Conflict 3: Difference between Avg AI and Human score >= 2.0
     if (overallScores.length > 0 && humanScore !== null && humanScore >= 0) {
       const avgAI = overallScores.reduce((a, b) => a + b, 0) / overallScores.length;
-      if (Math.abs(avgAI - humanScore) >= 2.0) {
+      if (Math.abs(avgAI - humanScore) >= conflictThreshold) {
         return true;
       }
     }
@@ -557,11 +620,42 @@ export class MultiEvalService {
     const historyMap = new Map();
     rewriteHistories.forEach(h => historyMap.set(String(h.sampleId), h));
 
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
+
+    // Fetch canonical docs to check if sample has been chốt/published
+    const canonicalDocs = await DatasetCanonicalLabel.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId)
+    }).select('sampleId').lean();
+    const canonicalSampleIds = new Set(canonicalDocs.map(c => String(c.sampleId)));
+
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: new mongoose.Types.ObjectId(versionId),
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
+
     // Map and filter by subject if required
     let mappedResults = results.map((r: any) => {
       const sample = r.sampleId;
       const qualityItem = qualityBySampleId.get(String(sample?._id)) || qualityBySampleId.get(String(sample?.sampleId));
-      const qualityHasHumanScore = qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
+      
+      const assigneeCount = sampleAssigneeCount.get(String(sample?._id)) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const hasCanonical = canonicalSampleIds.has(String(sample?._id));
+      const pendingAdjudication = isOverlapped ? !hasCanonical : pendingAdjudicationSet.has(String(sample?._id));
+
+      const qualityHasHumanScore = !pendingAdjudication && qualityItem && qualityItem.bucket !== 'Incomplete' && Number(qualityItem.scorableTurns || 0) > 0;
       const humanScore = qualityHasHumanScore && Number.isFinite(Number(qualityItem?.humanScore))
         ? Number(qualityItem.humanScore)
         : qualityHasHumanScore && Number.isFinite(Number((r as any).humanScore))
@@ -605,6 +699,7 @@ export class MultiEvalService {
         rewriteHistory: historyMap.get(String(sample?._id)) || null,
         turnPairs: qualityItem?.turnPairs || [],
         staffTargets: qualityItem?.staffTargets || [],
+        pendingAdjudication,
       };
     });
 

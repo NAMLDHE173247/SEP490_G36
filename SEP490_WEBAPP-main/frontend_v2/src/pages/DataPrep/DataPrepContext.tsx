@@ -3,17 +3,17 @@ import { apiService } from '../../services/api';
 
 // --- Constants ---
 export const STAGES = [
-  { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
-  { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-12' },
-  { num: 5, label: 'Finish', sub: 'Step 13-15' },
+  { num: 1, label: 'Tải lên & Chuyển đổi', sub: 'Bước 1' },
+  { num: 2, label: 'Tiền xử lý', sub: 'Bước 2-4' },
+  { num: 3, label: 'Gán nhãn', sub: 'Bước 5-7' },
+  { num: 4, label: 'Xem xét & Phân loại', sub: 'Bước 8-11' },
+  { num: 5, label: 'Hoàn tất', sub: 'Bước 12-14' },
 ];
 
 export const SUB_STEPS_STAGE2 = [
-  { num: 1, label: 'Clean' },
-  { num: 2, label: 'Find K' },
-  { num: 3, label: 'K-means Cluster' },
+  { num: 2, label: 'Clean' },
+  { num: 3, label: 'Find K' },
+  { num: 4, label: 'K-means Cluster' },
 ];
 
 export const SAMPLE_RAW_DATA = `[
@@ -175,15 +175,15 @@ export const SUB_STEPS_STAGE3 = [
 
 export const SUB_STEPS_STAGE4 = [
   { num: 8, label: 'Classification' },
-  { num: 9, label: 'Quality Management' },
-  { num: 10, label: 'Distribution' },
-  { num: 11, label: 'Rewrite' },
+  { num: 9, label: 'Quality Review' },
+  { num: 10, label: 'Rewrite Assignment' },
+  { num: 11, label: 'Assignment Review' },
 ];
 
 export const SUB_STEPS_STAGE6 = [
-  { num: 13, label: 'System Prompt' },
-  { num: 14, label: 'Split Guard' },
-  { num: 15, label: 'Export' },
+  { num: 12, label: 'System Prompt' },
+  { num: 13, label: 'Split Guard' },
+  { num: 14, label: 'Export' },
 ];
 
 export const PROMPT_VERSIONS = [
@@ -220,8 +220,8 @@ export const PREVIEW_REMOVED = [
 const DataPrepContext = createContext<any>(null);
 
 const resolveStageFromResumeStep = (step: number) => {
-  if (step >= 13) return 5;
-  if (step >= 7) return 4;
+  if (step >= 12) return 5;
+  if (step >= 8) return 4;
   if (step >= 5) return 3;
   if (step >= 2) return 2;
   return 1;
@@ -276,15 +276,10 @@ const buildConversationRowsFromVersionItems = (items: any[]) => {
 };
 
 export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [currentStage, setCurrentStage] = useState(() => {
-    const saved = localStorage.getItem('dp_currentStage');
-    const parsed = saved ? parseInt(saved, 10) : 1;
-    return parsed > 5 ? 5 : parsed;
-  });
-  const [currentSubStep, setCurrentSubStep] = useState(() => {
-    const saved = localStorage.getItem('dp_currentSubStep');
-    return saved ? parseInt(saved, 10) : 1;
-  });
+  // Always start at Stage 1 — session resume is handled by the mount useEffect
+  // which calls openWorkflowVersion() via the API with full data hydration.
+  const [currentStage, setCurrentStage] = useState(1);
+  const [currentSubStep, setCurrentSubStep] = useState(2);
 
   React.useEffect(() => {
     localStorage.setItem('dp_currentStage', currentStage.toString());
@@ -324,6 +319,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [cleaningDetailConv, setCleaningDetailConv] = useState<any>(null);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewItemsPerPage, setPreviewItemsPerPage] = useState(5);
 
@@ -558,19 +554,24 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const getLabelBadgeStyle = (labelName: string) => {
     const name = labelName.toUpperCase();
+    // Tích cực / xác nhận đúng → xanh lá
+    if (name === 'ANS' || name === 'CONF' || name === 'PR') {
+      return { backgroundColor: '#16a34a', color: '#ffffff' };
+    }
+    // Sai / cần sửa → đỏ
+    if (name === 'WRONG' || name === 'FIX') {
+      return { backgroundColor: '#dc2626', color: '#ffffff' };
+    }
+    // Dẫn dắt Socratic → xám đậm
     if (name === 'SCAF') {
       return { backgroundColor: '#475569', color: '#ffffff' };
     }
+    // Gợi ý → cam
     if (name === 'HINT') {
       return { backgroundColor: '#f97316', color: '#ffffff' };
     }
-    if (name === 'PR') {
-      return { backgroundColor: '#10b981', color: '#ffffff' };
-    }
-    if (name === 'OK') {
-      return { backgroundColor: '#16a34a', color: '#ffffff' };
-    }
-    if (name === 'THEO') {
+    // Lý thuyết / khái niệm → tím
+    if (name === 'THEO' || name === 'CLR') {
       return { backgroundColor: '#7c3aed', color: '#ffffff' };
     }
     return { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
@@ -628,7 +629,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 4 state */
   const [currentSubStep4, setCurrentSubStep4] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep4');
-    return saved ? parseInt(saved, 10) : 7;
+    const value = saved ? parseInt(saved, 10) : 8;
+    return value < 8 ? 8 : value;
   });
 
   React.useEffect(() => {
@@ -640,7 +642,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: false });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -663,7 +665,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   /* Stage 6 state */
   const [currentSubStep6, setCurrentSubStep6] = useState(() => {
     const saved = localStorage.getItem('dp_currentSubStep6');
-    return saved ? parseInt(saved, 10) : 13;
+    const value = saved ? parseInt(saved, 10) : 12;
+    return Math.max(12, Math.min(14, value));
   });
 
   React.useEffect(() => {
@@ -707,19 +710,37 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       setProjectName(version?.projectName || 'Dataset');
       setConversationsList(rows);
       setStage3Convs(rows);
+      const savedCleanStats = version?.cleanStats;
       setConversionStats({
         total: rows.length,
         converted: rows.length,
         datasetVersionId: versionId,
+        stats: savedCleanStats
+          ? {
+              totalConversations: rows.length,
+              cleaning: {
+                originalCount: savedCleanStats.originalCount,
+                finalCount: savedCleanStats.finalCount,
+                removedBoilerplate: savedCleanStats.breakdown?.removedBoilerplate || 0,
+                removedTooShort: savedCleanStats.breakdown?.removedTooShort || 0,
+                removedTooLong: savedCleanStats.breakdown?.removedTooLong || 0,
+                removedUnclosedThink: savedCleanStats.breakdown?.removedUnclosedThink || 0,
+                removedDuplicates: savedCleanStats.breakdown?.removedDuplicates || 0,
+              },
+            }
+          : undefined,
       });
+      if (savedCleanStats) {
+        setCleaningApplied(true);
+      }
 
       const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
       const stage = resolveStageFromResumeStep(resumeStep);
       setCurrentStage(stage);
-      if (stage === 2) setCurrentSubStep(Math.max(1, Math.min(3, resumeStep)));
-      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(6, resumeStep)));
-      if (stage === 4) setCurrentSubStep4(Math.max(7, Math.min(12, resumeStep)));
-      if (stage === 5) setCurrentSubStep6(Math.max(13, Math.min(14, resumeStep)));
+      if (stage === 2) setCurrentSubStep(Math.max(2, Math.min(4, resumeStep)));
+      if (stage === 3) setCurrentSubStep3(Math.max(5, Math.min(7, resumeStep)));
+      if (stage === 4) setCurrentSubStep4(Math.max(8, Math.min(11, resumeStep)));
+      if (stage === 5) setCurrentSubStep6(Math.max(12, Math.min(14, resumeStep)));
     } catch (error) {
       console.error('Failed to open workflow version', error);
     } finally {
@@ -736,10 +757,10 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     localStorage.removeItem('dp_currentSubStep6');
     setActiveWorkflowVersion(null);
     setCurrentStage(1);
-    setCurrentSubStep(1);
+    setCurrentSubStep(2);
     setCurrentSubStep3(5);
-    setCurrentSubStep4(7);
-    setCurrentSubStep6(13);
+    setCurrentSubStep4(8);
+    setCurrentSubStep6(12);
     setFile(null);
     setConversationsList([]);
     setStage3Convs([]);
@@ -755,10 +776,10 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
       setActiveWorkflowVersion(null);
       setCurrentStage(1);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
       setCurrentSubStep3(5);
-      setCurrentSubStep4(7);
-      setCurrentSubStep6(13);
+      setCurrentSubStep4(8);
+      setCurrentSubStep6(12);
     });
   }, [loadWorkflowVersions, openWorkflowVersion]);
 
@@ -786,6 +807,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const handleFileUpload = async (e: any) => {
     const uploaded = e.target.files?.[0];
     if (uploaded) {
+      if (!selectedProjectId) {
+        alert('Bạn phải chọn hoặc tạo một Project trước khi tải file.');
+        e.target.value = '';
+        return;
+      }
       localStorage.removeItem('current_version_id');
       setActiveWorkflowVersion(null);
       try {
@@ -800,7 +826,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded);
+        const res = await apiService.uploadFile(uploaded, selectedProjectId);
 
         setFile({
           fileId: res.fileId,
@@ -890,11 +916,13 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         const raw = record.messages;
         for (let i = 0; i < raw.length; i++) {
           if (raw[i].role === 'user') {
-            const nextAssistant = raw.slice(i + 1).find((m: any) => m.role === 'assistant');
+            const nextAssistant = raw[i + 1]?.role === 'assistant' ? raw[i + 1] : undefined;
             messages.push({
               user: raw[i].content || '',
               assistant: nextAssistant ? nextAssistant.content || '' : ''
             });
+          } else if (raw[i].role === 'assistant' && raw[i - 1]?.role !== 'user') {
+            messages.push({ user: '', assistant: raw[i].content || '' });
           }
         }
       } else if (record.conversations && Array.isArray(record.conversations)) {
@@ -931,7 +959,11 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       return {
         id,
-        messages
+        messages,
+        roleMessages: Array.isArray(record.messages)
+          ? record.messages.map((m: any) => ({ role: m.role, content: m.content || '' }))
+          : undefined,
+        messageCount: Array.isArray(record.messages) ? record.messages.length : messages.length * 2
       };
     });
   };
@@ -945,8 +977,10 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
-        enableCleaning: cleaningEnabled,
-        removeThinkTags: removeThinkTags
+        enableCleaning: false,
+        // Always false for preview: we need to see think tags in conv detail
+        // so users can verify what needs cleaning. Think tags are removed only at export.
+        removeThinkTags: false
       });
 
       const mapped = mapConvertedToConversations(res.data);
@@ -967,7 +1001,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       }));
 
       setCurrentStage(2);
-      setCurrentSubStep(1);
+      setCurrentSubStep(2);
     } catch (err: any) {
       console.error('Conversion failed:', err);
       alert(err.response?.data?.error || err.message || 'Chuyển đổi dữ liệu thất bại');
@@ -1002,7 +1036,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const originalRes = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags,
+        // Always false for preview: preserve think tags so before/after comparison shows them
+        removeThinkTags: false,
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
@@ -1023,6 +1058,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (cleanedItem) {
           const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
           const isFixed = assistantMsgBefore !== assistantMsgAfter;
+          const isContentWiped = isFixed && assistantMsgAfter === '';
           cleanedItem.status = isFixed ? 'fixed' : 'clean';
 
           beforePreview.push({
@@ -1031,14 +1067,20 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
 
           afterPreview.push({
             id: item.id,
-            status: isFixed ? 'fixed' : 'clean',
-            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            status: isContentWiped ? 'wiped' : isFixed ? 'fixed' : 'clean',
+            action: isContentWiped
+              ? 'Đã xóa toàn bộ thẻ think (nội dung rỗng)'
+              : isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
             user: userMsg,
             assistant: assistantMsgAfter,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
         } else {
           beforePreview.push({
@@ -1047,6 +1089,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: 'Bị lọc bỏ',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
 
           removedPreview.push({
@@ -1054,6 +1098,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
         }
       });
@@ -1111,6 +1157,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       setFindKResults({ ...res, recommendedK });
       setTargetK(recommendedK.toString());
+      // The clustering step must use the exact DBSCAN parameters evaluated here.
+      setClusterEps(eps);
+      setClusterMinSamples(safeMinSamples.toString());
     } catch (err: any) {
       console.error('Visualize K failed:', err);
       alert(err.response?.data?.error || err.message || 'Lỗi khi chạy Visualize (GPU)');
@@ -1143,9 +1192,14 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       const safeClusterMinSamples = Math.min(parseInt(clusterMinSamples, 10), Math.max(2, conversationsList.length));
       if (parseInt(clusterMinSamples, 10) !== safeClusterMinSamples) { setClusterMinSamples(safeClusterMinSamples.toString()); }
+      const requestedK = parseInt(targetK, 10) || 2;
+      // Keep the value selected by Find K. Only cap it at the number of samples,
+      // which is the actual mathematical constraint for K-means.
+      const safeK = Math.max(1, Math.min(requestedK, conversationsList.length));
+      if (requestedK !== safeK) setTargetK(String(safeK));
       const res = await apiService.clusterData(
         formattedData,
-        parseInt(targetK, 10),
+        safeK,
         parseFloat(clusterEps),
         safeClusterMinSamples
       );
@@ -1185,7 +1239,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             groupColor: groupId === -1 ? '#dc2626' : '#6366f1',
             groupBg: groupId === -1 ? '#fef2f2' : '#eef2ff',
             subGroup: c.subGroup || 'A',
-            confidence: Math.floor(Math.random() * 10 + 90) // Mock confidence
+            confidence: typeof groupStat?.avgSimilarity === 'number' ? Math.round(groupStat.avgSimilarity * 100) : null,
+            similarity: groupStat?.avgSimilarity ?? null
           };
         });
         setStage3Convs(updatedConvs);
@@ -1255,7 +1310,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
           ...res,
           clusterStats: updatedStats
         });
-        alert(`Đã loại bỏ ${res.removedCount} hội thoại trùng lặp. Giữ lại ${res.keptCount} hội thoại.`);
+        alert(`Đã loại bỏ ${(res as any).removedCount} hội thoại trùng lặp. Giữ lại ${(res as any).keptCount} hội thoại.`);
       }
     } catch (err: any) {
       console.error('Deduplicate failed:', err);
@@ -1364,6 +1419,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       cleaningPreviewBefore, setCleaningPreviewBefore,
       cleaningPreviewAfter, setCleaningPreviewAfter,
       cleaningPreviewRemoved, setCleaningPreviewRemoved,
+      cleaningDetailConv, setCleaningDetailConv,
       previewPage, setPreviewPage,
       previewItemsPerPage, setPreviewItemsPerPage,
       removeErrorKeywords, setRemoveErrorKeywords,

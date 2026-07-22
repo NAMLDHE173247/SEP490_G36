@@ -74,6 +74,70 @@ export class DataPrepVersionController {
     return legacyEvaluationController.getDatasetVersionDetail(req, res);
   }
 
+  /**
+   * GET /:id/clean-log
+   * Trả về toàn bộ lịch sử các version có gắn cleanStats (bước Clean),
+   * bắt đầu từ versionId gốc. Dùng để tra cứu lại thống kê số lượng / lý do
+   * bị loại sau khi reload.
+   *
+   * Lưu ý: không lọc theo operationType === 'clean' vì cleanStats hiện được
+   * đính kèm ngay trên version 'labeling_base' được tạo ở Stage 3 (version đó
+   * phải giữ operationType='labeling_base' để resolveCheckpointResumeStep
+   * resume đúng bước 5) — nên điều kiện đúng là "có cleanStats", bất kể
+   * operationType là gì.
+   */
+  async getCleanLog(req: Request, res: Response): Promise<void> {
+    try {
+      const ownerId = getAuthUserId(req);
+      if (!ownerId) {
+        res.status(401).json({ success: false, error: 'Unauthorized' });
+        return;
+      }
+
+      const { id } = req.params;
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ success: false, error: 'Invalid version id' });
+        return;
+      }
+
+      // Lấy version hiện tại để xác nhận quyền truy cập
+      const version = await DatasetVersion.findOne({
+        _id: id,
+        $or: [{ ownerId }, { isPublic: true }, { sharedWithUserIds: ownerId }],
+      }).lean();
+
+      if (!version) {
+        res.status(404).json({ success: false, error: 'Version not found' });
+        return;
+      }
+
+      // Tìm tất cả version trong cùng project có gắn cleanStats (xem ghi chú ở trên)
+      const cleanVersions = await DatasetVersion.find({
+        projectId: version.projectId,
+        cleanStats: { $exists: true, $ne: null },
+        $or: [{ ownerId }, { isPublic: true }, { sharedWithUserIds: ownerId }],
+      })
+        .sort({ createdAt: 1 })
+        .select('_id versionName versionNo operationParams cleanStats totalSamples createdAt parentVersionId')
+        .lean();
+
+      const log = cleanVersions.map((v) => ({
+        versionId:      String(v._id),
+        versionName:    v.versionName,
+        versionNo:      v.versionNo,
+        parentVersionId: v.parentVersionId ? String(v.parentVersionId) : null,
+        totalSamples:   v.totalSamples,
+        cleanStats:     (v as any).cleanStats ?? null,
+        operationParams: v.operationParams ?? null,
+        cleanedAt:      (v as any).cleanStats?.cleanedAt ?? v.createdAt,
+      }));
+
+      res.status(200).json({ success: true, data: log });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+
   async deleteVersion(req: Request, res: Response): Promise<void> {
     try {
       const ownerId = getAuthUserId(req);
@@ -143,8 +207,16 @@ export class DataPrepVersionController {
     return legacyEvaluationController.publishDatasetVersionAssignmentAdjudication(req, res);
   }
 
+  async getCheckerActivityLogs(req: Request, res: Response): Promise<void> {
+    return legacyEvaluationController.getCheckerActivityLogs(req, res);
+  }
+
   async autoPublishAssignmentAdjudications(req: Request, res: Response): Promise<void> {
     return legacyEvaluationController.autoPublishDatasetVersionAssignmentAdjudications(req, res);
+  }
+
+  async getAiAdjudicationAdvice(req: Request, res: Response): Promise<void> {
+    return legacyEvaluationController.getAiAdjudicationAdvice(req, res);
   }
 
   async assignRange(req: Request, res: Response): Promise<void> {
@@ -196,7 +268,28 @@ export class DataPrepVersionController {
     try {
       const { id } = req.params;
       const items = await ProcessedDatasetItem.find({ datasetVersionId: id }).sort({ sampleIndex: 1 });
-      const data = items.map(item => (item as any).processedData || (item as any).originalData || item.data);
+      const data = items.map(item => {
+        let payload = (item as any).processedData || (item as any).originalData || item.data;
+        if (payload) {
+          try {
+            payload = JSON.parse(JSON.stringify(payload));
+            if (Array.isArray(payload.messages)) {
+              payload.messages = payload.messages.map((msg: any) => {
+                if (msg.role === 'assistant' && msg.action && typeof msg.action === 'string') {
+                  // Inject Assistant Action Control Code
+                  msg.content = `[${msg.action.toUpperCase()}] ${msg.content}`;
+                }
+                if (msg.role === 'user' && msg.intent && typeof msg.intent === 'string') {
+                  // Inject User Intent Control Code
+                  msg.content = `[${msg.intent.toUpperCase()}] ${msg.content}`;
+                }
+                return msg;
+              });
+            }
+          } catch(e) {}
+        }
+        return payload;
+      });
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename=version_${id}_labeled.json`);
       res.send(JSON.stringify(data, null, 2));
@@ -219,17 +312,25 @@ export class DataPrepVersionController {
         }
       }
 
+      const targetVersionOid = mongoose.Types.ObjectId.isValid(id)
+        ? new mongoose.Types.ObjectId(id)
+        : null;
+
+      const queryVersionId = targetVersionOid
+        ? { $in: [id, targetVersionOid] }
+        : id;
+
       // Lấy tất cả sampleIds thuộc version này để xóa LabelAssignment
-      const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: id })
+      const sampleIds = await ProcessedDatasetItem.find({ datasetVersionId: targetVersionOid || id })
         .select('_id').lean().then(items => items.map(i => i._id));
 
       // Xóa toàn bộ dữ liệu assignment + labeling liên quan
       const [subDel, saDel, actDel, adjDel, canDel, laDel] = await Promise.all([
-        DatasetAssignmentSubmission.deleteMany({ datasetVersionId: id }),
-        DatasetSampleAssignment.deleteMany({ datasetVersionId: id }),
-        DatasetAssignmentActivity.deleteMany({ datasetVersionId: id }),
-        DatasetAssignmentAdjudication.deleteMany({ datasetVersionId: id }),
-        DatasetCanonicalLabel.deleteMany({ datasetVersionId: id }),
+        DatasetAssignmentSubmission.deleteMany({ datasetVersionId: queryVersionId }),
+        DatasetSampleAssignment.deleteMany({ datasetVersionId: queryVersionId }),
+        DatasetAssignmentActivity.deleteMany({ datasetVersionId: targetVersionOid || id }),
+        DatasetAssignmentAdjudication.deleteMany({ datasetVersionId: targetVersionOid || id }),
+        DatasetCanonicalLabel.deleteMany({ datasetVersionId: targetVersionOid || id }),
         sampleIds.length > 0
           ? LabelAssignment.deleteMany({ sampleId: { $in: sampleIds } })
           : Promise.resolve({ deletedCount: 0 }),

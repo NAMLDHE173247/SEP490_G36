@@ -88,7 +88,7 @@ function DataLabelingView({ onBack }) {
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  const SUBJECT_LABELS = ['MATH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'OUT_OF_SCOPE'];
+  const SUBJECT_LABELS = ['MATH', 'ENGLISH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'OUT_OF_SCOPE'];
   const COMPLETION_LABELS = ['COMPLETE', 'INCOMPLETE'];
   const QUALITY_LABELS = ['GOOD', 'BAD', 'AVERAGE'];
   const COMBINED_MESSAGE_HARD_LABELS = [

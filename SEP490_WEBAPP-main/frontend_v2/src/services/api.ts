@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAuthToken } from './authSession';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -164,11 +164,22 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'staff';
+  role: 'admin' | 'supervisor' | 'staff' | 'reviewer' | 'checker';
   status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
 export const apiService = {
+  getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
+    const response = await api.get(`/dataprep/export/${versionId}/training-data`);
+    return response.data;
+  },
+  snapshotDatasetLabels: async (
+    versionId: string,
+    payload?: { name?: string; description?: string },
+  ): Promise<{ success: boolean; snapshotId: string; totalLabels: number; message: string }> => {
+    const response = await api.post(`/dataprep/export/${versionId}/snapshot`, payload || {});
+    return response.data;
+  },
   listUsers: async (): Promise<{ users: User[] }> => {
     const response = await api.get('/auth/users');
     return response.data;
@@ -205,9 +216,10 @@ export const apiService = {
       return { isOk: false };
     }
   },
-  uploadFile: async (file: File, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
+  uploadFile: async (file: File, projectId?: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
+    if (projectId) formData.append('projectId', projectId);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -295,11 +307,12 @@ export const apiService = {
    */
   previewAutoLabels: async (
     versionId: string,
-    provider: 'gemini' | 'openai' | 'deepseek'
+    provider: 'openrouter' | 'groq' | 'deepseek' | 'oauth_gateway',
+    model?: string
   ): Promise<{
-    suggestions: Array<{ clusterId: number; label: string; sampleCount: number }>;
+    suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
-    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider });
+    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider, model });
     return response.data;
   },
 
@@ -330,6 +343,7 @@ export const apiService = {
     similarityThreshold: number;
     format: 'openai' | 'alpaca';
     data: Array<Record<string, any>>;
+    cleanStats?: Record<string, any>;
   }): Promise<{
     message: string;
     datasetVersion: { _id: string; projectName: string; versionName: string };
@@ -376,9 +390,19 @@ export const apiService = {
     return response.data;
   },
 
+  getCheckerActivityLogs: async (id: string): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get(`/dataprep/versions/${id}/assignments/checker-logs`);
+    return response.data;
+  },
+
+  setDatasetSampleCanonicalLabels: async (payload: { versionId: string; sampleId: string; labels: string[]; targetTextSnapshot?: string; sourceAnnotatorIds?: string[] }): Promise<any> => {
+    const response = await api.post('/dataprep/assignments/samples/canonical', payload);
+    return response.data;
+  },
+
   assignDatasetVersionRange: async (
     id: string,
-    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string }
+    payload: { assigneeId: string; startIndex: number; count: number; batchName?: string; priority?: string; similarityThreshold?: number; supervisorId?: string; checkerId?: string }
   ): Promise<{ message: string; assignedCount: number }> => {
     const response = await api.post(`/dataprep/versions/${id}/assignments/batch`, {
       assigneeIds: [payload.assigneeId],
@@ -386,7 +410,10 @@ export const apiService = {
       sampleCount: payload.count,
       taskType: 'labeling',
       priority: payload.priority || 'medium',
-      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`
+      batchName: payload.batchName || `Manual Batch ${payload.startIndex} - ${payload.startIndex + payload.count - 1}`,
+      similarityThreshold: payload.similarityThreshold,
+      supervisorId: payload.supervisorId,
+      checkerId: payload.checkerId
     });
     return response.data;
   },
@@ -425,12 +452,12 @@ export const apiService = {
   // ==========================================
   // Chat & Inference Endpoints
   // ==========================================
-  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat-sessions'); return response.data; },
-  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat-sessions/${args[0]}`); return response.data; },
-  createChatSession: async (...args: any[]) => { const response = await api.post('/chat-sessions', args[0]); return response.data; },
-  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat-sessions/${args[0]}`, { title: args[1] }); return response.data; },
-  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat-sessions/${args[0]}`); return response.data; },
-  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat-sessions/${args[0]}/messages`, args[1]); return response.data; },
+  getChatSessions: async (...args: any[]) => { const response = await api.get('/chat/sessions'); return response.data; },
+  getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat/sessions/${args[0]}`); return response.data; },
+  createChatSession: async (...args: any[]) => { const response = await api.post('/chat/sessions', args[0]); return response.data; },
+  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, { title: args[1] }); return response.data; },
+  deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat/sessions/${args[0]}`); return response.data; },
+  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat/sessions/${args[0]}/messages`, args[1]); return response.data; },
 
   infer: async (...args: any[]) => {
     const response = await api.post('/infer', args[0]);
@@ -449,30 +476,41 @@ export const apiService = {
       data = args[0];
       onChunkCallback = args[2] || args[1];
     }
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+    const apiUrl = import.meta.env.VITE_API_URL || '/api';
     const response = await fetch(`${apiUrl}/infer/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${getAuthToken() || ''}`
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: data?.signal,
     });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Inference failed (${response.status})`);
+    }
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
     while (reader) {
       const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = done ? '' : (lines.pop() || '');
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          let parsed: any;
           try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.response && onChunkCallback) onChunkCallback(parsed.response);
-          } catch (e) { }
+            parsed = JSON.parse(line.slice(6));
+          } catch { continue; }
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.is_final && typeof data?.onFinalInfo === 'function') data.onFinalInfo(parsed);
+          const text = parsed.response ?? parsed.text;
+          if (typeof text === 'string' && text && onChunkCallback) onChunkCallback(text);
         }
       }
+      if (done) break;
     }
   },
 
@@ -480,11 +518,11 @@ export const apiService = {
   stopInference: async (...args: any[]) => { const response = await api.post(`/infer/stop/${args[0]}`); return response.data; },
   loadModel: async (...args: any[]) => { const response = await api.post('/model/load', { hf_model_id: args[0], ...args[1] }); return response.data; },
   unloadModel: async (...args: any[]) => { const response = await api.post(`/model/unload/${args[0]}`); return response.data; },
-  validateModel: async (...args: any[]) => { const response = await api.post('/chat/validate-model', args[0]); return response.data; },
+  validateModel: async (model: string, provider: string) => { const response = await api.post('/chat/validate-model', { model, provider }); return response.data; },
   listModelRegistries: async (...args: any[]) => { const response = await api.get('/model-registry'); return response.data; },
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
-  getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/evaluations/job/${args[0]}`); return response.data; },
-  registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-registry', args[0]); return response.data; },
+  getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/model-versions/evaluations/${args[0]}`); return response.data; },
+  registerModelVersion: async (...args: any[]) => { const response = await api.post('/model-versions', args[0]); return response.data; },
   getDatasetPrompts: async (...args: any[]) => { const response = await api.get('/dataset-prompts'); return response.data; },
 
   // Generic POST helper for dynamic endpoints
@@ -506,7 +544,7 @@ export const apiService = {
       remainingSamples: number;
     }>;
   }> => {
-    const response = await api.get('/dataprep/labeling/assignments/available-staff');
+    const response = await api.get('/dataprep/assignments/available-staff');
     return response.data;
   },
 
@@ -518,6 +556,8 @@ export const apiService = {
   safeSplit: async (payload: {
     data: any[];
     test_percentage?: number;
+    validation_percentage?: number;
+    stratify_by_subject?: boolean;
     threshold?: number;
     max_attempts?: number;
     seed?: number;
@@ -625,7 +665,7 @@ export const apiService = {
   previewMessageAutoLabels: async (
     sampleId: string,
     payload: {
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'openrouter' | 'groq' | 'deepseek';
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
     }
   ): Promise<{ suggestions: MessageAutoLabelSuggestion[] }> => {
@@ -675,7 +715,7 @@ export const apiService = {
    * Chạy AI gán nhãn hàng loạt cho nhiều sample cùng lúc (preview + save trong một lần).
    */
   previewAndSaveMessageAutoLabelsBatch: async (payload: {
-    provider?: 'gemini' | 'openai' | 'deepseek';
+    provider?: 'openrouter' | 'groq' | 'deepseek';
     samples: Array<{
       sampleId: string;
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
@@ -702,5 +742,47 @@ export const apiService = {
       throw err;
     }
   },
-};
 
+  getEvaluatedModels: async (): Promise<any[]> => {
+    const response = await api.get('/model-eval/leaderboard');
+    return response.data;
+  },
+  getEvaluationDetail: async (evalId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/${evalId}`);
+    return response.data;
+  },
+  runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
+    const formData = new FormData();
+    formData.append('eval_file', file);
+    if (options.judgeModel) formData.append('judge_model', options.judgeModel);
+    if (options.baseModelHfRepo) formData.append('base_model_hf_repo', options.baseModelHfRepo);
+    const response = await api.post(`/model-eval/run/${jobId}`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  getEvalHistory: async (jobId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/history/${jobId}`);
+    return response.data;
+  },
+  pinEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.post(`/model-eval/pin/${evalId}`);
+    return response.data;
+  },
+  deleteEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.delete(`/model-eval/${evalId}`);
+    return response.data;
+  },
+  compareEvaluations: async (evalIdA: string, evalIdB: string): Promise<any> => {
+    const response = await api.get('/model-eval/compare', {
+      params: { a: evalIdA, b: evalIdB },
+    });
+    return response.data;
+  },
+  reviewConversation: async (evalId: string, convIndex: number, review: { verdict: 'agree' | 'disagree' | 'skip'; note?: string; reviewer?: string }): Promise<any> => {
+    const response = await api.patch(`/model-eval/${evalId}/review/${convIndex}`, review);
+    return response.data;
+  },
+};

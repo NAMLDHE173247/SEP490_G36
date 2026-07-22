@@ -4,7 +4,7 @@ import {
   UserCheck, UserX, Ban, CheckCircle2, XCircle, Clock,
   Mail, Calendar, Filter, ChevronDown, ChevronLeft, ChevronRight,
   X, Eye, EyeOff, ChevronsLeft, ChevronsRight,
-  Users, UserPlus, AlertTriangle, RefreshCw, ShieldAlert
+  Users, UserPlus, AlertTriangle, RefreshCw, ShieldAlert, ClipboardCheck
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import '../styles/admin.css';
@@ -86,7 +86,9 @@ const roleOptions = [
   { value: 'all', label: 'All Roles', icon: <Shield size={14} /> },
   { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={14} style={{ color: '#d97706' }} /> },
   { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={14} style={{ color: '#10b981' }} /> },
-  { value: 'Staff', label: 'Staff', icon: <Shield size={14} style={{ color: '#6366f1' }} /> }
+  { value: 'Checker', label: 'Checker', icon: <UserCheck size={14} style={{ color: '#f43f5e' }} /> },
+  { value: 'Staff', label: 'Staff', icon: <Shield size={14} style={{ color: '#6366f1' }} /> },
+  { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={14} style={{ color: '#8b5cf6' }} /> }
 ];
 
 function AdminAccountView() {
@@ -103,6 +105,8 @@ function AdminAccountView() {
   const [showPassword, setShowPassword] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [showRoleModal, setShowRoleModal] = useState<any>(null);
+  const [selectedNewRole, setSelectedNewRole] = useState<string>('Staff');
  
   const fetchAccounts = async () => {
     setLoading(true);
@@ -269,7 +273,9 @@ function AdminAccountView() {
     switch (role) {
       case 'Admin': return <ShieldCheck size={14} className="role-icon-admin" />;
       case 'Supervisor': return <ShieldAlert size={14} className="role-icon-supervisor" />;
+      case 'Checker': return <UserCheck size={14} className="role-icon-checker" />;
       case 'Staff': return <Shield size={14} className="role-icon-staff" />;
+      case 'Reviewer': return <ClipboardCheck size={14} className="role-icon-reviewer" />;
       default: return <Shield size={14} />;
     }
   };
@@ -278,13 +284,15 @@ function AdminAccountView() {
     switch (role) {
       case 'Admin': return 'avatar-admin';
       case 'Supervisor': return 'avatar-supervisor';
+      case 'Checker': return 'avatar-checker';
+      case 'Reviewer': return 'avatar-reviewer';
       default: return '';
     }
   };
 
   // Generate role change options based on current role
   const getRoleChangeOptions = (currentRole) => {
-    const allRoles = ['Admin', 'Supervisor', 'Staff'];
+    const allRoles = ['Admin', 'Supervisor', 'Checker', 'Staff', 'Reviewer'];
     return allRoles.filter(r => r !== currentRole);
   };
 
@@ -292,7 +300,9 @@ function AdminAccountView() {
     switch (targetRole) {
       case 'Admin': return <ShieldCheck size={14} />;
       case 'Supervisor': return <ShieldAlert size={14} />;
+      case 'Checker': return <UserCheck size={14} />;
       case 'Staff': return <Shield size={14} />;
+      case 'Reviewer': return <ClipboardCheck size={14} />;
       default: return <Shield size={14} />;
     }
   };
@@ -437,7 +447,8 @@ function AdminAccountView() {
                 </td>
               </tr>
             ) : (
-              paginatedAccounts.map(account => {
+              paginatedAccounts.map((account, index) => {
+                const isNearBottom = index >= paginatedAccounts.length - 2 && paginatedAccounts.length >= 3;
                 const statusConfig = getStatusConfig(account.status);
                 return (
                   <tr key={account.id} className={account.status === 'pending' ? 'row-pending' : ''}>
@@ -483,7 +494,7 @@ function AdminAccountView() {
                             <MoreHorizontal size={16} />
                           </button>
                           {actionMenuId === account.id && (
-                            <div className="action-dropdown">
+                            <div className={`action-dropdown ${isNearBottom ? 'open-upward' : ''}`}>
                               <button onClick={() => setShowDetailModal(account)}>
                                 <Eye size={14} /> View Details
                               </button>
@@ -503,12 +514,13 @@ function AdminAccountView() {
                                 </button>
                               )}
                               <div className="dropdown-sep"></div>
-                              <div className="dropdown-label">Change Role</div>
-                              {getRoleChangeOptions(account.role).map(targetRole => (
-                                <button key={targetRole} onClick={() => handleChangeRole(account.id, targetRole)}>
-                                  {getRoleChangeIcon(targetRole)} Change to {targetRole}
-                                </button>
-                              ))}
+                              <button onClick={() => {
+                                setSelectedNewRole(account.role);
+                                setShowRoleModal(account);
+                                setActionMenuId(null);
+                              }}>
+                                <Shield size={14} /> Change Role
+                              </button>
                               <div className="dropdown-sep"></div>
                               <button className="danger" onClick={() => handleReject(account.id)}>
                                 <XCircle size={14} /> Delete Account
@@ -647,12 +659,47 @@ function AdminAccountView() {
                 </div>
               </div>
               <div className="modal-field">
-                <label>Role</label>
-                <select value={newAccount.role} onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}>
-                  <option value="Staff">Staff</option>
-                  <option value="Supervisor">Supervisor</option>
-                  <option value="Admin">Admin</option>
-                </select>
+                <label style={{ marginBottom: '8px', display: 'block' }}>Role</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {[
+                    { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={16} />, color: '#d97706', bg: '#fffbeb' },
+                    { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={16} />, color: '#10b981', bg: '#f0fdf4' },
+                    { value: 'Checker', label: 'Checker', icon: <UserCheck size={16} />, color: '#f43f5e', bg: '#ffe4e6' },
+                    { value: 'Staff', label: 'Staff', icon: <Shield size={16} />, color: '#6366f1', bg: '#e0e7ff' },
+                    { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={16} />, color: '#8b5cf6', bg: '#f5f3ff' }
+                  ].map(roleOpt => {
+                    const isSelected = newAccount.role.toLowerCase() === roleOpt.value.toLowerCase();
+                    return (
+                      <button
+                        key={roleOpt.value}
+                        type="button"
+                        onClick={() => setNewAccount({ ...newAccount, role: roleOpt.value })}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          border: isSelected ? `2px solid ${roleOpt.color}` : '1px solid var(--border)',
+                          backgroundColor: isSelected ? roleOpt.bg : 'var(--surface)',
+                          color: isSelected ? roleOpt.color : 'var(--text-main)',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isSelected ? `0 4px 12px ${roleOpt.bg}` : 'none'
+                        }}
+                      >
+                        <span style={{ color: roleOpt.color, display: 'flex', alignItems: 'center' }}>
+                          {roleOpt.icon}
+                        </span>
+                        {roleOpt.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <div className="admin-modal-footer">
@@ -718,6 +765,75 @@ function AdminAccountView() {
                   <CheckCircle2 size={16} /> Activate
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Change Role Modal */}
+      {showRoleModal && (
+        <div className="admin-modal-overlay" onClick={() => setShowRoleModal(null)}>
+          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="admin-modal-header">
+              <h3><Shield size={20} /> Change User Role</h3>
+              <button className="modal-close" onClick={() => setShowRoleModal(null)}><X size={18} /></button>
+            </div>
+            <div className="admin-modal-body">
+              <p style={{ fontSize: '14px', color: '#4b5563', marginBottom: '8px' }}>
+                Select a new role for user <strong>{showRoleModal.name}</strong> ({showRoleModal.email}):
+              </p>
+              <div className="modal-field">
+                <label style={{ marginBottom: '8px', display: 'block' }}>Select Role</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {[
+                    { value: 'Admin', label: 'Admin', icon: <ShieldCheck size={16} />, color: '#d97706', bg: '#fffbeb' },
+                    { value: 'Supervisor', label: 'Supervisor', icon: <ShieldAlert size={16} />, color: '#10b981', bg: '#f0fdf4' },
+                    { value: 'Checker', label: 'Checker', icon: <UserCheck size={16} />, color: '#f43f5e', bg: '#ffe4e6' },
+                    { value: 'Staff', label: 'Staff', icon: <Shield size={16} />, color: '#6366f1', bg: '#e0e7ff' },
+                    { value: 'Reviewer', label: 'Reviewer', icon: <ClipboardCheck size={16} />, color: '#8b5cf6', bg: '#f5f3ff' }
+                  ].map(roleOpt => {
+                    const isSelected = selectedNewRole.toLowerCase() === roleOpt.value.toLowerCase();
+                    return (
+                      <button
+                        key={roleOpt.value}
+                        type="button"
+                        onClick={() => setSelectedNewRole(roleOpt.value)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '12px 14px',
+                          borderRadius: '10px',
+                          border: isSelected ? `2px solid ${roleOpt.color}` : '1px solid var(--border)',
+                          backgroundColor: isSelected ? roleOpt.bg : 'var(--surface)',
+                          color: isSelected ? roleOpt.color : 'var(--text-main)',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isSelected ? `0 4px 12px ${roleOpt.bg}` : 'none'
+                        }}
+                      >
+                        <span style={{ color: roleOpt.color, display: 'flex', alignItems: 'center' }}>
+                          {roleOpt.icon}
+                        </span>
+                        {roleOpt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="admin-modal-footer">
+              <button className="modal-btn-cancel" onClick={() => setShowRoleModal(null)}>Cancel</button>
+              <button className="modal-btn-submit" onClick={() => {
+                handleChangeRole(showRoleModal.id, selectedNewRole);
+                setShowRoleModal(null);
+              }}>
+                Update Role
+              </button>
             </div>
           </div>
         </div>

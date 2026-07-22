@@ -19,3 +19,8 @@ export function isManager(req: Request): boolean {
   const role = (req as any).user?.role;
   return role === 'admin' || role === 'supervisor';
 }
+
+export function isAssignmentReviewer(req: Request): boolean {
+  const role = (req as any).user?.role;
+  return role === 'admin' || role === 'supervisor' || role === 'checker';
+}

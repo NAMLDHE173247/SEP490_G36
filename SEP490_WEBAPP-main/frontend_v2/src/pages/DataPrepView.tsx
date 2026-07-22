@@ -10,11 +10,11 @@ import { apiService } from '../services/api';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, HelpCircle, MessageSquare, Plus, RefreshCw, RotateCcw, Scissors, Settings, Sparkles, Upload, X } from 'lucide-react';
 
 const STAGES = [
-  { num: 1, label: 'Upload & Convert', sub: 'Step 1' },
-  { num: 2, label: 'Preprocessing', sub: 'Step 2-4' },
-  { num: 3, label: 'Labeling', sub: 'Step 5-7' },
-  { num: 4, label: 'Classification', sub: 'Step 8-12' },
-  { num: 5, label: 'Finish', sub: 'Step 13-15' },
+  { num: 1, label: 'Tải lên & Chuyển đổi', sub: 'Bước 1' },
+  { num: 2, label: 'Tiền xử lý', sub: 'Bước 2-4' },
+  { num: 3, label: 'Gán nhãn', sub: 'Bước 5-7' },
+  { num: 4, label: 'Xem xét & Phân loại', sub: 'Bước 8-11' },
+  { num: 5, label: 'Hoàn tất', sub: 'Bước 12-14' },
 ];
 
 const SUB_STEPS_STAGE2 = [
@@ -282,6 +282,54 @@ function DataPrepInner() {
   /* Conversation Detail Popup */
   const [selectedConv, setSelectedConv] = useState(null);
 
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ &lt;think&gt;' : '🧠 &lt;think&gt;'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' &lt;/think&gt;'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
   /* Stage 3 state */
   const SUB_STEPS_STAGE3 = [
     { num: 5, label: 'Clustering & Labeling' },
@@ -302,7 +350,7 @@ function DataPrepInner() {
   const [selectedConv3, setSelectedConv3] = useState(null);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
   /* AI Labeling state */
-  const [aiProvider, setAiProvider] = useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
   const [isSavingLabels, setIsSavingLabels] = useState(false);
   const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
@@ -311,12 +359,8 @@ function DataPrepInner() {
 
   React.useEffect(() => {
     if (currentStage === 4) {
-      if (currentSubStep4 < 7 || currentSubStep4 > 10) {
+      if (currentSubStep4 < 7 || currentSubStep4 > 12) {
         setCurrentSubStep4(7);
-      }
-    } else if (currentStage === 5) {
-      if (currentSubStep4 < 11 || currentSubStep4 > 12) {
-        setCurrentSubStep4(11);
       }
     }
   }, [currentStage]);
@@ -704,8 +748,8 @@ function DataPrepInner() {
   const SUB_STEPS_STAGE4 = [
     { num: 8, label: 'Classification' },
     { num: 9, label: 'Quality Management' },
-    { num: 10, label: 'Distribution' },
-    { num: 11, label: 'Rewrite' },
+    { num: 10, label: 'Rewrite Assignment' },
+    { num: 11, label: 'Assignment Review' },
   ];
   const [currentSubStep4, setCurrentSubStep4] = useState(7);
   const [classPage, setClassPage] = useState(1);
@@ -714,7 +758,7 @@ function DataPrepInner() {
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, openai: false, deepseek: true });
+  const [judgeModels, setJudgeModels] = useState({ openrouter: true, groq: false, deepseek: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -794,7 +838,7 @@ function DataPrepInner() {
         setRawPreviewText('Đang phân tích dữ liệu tệp...');
         setSampleOutputText('Đang tạo mẫu đầu ra...');
 
-        const res = await apiService.uploadFile(uploaded, (progressEvent: any) => {
+        const res = await apiService.uploadFile(uploaded, undefined, (progressEvent: any) => {
           if (progressEvent.total) {
             const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percentCompleted);
@@ -944,8 +988,10 @@ function DataPrepInner() {
     try {
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
-        enableCleaning: cleaningEnabled,
-        removeThinkTags: removeThinkTags
+        enableCleaning: false,
+        // Always false for preview: think tags must be visible in conv detail so
+        // users can see what has not been cleaned yet. Removed only at export.
+        removeThinkTags: false
       });
 
       const mapped = mapConvertedToConversations(res.data);
@@ -1002,7 +1048,8 @@ function DataPrepInner() {
       const originalRes = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags,
+        // Always false: preserve think tags in before/after comparison
+        removeThinkTags: false,
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
@@ -1369,8 +1416,8 @@ function DataPrepInner() {
 
             {/* Radio: OpenAI Message Format */}
             <div
-              className={`dataprep-radio-option ${selectedFormat === 'openai' ? 'selected' : ''}`}
-              onClick={() => setSelectedFormat('openai')}
+              className={`dataprep-radio-option ${selectedFormat === 'groq' ? 'selected' : ''}`}
+              onClick={() => setSelectedFormat('groq')}
             >
               <div className="radio-circle">
                 <div className="radio-dot" />
@@ -1783,11 +1830,11 @@ function DataPrepInner() {
                         <div className="conv-detail-label">#{idx + 1}</div>
                         <div className="conv-detail-msg conv-detail-user">
                           <div className="conv-detail-role">👤 User</div>
-                          <div className="conv-detail-text">{msg.user}</div>
+                          <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                         </div>
                         <div className="conv-detail-msg conv-detail-assistant">
                           <div className="conv-detail-role">🤖 Assistant</div>
-                          <div className="conv-detail-text">{msg.assistant}</div>
+                          <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                         </div>
                       </div>
                     ))}
@@ -1879,12 +1926,6 @@ function DataPrepInner() {
                               </div>
                             </div>
 
-                            {/* Min pairs */}
-                            <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
-                              <label>Số cặp hỏi đáp tối thiểu:</label>
-                              <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
-                            </div>
-
                             {/* Preview button — switches to preview view */}
                             <button
                               className="cleaning-accept-btn"
@@ -1911,7 +1952,6 @@ function DataPrepInner() {
                           setRemoveCompleteThink(false);
                           setMinChars('5');
                           setMaxChars('4000');
-                          setMinPairs('1');
                         }}>
                           <RotateCcw size={14} />
                           Reset to Original
@@ -2023,11 +2063,11 @@ function DataPrepInner() {
                                   </thead>
                                   <tbody>
                                     {afterList.map((row) => (
-                                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                      <tr key={row.id} className={row.status === 'wiped' ? 'row-removed' : row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
                                         <td><span className="conv-id-badge">{row.id}</span></td>
-                                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                        <td><span className={`status-badge ${row.status === 'wiped' ? 'badge-removed' : row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant || <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>✓ Nội dung rỗng (đã xóa thẻ think)</span>}</div></td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -2896,6 +2936,7 @@ function DataPrepInner() {
                             <option value="">-- Select --</option>
                             <option value="MATH">MATH</option>
                             <option value="CODING">CODING</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="PHYSICS">PHYSICS</option>
                             <option value="CHEMISTRY">CHEMISTRY</option>
                             <option value="BIOLOGY">BIOLOGY</option>
@@ -2951,9 +2992,12 @@ function DataPrepInner() {
                       onChange={e => setAiProvider(e.target.value as any)}
                       disabled={isLabelingWithAI}
                     >
-                      <option value="deepseek">Deepseek</option>
-                      <option value="openai">ChatGPT</option>
+                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="gemini">Gemini</option>
+                      <option value="openai">ChatGPT / OpenAI</option>
+                      <option value="deepseek">Deepseek</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                     <button
                       className="label-ai-btn"
@@ -3016,7 +3060,7 @@ function DataPrepInner() {
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
                           const labelMap: Record<number, string> = {};
-                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                          const predefinedLabels = ['MATH', 'CODING', 'ENGLISH', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
                           const newLabels = new Set<string>();
 
                           suggestions.forEach((s: any) => {
@@ -3136,6 +3180,7 @@ function DataPrepInner() {
                               <option value="">-- Select --</option>
                               <option value="MATH">MATH</option>
                               <option value="CODING">CODING</option>
+                              <option value="ENGLISH">ENGLISH</option>
                               <option value="PHYSICS">PHYSICS</option>
                               <option value="PHYSICAL">PHYSICAL</option>
                               <option value="CHEMISTRY">CHEMISTRY</option>
@@ -3269,11 +3314,11 @@ function DataPrepInner() {
                     <div className="conv-detail-label">#{idx + 1}</div>
                     <div className="conv-detail-msg conv-detail-user">
                       <div className="conv-detail-role">👤 User</div>
-                      <div className="conv-detail-text">{msg.user}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                     </div>
                     <div className="conv-detail-msg conv-detail-assistant">
                       <div className="conv-detail-role">🤖 Assistant</div>
-                      <div className="conv-detail-text">{msg.assistant}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                     </div>
                   </div>
                 ))}
@@ -3611,7 +3656,7 @@ function DataPrepInner() {
                     <button className="ia-add-label-btn">Add Label</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
-                      <option>Gemini</option>
+                      <option>OpenRouter</option>
                       <option>Deepseek</option>
                     </select>
                   </div>

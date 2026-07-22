@@ -11,6 +11,7 @@ console.log('=== APP STARTING ===');
 console.log('PORT:', process.env.PORT);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('MONGO_URI exists:', !!process.env.MONGO_URI);
+// Force reload
 
 const app: Express = express();
 const PORT = process.env.PORT || 3000;
@@ -31,7 +32,9 @@ async function seedDefaultUsers() {
     const demoUsers = [
       { name: 'System Admin', email: 'admin', passwordHash, role: 'admin' as const, status: 'active' as const },
       { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const, status: 'active' as const },
+      { name: 'System Checker', email: 'checker', passwordHash, role: 'checker' as const, status: 'active' as const },
       { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const, status: 'active' as const },
+      { name: 'System Reviewer', email: 'reviewer', passwordHash, role: 'reviewer' as const, status: 'active' as const },
       { name: 'System Pending', email: 'pending', passwordHash, role: 'staff' as const, status: 'pending' as const },
       { name: 'System Disabled', email: 'disabled', passwordHash, role: 'staff' as const, status: 'inactive' as const },
     ];
@@ -54,6 +57,20 @@ mongoose
     console.log('✅ MongoDB connected:', MONGO_URI);
     await seedDefaultUsers();
     await seedDefaultStage4Data();
+
+    try {
+      // Reset any stuck running multi-eval jobs to failed
+      const { MultiModelEvaluationJob } = require('./models/MultiModelEvaluationJob');
+      const result = await MultiModelEvaluationJob.updateMany(
+        { status: 'running' },
+        { $set: { status: 'failed', error: 'Server restarted during job execution.' } }
+      );
+      if (result.modifiedCount > 0) {
+        console.log(`🧹 Cleaned up ${result.modifiedCount} stuck running multi-eval jobs.`);
+      }
+    } catch (err: any) {
+      console.error('❌ Stuck jobs cleanup error:', err.message);
+    }
   })
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 
@@ -112,7 +129,7 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 API docs available at http://localhost:${PORT}/api`);
 });

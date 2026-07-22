@@ -5,10 +5,19 @@ export interface IEvalResult {
   conv_index: number;
   num_turns: number;
   avg_latency_ms: number;
+  subject?: string;
+  selected_model?: string;
+  route_strategy?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
   replay_turns?: {               // ← thêm
     user: string;
     model: string;
     latency_ms: number;
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
   }[];
   criteria_scores: {
     A1: number; A2: number; A3: number;
@@ -60,8 +69,10 @@ export interface IEvaluation extends Document {
   delta?: Record<string, any>;      // FT - Base delta (paired only)
   gpuResult?: Record<string, any>;
   judgeModel?: string;
+  error?: string;
+  failureStage?: string;
   startedAt: Date;
-  completedAt: Date;
+  completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
   flags?: string[];
@@ -77,6 +88,12 @@ const EvaluationResultSchema = new Schema<IEvalResult>(
     conv_index: { type: Number },
     num_turns: { type: Number },
     avg_latency_ms: { type: Number },
+    subject: { type: String },
+    selected_model: { type: String },
+    route_strategy: { type: String },
+    input_tokens: { type: Number, default: 0 },
+    output_tokens: { type: Number, default: 0 },
+    total_tokens: { type: Number, default: 0 },
     replay_turns: { type: Schema.Types.Mixed, default: [] },
     criteria_scores: { type: Schema.Types.Mixed, default: {} },
     criteria_reasons: { type: Schema.Types.Mixed, default: {} },
@@ -105,8 +122,10 @@ const EvaluationSchema = new Schema<IEvaluation>(
     delta:             { type: Schema.Types.Mixed, default: null },
     gpuResult:         { type: Schema.Types.Mixed, default: {} },
     startedAt:         { type: Date, required: true },
-    completedAt:       { type: Date, required: true },
-    judgeModel:        { type: String, default: 'claude-sonnet-4-5-20251001' },
+    completedAt:       { type: Date },
+    judgeModel:        { type: String, default: 'google/gemini-2.5-flash' },
+    error:             { type: String, default: '' },
+    failureStage:      { type: String, default: '' },
     flags:             { type: [String], default: [] },
     // Dataset & Prompt traceability
     systemPrompt:       { type: String, default: '' },

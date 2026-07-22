@@ -4,14 +4,18 @@ import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationQualityReview } from '../../../models/ConversationQualityReview';
 import { ConversationQualityAdjudication } from '../../../models/ConversationQualityAdjudication';
 import { User } from '../../../models/User';
+import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 import { QUALITY_AUTO_REJECT_MARKER } from './quality.constants';
-import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery } from '../../../services/labelAssignmentService';
+import { getEffectiveSampleLabelsForVersion, insertAssignments, removeLabelsByQuery, ensureLabelAssignmentsForSamples } from '../../../services/labelAssignmentService';
 import { LabelAssignment } from '../../../models/LabelAssignment';
+import { DatasetAssignmentAdjudication } from '../../../models/DatasetAssignmentAdjudication';
+import { DatasetSampleAssignment } from '../../../models/DatasetSampleAssignment';
 
 export const QUALITY_BUCKETS = ['Gold', 'Rewrite', 'Reject', 'Incomplete'] as const;
 export type QualityBucket = (typeof QUALITY_BUCKETS)[number];
 
 const INTENTS = [
+  'ANSWER_ATTEMPT',
   'CORRECT',
   'INCORRECT',
   'REQUEST_HINT',
@@ -27,8 +31,9 @@ const INTENTS = [
 const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
 const CRITICAL_INTENTS = new Set(['INCORRECT', 'REQUEST_HINT'] as const);
 
-const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
-  CORRECT: new Set(['PRAISING']),
+export const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE', 'SCAFFOLDING']),
+  CORRECT: new Set(['PRAISING', 'CONFIRM_CORRECT_ANSWER']),
   INCORRECT: new Set(['SCAFFOLDING']),
   REQUEST_HINT: new Set(['HINTING', 'SCAFFOLDING']),
   ASK_THEORY: new Set(['CONCEPT_CLARIFY', 'LOGIC_BREAKDOWN']),
@@ -39,15 +44,65 @@ const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
   OFF_TOPIC: new Set(['REDIRECTING', 'TRANSITIONING']),
   NEXT_SECTION: new Set(['TRANSITIONING', 'NAVIGATING']),
 };
-const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+export const HARMFUL_ACTIONS: Record<string, ReadonlySet<string>> = {
+  ANSWER_ATTEMPT: new Set(['DIRECT_ANSWER']),
   INCORRECT: new Set(['PRAISING']),
   REQUEST_HINT: new Set(['LOGIC_BREAKDOWN']),
 };
-const HARMFUL_ACTION_PENALTY = -2;
 const USER_INTENT_SET = new Set<string>(INTENTS);
-const ASSISTANT_ACTION_SET = new Set<string>(
-  Array.from(new Set(Object.values(VALID_ACTIONS).flatMap((actions) => Array.from(actions))))
-);
+const ASSISTANT_ACTION_SET = new Set<string>([
+  ...Array.from(new Set(Object.values(VALID_ACTIONS).flatMap((actions) => Array.from(actions)))),
+  'WAITING',
+  'DIRECT_ANSWER',
+]);
+
+const ALL_VALID_INTENTS = new Set<string>([
+  ...Array.from(USER_INTENT_SET),
+  'CONFIRM_UNDERSTANDING',
+  'CONFIRM',
+  'UNDERSTOOD'
+]);
+
+const ALL_VALID_ACTIONS = new Set<string>([
+  ...Array.from(ASSISTANT_ACTION_SET),
+  'DIRECT_ANSWER',
+  'PRAISING',
+  'MOTIVATING',
+  'REDIRECTING',
+  'TRANSITIONING',
+]);
+
+const STAGE3_TO_BACKEND_MAP: Record<string, string> = {
+  // Intents (User)
+  'ANS': 'ANSWER_ATTEMPT',
+  'HINT': 'REQUEST_HINT',
+  'THEO': 'ASK_THEORY',
+  'WHY': 'REQUEST_EXPLANATION',
+  'EASY': 'REQUEST_SIMPLER',
+  'SKIP': 'SKIP_EXERCISE',
+  'DIS': 'ENCOURAGE',
+  'OFF': 'OFF_TOPIC',
+  'RDY': 'NEXT_SECTION',
+  'CFM': 'NEXT_SECTION',
+  'CONFIRM_UNDERSTANDING': 'NEXT_SECTION',
+
+  // Actions (Assistant)
+  'CONF': 'CONFIRM_CORRECT_ANSWER',
+  'WRONG': 'IDENTIFY_INCORRECT_ANSWER',
+  'FIX': 'CORRECT_MISTAKE',
+  'SCAF': 'SCAFFOLDING',
+  'CLR': 'CONCEPT_CLARIFY',
+  'LOG': 'LOGIC_BREAKDOWN',
+  'SIMP': 'SIMPLIFYING',
+  'PR': 'PRAISING',
+  'MOT': 'MOTIVATING',
+  'REDIR': 'REDIRECTING',
+  'TRAN': 'TRANSITIONING',
+  'DIR': 'DIRECT_ANSWER',
+  'WAIT': 'WAITING',
+  'WAITING': 'WAITING',
+  'DIRECT_ANSWER': 'DIRECT_ANSWER'
+};
 
 type SerializedMessage = {
   messageIndex: number;
@@ -73,6 +128,9 @@ export type QualityItem = {
   sampleId: string;
   data: Record<string, unknown>;
   bucket: QualityBucket;
+  hasMissingLabeling?: boolean;
+  requiredTurns?: number;
+  isApproved?: boolean;
   score: number;
   humanScore?: number | null;
   scoreScale: 'turn-average-raw';
@@ -87,6 +145,8 @@ export type QualityItem = {
   note?: string;
   adjudicatedBy?: string;
   adjudicatedAt?: string;
+  errorMessageIndex?: number | null;
+  conflictReason?: string;
   turnPairs: Array<{
     userMessageIndex: number;
     assistantMessageIndex: number;
@@ -104,6 +164,7 @@ export type QualityItem = {
       harmfulActions: string[];
     }>;
   }>;
+  pendingAdjudication?: boolean;
 };
 
 export type QualityResult = {
@@ -138,12 +199,14 @@ function isQualityBucket(value: string): value is QualityBucket {
 function serializeMessages(data: Record<string, any>): SerializedMessage[] {
   if (Array.isArray(data?.messages)) {
     return data.messages
-      .filter((message: any) => message?.role === 'user' || message?.role === 'assistant')
       .map((message: any, index: number) => ({
         messageIndex: index,
         role: message.role,
         content: String(message?.content || ''),
-      }));
+      }))
+      .filter((message: any) =>
+        (message.role === 'user' || message.role === 'assistant') && message.content.trim().length > 0
+      );
   }
 
   const instruction = String(data?.instruction || data?.userText || '').trim();
@@ -236,7 +299,7 @@ function toTenPointScore(raw: number): number {
 // Map human-readable draft labels to the standard codes used by the scoring rules.
 const DRAFT_INTENT_MAP: Record<string, string> = {
   'Ask Explanation': 'REQUEST_EXPLANATION',
-  'Solve Exercise': 'INCORRECT',
+  'Solve Exercise': 'ANSWER_ATTEMPT',
   'Request Formula': 'ASK_THEORY',
   'Confirm Understanding': 'NEXT_SECTION',
   'Ask Example': 'REQUEST_SIMPLER',
@@ -263,14 +326,14 @@ function mapDraftIntent(raw: string): string | null {
   if (!trimmed) return null;
   if (DRAFT_INTENT_MAP[trimmed]) return DRAFT_INTENT_MAP[trimmed];
   const upper = trimmed.toUpperCase();
-  return USER_INTENT_SET.has(upper) ? upper : null;
+  return ALL_VALID_INTENTS.has(upper) ? upper : null;
 }
 function mapDraftAction(raw: string): string | null {
   const trimmed = String(raw || '').trim();
   if (!trimmed) return null;
   if (DRAFT_ACTION_MAP[trimmed]) return DRAFT_ACTION_MAP[trimmed];
   const upper = trimmed.toUpperCase();
-  return ASSISTANT_ACTION_SET.has(upper) ? upper : null;
+  return ALL_VALID_ACTIONS.has(upper) ? upper : null;
 }
 
 /**
@@ -339,21 +402,57 @@ export class QualityService {
     }
 
     const itemIds = items.map((item: any) => item._id);
+    const sourceSampleIds = items.map((item: any) => item.sourceSampleId).filter(Boolean);
+    const querySampleIds = [...itemIds, ...sourceSampleIds];
+
+    await ensureLabelAssignmentsForSamples(querySampleIds);
     const itemsById = new Map<string, any>(items.map((item: any) => [String(item._id), item]));
-    const allLabels = await getEffectiveSampleLabelsForVersion(version._id, itemIds);
+    const allLabels = await getEffectiveSampleLabelsForVersion(version._id, querySampleIds);
+
+    const sourceToNewMap = new Map<string, string>();
+    items.forEach((item: any) => {
+      if (item.sourceSampleId) {
+        sourceToNewMap.set(String(item.sourceSampleId), String(item._id));
+      }
+    });
+
+    allLabels.forEach((label: any) => {
+      const srcSid = String(label.sampleId);
+      if (sourceToNewMap.has(srcSid)) {
+        label.sampleId = new mongoose.Types.ObjectId(sourceToNewMap.get(srcSid));
+      }
+    });
+
     const labels = allLabels.filter(
       (label: any) => label.targetScope === 'message' && label.type === 'hard'
     );
 
-    // Fallback: for samples that have NO hard message labels yet (e.g. staff saved a
-    // draft but the submission has not promoted them), expand soft draft labels so the
-    // Staff Rule Score still shows up in the table.
-    const samplesWithHardMessageLabels = new Set(labels.map((l: any) => String(l.sampleId)));
+    // Fallback: only include draft message labels if there is no hard label on that specific message key
+    const hardKeys = new Set(labels.map(l => `${String(l.sampleId)}:${Number(l.messageIndex)}:${l.messageRole}`));
     const draftMessageLabels = await getDraftMessageLabels(itemIds, itemsById);
     const draftFallbackLabels = draftMessageLabels.filter(
-      (l) => !samplesWithHardMessageLabels.has(String(l.sampleId))
+      (l) => !hardKeys.has(`${String(l.sampleId)}:${Number(l.messageIndex)}:${l.messageRole}`)
     );
     const labelMap = buildLabelMap([...labels, ...draftFallbackLabels]);
+
+    // Fetch pending assignment adjudications (unresolved staff conflicts)
+    const pendingAdjudications = await DatasetAssignmentAdjudication.find({
+      datasetVersionId: version._id,
+      status: { $ne: 'published' }
+    }).select('sampleId').lean();
+    const pendingAdjudicationSet = new Set(pendingAdjudications.map(a => String(a.sampleId)));
+
+    // Fetch active assignments count per sample
+    const assignments = await DatasetSampleAssignment.find({
+      datasetVersionId: version._id,
+      active: true
+    }).select('sampleId assigneeId').lean();
+
+    const sampleAssigneeCount = new Map<string, number>();
+    assignments.forEach((asg: any) => {
+      const sid = String(asg.sampleId);
+      sampleAssigneeCount.set(sid, (sampleAssigneeCount.get(sid) || 0) + 1);
+    });
 
     const SUBJECT_LABELS = new Set([
       'MATH',
@@ -399,6 +498,25 @@ export class QualityService {
 
     const reviews = await ConversationQualityReview.find({ datasetVersionId: version._id }).lean();
     const adjudications = await ConversationQualityAdjudication.find({ datasetVersionId: version._id }).lean();
+    const canonicalDocs = await DatasetCanonicalLabel.find({ datasetVersionId: version._id }).select('sampleId targetScope labels messageIndex messageRole').lean();
+    const approvedSampleIds = new Set(canonicalDocs.map(c => String(c.sampleId)));
+
+
+    const canonicalSampleBucketMap = new Map<string, QualityBucket>();
+    const canonicalLabelMap = new Map<string, string[]>();
+    canonicalDocs.forEach(c => {
+      if (c.targetScope === 'sample' && Array.isArray(c.labels)) {
+        const bucketLabel = c.labels[0];
+        if (bucketLabel) {
+          const bucket = bucketLabel === 'Bad' ? 'Reject' : bucketLabel as QualityBucket;
+          canonicalSampleBucketMap.set(String(c.sampleId), bucket);
+        }
+      } else if (c.targetScope === 'message' && Array.isArray(c.labels) && c.labels.length > 0) {
+        const role = c.messageRole === 'assistant' ? 'assistant' : 'user';
+        const key = `${String(c.sampleId)}:${c.messageIndex}:${role}`;
+        canonicalLabelMap.set(key, c.labels);
+      }
+    });
 
     const reviewsBySample = new Map<string, any[]>();
     for (const r of reviews) {
@@ -418,6 +536,8 @@ export class QualityService {
 
     for (const item of items as any[]) {
       const itemSid = String(item._id);
+      const adj = adjudicationBySample.get(itemSid);
+      const isApproved = approvedSampleIds.has(itemSid) || (adj && ['resolved_unpublished', 'published'].includes(adj.status));
       const sampleSubjectLabels = sampleSubjectLabelsMap.get(itemSid) || [];
       const resolvedSubject = resolveSubjectGroup(sampleSubjectLabels);
       const messages = serializeMessages(item.data || {});
@@ -438,12 +558,36 @@ export class QualityService {
         if (!assistantMessage) continue;
         requiredTurns += 1;
 
-        const userLabels = (labelMap.get(`${String(item._id)}:${userMessage.messageIndex}:user`) || [])
-          .filter((label) => USER_INTENT_SET.has(label));
-        const assistantLabels = (labelMap.get(`${String(item._id)}:${assistantMessage.messageIndex}:assistant`) || [])
-          .filter((label) => ASSISTANT_ACTION_SET.has(label));
-        if (!userLabels.length || !assistantLabels.length) {
+        const userKey = `${String(item._id)}:${userMessage.messageIndex}:user`;
+        const assistantKey = `${String(item._id)}:${assistantMessage.messageIndex}:assistant`;
+
+        const rawUserLabels = (canonicalLabelMap.get(userKey) || labelMap.get(userKey)) || [];
+        const rawAssistantLabels = (canonicalLabelMap.get(assistantKey) || labelMap.get(assistantKey)) || [];
+
+        const rawUserLabelsMapped = rawUserLabels
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase());
+        const rawAssistantLabelsMapped = rawAssistantLabels
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase());
+
+        const hasUserLabel = rawUserLabelsMapped.some(l => ALL_VALID_INTENTS.has(l));
+        const hasAssistantLabel = rawAssistantLabelsMapped.some(l => ALL_VALID_ACTIONS.has(l));
+
+        if (!hasUserLabel || !hasAssistantLabel) {
           hasMissingLabeling = true;
+          totalTurnScore -= 0.5;
+          continue;
+        }
+
+        const userLabels = rawUserLabels
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase())
+          .filter((label) => USER_INTENT_SET.has(label));
+        const assistantLabels = rawAssistantLabels
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase())
+          .filter((label) => ASSISTANT_ACTION_SET.has(label));
+
+
+        // If labeled but not with Socratic intents/actions, skip turn without flagging hasMissingLabeling
+        if (!userLabels.length || !assistantLabels.length) {
           continue;
         }
 
@@ -460,7 +604,9 @@ export class QualityService {
           const harmfulActions = assistantLabels.filter((action) => HARMFUL_ACTIONS[userLabel]?.has(action));
           const isCorrect = matchedActions.length > 0;
           const isCriticalFailure = !isCorrect && CRITICAL_INTENTS.has(userLabel as any);
-          const value = (isCorrect ? 1 : -1) + (harmfulActions.length * HARMFUL_ACTION_PENALTY);
+          // A missing rule match is neutral, not automatically a total failure.
+          // Only an explicitly harmful pairing receives the low endpoint.
+          const value = harmfulActions.length > 0 ? -1 : isCorrect ? 1 : -0.5;
 
           if (!isCorrect) {
             incrementWrongPair(wrongPairMap, userLabel, assistantLabels, isCriticalFailure);
@@ -487,7 +633,11 @@ export class QualityService {
           continue;
         }
 
-        const turnScore = intentScores.reduce((sum, current) => sum + current.value, 0) / intentScores.length;
+        // Treat multiple selected intents as alternatives for one turn. Preserve
+        // the best valid pairing instead of penalising every extra label.
+        const turnScore = intentScores.some((current) => current.harmfulActions.length > 0)
+          ? -1
+          : Math.max(...intentScores.map((current) => current.value));
         totalTurnScore += turnScore;
         scorableTurns += 1;
 
@@ -499,14 +649,42 @@ export class QualityService {
           userLabels: [...userLabels],
           assistantLabels: [...assistantLabels],
           expectedActions: Array.from(expectedActions),
-          matched: intentScores.every((entry) => entry.matched),
+          matched: intentScores.some((entry) => entry.matched),
           turnScore,
           intentScores,
         });
       }
 
+      let errorMessageIndex: number | null = null;
+      const mismatchReasons: string[] = [];
+
+      for (const turn of turnPairs) {
+        if (!turn.matched) {
+          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Student intent '${turn.userLabels.join(',')}' and Assistant action '${turn.assistantLabels.join(',')}' are mismatched.`);
+          if (errorMessageIndex === null) {
+            errorMessageIndex = turn.assistantMessageIndex;
+          }
+        } else if (turn.turnScore < 0) {
+          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Harmful action detected.`);
+          if (errorMessageIndex === null) {
+            errorMessageIndex = turn.assistantMessageIndex;
+          }
+        }
+      }
+
+      if (errorMessageIndex === null) {
+        // Fallback to the last assistant message
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === 'assistant') {
+            errorMessageIndex = messages[i].messageIndex;
+            break;
+          }
+        }
+      }
+
+      const conflictReason = mismatchReasons.length > 0 ? mismatchReasons.join('; ') : undefined;
+
       const sid = String(item._id);
-      const adj = adjudicationBySample.get(sid);
       const sReviews = reviewsBySample.get(sid) || [];
       const displaySubject = resolvedSubject !== 'OUT_OF_SCOPE'
         ? resolvedSubject
@@ -520,7 +698,19 @@ export class QualityService {
       let adjudicatedAt = '';
       let isClassified = false;
 
-      if (adj) {
+      const isApprovedSample = isApproved;
+
+      if (isApprovedSample) {
+        isClassified = true;
+        resolvedBucket = canonicalSampleBucketMap.get(sid) || (adj ? (adj.finalClassification === 'Bad' ? 'Reject' : adj.finalClassification) : 'Gold');
+        reviewStatus = 'reviewed';
+        if (adj) {
+          hasConflict = adj.hasConflict;
+          note = adj.note || '';
+          adjudicatedBy = adj.adjudicatedBy ? String(adj.adjudicatedBy) : '';
+          adjudicatedAt = adj.updatedAt ? adj.updatedAt.toISOString() : '';
+        }
+      } else if (adj) {
         resolvedBucket = adj.finalClassification === 'Bad' ? 'Reject' : adj.finalClassification;
         hasConflict = adj.hasConflict;
         reviewStatus = adj.hasConflict ? 'conflict' : 'reviewed';
@@ -541,11 +731,15 @@ export class QualityService {
         isClassified = true;
       }
 
+      const assigneeCount = sampleAssigneeCount.get(sid) || 0;
+      const isOverlapped = assigneeCount >= 2;
+      const pendingAdjudication = isOverlapped ? !approvedSampleIds.has(sid) : pendingAdjudicationSet.has(sid);
       const iar = vector.map((value, index) => (
         intentCounts[index] > 0 ? value / intentCounts[index] : null
       ));
-      const score = scorableTurns > 0 ? totalTurnScore / scorableTurns : -1;
-      const humanScore = scorableTurns > 0 ? toTenPointScore(score) : null;
+      const score = requiredTurns > 0 ? totalTurnScore / requiredTurns : -1;
+      const humanScore = pendingAdjudication ? null : ((requiredTurns > 0 && !hasMissingLabeling) ? toTenPointScore(score) : null);
+
 
       if (isClassified) {
         qualityItems.push({
@@ -553,6 +747,9 @@ export class QualityService {
           sampleId: String(item.sampleId),
           data: { ...(item.data || {}), subject: displaySubject },
           bucket: resolvedBucket,
+          hasMissingLabeling,
+          requiredTurns,
+          isApproved,
           score: getBucketScore(resolvedBucket === 'Reject' ? 'Reject' : resolvedBucket),
           humanScore,
           scoreScale: 'turn-average-raw',
@@ -567,7 +764,48 @@ export class QualityService {
           note,
           adjudicatedBy,
           adjudicatedAt,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
+          pendingAdjudication,
+        });
+        continue;
+      }
+
+      // Check severe error flags from Stage 3 (Factual Error, Direct Answer, Language Issue)
+      const SEVERE_ERROR_LABELS = new Set([
+        'FACT_ERR', 'FACTUAL ERROR',
+        'DIR_ANS', 'DIRECT ANSWER',
+        'LANG_ISSUE', 'LANGUAGE ISSUE'
+      ]);
+      const activeErrors = sampleSubjectLabels
+        .filter((l: any) => SEVERE_ERROR_LABELS.has(String(l.name || '').toUpperCase()))
+        .map((l: any) => l.name);
+
+      if (activeErrors.length > 0) {
+        qualityItems.push({
+          _id: sid,
+          sampleId: String(item.sampleId),
+          data: { ...(item.data || {}), subject: displaySubject },
+          bucket: 'Reject',
+          hasMissingLabeling,
+          requiredTurns,
+          isApproved,
+          score: 0,
+          humanScore: 0,
+          scoreScale: 'turn-average-raw',
+          vector,
+          intentCounts,
+          iar,
+          criticalFailures,
+          scorableTurns,
+          reviewStatus: 'pending',
+          reviewCount: 0,
+          conflict: false,
+          errorMessageIndex,
+          conflictReason: `Bị gắn cờ lỗi nghiêm trọng từ Stage 3: ${activeErrors.join(', ')}`,
+          turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -579,6 +817,9 @@ export class QualityService {
           sampleId: String(item.sampleId),
           data: { ...(item.data || {}), subject: displaySubject },
           bucket: incompleteBucket,
+          hasMissingLabeling,
+          requiredTurns,
+          isApproved,
           score: getBucketScore(incompleteBucket),
           humanScore,
           scoreScale: 'turn-average-raw',
@@ -590,7 +831,10 @@ export class QualityService {
           reviewStatus: 'pending',
           reviewCount: 0,
           conflict: false,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -601,6 +845,9 @@ export class QualityService {
           sampleId: String(item.sampleId),
           data: { ...(item.data || {}), subject: displaySubject },
           bucket: 'Incomplete',
+          hasMissingLabeling,
+          requiredTurns,
+          isApproved,
           score: 0,
           humanScore,
           scoreScale: 'turn-average-raw',
@@ -612,7 +859,10 @@ export class QualityService {
           reviewStatus: 'pending',
           reviewCount: 0,
           conflict: false,
+          errorMessageIndex,
+          conflictReason,
           turnPairs,
+          pendingAdjudication,
         });
         continue;
       }
@@ -623,6 +873,9 @@ export class QualityService {
         sampleId: String(item.sampleId),
         data: { ...(item.data || {}), subject: displaySubject },
         bucket,
+        hasMissingLabeling,
+        requiredTurns,
+        isApproved,
         score,
         humanScore,
         scoreScale: 'turn-average-raw',
@@ -634,7 +887,10 @@ export class QualityService {
         reviewStatus: 'pending',
         reviewCount: 0,
         conflict: false,
+        errorMessageIndex,
+        conflictReason,
         turnPairs,
+        pendingAdjudication,
       });
     }
 
@@ -729,8 +985,10 @@ export class QualityService {
         requiredTurns += 1;
 
         const userLabels = (labelMap.get(`${String(item._id)}:${userMessage.messageIndex}:user`) || [])
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase())
           .filter((label) => USER_INTENT_SET.has(label));
         const assistantLabels = (labelMap.get(`${String(item._id)}:${assistantMessage.messageIndex}:assistant`) || [])
+          .map((label) => STAGE3_TO_BACKEND_MAP[label.toUpperCase()] || label.toUpperCase())
           .filter((label) => ASSISTANT_ACTION_SET.has(label));
 
         if (!userLabels.length || !assistantLabels.length) {
@@ -811,6 +1069,7 @@ export class QualityService {
       name: 'REJECT',
       type: 'hard' as const,
       targetScope: 'sample' as const,
+      source: 'system' as const,
       targetTextSnapshot: QUALITY_AUTO_REJECT_MARKER,
       createdBy: ownerOid,
     }));
@@ -983,6 +1242,8 @@ export class QualityService {
     const messageCounts = { Gold: 0, Rewrite: 0, Bad: 0, Incomplete: 0 };
     let conflictCount = 0;
 
+    const subjectStats: Record<string, { subject: string; total: number; gold: number; rewrite: number; reject: number; incomplete: number }> = {};
+
     const ruleClassification = await this.classify(versionId, String(version.ownerId));
     const ruleClassificationMap = new Map<string, string>();
     for (const ri of ruleClassification.items) {
@@ -1013,6 +1274,38 @@ export class QualityService {
         const msgCount = Array.isArray(item.data?.messages) ? item.data.messages.length : 2;
         messageCounts[finalClass] += msgCount;
       }
+
+      const itemData = (item.data || {}) as any;
+      const subClass = (itemData.subject_classification || {}) as any;
+      const subject = subClass.subject_final ||
+                      itemData.subject ||
+                      itemData.subjectLabel ||
+                      itemData.subject_label ||
+                      itemData.groupLabel ||
+                      itemData.group_label ||
+                      (itemData.meta?.subject) ||
+                      'Ungrouped';
+
+      if (!subjectStats[subject]) {
+        subjectStats[subject] = {
+          subject,
+          total: 0,
+          gold: 0,
+          rewrite: 0,
+          reject: 0,
+          incomplete: 0
+        };
+      }
+      subjectStats[subject].total += 1;
+      if (finalClass === 'Gold') {
+        subjectStats[subject].gold += 1;
+      } else if (finalClass === 'Rewrite') {
+        subjectStats[subject].rewrite += 1;
+      } else if (finalClass === 'Bad') {
+        subjectStats[subject].reject += 1;
+      } else {
+        subjectStats[subject].incomplete += 1;
+      }
     }
 
     const reviewerCountsMap = new Map<string, { name: string; count: number }>();
@@ -1041,6 +1334,7 @@ export class QualityService {
         { group: 'Incomplete', count: counts.Incomplete, messageCount: messageCounts.Incomplete, percentage: items.length ? Math.round((counts.Incomplete / items.length) * 100) : 0 },
       ],
       reviewerStats: Array.from(reviewerCountsMap.values()),
+      bySubject: Object.values(subjectStats),
     };
   }
 }

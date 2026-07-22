@@ -33,9 +33,9 @@ export const Stage5Evaluation: React.FC = () => {
         ['Student', 'Hinh nhu la n*x^(n-1) a?'],
       ],
       models: [
-        { name: 'GEMINI', rec: 'Reject', score: 4.0, color: 'rose' },
+        { name: 'OPENROUTER', rec: 'Reject', score: 4.0, color: 'rose' },
         { name: 'DEEPSEEK', rec: 'Pass', score: 7.8, color: 'emerald' },
-        { name: 'OPENAI', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
+        { name: 'GROQ', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
       ],
     },
     {
@@ -49,7 +49,7 @@ export const Stage5Evaluation: React.FC = () => {
         ['AI Tutor', 'Em thu nghi xem vi sao xe phanh lai dung duoc tren mat duong?'],
       ],
       models: [
-        { name: 'GEMINI', rec: 'Pass', score: 8.8, color: 'emerald' },
+        { name: 'OPENROUTER', rec: 'Pass', score: 8.8, color: 'emerald' },
         { name: 'DEEPSEEK', rec: 'Pass', score: 8.4, color: 'emerald' },
       ],
     },
@@ -72,8 +72,8 @@ export const Stage5Evaluation: React.FC = () => {
           </div>
           <div className="sep490-check-list">
             {[
-              ['gemini', 'Gemini (Flash 1.5)', 'Default education judge'],
-              ['openai', 'OpenAI (GPT-4o)', 'High precision verification'],
+              ['openrouter', 'Gemini (Flash 1.5)', 'Default education judge'],
+              ['groq', 'Groq Llama 3', 'High precision verification'],
               ['deepseek', 'Deepseek (R1/V3)', 'Advanced logic judge'],
             ].map(([key, label, desc]) => (
               <label key={key} className={judgeModels[key] ? 'active' : ''}>

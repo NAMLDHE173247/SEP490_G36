@@ -1,35 +1,37 @@
-name: Deploy Frontend to Azure App Service (Code)
+name: Deploy Frontend to Azure App Service
 
 on:
-  workflow_dispatch: # Cho phép bấm nút chạy thủ công trên GitHub
+  workflow_dispatch:
   push:
     branches:
       - main
       - develop
     paths:
-      - 'SEP490_WEBAPP-main/frontend/**'
-      - 'SEP490_WEBAPP-main/frontend_v2/**'
-
+      - "SEP490_WEBAPP-main/frontend/**"
+      - "SEP490_WEBAPP-main/frontend_v2/**"
+      - ".github/workflows/deploy-fe.yml"
 
 env:
-  AZURE_WEBAPP_NAME: 'front-end' # Thay bằng tên App Service FE của bạn trên Azure
-  NODE_VERSION: '22.x'
+  AZURE_WEBAPP_NAME: front-end
+  NODE_VERSION: 22.x
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
 
-      - name: Install dependencies & Build
+      - name: Install dependencies and build with .env.production
+        working-directory: SEP490_WEBAPP-main/frontend_v2
         run: |
-          cd SEP490_WEBAPP-main/frontend_v2
           npm install --legacy-peer-deps
           npm run build
 
@@ -38,4 +40,4 @@ jobs:
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_FE }}
-          package: './SEP490_WEBAPP-main/frontend_v2/dist'
+          package: SEP490_WEBAPP-main/frontend_v2/dist

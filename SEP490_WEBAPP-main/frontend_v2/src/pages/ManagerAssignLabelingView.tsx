@@ -4,7 +4,7 @@ import {
   CheckCircle, Clock, AlertCircle, XCircle, UserCheck, Users,
   Eye, Plus, Calendar, ArrowUpDown, BarChart2, Tag,
   MessageSquare, RefreshCw, Send, X, FileText, Sparkles, Trash2,
-  Layers, ChevronUp, Activity
+  Layers, ChevronUp, Activity, Download, AlertTriangle
 } from 'lucide-react';
 import '../styles/assignlabeling.css';
 
@@ -22,7 +22,7 @@ const STATUS_CONFIG = {
 };
 
 const PRIORITY_CONFIG = {
-  'urgent': { label: 'Khẩn cấp', className: 'al-priority-urgent' },
+  'urgent': { label: 'Cực cao',    className: 'al-priority-urgent' },
   'high':   { label: 'Cao',      className: 'al-priority-high' },
   'medium': { label: 'Trung bình', className: 'al-priority-medium' },
   'low':    { label: 'Thấp',     className: 'al-priority-low' },
@@ -41,6 +41,38 @@ function ManagerAssignLabelingView({ onViewDetail }) {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [checkers, setCheckers] = useState<any[]>([]);
+  const [updatingChecker, setUpdatingChecker] = useState<string | null>(null);
+
+  const handleCheckerChange = async (e: any, task: any) => {
+    const selectedCheckerId = e.target.value;
+    setUpdatingChecker(task.id);
+    try {
+      const versionId = String(task.id || '').split('_')[0];
+      await api.patch(`/dataprep/versions/${versionId}/assignments/checker`, {
+        batchName: task.name,
+        checkerId: selectedCheckerId || undefined
+      });
+      task.checkerId = selectedCheckerId;
+      setShowToast('Đã cập nhật Checker phụ trách!');
+    } catch (err: any) {
+      console.error('Failed to update checker', err);
+      alert(err.response?.data?.error || 'Không thể cập nhật Checker');
+    } finally {
+      setUpdatingChecker(null);
+      setTimeout(() => setShowToast(null), 3000);
+    }
+  };
+
+  const fetchCheckers = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      const list = (res.data.users || []).filter((u: any) => u.role === 'checker' && (!u.status || u.status === 'active'));
+      setCheckers(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
+    } catch (e) {
+      console.error('Failed to fetch checkers', e);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -74,6 +106,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
   React.useEffect(() => {
     fetchTasks();
+    fetchCheckers();
   }, []);
 
   const toggleProject = (projectId: string) => {
@@ -92,6 +125,44 @@ function ManagerAssignLabelingView({ onViewDetail }) {
       alert(error.response?.data?.error || 'Xóa Project thất bại');
     }
     setTimeout(() => setShowToast(null), 3000);
+  };
+
+  const [exportModal, setExportModal] = useState<null | { task: any; versionId: string }>(null);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportTask = (e: React.MouseEvent, task: any) => {
+    e.stopPropagation();
+    const versionId = String(task.id || '').split('_')[0];
+    if (task.status !== 'completed' && task.status !== 'submitted') {
+      setExportModal({ task, versionId });
+      return;
+    }
+    doExport(versionId, task.name);
+  };
+
+  const doExport = async (versionId: string, taskName: string) => {
+    setIsExporting(true);
+    try {
+      const res = await api.get(`/dataprep/export/${versionId}/training-data`);
+      const exportData = res.data?.data || res.data;
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `export_${taskName.replace(/\s+/g, '_')}_${versionId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setShowToast('Xuất dữ liệu thành công!');
+      setTimeout(() => setShowToast(null), 3000);
+    } catch (err: any) {
+      console.error('Export failed', err);
+      alert(err.response?.data?.error || 'Xuất dữ liệu thất bại');
+    }
+    setIsExporting(false);
+    setExportModal(null);
   };
 
   // ── Quản lý nhân sự (thay thế / thêm / gỡ) ──
@@ -189,7 +260,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
       case 'date-asc': return new Date(a.dueDate || 0).getTime() - new Date(b.dueDate || 0).getTime();
       case 'date-desc': return new Date(b.dueDate || 0).getTime() - new Date(a.dueDate || 0).getTime();
       case 'priority': {
-        const order = { urgent: 0, high: 1, medium: 2, low: 3 };
+        const order = { high: 0, medium: 1, low: 2 };
         return (order[a.priority] || 2) - (order[b.priority] || 2);
       }
       case 'progress': {
@@ -298,6 +369,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <span className="al-task-desc">
               {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
             </span>
+            <div onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
+              <UserCheck size={14} />
+              <select
+                value={task.checkerId || ''}
+                onChange={(e) => handleCheckerChange(e, task)}
+                disabled={updatingChecker === task.id}
+                aria-label={`Checker của ${task.name}`}
+                style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px', background: '#fff', color: '#334155', maxWidth: 220 }}
+              >
+                <option value="">-- Chọn Checker phụ trách --</option>
+                {checkers.map((checker: any) => (
+                  <option key={checker.id} value={checker.id}>
+                    {checker.name} ({checker.email})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>
@@ -343,6 +431,14 @@ function ManagerAssignLabelingView({ onViewDetail }) {
               title="Xóa task"
             >
               <Trash2 size={18} />
+            </button>
+            <button
+              className="al-action-btn export"
+              onClick={(e) => handleExportTask(e, task)}
+              style={{ background: 'none', border: 'none', color: '#10b981', cursor: 'pointer', padding: '4px' }}
+              title="Export Data (JSON)"
+            >
+              <Download size={18} />
             </button>
           </div>
         </div>
@@ -579,7 +675,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
 
         {projectGroups.map((group) => {
           const groupKey = group.projectId || group.projectName;
-          const isOpen = expandedProjects[groupKey] ?? true;
+          const isOpen = expandedProjects[groupKey] ?? false;
           const groupSamples = group.tasks.reduce((s: number, t: any) => s + (t.totalSamples || 0), 0);
           const groupLabeled = group.tasks.reduce((s: number, t: any) => s + (t.labeledCount || 0), 0);
           const groupProgress = groupSamples > 0 ? Math.round((groupLabeled / groupSamples) * 100) : 0;
@@ -648,6 +744,23 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                   <span className="al-task-desc">
                     {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
                   </span>
+                  <label onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
+                    <UserCheck size={14} />
+                    <select
+                      value={task.checkerId || ''}
+                      onChange={(e) => handleCheckerChange(e, task)}
+                      disabled={updatingChecker === task.id}
+                      aria-label={`Checker của ${task.name}`}
+                      style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px', background: '#fff', color: '#334155', maxWidth: 220 }}
+                    >
+                      <option value="">-- Chọn Checker phụ trách --</option>
+                      {checkers.map((checker: any) => (
+                        <option key={checker.id} value={checker.id}>
+                          {checker.name} ({checker.email})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
                 <div className={`al-task-priority ${priorityInfo.className}`}>{priorityInfo.label}</div>
@@ -815,6 +928,71 @@ function ManagerAssignLabelingView({ onViewDetail }) {
           </div>
         </div>
       )}
+
+      {/* ── Export Confirm Modal ── */}
+      {exportModal && (() => {
+        const progress = exportModal.task.totalSamples > 0
+          ? Math.round((exportModal.task.labeledCount / exportModal.task.totalSamples) * 100) : 0;
+        return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={() => !isExporting && setExportModal(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(6px)' }} />
+          <div style={{ position: 'relative', background: '#fff', borderRadius: '20px', padding: '32px', width: '400px', maxWidth: '90vw', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            {/* Close */}
+            <button onClick={() => !isExporting && setExportModal(null)} style={{ position: 'absolute', top: '16px', right: '16px', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}><X size={18} /></button>
+
+            {/* Icon + Title */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '12px', background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={22} style={{ color: '#d97706' }} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: '#1e293b' }}>Task chưa hoàn thành</h3>
+                <p style={{ margin: '2px 0 0', fontSize: '13px', color: '#94a3b8' }}>Dữ liệu export có thể chưa đầy đủ</p>
+              </div>
+            </div>
+
+            {/* Info card */}
+            <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '14px 16px', marginBottom: '20px', border: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#334155', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exportModal.task.name}</span>
+                <span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '20px', background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' }}>
+                  {(STATUS_CONFIG as any)[exportModal.task.status]?.label || exportModal.task.status}
+                </span>
+              </div>
+              <div style={{ height: '6px', borderRadius: '3px', background: '#e2e8f0', overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${progress}%`, borderRadius: '3px', background: progress > 50 ? 'linear-gradient(90deg, #6366f1, #818cf8)' : 'linear-gradient(90deg, #f59e0b, #fbbf24)', transition: 'width 0.3s' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '12px', color: '#94a3b8' }}>
+                <span>{exportModal.task.labeledCount || 0}/{exportModal.task.totalSamples || 0} samples</span>
+                <span style={{ fontWeight: 600, color: progress > 50 ? '#6366f1' : '#d97706' }}>{progress}%</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setExportModal(null)}
+                disabled={isExporting}
+                style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', color: '#475569', fontWeight: 600, cursor: 'pointer', fontSize: '14px' }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => doExport(exportModal.versionId, exportModal.task.name)}
+                disabled={isExporting}
+                style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: isExporting ? '#cbd5e1' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', fontWeight: 700, cursor: isExporting ? 'not-allowed' : 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              >
+                {isExporting ? (
+                  <><RefreshCw size={14} className="animate-spin" /> Đang xuất...</>
+                ) : (
+                  <><Download size={14} /> Xuất dữ liệu</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
     </div>
   );

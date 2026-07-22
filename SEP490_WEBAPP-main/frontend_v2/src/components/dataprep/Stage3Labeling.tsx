@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 const SUB_STEPS_STAGE3 = [{ num: 1, label: 'Cluster Groups' }, { num: 2, label: 'Quality Assign' }];
 import { apiService } from '../../services/api';
+import { useStage4Data } from '../../hooks/useStage4Data';
+import { Stage3AiReview } from './Stage3AiReview';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../../pages/DataPrep/utils';
 import './Stage3Labeling.css';
 
@@ -36,9 +38,56 @@ export const Stage3Labeling = (dataPrep: any) => {
 
   // Local states
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
+
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'openai' | 'gemini'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -47,6 +96,29 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [newSubjectInput, setNewSubjectInput] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
   const [useCustomApi, setUseCustomApi] = React.useState(false);
+  const [scoringVersionId] = React.useState<string | null>(() => localStorage.getItem('current_version_id'));
+  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ openrouter: true, deepseek: true, groq: false });
+  const [isStartingCrossCheck, setIsStartingCrossCheck] = React.useState(false);
+  const {
+    results: crossCheckResults,
+    latestJob: crossCheckJob,
+    runMultiEval: runCrossCheck,
+    error: crossCheckError,
+  } = useStage4Data(scoringVersionId);
+
+  const handleRunCrossCheck = async () => {
+    const models = Object.entries(judgeModels).filter(([, enabled]) => enabled).map(([model]) => model);
+    if (!scoringVersionId) return alert('Không tìm thấy Dataset Version của Project hiện tại.');
+    if (models.length === 0) return alert('Vui lòng chọn ít nhất một mô hình AI.');
+    try {
+      setIsStartingCrossCheck(true);
+      await runCrossCheck(models, 'No Context');
+    } catch (err: any) {
+      alert(err.message || 'Không thể chạy AI đối soát.');
+    } finally {
+      setIsStartingCrossCheck(false);
+    }
+  };
 
   // --- Added for Assignment Dashboard ---
   const [assignmentTotals, setAssignmentTotals] = React.useState<any>(null);
@@ -55,6 +127,28 @@ export const Stage3Labeling = (dataPrep: any) => {
   const [shareUsers, setShareUsers] = React.useState<any[]>([]);
   const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
   const [isAssigning, setIsAssigning] = React.useState(false);
+
+  const loadAssignmentReviewData = React.useCallback(async () => {
+    if (!scoringVersionId) return;
+    setIsFetchingDashboard(true);
+    try {
+      const [assignments, dashboard] = await Promise.all([
+        apiService.getDatasetVersionAssignments(scoringVersionId),
+        apiService.getDatasetVersionAssignmentDashboard(scoringVersionId),
+      ]);
+      setAssignmentSamples(assignments.samples || []);
+      setAssignmentTotals(assignments.totals || null);
+      setAssignmentDashboard(dashboard || null);
+    } catch (err) {
+      console.error('Failed to load assignment review data:', err);
+    } finally {
+      setIsFetchingDashboard(false);
+    }
+  }, [scoringVersionId]);
+
+  React.useEffect(() => {
+    if (currentSubStep3 === 6 || currentSubStep3 === 7) loadAssignmentReviewData();
+  }, [currentSubStep3, loadAssignmentReviewData]);
   
   // Create Task Modal States
   const [taskBatchSize, setTaskBatchSize] = React.useState(30);
@@ -650,9 +744,12 @@ export const Stage3Labeling = (dataPrep: any) => {
                         onChange={e => setAiProvider(e.target.value as any)}
                         disabled={isLabelingWithAI}
                       >
-                        <option value="deepseek">Deepseek</option>
-                        <option value="openai">ChatGPT</option>
+                        <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                         <option value="gemini">Gemini</option>
+                        <option value="openai">ChatGPT / OpenAI</option>
+                        <option value="deepseek">Deepseek</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
                       </select>
                       <button
                         className="label-ai-btn"
@@ -1022,11 +1119,11 @@ export const Stage3Labeling = (dataPrep: any) => {
                     <div className="conv-detail-label">#{idx + 1}</div>
                     <div className="conv-detail-msg conv-detail-user">
                       <div className="conv-detail-role">≡ƒæñ User</div>
-                      <div className="conv-detail-text">{msg.user}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                     </div>
                     <div className="conv-detail-msg conv-detail-assistant">
                       <div className="conv-detail-role">≡ƒñû Assistant</div>
-                      <div className="conv-detail-text">{msg.assistant}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                     </div>
                   </div>
                 ))}
@@ -1245,7 +1342,11 @@ export const Stage3Labeling = (dataPrep: any) => {
           </div>
         )}
 
-        {currentSubStep3 === 7 && (
+        {currentSubStep3 === 7 && (isFetchingDashboard && assignmentSamples.length === 0
+          ? <div style={{ padding: 48, display: 'flex', justifyContent: 'center', gap: 10, color: '#64748b' }}><Loader2 className="animate-spin" size={18}/> Đang tải dữ liệu review...</div>
+          : <Stage3AiReview versionId={scoringVersionId} samples={assignmentSamples} dashboard={assignmentDashboard} onRefresh={loadAssignmentReviewData} />)}
+
+        {false && currentSubStep3 === 7 && (
           <div className="ia-dashboard">
             {/* Coverage Bar */}
             <div className="ia-coverage-bar">
@@ -1257,6 +1358,49 @@ export const Stage3Labeling = (dataPrep: any) => {
                 <span className="ia-stat-green">Complete: 0</span>
                 <span className="ia-stat-red">Missing: 90</span>
               </div>
+            </div>
+
+            <div className="ia-section-card" style={{ marginBottom: 16, border: '1px solid #c7d2fe' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <div>
+                  <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={16} /> AI đối soát kết quả Staff</h4>
+                  <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
+                    AI chấm cùng hội thoại và so sánh chéo với điểm Staff. Chênh lệch lớn sẽ được đánh dấu để Admin review.
+                  </p>
+                </div>
+                <button className="ia-auto-labeling-btn" onClick={handleRunCrossCheck} disabled={isStartingCrossCheck || crossCheckJob?.status === 'running' || crossCheckJob?.status === 'pending'}>
+                  {(isStartingCrossCheck || crossCheckJob?.status === 'running' || crossCheckJob?.status === 'pending') ? <><Loader2 size={14} className="animate-spin" /> Đang chấm...</> : 'Chạy AI đối soát'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
+                {['openrouter', 'deepseek', 'groq'].map(model => (
+                  <label key={model} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, textTransform: 'capitalize' }}>
+                    <input type="checkbox" checked={judgeModels[model]} onChange={() => setJudgeModels(prev => ({ ...prev, [model]: !prev[model] }))} /> {model}
+                  </label>
+                ))}
+              </div>
+              {crossCheckError && <p style={{ color: '#dc2626', fontSize: 13 }}>{crossCheckError}</p>}
+              {crossCheckResults.length > 0 && (
+                <div style={{ overflowX: 'auto', marginTop: 14 }}>
+                  <table className="sa-tasks-table" style={{ minWidth: 720 }}>
+                    <thead><tr><th>HỘI THOẠI</th><th>STAFF</th><th>AI TRUNG BÌNH</th><th>CHÊNH LỆCH</th><th>KẾT QUẢ ĐỐI SOÁT</th></tr></thead>
+                    <tbody>{crossCheckResults.map(result => {
+                      const staffScore = Number(result.scores?.human ?? result.scores?.Human);
+                      const aiScore = Number(result.averageOverall ?? result.averageScore);
+                      const hasStaff = Number.isFinite(staffScore);
+                      const diff = hasStaff && Number.isFinite(aiScore) ? Math.abs(aiScore - staffScore) : Number(result.diff || 0);
+                      const conflict = Boolean(result.hasConflict) || result.recommendation === 'Conflict' || (hasStaff && diff >= 2);
+                      return <tr key={result._id}>
+                        <td><strong>{result.sampleIdRef?.sampleId || result.sampleId}</strong><div style={{ color: '#64748b', fontSize: 12 }}>{truncateText(result.sampleIdRef?.data?.messages?.find(m => m.role === 'user')?.content || '', 90)}</div></td>
+                        <td>{hasStaff ? staffScore.toFixed(1) : <span style={{ color: '#94a3b8' }}>Chưa có điểm Staff</span>}</td>
+                        <td>{Number.isFinite(aiScore) ? aiScore.toFixed(1) : '—'}</td>
+                        <td>{hasStaff ? diff.toFixed(1) : '—'}</td>
+                        <td><span style={{ color: conflict ? '#dc2626' : '#15803d', fontWeight: 700 }}>{hasStaff ? (conflict ? 'Cần Admin review' : 'Khớp với Staff') : 'Chỉ có điểm AI'}</span></td>
+                      </tr>;
+                    })}</tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             <div className="ia-main-layout">
@@ -1447,7 +1591,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                     <button className="ia-add-label-btn">Th├¬m Nh├ún</button>
                     <input type="number" defaultValue={1} className="ia-label-num-input" />
                     <select className="ia-label-select">
-                      <option>Gemini</option>
+                      <option>OpenRouter</option>
                       <option>Deepseek</option>
                     </select>
                   </div>

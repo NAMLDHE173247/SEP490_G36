@@ -12,6 +12,8 @@ export interface IModelVersion extends Document {
   trainingHistoryId?: mongoose.Types.ObjectId;
   evaluationId?: mongoose.Types.ObjectId;
   hfRepoId?: string;
+  subject?: string;
+  routerEnabled?: boolean;
   status: ModelVersionStatus;
   metrics?: {
     loss?: number;
@@ -41,6 +43,8 @@ const ModelVersionSchema = new Schema<IModelVersion>(
     trainingHistoryId: { type: Schema.Types.ObjectId, ref: 'TrainingHistory' },
     evaluationId: { type: Schema.Types.ObjectId, ref: 'ModelEvaluation' },
     hfRepoId: { type: String },
+    subject: { type: String, uppercase: true, trim: true },
+    routerEnabled: { type: Boolean, default: true },
     status: {
       type: String,
       enum: Object.values(ModelVersionStatus),

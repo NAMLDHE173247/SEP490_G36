@@ -30,13 +30,14 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
 import { apiService } from '../services/api';
+import { getCliProxyModels } from '../services/configApi';
 import '../styles/chat.css';
-import { BatchTestingModal } from '../components/BatchTestingModal';
+import { BatchModelTarget, BatchTestingModal } from '../components/BatchTestingModal';
 import { TypingIndicator } from '../components/TypingIndicator';
 
 // Constants
 const BASE_MODEL_OPTIONS = [
-  "Qwen/Qwen3-0.6B",
+  "Qwen/Qwen2.5-0.5B-Instruct",
   "meta-llama/Llama-3.1-8B-Instruct",
   "unsloth/gpt-oss-20b",
   "unsloth/gpt-oss-20b-unsloth-bnb-4bit",
@@ -423,6 +424,7 @@ interface ChatPanelProps {
   externalInput?: { text: string; ts: number } | null;
   isCompareMode?: boolean;
   onModelLoadedChange?: (loaded: boolean) => void;
+  onActiveModelChange?: (target: BatchModelTarget) => void;
   onIsInferringChange?: (inferring: boolean) => void;
   externalParams?: InferenceParams;
   onLog?: (log: Omit<LogEntry, "ts">) => void;
@@ -434,6 +436,7 @@ function ChatPanel({
   externalInput,
   isCompareMode = false,
   onModelLoadedChange,
+  onActiveModelChange,
   onIsInferringChange,
   externalParams,
   onLog,
@@ -442,9 +445,24 @@ function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [hfHubId, setHfHubId] = useState("");
   const [provider, setProvider] = useState<string>("local");
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
+  useEffect(() => {
+    if (provider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels()
+      .then((result) => {
+        setGatewayModels(result.models || []);
+        if (!hfHubId) setHfHubId(result.defaultModel || '');
+      })
+      .catch(() => setGatewayModels([]));
+  }, [provider, gatewayModels.length, hfHubId]);
   const [registries, setRegistries] = useState<any[]>([]);
   const [selectedRegistryId, setSelectedRegistryId] = useState<string>("");
   const [activeModelId, setActiveModelId] = useState<string>("");
+  const [showConnectedStatus, setShowConnectedStatus] = useState(false);
+  const flashConnectedStatus = useCallback(() => {
+    setShowConnectedStatus(true);
+    window.setTimeout(() => setShowConnectedStatus(false), 3500);
+  }, []);
   const [modelLoaded, setModelLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -484,6 +502,15 @@ function ChatPanel({
   }, []);
 
   useEffect(() => { onModelLoadedChange?.(modelLoaded); }, [modelLoaded, onModelLoadedChange]);
+  useEffect(() => {
+    onActiveModelChange?.({
+      modelId: modelLoaded ? activeModelId : "",
+      provider,
+      instanceId,
+      label: `Model ${instanceId}`,
+      registryId: provider === "registry" ? selectedRegistryId : undefined,
+    });
+  }, [activeModelId, modelLoaded, onActiveModelChange, provider, selectedRegistryId]);
   useEffect(() => { onIsInferringChange?.(isInferring); }, [isInferring, onIsInferringChange]);
 
   const fetchChatSessions = async () => {
@@ -590,7 +617,7 @@ function ChatPanel({
 
     return {
       title: "Chua the hoan tat thao tac",
-      description: "Kiem tra lai model/GPU roi thu lai. Chi tiet loi da duoc ghi trong Logs.",
+      description: message ? `Chi tiet: ${message}` : "Kiem tra lai ket noi AI roi thu lai.",
     };
   };
 
@@ -660,9 +687,11 @@ function ChatPanel({
   const sendMessage = useCallback(
     async (textOverride?: string) => {
       const text = textOverride ?? "";
+      const isHybrid = provider === "hybrid";
       const isLocal = provider === "local" || provider === "registry";
       if (!text.trim() || loading) return;
       if (isLocal && (!hfHubId.trim() || !modelLoaded)) return;
+      setLoadError(null);
 
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
@@ -684,7 +713,7 @@ function ChatPanel({
 
       const startTime = Date.now();
       let aiContent = "";
-      setMessages((prev) => [...prev, { role: "ai", content: "", model: isLocal ? hfHubId : provider }]);
+      setMessages((prev) => [...prev, { role: "ai", content: "", model: isHybrid ? "Hybrid Router" : isLocal ? hfHubId : provider }]);
 
       try {
         const options = {
@@ -697,9 +726,19 @@ function ChatPanel({
           top_k: params.topK === "" ? undefined : params.topK,
           top_p: params.topP === "" ? undefined : params.topP,
           repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
-          provider: provider === "local" || provider === "registry" ? undefined : provider,
+          provider: provider === "local" || provider === "registry" || isHybrid ? undefined : provider,
+          routing_mode: isHybrid ? "hybrid" : undefined,
+          session_id: currentSessionId || undefined,
           signal: abortController.signal,
           onFinalInfo: (info: any) => {
+            if (info.routing) {
+              onLog?.({
+                message: `Hybrid route: ${info.routing.subject} → ${info.routing.selectedModel || 'clarification'}`,
+                type: "info",
+                instanceId,
+                data: info.routing,
+              });
+            }
             if (info.input_parameters) {
               setMessages((prev) => {
                 const arr = [...prev];
@@ -711,7 +750,11 @@ function ChatPanel({
           },
         };
 
-        await apiService.inferStream(text, hfHubId, options, (chunk: string) => {
+        await apiService.inferStream({
+          text_input: text,
+          hf_hub_id: isHybrid ? undefined : (hfHubId || undefined),
+          ...options,
+        }, (chunk: string) => {
           aiContent += chunk;
           setMessages((prev) => {
             const arr = [...prev];
@@ -833,6 +876,13 @@ function ChatPanel({
   };
 
   const handleConfirmModel = async (modelOverride?: string) => {
+    if (provider === "hybrid") {
+      setActiveModelId("Hybrid Router");
+      setModelLoaded(true);
+      setLoadError(null);
+      toast.success("Hybrid Router đã sẵn sàng");
+      return;
+    }
     const isLocalOrRegistry = provider === "local" || provider === "registry";
     const modelToLoad = modelOverride || hfHubId;
 
@@ -843,6 +893,7 @@ function ChatPanel({
         await apiService.validateModel(modelToLoad, provider);
         setActiveModelId(modelToLoad || "Default Model");
         setModelLoaded(true);
+        flashConnectedStatus();
         toast.success(`Da ket noi model: ${modelToLoad || "Mac dinh"}`);
       } catch (error: any) {
         const errorMsg = error.response?.data?.error || error.message;
@@ -879,6 +930,7 @@ function ChatPanel({
       });
       setActiveModelId(modelToLoad);
       setModelLoaded(true);
+      flashConnectedStatus();
       toast.success("Model da san sang!");
       onLog?.({ message: `Tai model thanh cong: ${modelToLoad}`, type: "success", instanceId });
     } catch (error: any) {
@@ -1052,10 +1104,20 @@ function ChatPanel({
           >
             <option value="local">Manual ID</option>
             <option value="registry">Model Registry</option>
+            <option value="hybrid">Tự động · Hybrid Router</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="deepseek">DeepSeek V3 · OpenRouter</option>
+            <option value="gemini">Gemini 2.5 Flash · OpenRouter</option>
+            <option value="openai">GPT-4o mini · OpenRouter</option>
+            <option value="groq">Groq</option>
+            <option value="oauth_gateway">OAuth Gateway</option>
           </select>
 
-          {provider === "registry" ? (
+          {provider === "hybrid" ? (
+            <div style={{ width: '320px', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              Rule-first → Gemini fallback → Math/Physics SLM
+            </div>
+          ) : provider === "registry" ? (
             <select
               value={selectedRegistryId}
               onChange={(e) => handleRegistryChange(e.target.value)}
@@ -1071,6 +1133,7 @@ function ChatPanel({
             <div style={{ position: 'relative', width: '220px' }} ref={modelPickerRef}>
               <input
                 type="text"
+                list={provider === 'oauth_gateway' ? 'oauth-gateway-models' : undefined}
                 style={{ width: '100%', paddingRight: '30px' }}
                 placeholder={
                   provider === "local"
@@ -1087,6 +1150,11 @@ function ChatPanel({
                 }}
                 disabled={loading}
               />
+              {provider === 'oauth_gateway' && (
+                <datalist id="oauth-gateway-models">
+                  {gatewayModels.map((model) => <option key={model} value={model} />)}
+                </datalist>
+              )}
               {provider === "local" && (
                 <button
                   onClick={() => setShowModelPicker((p) => !p)}
@@ -1181,9 +1249,9 @@ function ChatPanel({
               </div>
             </div>
           )}
-          {modelLoaded && (
-            <span style={{ fontSize: '12.5px', color: 'var(--success)', fontWeight: 500 }}>
-              Active: {activeModelId.split('/').pop()}
+          {modelLoaded && showConnectedStatus && (
+            <span style={{ fontSize: '12.5px', color: 'var(--success)', fontWeight: 600 }}>
+              Đã kết nối: {activeModelId.split('/').pop()}
             </span>
           )}
         </div>
@@ -1373,6 +1441,7 @@ function ChatView() {
   const [showBatchTesting, setShowBatchTesting] = useState(false);
   const [showGlobalSettings, setShowGlobalSettings] = useState(false);
   const [showInferencePopup, setShowInferencePopup] = useState(false);
+  const [batchTargets, setBatchTargets] = useState<BatchModelTarget[]>([]);
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Model loading and inference states for compare mode validation
@@ -1394,6 +1463,13 @@ function ChatView() {
 
   const handleLog = useCallback((log: Omit<LogEntry, "ts">) => {
     setLogs((prev) => [...prev, { ...log, ts: Date.now() }]);
+  }, []);
+
+  const handleBatchTargetChange = useCallback((target: BatchModelTarget) => {
+    setBatchTargets((previous) => {
+      const withoutCurrent = previous.filter((item) => item.instanceId !== target.instanceId);
+      return [...withoutCurrent, target];
+    });
   }, []);
 
   const handleSend = () => {
@@ -1562,10 +1638,13 @@ function ChatView() {
         {showBatchTesting && (
           <BatchTestingModal
             onClose={() => setShowBatchTesting(false)}
-            activeModelId=""
-            provider="local"
+            activeModelId={batchTargets.find((target) => target.instanceId === 1)?.modelId || ""}
+            provider={batchTargets.find((target) => target.instanceId === 1)?.provider || "local"}
             params={params}
             instanceId={1}
+            selectedRegistryId={batchTargets.find((target) => target.instanceId === 1)?.registryId}
+            targets={mode === "compare" ? batchTargets : batchTargets.filter((target) => target.instanceId === 1)}
+            requiredTargetCount={mode === "compare" ? compareCount : 1}
           />
         )}
 
@@ -1579,6 +1658,7 @@ function ChatView() {
                 externalInput={sendTrigger}
                 isCompareMode={false}
                 onModelLoadedChange={setModel1Loaded}
+                onActiveModelChange={handleBatchTargetChange}
                 onIsInferringChange={setModel1Inferring}
                 externalParams={params}
                 onLog={handleLog}
@@ -1597,6 +1677,7 @@ function ChatView() {
                     else if (index === 1) setModel2Loaded(loaded);
                     else if (index === 2) setModel3Loaded(loaded);
                   }}
+                  onActiveModelChange={handleBatchTargetChange}
                   onIsInferringChange={(inferring) => {
                     if (index === 0) setModel1Inferring(inferring);
                     else if (index === 1) setModel2Inferring(inferring);

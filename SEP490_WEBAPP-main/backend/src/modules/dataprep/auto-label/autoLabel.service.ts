@@ -21,8 +21,11 @@ type ClusterPayload = {
 export type AutoLabelSuggestion = {
   clusterId: number;
   label: string;
-  // reason: string;
+  source: 'ai';
+  topic: string;
+  reason: string;
   sampleCount: number;
+  confidence?: number;
 };
 
 
@@ -104,13 +107,16 @@ ${JSON.stringify(payload)}
 
 Yêu cầu output:
 - CHỈ trả về JSON array hợp lệ.
-- Mỗi object bắt buộc có: clusterId, label.
+- Mỗi object bắt buộc có: clusterId, label, confidence, topic, reason.
 - label là tên môn học in hoa.
+- confidence là số thực biểu thị độ tin cậy từ 0.0 đến 1.0 (ví dụ: 0.95).
+- topic tóm tắt nội dung chính của cụm trong một câu ngắn.
+- reason nêu các đặc trưng nội dung chung khiến những hội thoại được gom vào cùng cụm.
 - Không thêm markdown, không giải thích ngoài JSON.
 
 Định dạng:
 [
-  { "clusterId": 0, "label": "MATH" }
+  { "clusterId": 0, "label": "MATH", "confidence": 0.95, "topic": "Phương trình bậc hai", "reason": "Các mẫu đều hỏi về nghiệm và cách giải phương trình bậc hai." }
 ]`;
 }
 
@@ -138,11 +144,15 @@ function parseSuggestions(rawText: string, clusters: ClusterPayload[]): AutoLabe
 
   return clusters.map((cluster) => {
     const item = byCluster.get(cluster.clusterId);
+    const confidence = typeof item?.confidence === 'number' ? item.confidence : 0.85;
     return {
       clusterId: cluster.clusterId,
       label: normalizeSubjectLabel(item?.label),
-      // reason: String(item?.reason || 'Fallback label because AI response was missing or invalid.'),
+      source: 'ai' as const,
+      topic: String(item?.topic || 'Chưa đủ dữ liệu để tóm tắt'),
+      reason: String(item?.reason || 'AI không cung cấp giải thích đủ tin cậy cho cụm này.'),
       sampleCount: cluster.sampleCount,
+      confidence,
     };
   });
 }
@@ -202,7 +212,7 @@ export class AutoLabelingService {
     return parseSuggestions(rawText, clusters);
   }
 
-  async save(versionId: string, userId: string, labels: Array<{ clusterId: number; label: string }>) {
+  async save(versionId: string, userId: string, labels: Array<{ clusterId: number; label: string; confidence?: number }>) {
     if (!Array.isArray(labels) || labels.length === 0) {
       throw Object.assign(new Error('labels is required.'), { statusCode: 400 });
     }
@@ -212,6 +222,7 @@ export class AutoLabelingService {
     const requestedLabels = labels.map((item) => ({
       clusterId: Number(item.clusterId),
       label: normalizeSubjectLabel(item.label),
+      confidence: typeof item.confidence === 'number' ? item.confidence : 0.85,
     }));
 
     const invalid = requestedLabels.find((item) => !validClusterIds.has(item.clusterId) || !item.label);
@@ -229,9 +240,23 @@ export class AutoLabelingService {
       const samples = await ProcessedDatasetItem.find({
         datasetVersionId: version._id,
         'data.cluster': item.clusterId,
-      }).select('_id').lean();
+      });
       const sampleIds = samples.map((sample: any) => sample._id);
       if (!sampleIds.length) continue;
+
+      // Update ProcessedDatasetItem with subject_classification inside data field
+      for (const sample of samples) {
+        const itemData = sample.data || {};
+        itemData.subject_classification = {
+          subject_ai: item.label,
+          confidence: item.confidence,
+          subject_final: item.label,
+          status: 'pending_review',
+          reviewed_by: null,
+        };
+        sample.markModified('data');
+        await sample.save();
+      }
 
       await removeLabelsByQuery({
         sampleId: { $in: sampleIds },
@@ -249,6 +274,7 @@ export class AutoLabelingService {
         name: item.label,
         type: 'hard' as const,
         targetScope: 'sample' as const,
+        source: 'ai' as const,
         createdBy: userOid,
       }));
 

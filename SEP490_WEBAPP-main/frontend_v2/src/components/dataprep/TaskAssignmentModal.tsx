@@ -14,6 +14,8 @@ interface StaffItem {
   totalAssigned: number;
 }
 
+interface CheckerItem { id: string; name: string; email: string; }
+
 interface VersionItem {
   _id: string;
   projectName: string;
@@ -31,6 +33,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [step, setStep] = useState(1);
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const [checkers, setCheckers] = useState<CheckerItem[]>([]);
   const [selectedVersion, setSelectedVersion] = useState<VersionItem | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [aiStaff, setAiStaff] = useState<string[]>([]);
@@ -40,8 +43,10 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
   const [overlapCount, setOverlapCount] = useState(1);
+  const [conflictThreshold, setConflictThreshold] = useState(0.6);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [selectedChecker, setSelectedChecker] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -54,8 +59,10 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setPriority('medium');
       setDeadline('');
       setOverlapCount(1);
+      setConflictThreshold(0.6);
       setError('');
       fetchVersions();
+      fetchCheckers();
     }
   }, [isOpen]);
 
@@ -86,6 +93,14 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       if (res.data.success) setStaffList(res.data.data);
     } catch { /* ignore */ }
     setLoading(false);
+  };
+
+  const fetchCheckers = async () => {
+    try {
+      const res = await api.get('/auth/users');
+      const list = (res.data.users || []).filter((u: any) => u.role === 'checker' && (!u.status || u.status === 'active'));
+      setCheckers(list.map((u: any) => ({ id: u.id || u._id, name: u.name, email: u.email })));
+    } catch { setCheckers([]); }
   };
 
   const toggleStaff = (id: string) => {
@@ -161,6 +176,8 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         priority,
         deadline: deadline || undefined,
         overlapCount,
+        similarityThreshold: conflictThreshold,
+        checkerId: overlapCount > 1 ? (selectedChecker || undefined) : undefined,
       });
       if (res.data.success) {
         onSuccess();
@@ -319,11 +336,21 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                       </select>
                     </div>
                     {overlapCount > 1 && (
-                      <div className="ta-overlap-preview">
-                        <span className="ta-overlap-badge">
-                          📊 {numberOfGroups} nhóm × {overlapCount} người — mỗi nhóm cùng gán{' '}
-                          {selectedVersion ? Math.floor(selectedVersion.totalSamples / numberOfGroups) : '?'} câu giống nhau
-                        </span>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        <div className="ta-overlap-preview">
+                          <span className="ta-overlap-badge">
+                            📊 {numberOfGroups} nhóm × {overlapCount} người — mỗi nhóm cùng gán{' '}
+                            {selectedVersion ? Math.floor(selectedVersion.totalSamples / numberOfGroups) : '?'} mẫu
+                          </span>
+                        </div>
+                        <div style={{ padding: 10, border: '1px solid #ddd6fe', borderRadius: 8, background: '#faf5ff' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700 }}>
+                            <span>Ngưỡng đồng thuận Jaccard</span>
+                            <span style={{ color: '#7c3aed' }}>{Math.round(conflictThreshold * 100)}%</span>
+                          </div>
+                          <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={e => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#7c3aed' }} />
+                          <small>Đạt từ {Math.round(conflictThreshold * 100)}%: tự chốt nhãn đa số. Thấp hơn: chuyển Checker.</small>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -437,7 +464,6 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                     <option value="low">Thấp</option>
                     <option value="medium">Trung bình</option>
                     <option value="high">Cao</option>
-                    <option value="urgent">Khẩn cấp</option>
                   </select>
                 </div>
                 <div className="ta-config-group">
@@ -445,6 +471,22 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                   <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
                 </div>
               </div>
+
+              {overlapCount > 1 ? (
+                <div className="ta-config-group ta-checker-field">
+                  <label><Users size={14} /> Checker xử lý ngoại lệ</label>
+                  <select value={selectedChecker} onChange={e => setSelectedChecker(e.target.value)} className="ta-select">
+                    <option value="">-- Admin/Supervisor tự xử lý --</option>
+                    {checkers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
+                  </select>
+                  <small>Checker chỉ nhận mẫu có mức đồng thuận thấp hơn {Math.round(conflictThreshold * 100)}%.</small>
+                </div>
+              ) : (
+                <div className="ta-config-group ta-checker-field" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                  <strong style={{ color: '#166534' }}>Luồng một Staff</strong>
+                  <small>Staff nộp → Supervisor duyệt → tự tạo Canonical. Không qua Checker.</small>
+                </div>
+              )}
 
               <div className="ta-summary-card">
                 <div className="ta-summary-title">

@@ -1,0 +1,30 @@
+# Copy this file to config.yaml. config.yaml and auths/ are git-ignored.
+host: "0.0.0.0"
+port: 8317
+
+tls:
+  enable: false
+
+remote-management:
+  # Docker sees host requests through its bridge address. This is safe for the
+  # local POC only because compose binds port 8317 to 127.0.0.1 and a strong
+  # management secret is mandatory.
+  allow-remote: true
+  # Replace before enabling OAuth management endpoints.
+  # Empty disables /v0/management entirely.
+  secret-key: ""
+  disable-control-panel: true
+
+auth-dir: "/root/.cli-proxy-api"
+
+# Replace with a long random secret and set the same value as
+# CLIPROXY_API_KEY in backend/.env. Never commit the real value.
+api-keys:
+  - "REPLACE_WITH_RANDOM_INTERNAL_KEY"
+
+debug: false
+logging-to-file: true
+usage-statistics-enabled: false
+
+# Required for per-user OAuth credential isolation.
+force-model-prefix: true

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { Eye, EyeOff } from 'lucide-react';
 import '../styles/auth.css';
 
 // SVG Icons
@@ -38,6 +39,7 @@ function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [registerSuccess, setRegisterSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -110,7 +112,7 @@ function Auth() {
 
   const handleSocialRedirect = (provider: 'google' | 'outlook') => {
     // Redirect browser to the backend OAuth initialization URL
-    const baseUrl = api.defaults.baseURL || 'http://localhost:3000/api';
+    const baseUrl = api.defaults.baseURL || '/api';
     window.location.href = `${baseUrl}/auth/${provider}/redirect`;
   };
 
@@ -223,7 +225,7 @@ function Auth() {
             <input
               type="text"
               className="input-field"
-              placeholder={isLogin ? "admin / supervisor / staff" : "your@email.com"}
+              placeholder="your@email.com"
               value={email}
               onChange={(e) => { setEmail(e.target.value); setErrorMsg(''); }}
               required
@@ -237,14 +239,36 @@ function Auth() {
                 <a href="#" className="auth-link" style={{ fontSize: '13px', fontWeight: '500' }}>Forgot Password?</a>
               )}
             </div>
-            <input
-              type="password"
-              className="input-field"
-              placeholder="**************"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? "text" : "password"}
+                className="input-field"
+                placeholder="**************"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setErrorMsg(''); }}
+                required
+                style={{ paddingRight: '40px' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary, #64748b)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: 0
+                }}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
 
           {/* Confirm Password field for Registration only */}
@@ -262,16 +286,6 @@ function Auth() {
             </div>
           )}
 
-          {/* Demo hint for login */}
-          {isLogin && (
-            <div style={{
-              background: 'var(--bg-secondary, #f8fafc)', borderRadius: '8px',
-              padding: '10px 14px', marginTop: '4px', fontSize: '12px',
-              color: 'var(--text-secondary, #64748b)', lineHeight: 1.6
-            }}>
-              <strong>Demo accounts:</strong> admin / supervisor / staff / pending / disabled (pass: <code>1</code>)
-            </div>
-          )}
 
           <button type="submit" className="auth-btn" style={{ marginTop: '16px' }}>
             {isLogin ? 'Log In' : 'Sign Up'}

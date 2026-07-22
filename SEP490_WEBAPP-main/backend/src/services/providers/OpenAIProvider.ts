@@ -9,10 +9,10 @@ export class OpenAIProvider implements ILlmProvider {
   private readonly model: string;
   private readonly baseUrl: string;
 
-  constructor() {
+  constructor(customApiKey?: string) {
     this.model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-    this.apiKey = this.resolveApiKey();
+    this.apiKey = customApiKey || this.resolveApiKey();
 
     if (!this.apiKey) {
       throw new Error(this.buildMissingKeyMessage());

@@ -1,0 +1,48 @@
+[
+  {
+    "id": "math-001",
+    "question": "Giải phương trình 2x + 6 = 14",
+    "gold_subject": "MATH",
+    "gold_intent": "solve_problem",
+    "gold_need_clarification": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Giải phương trình 2x + 6 = 14"
+      }
+    ],
+    "turn_gold_subjects": ["MATH"]
+  },
+  {
+    "id": "physics-001",
+    "question": "Một xe đi 120 km trong 2 giờ. Vận tốc trung bình là bao nhiêu?",
+    "gold_subject": "PHYSICS",
+    "gold_intent": "solve_problem",
+    "gold_need_clarification": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Một xe đi 120 km trong 2 giờ. Vận tốc trung bình là bao nhiêu?"
+      }
+    ],
+    "turn_gold_subjects": ["PHYSICS"]
+  },
+  {
+    "id": "physics-followup-001",
+    "question": "Một vật rơi tự do trong 2 giây.",
+    "gold_subject": "PHYSICS",
+    "gold_intent": "solve_problem",
+    "gold_need_clarification": false,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Một vật rơi tự do trong 2 giây."
+      },
+      {
+        "role": "user",
+        "content": "Nếu thời gian tăng lên 3 giây thì quãng đường thay đổi thế nào?"
+      }
+    ],
+    "turn_gold_subjects": ["PHYSICS", "PHYSICS"]
+  }
+]

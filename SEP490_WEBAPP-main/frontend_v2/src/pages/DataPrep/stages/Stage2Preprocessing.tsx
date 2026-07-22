@@ -4,20 +4,128 @@ import { Tooltip } from '../utils';
 import { Download, Search, AlertCircle, FileText, Upload, Check, ChevronDown, Trash2, GitCompare, ArrowUpDown, ChevronRight, CheckCircle, RefreshCw, MessageSquare, HelpCircle, Scissors, Filter, Calendar, BarChart2, XCircle, Tag, ClipboardList, Send, Play, Eye, RotateCcw, Plus, Sparkles, ChevronLeft, Settings, X, Users } from 'lucide-react';
 
 export const Stage2Preprocessing = () => {
-  const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
+  const { currentStage, setCurrentStage, currentSubStep, setCurrentSubStep, file, setFile, rawPreviewText, setRawPreviewText, sampleOutputText, setSampleOutputText, projectName, setProjectName, rawPreviewOpen, setRawPreviewOpen, conversationsList, setConversationsList, selectedFormat, setSelectedFormat, removeThinkTags, setRemoveThinkTags, cleaningEnabled, setCleaningEnabled, cleaningApplied, setCleaningApplied, showPreviewModal, setShowPreviewModal, previewTab, setPreviewTab, conversionStats, setConversionStats, cleaningPreviewBefore, setCleaningPreviewBefore, cleaningPreviewAfter, setCleaningPreviewAfter, cleaningPreviewRemoved, setCleaningPreviewRemoved, cleaningDetailConv, setCleaningDetailConv, previewPage, setPreviewPage, previewItemsPerPage, setPreviewItemsPerPage, isCleaningLoading, setIsCleaningLoading, pendingCleanedList, setPendingCleanedList, removeErrorKeywords, setRemoveErrorKeywords, removeUnclosedThink, setRemoveUnclosedThink, removeCompleteThink, setRemoveCompleteThink, minChars, setMinChars, maxChars, setMaxChars, minPairs, setMinPairs, currentPage, setCurrentPage, convsPerPage, setConvsPerPage, expandedConvs, setExpandedConvs, expandedCells, setExpandedCells, searchQuery, setSearchQuery, maxK, setMaxK, eps, setEps, minSamples, setMinSamples, showVisualization, setShowVisualization, isFindingK, setIsFindingK, findKResults, setFindKResults, targetK, setTargetK, clusterEps, setClusterEps, clusterMinSamples, setClusterMinSamples, clusterRan, setClusterRan, simThreshold, setSimThreshold, clusterPage, setClusterPage, clusterPerPage, isClustering, setIsClustering, clusterResults, setClusterResults, backupConvs, setBackupConvs, showClusterOptionsPopup, setShowClusterOptionsPopup, showCleaningPopup, setShowCleaningPopup, cleaningPopupView, setCleaningPopupView, selectedConv, setSelectedConv, SUB_STEPS_STAGE3, currentSubStep3, setCurrentSubStep3, stage3Page, setStage3Page, stage3PerPage, setStage3PerPage, stage3Search, setStage3Search, showCompareLabels, setShowCompareLabels, showCreateTaskModal, setShowCreateTaskModal, iaActiveTab, setIaActiveTab, showUserGuide, setShowUserGuide, selectedGroup3, setSelectedGroup3, selectedConv3, setSelectedConv3, stage3SubGroup, setStage3SubGroup, stage3Convs, setStage3Convs, checkedConvIds, setCheckedConvIds, cleanVietnameseGreetings, cleanAssistantGreetings, truncateText, highlightSearch, getConversationTopic, getAssistantSummary, selectedIaMsgId, setSelectedIaMsgId, iaMessages, setIaMessages, getLabelBadgeStyle, handleToggleLabel, handleRemoveMessageSingleLabel, SUB_STEPS_STAGE4, currentSubStep4, setCurrentSubStep4, classPage, setClassPage, qualityTab, setQualityTab, rewriteConvIdx, setRewriteConvIdx, rewriteTab, setRewriteTab, judgeModels, setJudgeModels, evalExpanded, setEvalExpanded, sepQualityModal, setSepQualityModal, sepDistributionTab, setSepDistributionTab, sepEvalRecommendation, setSepEvalRecommendation, sepEvalConflictOnly, setSepEvalConflictOnly, sepEvalMinScore, setSepEvalMinScore, sepRunningClass, setSepRunningClass, sepRunningQuality, setSepRunningQuality, sepRunningEval, setSepRunningEval, sepSubjectFilter, setSepSubjectFilter, sepSelectedDistSubject, setSepSelectedDistSubject, sepSelectedDistQuality, setSepSelectedDistQuality, sepSelectedError, setSepSelectedError, sepBalanceApplied, setSepBalanceApplied, sepRewriteGenerated, setSepRewriteGenerated, sepRewriteDecision, setSepRewriteDecision, sepQualityRatings, setSepQualityRatings, sepQualityLabels, setSepQualityLabels, SUB_STEPS_STAGE6, currentSubStep6, setCurrentSubStep6, promptText, setPromptText, promptName, setPromptName, promptDesc, setPromptDesc, selectedVersion, setSelectedVersion, sampleQuestion, setSampleQuestion, trialResponse, setTrialResponse, PROMPT_VERSIONS, exportPage, setExportPage, cloudProvider, setCloudProvider, EXPORT_ROWS, fileInputRef, handleFileUpload, handleRemoveFile, mapConvertedToConversations, handleConvert, handleApplyCleaning, handleVisualizeK, handleCluster, handleRemoveNoise, handleDeduplicate, handleResetFilter, renderJsonHighlighted, getPageNumbers, PREVIEW_BEFORE, PREVIEW_AFTER, PREVIEW_REMOVED, QUALITY_CONVS } = useDataPrep();
+  const [selectedClusterStat, setSelectedClusterStat] = React.useState<any>(null);
+
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
+  const summarizeCluster = React.useCallback((conversations: any[]) => {
+    const stopWords = new Set(['và','là','của','có','cho','trong','một','những','các','được','với','không','thì','này','đó','em','anh','chị','tôi','ta','hãy','sao','gì','như','về','khi','để','ở','từ','đến','theo','đúng','phải','bao','nhiêu','rồi','vậy','lắm','tốt','nhé','nha','ạ','à','ơi','ừ','ừm','dạ','vâng','cảm','ơn','thầy','cô','bạn','mình','hiểu','thử','xem','biết','nói','giúp','giải','thích','câu','hỏi','cần','tập','the','and','for','that','this','with','from','what','how','are','is']);
+    const documentFrequency = new Map<string, number>();
+    const phraseFrequency = new Map<string, number>();
+    const domainPhrases: Array<[RegExp, string]> = [
+      [/phương\s+trình/iu, 'phương trình'], [/bất\s+phương\s+trình/iu, 'bất phương trình'],
+      [/\\?frac|phân\s+số/iu, 'phân số'], [/trung\s+bình\s+cộng/iu, 'trung bình cộng'],
+      [/hàm\s+số/iu, 'hàm số'], [/đạo\s+hàm/iu, 'đạo hàm'], [/tích\s+phân/iu, 'tích phân'],
+      [/hình\s+học/iu, 'hình học'], [/xác\s+suất/iu, 'xác suất'],
+      [/phản\s+ứng|hóa\s+học/iu, 'phản ứng hóa học'], [/nguyên\s+tử/iu, 'nguyên tử'],
+      [/lực|gia\s+tốc|vận\s+tốc/iu, 'cơ học'],
+    ];
+    conversations.forEach((conversation: any) => {
+      const allMessages = conversation.roleMessages || conversation.messages.flatMap((pair: any) => [
+        { role: 'user', content: pair.user }, { role: 'assistant', content: pair.assistant },
+      ]);
+      // User utterances carry the problem/topic; assistant replies often contain
+      // generic encouragement that must not dominate cluster summaries.
+      const userMessages = allMessages.filter((message: any) => message.role === 'user' && String(message.content || '').trim());
+      const sourceMessages = userMessages.length ? userMessages : allMessages;
+      const texts = sourceMessages.map((message: any) => String(message.content || '')).join(' ');
+      domainPhrases.forEach(([pattern, label]) => {
+        if (pattern.test(texts)) phraseFrequency.set(label, (phraseFrequency.get(label) || 0) + 1);
+      });
+      const words = new Set((texts.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [])
+        .filter((word: string) => word.length >= 3 && !stopWords.has(word) && !/^\d+$/.test(word)));
+      words.forEach((word: string) => documentFrequency.set(word, (documentFrequency.get(word) || 0) + 1));
+    });
+    const ranked = [...documentFrequency.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+      .filter(([, count]) => conversations.length === 1 || count >= 2)
+      .slice(0, 5);
+    const phrases = [...phraseFrequency.entries()].sort((a, b) => b[1] - a[1]).filter(([, count]) => conversations.length === 1 || count >= 2).slice(0, 3);
+    const keywords = ranked.map(([word]) => word).filter(word => !phrases.some(([phrase]) => phrase.includes(word)));
+    const sharedEntries = ranked.filter(([, count]) => count > 1);
+    const shared = sharedEntries.map(([word]) => word);
+    return {
+      topic: phrases.length
+        ? `Các bài học/bài toán về ${phrases.map(([phrase]) => phrase).join(' và ')}`
+        : keywords.length ? `Các hội thoại cùng tập trung vào ${keywords.slice(0, 3).join(', ')}` : 'Chưa đủ dữ liệu để xác định chủ đề chung',
+      reason: phrases.length
+        ? phrases.map(([phrase, count]) => `${count}/${conversations.length} hội thoại cùng đề cập ${phrase}`).join('; ') + '.'
+        : shared.length ? `Nhiều hội thoại cùng đề cập ${sharedEntries.map(([word, count]) => `“${word}” (${count}/${conversations.length} hội thoại)`).join(', ')}.`
+        : 'Chưa tìm thấy khái niệm lặp lại đủ mạnh; người duyệt nên kiểm tra trực tiếp các hội thoại trong cụm.',
+    };
+  }, []);
 
   {
     const totalConvs = conversationsList.length;
-    const totalMessages = conversationsList.reduce((sum, c) => sum + c.messages.length, 0);
+    const messageRows = conversationsList.flatMap((conv: any) => {
+      const atomicMessages = conv.roleMessages || conv.messages.flatMap((pair: any) => [
+        { role: 'user', content: pair.user },
+        { role: 'assistant', content: pair.assistant },
+      ]).filter((message: any) => message.content);
+      return atomicMessages.map((message: any, index: number) => ({
+        id: `${conv.id}-${index}`,
+        conversationId: conv.id,
+        messageIndex: index + 1,
+        role: message.role || 'user',
+        content: message.content || '',
+      }));
+    });
+    const totalMessages = messageRows.length;
+    const userMessages = messageRows.filter((message: any) => message.role === 'user').length;
+    const assistantMessages = messageRows.filter((message: any) => message.role === 'assistant').length;
 
     /* Filter conversations by search */
     const filtered = searchQuery.trim()
-      ? conversationsList.filter(conv =>
+      ? conversationsList.filter((conv: any) =>
         conv.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        conv.messages.some(m =>
-          m.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.assistant.toLowerCase().includes(searchQuery.toLowerCase())
-        )
+        (conv.roleMessages || []).some((message: any) => String(message.content || '').toLowerCase().includes(searchQuery.toLowerCase())) ||
+        conv.messages.some((message: any) => String(message.user || '').toLowerCase().includes(searchQuery.toLowerCase()) || String(message.assistant || '').toLowerCase().includes(searchQuery.toLowerCase()))
       )
       : conversationsList;
 
@@ -27,7 +135,7 @@ export const Stage2Preprocessing = () => {
     /* Slice conversations for this page */
     const startConvIdx = (currentPage - 1) * convsPerPage;
     const pageConvs = filtered.slice(startConvIdx, startConvIdx + convsPerPage);
-    const pageMsgCount = pageConvs.reduce((sum, c) => sum + c.messages.length, 0);
+    const pageMsgCount = pageConvs.reduce((sum: number, conv: any) => sum + (conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length), 0);
 
     const handleConvsPerPageChange = (val) => {
       setConvsPerPage(parseInt(val, 10));
@@ -80,7 +188,7 @@ export const Stage2Preprocessing = () => {
           ))}
         </div>
 
-        {currentSubStep === 1 && (
+        {currentSubStep === 2 && (
           <>
             {/* Post-conversion Statistics — shown above table after cleaning is applied */}
             {cleaningApplied && (() => {
@@ -174,7 +282,6 @@ export const Stage2Preprocessing = () => {
               );
             })()}
 
-            {/* Full-width content (no sidebar) */}
             <div className="cluster-fullwidth">
               <div className="preview-header">
                 <h3>Converted Dataset Preview</h3>
@@ -225,11 +332,13 @@ export const Stage2Preprocessing = () => {
                 <div className="toolbar-stats">
                   <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                   <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                  <span className="toolbar-stat-tag" style={{ color: '#047857' }}>{userMessages} User</span>
+                  <span className="toolbar-stat-tag" style={{ color: '#4f46e5' }}>{assistantMessages} AI</span>
                 </div>
               </div>
 
               <div className="preview-table-wrapper cluster-table-full">
-                <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
+                {true && <table className="preview-table conv-grouped" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead>
                     <tr>
                       <th style={{ width: '4%', textAlign: 'center' }}>STT</th>
@@ -261,23 +370,21 @@ export const Stage2Preprocessing = () => {
                           <td className="col-conv-num-cell">{convGlobalIdx}</td>
                           <td className="col-conv-id-cell">
                             <span className="conv-id-badge">{conv.id}</span>
-                            <span className="conv-msg-count">{conv.messages.length} messages</span>
+                            <span className="conv-msg-count">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length} messages</span>
                             {cleaningApplied && (
                               <span className={`conv-status-badge badge-${status}`}>
                                 {status === 'clean' ? '✓ Clean' : status === 'fixed' ? '🔧 Fixed' : '✗ Removed'}
                               </span>
                             )}
                           </td>
-                          <td className="col-msg-num-cell">{conv.messages.length}</td>
+                          <td className="col-msg-num-cell">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length}</td>
                           <td className="cell-text-col" style={{ padding: '12px' }}>
                             <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {conv.messages.length === 1 ? (
-                                /* Đơn lượt: Hiển thị câu hỏi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#1e293b', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                   {highlightSearch(conv.messages[0].user, searchQuery)}
                                 </div>
                               ) : (
-                                /* Đa lượt: Hiển thị chủ đề chính và tóm tắt danh sách lượt thoại */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: '13px' }}>Chủ đề:</span>
@@ -307,12 +414,10 @@ export const Stage2Preprocessing = () => {
                           <td className="cell-text-col" style={{ padding: '12px' }}>
                             <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                               {conv.messages.length === 1 ? (
-                                /* Đơn lượt: Hiển thị phản hồi đầy đủ dạng bọc dòng */
                                 <div style={{ fontSize: '14px', color: '#475569', lineHeight: '1.5', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                   {highlightSearch(conv.messages[0].assistant, searchQuery)}
                                 </div>
                               ) : (
-                                /* Đa lượt: Hiển thị phản hồi chính và tóm tắt danh sách phản hồi */
                                 <>
                                   <div className="conv-topic-title" style={{ fontWeight: '600', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     <span style={{ fontSize: '13px' }}>Phản hồi:</span>
@@ -349,10 +454,9 @@ export const Stage2Preprocessing = () => {
                       );
                     })}
                   </tbody>
-                </table>
+                </table>}
               </div>
 
-              {/* Pagination */}
               <div className="preview-pagination">
                 <button
                   className="pagination-arrow"
@@ -384,7 +488,6 @@ export const Stage2Preprocessing = () => {
               </div>
             </div>
 
-            {/* Conversation Detail Popup */}
             {selectedConv && (
               <div className="cluster-popup-overlay" onClick={() => setSelectedConv(null)}>
                 <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
@@ -393,7 +496,7 @@ export const Stage2Preprocessing = () => {
                       <MessageSquare size={20} />
                       <div>
                         <h2>Conversation Detail</h2>
-                        <p>{selectedConv.id} · {selectedConv.messages.length} messages</p>
+                        <p>{selectedConv.id} · {selectedConv.roleMessages?.length ?? selectedConv.messageCount ?? selectedConv.messages.length} messages</p>
                       </div>
                     </div>
                     <button className="cluster-popup-close-btn" onClick={() => setSelectedConv(null)}>
@@ -403,16 +506,15 @@ export const Stage2Preprocessing = () => {
                   </div>
 
                   <div className="conv-detail-body">
-                    {selectedConv.messages.map((msg, idx) => (
+                    {(selectedConv.roleMessages || selectedConv.messages.flatMap((pair: any) => [
+                      { role: 'user', content: pair.user },
+                      { role: 'assistant', content: pair.assistant }
+                    ]).filter((message: any) => message.content)).map((msg: any, idx: number) => (
                       <div key={idx} className="conv-detail-pair">
                         <div className="conv-detail-label">#{idx + 1}</div>
-                        <div className="conv-detail-msg conv-detail-user">
-                          <div className="conv-detail-role">👤 User</div>
-                          <div className="conv-detail-text">{msg.user}</div>
-                        </div>
-                        <div className="conv-detail-msg conv-detail-assistant">
-                          <div className="conv-detail-role">🤖 Assistant</div>
-                          <div className="conv-detail-text">{msg.assistant}</div>
+                        <div className={`conv-detail-msg ${msg.role === 'assistant' ? 'conv-detail-assistant' : 'conv-detail-user'}`}>
+                          <div className="conv-detail-role">{msg.role === 'assistant' ? '🤖 Assistant' : msg.role === 'system' ? '⚙️ System' : '👤 User'}</div>
+                          <div className="conv-detail-text">{renderMessageContent(msg.content)}</div>
                         </div>
                       </div>
                     ))}
@@ -421,7 +523,6 @@ export const Stage2Preprocessing = () => {
               </div>
             )}
 
-            {/* Data Cleaning Pipeline Popup (merged with Preview) */}
             {showCleaningPopup && (
               <div className="cluster-popup-overlay" onClick={() => { setShowCleaningPopup(false); setCleaningPopupView('settings'); }}>
                 <div className={`cluster-popup-content cleaning-popup-content ${cleaningPopupView === 'preview' ? 'cleaning-popup-wide' : ''}`} onClick={(e) => e.stopPropagation()}>
@@ -439,10 +540,8 @@ export const Stage2Preprocessing = () => {
                     </button>
                   </div>
 
-                  {/* ===== VIEW: Settings ===== */}
                   {cleaningPopupView === 'settings' && (
                     <div className="cluster-popup-body">
-                      {/* Enable toggle section */}
                       <div className="cluster-popup-section">
                         <div className="cleaning-pipeline-row">
                           <span className="cleaning-label">Data Cleaning Pipeline</span>
@@ -459,7 +558,6 @@ export const Stage2Preprocessing = () => {
 
                         {cleaningEnabled && (
                           <div className="cleaning-options">
-                            {/* Checkbox: Xóa thẻ think hoàn chỉnh */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -470,7 +568,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Xóa các cặp thẻ &lt;think&gt;...&lt;/think&gt; hoàn chỉnh</span>
                             </label>
 
-                            {/* Checkbox: Vá lỗi thẻ think */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -481,7 +578,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Vá lỗi thẻ &lt;think&gt; bị thiếu thẻ đóng/mở (Regex + AI)</span>
                             </label>
 
-                            {/* Checkbox: Lọc từ khóa lỗi */}
                             <label className="cleaning-checkbox">
                               <input
                                 type="checkbox"
@@ -492,7 +588,6 @@ export const Stage2Preprocessing = () => {
                               <span className="checkbox-label">Lọc bỏ các từ khóa lỗi quy định</span>
                             </label>
 
-                            {/* Min / Max chars */}
                             <div className="cleaning-inputs-row">
                               <div className="cleaning-input-group">
                                 <label>Min chars assistant</label>
@@ -504,13 +599,6 @@ export const Stage2Preprocessing = () => {
                               </div>
                             </div>
 
-                            {/* Min pairs */}
-                            <div className="cleaning-input-group" style={{ maxWidth: '50%' }}>
-                              <label>Số cặp hỏi đáp tối thiểu:</label>
-                              <input type="number" value={minPairs} onChange={(e) => setMinPairs(e.target.value)} />
-                            </div>
-
-                            {/* Preview button — switches to preview view */}
                             <button
                               className="cleaning-accept-btn"
                               disabled={isCleaningLoading}
@@ -536,7 +624,6 @@ export const Stage2Preprocessing = () => {
                           setRemoveCompleteThink(false);
                           setMinChars('5');
                           setMaxChars('4000');
-                          setMinPairs('1');
                         }}>
                           <RotateCcw size={14} />
                           Reset to Original
@@ -545,19 +632,14 @@ export const Stage2Preprocessing = () => {
                     </div>
                   )}
 
-                  {/* ===== VIEW: Preview ===== */}
                   {cleaningPopupView === 'preview' && (
                     <>
                       {(() => {
-                        const beforeList = cleaningPreviewBefore.length > 0 ? cleaningPreviewBefore : PREVIEW_BEFORE;
-                        const afterList = cleaningPreviewAfter.length > 0 ? cleaningPreviewAfter : PREVIEW_AFTER;
-                        const removedList = cleaningPreviewRemoved.length > 0 ? cleaningPreviewRemoved : PREVIEW_REMOVED;
+                        const hasRealData = cleaningPreviewBefore.length > 0;
+                        const beforeList  = hasRealData ? cleaningPreviewBefore : PREVIEW_BEFORE;
+                        const afterList   = hasRealData ? cleaningPreviewAfter  : PREVIEW_AFTER;
+                        const removedList = hasRealData ? cleaningPreviewRemoved : PREVIEW_REMOVED;
                         const fixedList = afterList.filter(r => r.status === 'fixed');
-
-                        const totalCount = beforeList.length;
-                        const keptCount = afterList.length;
-                        const fixedCount = fixedList.length;
-                        const removedCount = removedList.length;
 
                         const activeList = previewTab === 'total' || previewTab === 'before' ? beforeList :
                           previewTab === 'kept' || previewTab === 'after' ? afterList :
@@ -568,14 +650,14 @@ export const Stage2Preprocessing = () => {
                         const startIdx = (previewPage - 1) * previewItemsPerPage;
                         const paginatedList = activeList.slice(startIdx, startIdx + previewItemsPerPage);
 
-                        const realTotal = conversionStats?.stats?.cleaning?.originalCount ?? conversionStats?.stats?.totalConversations ?? conversationsList.length;
-                        const realKept = conversionStats?.stats?.cleaning?.finalCount ?? conversationsList.length;
+                        const cleaningStats = conversionStats?.stats?.cleaning;
+                        const realTotal   = cleaningStats?.originalCount ?? beforeList.length;
+                        const realKept    = cleaningStats?.finalCount    ?? afterList.length;
                         const realRemoved = realTotal - realKept;
-                        const realFixed = conversionStats?.stats?.cleaning?.removedBoilerplate ?? 0;
+                        const realFixed   = fixedList.length;
 
                         return (
                           <>
-                            {/* New Tabs / Summary */}
                             <div className="preview-modal-summary" style={{ display: 'flex', gap: '8px', cursor: 'pointer', flexWrap: 'wrap' }}>
                               <button
                                 className={`summary-tag summary-total ${previewTab === 'total' || previewTab === 'before' ? 'active-tab' : ''}`}
@@ -607,7 +689,6 @@ export const Stage2Preprocessing = () => {
                               </button>
                             </div>
 
-                            {/* Toolbar for Pagination */}
                             <div className="preview-toolbar" style={{ margin: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div className="toolbar-select-wrapper">
                                 <label className="toolbar-label">Hiển thị:</label>
@@ -646,7 +727,6 @@ export const Stage2Preprocessing = () => {
                               </div>
                             </div>
 
-                            {/* Tab Content */}
                             <div className="preview-modal-body">
                               {(previewTab === 'total' || previewTab === 'before') && (
                                 <table className="preview-modal-table">
@@ -656,6 +736,7 @@ export const Stage2Preprocessing = () => {
                                       <th>Status</th>
                                       <th>User</th>
                                       <th>Assistant (trước)</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -670,6 +751,11 @@ export const Stage2Preprocessing = () => {
                                         </td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -684,15 +770,21 @@ export const Stage2Preprocessing = () => {
                                       <th>Action</th>
                                       <th>User</th>
                                       <th>Assistant (sau)</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {paginatedList.map((row) => (
-                                      <tr key={row.id} className={row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
+                                      <tr key={row.id} className={row.status === 'wiped' ? 'row-removed' : row.status === 'fixed' ? 'row-fixed' : 'row-clean'}>
                                         <td><span className="conv-id-badge">{row.id}</span></td>
-                                        <td><span className={`status-badge ${row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
+                                        <td><span className={`status-badge ${row.status === 'wiped' ? 'badge-removed' : row.status === 'fixed' ? 'badge-fixed' : 'badge-clean'}`}>{row.action}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
-                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td className="cell-text-col"><div className="cell-truncate">{row.assistant || <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '12px' }}>✓ Nội dung rỗng (đã xóa thẻ think)</span>}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -707,6 +799,7 @@ export const Stage2Preprocessing = () => {
                                       <th>Lý do loại bỏ</th>
                                       <th>User</th>
                                       <th>Assistant</th>
+                                      <th>Chi tiết</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -716,6 +809,11 @@ export const Stage2Preprocessing = () => {
                                         <td><span className="status-badge badge-removed">{row.reason}</span></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.user}</div></td>
                                         <td className="cell-text-col"><div className="cell-truncate">{row.assistant}</div></td>
+                                        <td>
+                                          <button className="detail-link-btn" onClick={() => setCleaningDetailConv(row)}>
+                                            <Eye size={14} /> Xem
+                                          </button>
+                                        </td>
                                       </tr>
                                     ))}
                                   </tbody>
@@ -731,7 +829,6 @@ export const Stage2Preprocessing = () => {
                         );
                       })()}
 
-                      {/* Footer */}
                       <div className="preview-modal-footer">
                         <button className="modal-cancel-btn" onClick={() => setCleaningPopupView('settings')}>
                           <ChevronLeft size={16} />
@@ -772,10 +869,71 @@ export const Stage2Preprocessing = () => {
                 </div>
               </div>
             )}
+
+            {cleaningDetailConv && (
+              <div className="cluster-popup-overlay" onClick={() => setCleaningDetailConv(null)}>
+                <div className="cluster-popup-content conv-detail-popup" onClick={(e) => e.stopPropagation()}>
+                  <div className="cluster-popup-header">
+                    <div className="cluster-popup-header-left">
+                      <MessageSquare size={20} />
+                      <div>
+                        <h2>Chi tiết Conversation</h2>
+                        <p>{cleaningDetailConv.id} · {(cleaningDetailConv.messagesBefore || []).length} messages</p>
+                      </div>
+                    </div>
+                    <button className="cluster-popup-close-btn" onClick={() => setCleaningDetailConv(null)}>
+                      <X size={18} />
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="conv-detail-body">
+                    {(cleaningDetailConv.messagesBefore || []).map((pair: any, idx: number) => {
+                      const afterPair = cleaningDetailConv.messagesAfter?.[idx];
+                      const isRemoved = !cleaningDetailConv.messagesAfter;
+                      const afterContent = afterPair?.assistant ?? '';
+                      const isChanged = !isRemoved && afterPair && afterContent !== pair.assistant;
+                      const isContentWiped = isChanged && afterContent === '';
+                      const action = isRemoved
+                        ? 'Bị loại bỏ'
+                        : isContentWiped
+                          ? 'Đã xóa toàn bộ thẻ think (nội dung rỗng)'
+                          : isChanged
+                            ? 'Đã làm sạch bằng Regex'
+                            : 'Không thay đổi';
+                      return (
+                        <div key={idx} className="conv-detail-pair">
+                          <div className="conv-detail-label">#{idx + 1}</div>
+                          <div className="conv-detail-action-row">
+                            <span className={`status-badge ${isRemoved ? 'badge-removed' : isContentWiped ? 'badge-removed' : isChanged ? 'badge-fixed' : 'badge-clean'}`}>
+                              {action}
+                            </span>
+                          </div>
+                          <div className="conv-detail-msg conv-detail-user">
+                            <div className="conv-detail-role">👤 User</div>
+                            <div className="conv-detail-text">{renderMessageContent(String(pair.user || ''))}</div>
+                          </div>
+                          <div className="conv-detail-msg conv-detail-assistant">
+                            <div className="conv-detail-role">🤖 Assistant (trước)</div>
+                            <div className="conv-detail-text">{renderMessageContent(String(pair.assistant || ''))}</div>
+                          </div>
+                          {!isRemoved && (
+                            <div className="conv-detail-msg conv-detail-assistant">
+                              <div className="conv-detail-role">🤖 Assistant (sau)</div>
+                              <div className="conv-detail-text">{afterPair?.assistant ?? ''}</div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
 
-        {currentSubStep === 2 && (
+        {currentSubStep === 3 && (
           <div className="findk-container">
             <div className="findk-card">
               <h3>Find K</h3>
@@ -916,7 +1074,7 @@ export const Stage2Preprocessing = () => {
           </div>
         )}
 
-        {currentSubStep === 3 && (() => {
+        {currentSubStep === 4 && (() => {
 
           const CLUSTER_GROUPS = [
             { name: 'Group 0', count: 17, sim: 0.9973 },
@@ -976,6 +1134,8 @@ export const Stage2Preprocessing = () => {
                   <div className="toolbar-stats">
                     <span className="toolbar-stat-tag">{totalConvs} conversations</span>
                     <span className="toolbar-stat-tag">{totalMessages} messages</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#047857' }}>{userMessages} User</span>
+                    <span className="toolbar-stat-tag" style={{ color: '#4f46e5' }}>{assistantMessages} AI</span>
                   </div>
                 </div>
 
@@ -1010,14 +1170,14 @@ export const Stage2Preprocessing = () => {
                             <td className="col-conv-num-cell" style={{ textAlign: 'center', verticalAlign: 'middle' }}>{convGlobalIdx}</td>
                             <td className="col-conv-id-cell">
                               <span className="conv-id-badge">{conv.id}</span>
-                              <span className="conv-msg-count">{conv.messages.length} messages</span>
+                              <span className="conv-msg-count">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length} messages</span>
                               {conv.groupLabel && (
                                 <span className="conv-group-badge" style={{ backgroundColor: conv.groupBg, color: conv.groupColor, border: `1px solid ${conv.groupColor}40`, marginLeft: '8px', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', display: 'inline-block', marginTop: '4px' }}>
                                   {conv.groupLabel}
                                 </span>
                               )}
                             </td>
-                            <td className="col-msg-num-cell">{conv.messages.length}</td>
+                            <td className="col-msg-num-cell">{conv.roleMessages?.length ?? conv.messageCount ?? conv.messages.length}</td>
                             <td className="cell-text-col" style={{ padding: '12px', verticalAlign: 'middle' }}>
                               <div className="conv-card-cell" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                                 {conv.messages.length === 1 ? (
@@ -1145,7 +1305,7 @@ export const Stage2Preprocessing = () => {
                         <div className="cleaning-input-group" style={{ marginBottom: 8 }}>
                           <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             Target K (Clusters)
-                            <Tooltip position="bottom" text="Số lượng nhóm dữ liệu mà AI sẽ tự động phân loại. Giá trị này được AI khuyến nghị tự động (Recommended K) dựa trên biểu đồ Silhouette để đạt chất lượng chia nhóm tốt nhất.">
+                            <Tooltip text="Số lượng nhóm dữ liệu mà AI sẽ tự động phân loại. Giá trị này được AI khuyến nghị tự động (Recommended K) dựa trên biểu đồ Silhouette để đạt chất lượng chia nhóm tốt nhất.">
                               <HelpCircle size={14} color="#94a3b8" />
                             </Tooltip>
                           </label>
@@ -1164,7 +1324,7 @@ export const Stage2Preprocessing = () => {
                           <div className="cleaning-input-group">
                             <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               DBSCAN EPS
-                              <Tooltip position="bottom" text="Khoảng cách cho phép (bán kính) để 2 hội thoại được xem là 'giống nhau'. Nếu vượt quá mức này, AI sẽ loại chúng ra thành dữ liệu rác (Noise) để làm sạch cụm.">
+                              <Tooltip text="Khoảng cách cho phép (bán kính) để 2 hội thoại được xem là 'giống nhau'. Nếu vượt quá mức này, AI sẽ loại chúng ra thành dữ liệu rác (Noise) để làm sạch cụm.">
                                 <HelpCircle size={14} color="#94a3b8" />
                               </Tooltip>
                             </label>
@@ -1173,7 +1333,7 @@ export const Stage2Preprocessing = () => {
                           <div className="cleaning-input-group">
                             <label style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                               Min Samples
-                              <Tooltip position="bottom" text="Số lượng hội thoại tối thiểu cần có để tạo thành 1 nhóm. Nếu một nhóm có ít hội thoại hơn mức này, nó sẽ bị AI coi là rác (Noise) và loại bỏ.">
+                              <Tooltip text="Số lượng hội thoại tối thiểu cần có để tạo thành 1 nhóm. Nếu một nhóm có ít hội thoại hơn mức này, nó sẽ bị AI coi là rác (Noise) và loại bỏ.">
                                 <HelpCircle size={14} color="#94a3b8" />
                               </Tooltip>
                             </label>
@@ -1225,7 +1385,7 @@ export const Stage2Preprocessing = () => {
                               </thead>
                               <tbody>
                                 {clusterResults?.clusterStats ? clusterResults.clusterStats.map((g: any, i: number) => (
-                                  <tr key={i}>
+                                  <tr key={i} onClick={() => setSelectedClusterStat(g)} style={{ cursor: 'pointer', background: selectedClusterStat?.clusterId === g.clusterId ? '#eef2ff' : undefined }}>
                                     <td style={{ textAlign: 'left' }}><strong>{g.clusterId === -1 ? 'Group -1' : `Group ${g.clusterId}`}</strong></td>
                                     <td className="count-cell" style={{ textAlign: 'center' }}>{g.count}</td>
                                     <td className="sim-cell" style={{ textAlign: 'right' }}>{g.avgSimilarity?.toFixed(4) || 'N/A'}</td>
@@ -1239,6 +1399,19 @@ export const Stage2Preprocessing = () => {
                                 ))}
                               </tbody>
                             </table>
+                            {selectedClusterStat && (() => {
+                              const groupConversations = conversationsList.filter((conversation: any) => conversation.groupId === selectedClusterStat.clusterId);
+                              const summary = summarizeCluster(groupConversations);
+                              const similarity = Number(selectedClusterStat.avgSimilarity);
+                              return (
+                                <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: '1px solid #c7d2fe', background: '#f8fafc' }}>
+                                  <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 6 }}>Review Group {selectedClusterStat.clusterId}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5 }}><strong>Topic (tổng hợp toàn cụm):</strong> {summary.topic}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4 }}><strong>Độ tương đồng trung bình:</strong> {Number.isFinite(similarity) ? `${(similarity * 100).toFixed(1)}%` : 'N/A'}</div>
+                                  <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: 4, color: '#64748b' }}><strong>Tại sao chúng giống nhau?</strong> {summary.reason} {Number.isFinite(similarity) ? `Mức ${(similarity * 100).toFixed(1)}% cho thấy nội dung các hội thoại bám khá gần chủ đề trung tâm của nhóm.` : ''} Người duyệt vẫn nên kiểm tra các hội thoại không chứa chủ đề chung nêu trên.</div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </>
                       )}
@@ -1253,7 +1426,7 @@ export const Stage2Preprocessing = () => {
         {/* Action Buttons */}
         <div className="dataprep-actions-row">
           <button className="dataprep-btn-back" onClick={() => {
-            if (currentSubStep > 1) {
+            if (currentSubStep > 2) {
               setCurrentSubStep(currentSubStep - 1);
             } else {
               setCurrentStage(1);
@@ -1262,10 +1435,11 @@ export const Stage2Preprocessing = () => {
             Back
           </button>
           <button className="dataprep-btn-next" onClick={() => {
-            if (currentSubStep < SUB_STEPS_STAGE2.length) {
+            if (currentSubStep < SUB_STEPS_STAGE2[SUB_STEPS_STAGE2.length - 1].num) {
               setCurrentSubStep(currentSubStep + 1);
             } else {
               setCurrentStage(3);
+              setCurrentSubStep3(5);
             }
           }}>
             Next

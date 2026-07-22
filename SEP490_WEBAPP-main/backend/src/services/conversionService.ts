@@ -412,6 +412,8 @@ export class ConversionService {
       removedTooLong: 0,
       removedDuplicates: 0,
       removedUnclosedThink: 0,
+      removedInsufficientTurns: 0,
+      removedTotal: 0,
       finalCount: 0,
     };
 
@@ -456,7 +458,18 @@ export class ConversionService {
       stats.removedBoilerplate = before - cleaned.length;
     }
 
-    // --- BƯỚC 3: LENGTH FILTERING ---
+    // --- BƯỚC 3: REMOVE UNCLOSED THINK ---
+    if (options.removeUnclosedThink) {
+      const before = cleaned.length;
+      cleaned = cleaned.filter((item) => {
+        const hasOpen = item.output.includes('<think>');
+        const hasClose = item.output.includes('</think>');
+        return !(hasOpen && !hasClose);
+      });
+      stats.removedUnclosedThink = before - cleaned.length;
+    }
+
+    // --- BƯỚC 4: LENGTH FILTERING ---
     const tooShort: AlpacaFormat[] = [];
     const tooLong: AlpacaFormat[] = [];
 
@@ -481,16 +494,18 @@ export class ConversionService {
     stats.removedTooShort = tooShort.length;
     stats.removedTooLong = tooLong.length;
 
-
-    // --- BƯỚC 5: REMOVE UNCLOSED THINK ---
-    if (options.removeUnclosedThink) {
+    // --- BƯỚC 5: DEDUPLICATION ---
+    // Loại các bản ghi có instruction + output giống hệt nhau (giữ bản đầu tiên)
+    if (options.deduplicate !== false) {
       const before = cleaned.length;
+      const seen = new Set<string>();
       cleaned = cleaned.filter((item) => {
-        const hasOpen = item.output.includes('<think>');
-        const hasClose = item.output.includes('</think>');
-        return !(hasOpen && !hasClose);
+        const key = `${item.instruction} ${item.output}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-      stats.removedUnclosedThink = before - cleaned.length;
+      stats.removedDuplicates = before - cleaned.length;
     }
 
     // --- BƯỚC 6: MIN TURNS ---
@@ -498,7 +513,7 @@ export class ConversionService {
       const before = cleaned.length;
       // Alpaca format luôn là 1 turn (1 cặp QA). Nếu yêu cầu > 1 thì lọc hết.
       cleaned = [];
-      stats.removedTooShort += before;
+      stats.removedInsufficientTurns = before;
     }
 
     // BƯỚC 7: ÁP DỤNG TEXT CLEANING
@@ -510,6 +525,7 @@ export class ConversionService {
     }));
 
     stats.finalCount = cleaned.length;
+    stats.removedTotal = stats.originalCount - stats.finalCount;
     return { cleaned, stats };
   }
 
@@ -532,6 +548,8 @@ export class ConversionService {
       removedTooLong: 0,
       removedDuplicates: 0,
       removedUnclosedThink: 0,
+      removedInsufficientTurns: 0,
+      removedTotal: 0,
       finalCount: 0,
     };
 
@@ -565,6 +583,20 @@ export class ConversionService {
     //   /^(Okay|Được rồi|Sure|Chắc chắn)[!,.]?\s*$/i,
     //   /^(I understand|Tôi hiểu)[.!]?\s*$/i,
     // ];
+
+    // BƯỚC 1: REMOVE UNCLOSED THINK
+    if (options.removeUnclosedThink) {
+      const before = cleaned.length;
+      cleaned = cleaned.filter((item) => {
+        return item.messages.every(msg => {
+          if (msg.role !== 'assistant') return true;
+          const hasOpen = msg.content.includes('<think>');
+          const hasClose = msg.content.includes('</think>');
+          return !(hasOpen && !hasClose);
+        });
+      });
+      stats.removedUnclosedThink = before - cleaned.length;
+    }
 
     if (options.removeBoilerplate !== false) {
       const before = cleaned.length;
@@ -626,19 +658,18 @@ export class ConversionService {
     stats.removedTooShort = tooShort.length;
     stats.removedTooLong = tooLong.length;
 
-
-    // BƯỚC 4: REMOVE UNCLOSED THINK
-    if (options.removeUnclosedThink) {
+    // BƯỚC 3: DEDUPLICATION
+    // Loại các hội thoại có nội dung messages giống hệt nhau (giữ bản đầu tiên)
+    if (options.deduplicate !== false) {
       const before = cleaned.length;
+      const seen = new Set<string>();
       cleaned = cleaned.filter((item) => {
-        return item.messages.every(msg => {
-          if (msg.role !== 'assistant') return true;
-          const hasOpen = msg.content.includes('<think>');
-          const hasClose = msg.content.includes('</think>');
-          return !(hasOpen && !hasClose);
-        });
+        const key = JSON.stringify(item.messages.map(msg => `${msg.role}:${msg.content}`));
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
       });
-      stats.removedUnclosedThink = before - cleaned.length;
+      stats.removedDuplicates = before - cleaned.length;
     }
 
     // BƯỚC 5: MIN TURNS
@@ -654,7 +685,7 @@ export class ConversionService {
         }
         return pairs >= (options.minTurns || 1);
       });
-      stats.removedTooShort += before - cleaned.length;
+      stats.removedInsufficientTurns = before - cleaned.length;
     }
 
     // BƯỚC 6: ÁP DỤNG TEXT CLEANING CHO TẤT CẢ MESSAGES
@@ -667,6 +698,7 @@ export class ConversionService {
     }));
 
     stats.finalCount = cleaned.length;
+    stats.removedTotal = stats.originalCount - stats.finalCount;
     return { cleaned, stats };
   }
 
