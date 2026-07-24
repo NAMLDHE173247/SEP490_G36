@@ -88,6 +88,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
   const isCustomActive = config.baseModel === 'custom' || !isPredefinedModel;
   const isOnlineModel = false;
+  const isOfficialVistral = config.baseModel === 'Viet-Mistral/Vistral-7B-Chat';
 
   const [customModelInput, setCustomModelInput] = useState(isPredefinedModel ? '' : config.baseModel);
   const [isValidatingModel, setIsValidatingModel] = useState(false);
@@ -290,6 +291,28 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span>
                     <strong>Warning:</strong> This model runs through an online API. Local AutoTrain <strong>only supports LoRA fine-tuning</strong> for open-source models. Training this model will fail. Please choose an offline model (e.g. Qwen 3 (0.6B)) to proceed.
+                  </span>
+                </div>
+              )}
+
+              {isOfficialVistral && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    padding: 12,
+                    background: 'var(--at-amber-bg)',
+                    border: '1px solid var(--at-amber-border)',
+                    borderRadius: 'var(--at-radius)',
+                    color: '#B45309',
+                    fontSize: 12,
+                    marginTop: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    <strong>Model bị giới hạn truy cập:</strong> hãy xin quyền trên Hugging Face và nhập HF token ở mục “Export to HuggingFace Hub”. Nếu chưa được duyệt, chọn bản mirror công khai.
                   </span>
                 </div>
               )}

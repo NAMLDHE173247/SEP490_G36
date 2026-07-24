@@ -643,8 +643,8 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       if (config.hfRepoId) {
         formData.append('push_to_hub', 'true');
         formData.append('hf_repo_id', config.hfRepoId);
-        formData.append('hf_token', config.hfToken);
       }
+      if (config.hfToken) formData.append('hf_token', config.hfToken);
 
       if (config.datasetSource === 'local' && config.localFile) {
         formData.append('dataset_file', config.localFile);

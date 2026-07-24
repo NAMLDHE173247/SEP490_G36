@@ -1754,6 +1754,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             max_seq_length=config['modelMaxLength'],
             dtype=dtype,
             load_in_4bit=True,
+            token=hf_token or None,
         )
 
         # Cấu hình Chat Template cho OpenAI format

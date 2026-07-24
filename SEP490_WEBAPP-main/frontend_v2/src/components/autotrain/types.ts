@@ -108,6 +108,8 @@ export const BASE_MODEL_GROUPS: ModelGroup[] = [
   {
     category: "Môn Lịch sử & KHXH",
     models: [
+      { id: "Viet-Mistral/Vistral-7B-Chat", name: "Vistral 7B Chat (7B) — Bản chính thức (cần được cấp quyền + HF token)" },
+      { id: "minhtt/vistral-7b-chat", name: "Vistral 7B Chat (7B) — Bản mirror công khai (dùng ngay)" },
       { id: "unsloth/phi-4-bnb-4bit", name: "Phi-4 (14B) — Argument Mining / Socratic Chatbot" },
       { id: "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit", name: "Llama 3.1 (8B) — Critical Thinking (SocratiQ)" },
       { id: "unsloth/Qwen2.5-14B-Instruct-bnb-4bit", name: "Qwen 2.5 (14B) — 128K Context Window" },
