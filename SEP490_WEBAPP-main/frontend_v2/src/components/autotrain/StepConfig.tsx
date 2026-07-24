@@ -113,20 +113,29 @@ const StepConfig: React.FC<StepConfigProps> = ({
     setIsValidatingModel(true);
     setModelValidationStatus('none');
     try {
-      const response = await axios.get(`https://huggingface.co/api/models/${encodeURIComponent(trimmed)}`);
-      if (response.status === 200) {
+      const headers: Record<string, string> = {};
+      if (config.hfToken?.trim()) {
+        headers['Authorization'] = `Bearer ${config.hfToken.trim()}`;
+      }
+      await axios.get(`https://huggingface.co/api/models/${encodeURIComponent(trimmed)}`, { headers });
+      onConfigChange({ baseModel: trimmed });
+      setModelValidationStatus('success');
+      toast('HuggingFace model validated successfully!', 'success');
+    } catch (err: any) {
+      console.warn('Validate model check:', err);
+      // Fallback: If it's a valid repo format username/model-name, accept it (could be gated model or CORS issue in browser)
+      if (/^[a-zA-Z0-9_\-\.]+\/[a-zA-Z0-9_\-\.]+$/.test(trimmed)) {
         onConfigChange({ baseModel: trimmed });
         setModelValidationStatus('success');
-        toast('HuggingFace model validated successfully!', 'success');
+        toast('Custom model ID accepted. Note: Ensures HF Token is set if this is a gated model.', 'info');
+      } else {
+        setModelValidationStatus('error');
+        toast('Invalid HuggingFace Model ID format (expected: organization/model-name).', 'error');
       }
-    } catch (err) {
-      console.error('Validate model error:', err);
-      setModelValidationStatus('error');
-      toast('Model not found on HuggingFace Hub. Ensure it is public and correct.', 'error');
     } finally {
       setIsValidatingModel(false);
     }
-  }, [customModelInput, onConfigChange, toast]);
+  }, [customModelInput, config.hfToken, onConfigChange, toast]);
 
   const defaultPresetNames = useMemo(() => Object.keys(DEFAULT_PRESETS), []);
   const customPresetNames = useMemo(() => Object.keys(customPresets), [customPresets]);
