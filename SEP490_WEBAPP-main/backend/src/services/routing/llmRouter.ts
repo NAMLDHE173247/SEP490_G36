@@ -29,10 +29,12 @@ export const llmBasedRoute = async (
 ): Promise<RouterSignal> => {
   const history = context.history.slice(-6).map(item => `${item.role}: ${item.content}`).join('\n');
   const prompt = `HISTORY:\n${history || '(empty)'}\n\nCURRENT QUESTION:\n${context.question}`;
-  const subjects = new Set([...allowedSubjects.map(value => String(value).toUpperCase()), 'GENERAL', 'UNKNOWN']);
+  const configuredSubjects = allowedSubjects.map(value => String(value).toUpperCase());
+  const casualSubject = configuredSubjects.includes('OTHER') ? 'OTHER' : 'GENERAL';
+  const subjects = new Set([...configuredSubjects, casualSubject, 'UNKNOWN']);
   const system = `You are a deterministic router for a Vietnamese educational tutor. Return JSON only.
 Schema: {"primary_subject":"${[...subjects].join('|')}","secondary_subjects":[],"intent":"solve_problem|explain_concept|give_hint|check_answer|diagnose_error|ask_follow_up|unknown","confidence":0.0,"need_clarification":false,"reason":"short Vietnamese reason"}.
-Use conversation history for short follow-ups. Mathematics used only as a tool inside a physics problem remains PHYSICS; mathematics inside a chemistry calculation remains CHEMISTRY. Use UNKNOWN and need_clarification=true when evidence is insufficient.`;
+Use conversation history for short follow-ups. Mathematics used only as a tool inside a physics problem remains PHYSICS; mathematics inside a chemistry calculation remains CHEMISTRY. Use ${casualSubject} for greetings, thanks, farewells, project/system questions, and casual conversation that does not belong to a school subject. Use UNKNOWN and need_clarification=true only when the educational subject itself is ambiguous or evidence is insufficient.`;
   const raw = await provider.generateContent(prompt, model, system);
   const parsed = parseJsonObject(raw);
   const tokenUsage = provider.getLastUsage?.() || null;

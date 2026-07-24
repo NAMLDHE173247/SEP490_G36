@@ -455,9 +455,9 @@ export const apiService = {
   getChatSessions: async (...args: any[]) => { const response = await api.get('/chat/sessions'); return response.data; },
   getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat/sessions/${args[0]}`); return response.data; },
   createChatSession: async (...args: any[]) => { const response = await api.post('/chat/sessions', args[0]); return response.data; },
-  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, { title: args[1] }); return response.data; },
+  updateChatSessionTitle: async (...args: any[]) => { const response = await api.patch(`/chat/sessions/${args[0]}/title`, { title: args[1] }); return response.data; },
   deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat/sessions/${args[0]}`); return response.data; },
-  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat/sessions/${args[0]}/messages`, args[1]); return response.data; },
+  appendMessageToSession: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, args[1]); return response.data; },
 
   infer: async (...args: any[]) => {
     const response = await api.post('/infer', args[0]);
@@ -505,6 +505,7 @@ export const apiService = {
             parsed = JSON.parse(line.slice(6));
           } catch { continue; }
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.stage && typeof data?.onProgressInfo === 'function') data.onProgressInfo(parsed);
           if (parsed.is_final && typeof data?.onFinalInfo === 'function') data.onFinalInfo(parsed);
           const text = parsed.response ?? parsed.text;
           if (typeof text === 'string' && text && onChunkCallback) onChunkCallback(text);

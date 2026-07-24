@@ -64,6 +64,34 @@ const inferSubject = (...values: unknown[]): RegistrySubject => {
   return 'UNKNOWN';
 };
 
+const demoteOtherUseVersionsForSubject = async (
+  ownerId: string,
+  version: any,
+): Promise<void> => {
+  const registry = await ModelRegistry.findOne({
+    _id: version.modelRegistryId,
+    ownerId,
+  }).select('_id subject').lean();
+  const subject = String(version.subject || registry?.subject || 'UNKNOWN').trim().toUpperCase();
+  if (!subject || subject === 'UNKNOWN') return;
+
+  const registryIds = await ModelRegistry.find({
+    ownerId,
+    subject,
+    routerEnabled: { $ne: false },
+  }).distinct('_id');
+
+  await ModelVersion.updateMany(
+    {
+      ownerId,
+      modelRegistryId: { $in: registryIds },
+      _id: { $ne: version._id },
+      status: ModelVersionStatus.USE,
+    },
+    { $set: { status: ModelVersionStatus.NOT_USE } },
+  );
+};
+
 // Helper để lấy kết quả đánh giá đúng với một Model Version.
 // Ưu tiên evaluationId đã chọn khi đăng ký version; chỉ fallback latest khi version cũ chưa có evaluationId.
 const getVersionEvaluation = async (params: {
@@ -336,6 +364,12 @@ export class ModelRegistryController {
         res.status(404).json({ message: 'Registry not found' });
         return;
       }
+      if (typeof req.body.subject === 'string' && req.body.subject.trim()) {
+        await ModelVersion.updateMany(
+          { ownerId, modelRegistryId: registry._id },
+          { $set: { subject: req.body.subject.trim().toUpperCase() } },
+        );
+      }
       res.json(registry);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -505,6 +539,10 @@ export class ModelRegistryController {
         status: status || ModelVersionStatus.NOT_USE,
       });
 
+      if (newVersion.status === ModelVersionStatus.USE) {
+        await demoteOtherUseVersionsForSubject(ownerId, newVersion);
+      }
+
       res.status(201).json(newVersion);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -536,17 +574,10 @@ export class ModelRegistryController {
         return;
       }
 
-      // If status is USE, we might want to demote other versions of the same registry
+      // The Router needs one deterministic deployment target per subject, not
+      // merely one active version inside each separate registry.
       if (status === ModelVersionStatus.USE) {
-        await ModelVersion.updateMany(
-          {
-            ownerId,
-            modelRegistryId: version.modelRegistryId,
-            _id: { $ne: version._id },
-            status: ModelVersionStatus.USE
-          },
-          { status: ModelVersionStatus.NOT_USE }
-        );
+        await demoteOtherUseVersionsForSubject(ownerId, version);
       }
 
       res.json(version);

@@ -25,7 +25,7 @@ export interface RouterSignal {
 }
 
 export interface HybridRoutingDecision extends RouterSignal {
-  strategy: RoutingMode | 'clarification';
+  strategy: RoutingMode | 'clarification' | 'sticky';
   selectedModel?: string;
   fallbackUsed: boolean;
   llmCalled: boolean;

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { saveAs } from 'file-saver';
+import JSZip from 'jszip';
 import { BarChart3, CheckCircle2, Download, FileUp, Gauge, Loader2, Route, ShieldAlert, Timer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { api } from '../services/api';
@@ -47,7 +48,17 @@ const subjectMap = (value: unknown): RouterCase['gold_subject'] => {
 };
 
 function extractCases(raw: any): RouterCase[] {
-  const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.cases) ? raw.cases : [];
+  const rows = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.cases)
+      ? raw.cases
+      : Array.isArray(raw?.router?.test)
+        ? raw.router.test
+        : Array.isArray(raw?.router_test)
+          ? raw.router_test
+          : Array.isArray(raw?.model_eval?.test)
+            ? raw.model_eval.test
+            : [];
   return rows.map((row: any, index: number) => {
     const explicitTurns = Array.isArray(row.turns)
       ? row.turns.map((value: unknown) => String(value || '').trim()).filter(Boolean)
@@ -93,6 +104,7 @@ export default function RouterBenchmarkView() {
   const [fileName, setFileName] = useState('');
   const [modes, setModes] = useState<RouterMode[]>(['rule', 'hybrid']);
   const [modelMap, setModelMap] = useState<Record<string, string>>({ GENERAL: '' });
+  const [manualModelSubjects, setManualModelSubjects] = useState<Record<string, boolean>>({});
   const [registryModels, setRegistryModels] = useState<Array<{ subject: string; model: string }>>([]);
   const [results, setResults] = useState<Record<string, RouterResult> | null>(null);
   const [benchmarkEnvelope, setBenchmarkEnvelope] = useState<any>(null);
@@ -108,10 +120,16 @@ export default function RouterBenchmarkView() {
     acc[item.gold_subject] = (acc[item.gold_subject] || 0) + 1;
     return acc;
   }, {}), [cases]);
-  const subjects = useMemo(() => [...new Set([...Object.keys(overview), 'GENERAL'])].sort(), [overview]);
+  const subjects = useMemo(() => Object.keys(overview).sort(), [overview]);
   const scopedModelMap = useMemo(() => Object.fromEntries(
-    Object.entries(modelMap).filter(([subject]) => subjects.includes(subject)),
+    Object.entries(modelMap).filter(([subject]) => subjects.includes(subject) || subject === 'GENERAL'),
   ), [modelMap, subjects]);
+
+  const selectModel = (subject: string, value: string) => {
+    const manual = value === '__manual';
+    setManualModelSubjects(current => ({ ...current, [subject]: manual }));
+    setModelMap(current => ({ ...current, [subject]: manual ? '' : value }));
+  };
 
   useEffect(() => {
     api.get('/model-registry').then(response => {
@@ -156,7 +174,18 @@ export default function RouterBenchmarkView() {
   const onFile = async (file?: File) => {
     if (!file) return;
     try {
-      const parsed = JSON.parse(await file.text());
+      let parsed: any;
+      if (file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip') {
+        const zip = await JSZip.loadAsync(file);
+        const candidates = ['router_test.json', 'model_eval_test.json', 'test_dataset.json'];
+        const selectedName = candidates.find(name => zip.file(name))
+          || Object.keys(zip.files).find(name => candidates.some(candidate => name.toLowerCase().endsWith(`/${candidate}`)));
+        const selectedFile = selectedName ? zip.file(selectedName) : null;
+        if (!selectedFile) throw new Error('ZIP không chứa router_test.json, model_eval_test.json hoặc test_dataset.json.');
+        parsed = JSON.parse(await selectedFile.async('text'));
+      } else {
+        parsed = JSON.parse(await file.text());
+      }
       const next = extractCases(parsed);
       if (!next.length) throw new Error('Không tìm thấy conversation hoặc cases hợp lệ.');
       setCases(next);
@@ -166,7 +195,7 @@ export default function RouterBenchmarkView() {
       setEndToEndReport(null);
       toast.success(`Đã nạp ${next.length} test cases`);
     } catch (error: any) {
-      toast.error(error.message || 'Không thể đọc JSON test');
+      toast.error(error.message || 'Không thể đọc Evaluation Pack ZIP hoặc JSON test');
     }
   };
 
@@ -271,12 +300,13 @@ export default function RouterBenchmarkView() {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1.2fr) repeat(3, minmax(150px, 1fr))', gap: 14 }}>
           <button onClick={() => fileRef.current?.click()} style={uploadStyle}>
             <FileUp size={22} color="#4f46e5" />
-            <span>{fileName || 'Upload test JSON'}</span>
-            <small>Nhận file Model Eval: messages + subject</small>
+            <span>{fileName || 'Upload Evaluation Pack ZIP hoặc test JSON'}</span>
+            <small>Nhận ZIP có router_test.json hoặc JSON có cases</small>
           </button>
-          <input ref={fileRef} type="file" accept=".json" hidden onChange={event => onFile(event.target.files?.[0])} />
-          {subjects.map(subject => <label key={subject} style={labelStyle}>{subject}<select value={modelMap[subject] || ''} onChange={event => setModelMap(prev => ({ ...prev, [subject]: event.target.value }))} style={inputStyle}><option value="">Chọn model registry...</option>{registryModels.filter(item => item.subject === subject || subject === 'GENERAL').map(item => <option key={`${item.subject}-${item.model}`} value={item.model}>{item.model}</option>)}<option value="__manual">Nhập model thủ công...</option></select>{modelMap[subject] === '__manual' && <input placeholder="organization/model" onChange={event => setModelMap(prev => ({ ...prev, [subject]: event.target.value }))} style={inputStyle} />}</label>)}
+          <input ref={fileRef} type="file" accept=".json,.zip,application/json,application/zip" hidden onChange={event => onFile(event.target.files?.[0])} />
+          {subjects.map(subject => <label key={subject} style={labelStyle}>{subject}<select value={manualModelSubjects[subject] ? '__manual' : modelMap[subject] || ''} onChange={event => selectModel(subject, event.target.value)} style={inputStyle}><option value="">Chọn model registry...</option>{registryModels.filter(item => item.subject === subject || subject === 'GENERAL').map(item => <option key={`${item.subject}-${item.model}`} value={item.model}>{item.model}</option>)}<option value="__manual">Nhập model thủ công...</option></select>{manualModelSubjects[subject] && <input value={modelMap[subject] || ''} placeholder="organization/model" onChange={event => setModelMap(prev => ({ ...prev, [subject]: event.target.value }))} style={inputStyle} />}</label>)}
         </div>
+        {endToEndConditions.includes('pooled') && <label style={{ ...labelStyle, maxWidth: 320, marginTop: 14 }}>POOLED BASELINE (E2E)<select value={manualModelSubjects.GENERAL ? '__manual' : modelMap.GENERAL || ''} onChange={event => selectModel('GENERAL', event.target.value)} style={inputStyle}><option value="">Chọn model pooled...</option>{registryModels.map(item => <option key={`pooled-${item.subject}-${item.model}`} value={item.model}>{item.model}</option>)}<option value="__manual">Nhập model thủ công...</option></select>{manualModelSubjects.GENERAL && <input value={modelMap.GENERAL || ''} placeholder="organization/model" onChange={event => setModelMap(prev => ({ ...prev, GENERAL: event.target.value }))} style={inputStyle} />}</label>}
         {cases.length > 0 && <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <Pill label={`${cases.length} total`} />{Object.entries(overview).map(([subject, count]) => <Pill key={subject} label={`${count} ${subject}`} color={subject === 'MATH' ? '#2563eb' : subject === 'PHYSICS' ? '#7c3aed' : '#b45309'} />)}
         </div>}

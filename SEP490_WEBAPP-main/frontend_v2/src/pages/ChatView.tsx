@@ -21,7 +21,8 @@ import {
   Settings2,
   Pencil,
   Check,
-  FileText
+  FileText,
+  Download
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
@@ -54,21 +55,71 @@ const BASE_MODEL_OPTIONS = [
   "sshleifer/tiny-gpt2",
 ];
 
+const HYBRID_SPEED_TEST_STEPS = [
+  { subject: 'OTHER', question: 'Xin chào, hôm nay bạn có thể giúp tôi học bài không?' },
+  { subject: 'MATH', question: 'Giải phương trình 2x + 5 = 15 và hướng dẫn từng bước.' },
+  { subject: 'MATH', question: 'Kiểm tra lại bài trên bằng cách thay nghiệm vào phương trình.' },
+  { subject: 'OTHER', question: 'Cảm ơn bạn. Hẹn gặp lại nhé.' },
+  { subject: 'HISTORY', question: 'Những nguyên nhân chính của Cách mạng tháng Tám năm 1945 là gì?' },
+  { subject: 'ENGLISH', question: "Explain why we use the present continuous in 'She is reading now'." },
+];
+const HYBRID_SPEED_TEST_MAX_NEW_TOKENS = 256;
+const createRoutingSessionId = () => globalThis.crypto?.randomUUID?.()
+  || `hybrid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 interface Message {
   role: "user" | "ai";
   content: string;
   responseTime?: number;
   model?: string;
   parameters?: any;
+  manualHybridMetrics?: ManualHybridMetrics;
+  manualHybridFailure?: ManualHybridFailure;
   errorInfo?: {
     raw: string;
     retryText?: string;
   };
 }
 
+interface ManualHybridFailure {
+  measured_at: string;
+  subject: string | null;
+  failed_after_ms: number;
+  error_message: string;
+}
+
+interface ManualHybridMetrics {
+  measured_at: string;
+  routing_mode: string;
+  subject: string | null;
+  route_strategy: string;
+  router_latency_ms: number;
+  model_switch_latency_ms: number;
+  generation_latency_ms: number;
+  ttft_ms: number | null;
+  decode_latency_ms: number | null;
+  end_to_end_latency_ms: number;
+  previous_model: string | null;
+  selected_model: string | null;
+  gpu_slot_id: number;
+  model_cache_hit: boolean;
+  model_load_action: 'cache_hit' | 'cold_load' | 'switch_load';
+  model_evicted: boolean;
+  inference_id?: string | null;
+  token_usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    accounting?: string;
+  } | null;
+  history_messages_sent?: number;
+  history_characters_sent?: number;
+}
+
 type HistoryMessage = {
   role: "user" | "assistant";
   content: string;
+  subject?: string;
 };
 
 interface LogEntry {
@@ -152,6 +203,38 @@ const handleTextareaResize = (e: React.ChangeEvent<HTMLTextAreaElement>, maxHeig
   e.target.style.height = "auto";
   e.target.style.height = Math.min(e.target.scrollHeight, maxHeight) + "px";
 };
+
+const percentile = (values: number[], ratio: number) => {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(ratio * sorted.length) - 1));
+  return sorted[index];
+};
+
+const average = (values: number[]) => values.length
+  ? values.reduce((sum, value) => sum + value, 0) / values.length
+  : null;
+
+const coefficientOfVariation = (values: number[]) => {
+  const mean = average(values);
+  if (mean === null || mean === 0 || values.length < 2) return null;
+  const variance = values.reduce((sum, value) => sum + ((value - mean) ** 2), 0) / values.length;
+  return Math.sqrt(variance) / mean;
+};
+
+const downloadTextFile = (filename: string, content: string, mimeType: string) => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 function ParamsSummaryBar({ params }: { params: InferenceParams }) {
   const chips = [
@@ -466,6 +549,7 @@ function ChatPanel({
   const [modelLoaded, setModelLoaded] = useState(false);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const routingSessionIdRef = useRef(createRoutingSessionId());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSessionSidebarCollapsed, setIsSessionSidebarCollapsed] = useState(false);
   const [localInput, setLocalInput] = useState("");
@@ -474,6 +558,7 @@ function ChatPanel({
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
+  const [hybridSpeedStep, setHybridSpeedStep] = useState(0);
   const unloadMenuRef = useRef<HTMLDivElement>(null);
 
   // Quick model picker dropdown
@@ -482,24 +567,182 @@ function ChatPanel({
 
   const [localParams] = useState<InferenceParams>(DEFAULT_PARAMS);
   const params: InferenceParams = externalParams ?? localParams;
+  const fallbackHybridModelId = registries
+    .map((registry: any) => ({
+      subject: String(registry.activeVersion?.subject || registry.subject || '').toUpperCase(),
+      model: registry.activeVersion?.hfRepoId || registry.hfRepoId || '',
+    }))
+    .find((item: any) => ['OTHER', 'GENERAL'].includes(item.subject) && item.model)?.model || '';
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const buildRecentHistory = useCallback((sourceMessages: Message[]): HistoryMessage[] => {
+    const subjectByModel = new Map<string, string>();
+    registries.forEach((registry: any) => {
+      const model = registry.activeVersion?.hfRepoId || registry.hfRepoId;
+      const subject = String(registry.activeVersion?.subject || registry.subject || '').toUpperCase();
+      if (model && subject) subjectByModel.set(String(model), subject);
+    });
     const normalized: HistoryMessage[] = sourceMessages
       .filter((m) => (m.role === "user" || m.role === "ai") && m.content.trim())
-      .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content }));
+      .map((m) => ({
+        role: m.role === "ai" ? "assistant" as const : "user" as const,
+        content: m.content,
+        ...(m.role === "ai" && (m.manualHybridMetrics?.subject || (m.model ? subjectByModel.get(m.model) : undefined))
+          ? { subject: m.manualHybridMetrics?.subject || subjectByModel.get(String(m.model)) }
+          : {}),
+      }));
 
     const pairs: HistoryMessage[][] = [];
     for (let i = 0; i < normalized.length - 1; i++) {
       if (normalized[i].role === "user" && normalized[i + 1].role === "assistant") {
-        pairs.push([normalized[i], normalized[i + 1]]);
+        const subject = normalized[i + 1].subject;
+        pairs.push([
+          { ...normalized[i], ...(subject ? { subject } : {}) },
+          normalized[i + 1],
+        ]);
         i++;
       }
     }
     return pairs.slice(-5).flat();
-  }, []);
+  }, [registries]);
+
+  const buildManualHybridRows = useCallback(() => {
+    const rows: Array<Record<string, any>> = [];
+    let latestQuestion = '';
+    messages.forEach((message, index) => {
+      if (message.role === 'user') {
+        latestQuestion = message.content;
+        return;
+      }
+      if (!message.manualHybridMetrics && !message.manualHybridFailure) return;
+      const common = {
+        turn: rows.length + 1,
+        message_index: index,
+        question: latestQuestion,
+        response: message.content,
+        frontend_response_time_seconds: message.responseTime ?? null,
+      };
+      if (message.manualHybridMetrics) {
+        const maxNewTokens = Number(message.parameters?.max_new_tokens);
+        const outputTokens = Number(message.manualHybridMetrics.token_usage?.output_tokens);
+        const generationSeconds = message.manualHybridMetrics.generation_latency_ms / 1000;
+        rows.push({
+          ...common,
+          status: 'COMPLETED',
+          error_message: null,
+          max_new_tokens: Number.isFinite(maxNewTokens) ? maxNewTokens : null,
+          output_tokens: Number.isFinite(outputTokens) ? outputTokens : null,
+          tokens_per_second: Number.isFinite(outputTokens) && generationSeconds > 0
+            ? outputTokens / generationSeconds
+            : null,
+          hit_output_cap: Number.isFinite(maxNewTokens)
+            && Number.isFinite(outputTokens)
+            && outputTokens >= maxNewTokens,
+          ...message.manualHybridMetrics,
+        });
+      } else {
+        rows.push({
+          ...common,
+          status: 'FAILED',
+          ...message.manualHybridFailure,
+          router_latency_ms: null,
+          model_switch_latency_ms: null,
+          generation_latency_ms: null,
+          ttft_ms: null,
+          decode_latency_ms: null,
+          end_to_end_latency_ms: null,
+          model_cache_hit: null,
+          model_load_action: null,
+          model_evicted: null,
+        });
+      }
+    });
+    return rows;
+  }, [messages]);
+
+  const exportManualHybridReport = useCallback((format: 'json' | 'csv') => {
+    const rows = buildManualHybridRows();
+    if (!rows.length) {
+      toast.error('Chưa có lượt Chat Hybrid nào có telemetry để xuất.');
+      return;
+    }
+
+    const metricValues = (key: string) => rows
+      .map((row) => row[key])
+      .filter((value) => typeof value === 'number' && Number.isFinite(value)) as number[];
+    const completedRows = rows.filter((row) => row.status === 'COMPLETED');
+    const e2e = metricValues('end_to_end_latency_ms');
+    const router = metricValues('router_latency_ms');
+    const switching = metricValues('model_switch_latency_ms');
+    const generation = metricValues('generation_latency_ms');
+    const ttft = metricValues('ttft_ms').filter((value) => value >= 0);
+    const throughput = metricValues('tokens_per_second');
+    const cacheHits = completedRows.filter((row) => row.model_cache_hit).length;
+    const exportedAt = new Date().toISOString();
+    const summary = {
+      turns: rows.length,
+      completed_turns: completedRows.length,
+      failed_turns: rows.length - completedRows.length,
+      avg_router_latency_ms: average(router),
+      avg_model_switch_latency_ms: average(switching),
+      avg_generation_latency_ms: average(generation),
+      avg_ttft_ms: average(ttft),
+      avg_tokens_per_second: average(throughput),
+      avg_end_to_end_latency_ms: average(e2e),
+      median_end_to_end_latency_ms: percentile(e2e, 0.5),
+      p95_end_to_end_latency_ms: percentile(e2e, 0.95),
+      end_to_end_latency_cv: coefficientOfVariation(e2e),
+      cache_hits: cacheHits,
+      cache_hit_rate: completedRows.length ? cacheHits / completedRows.length : null,
+      cold_loads: completedRows.filter((row) => row.model_load_action === 'cold_load').length,
+      switch_loads: completedRows.filter((row) => row.model_load_action === 'switch_load').length,
+      evictions: completedRows.filter((row) => row.model_evicted).length,
+      output_cap_hits: completedRows.filter((row) => row.hit_output_cap).length,
+    };
+    const stamp = exportedAt.replace(/[:.]/g, '-');
+
+    if (format === 'json') {
+      const report = {
+        schema_version: 'manual-hybrid-speed-v1',
+        experiment: 'Manual continuous model-switching test',
+        exported_at: exportedAt,
+        gpu_slot_id: instanceId,
+        inference_parameters: params,
+        metric_definitions: {
+          router_latency_ms: 'Hybrid routing decision only',
+          model_switch_latency_ms: 'GPU model acquisition/load before inference',
+          ttft_ms: 'Inference request to first non-empty token',
+          generation_latency_ms: 'GPU stream request to completion',
+          end_to_end_latency_ms: 'Backend request start to completed response',
+          tokens_per_second: 'Measured output tokens divided by generation latency',
+          hit_output_cap: 'True when output tokens reached max_new_tokens and may be truncated',
+        },
+        summary,
+        turns: rows,
+      };
+      downloadTextFile(`manual_hybrid_speed_${stamp}.json`, JSON.stringify(report, null, 2), 'application/json;charset=utf-8');
+    } else {
+      const columns = [
+        'turn', 'status', 'measured_at', 'question', 'subject', 'route_strategy', 'previous_model', 'selected_model',
+        'gpu_slot_id', 'model_load_action', 'model_cache_hit', 'model_evicted', 'router_latency_ms',
+        'model_switch_latency_ms', 'ttft_ms', 'decode_latency_ms', 'generation_latency_ms',
+        'end_to_end_latency_ms', 'max_new_tokens', 'output_tokens', 'tokens_per_second', 'hit_output_cap',
+        'failed_after_ms', 'error_message', 'frontend_response_time_seconds', 'response',
+      ];
+      const csv = [
+        columns.map(csvCell).join(','),
+        ...rows.map((row) => columns.map((column) => csvCell(row[column])).join(',')),
+      ].join('\n');
+      downloadTextFile(`manual_hybrid_speed_${stamp}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8');
+    }
+    toast.success(`Đã xuất báo cáo ${format.toUpperCase()} cho ${rows.length} lượt.`);
+  }, [buildManualHybridRows, instanceId, params]);
+
+  const manualHybridTurnCount = messages.filter(
+    (message) => Boolean(message.manualHybridMetrics || message.manualHybridFailure)
+  ).length;
 
   useEffect(() => { onModelLoadedChange?.(modelLoaded); }, [modelLoaded, onModelLoadedChange]);
   useEffect(() => {
@@ -634,6 +877,7 @@ function ChatPanel({
           }))
         );
         setCurrentSessionId(fullSession._id);
+        routingSessionIdRef.current = fullSession._id;
         const lastAi = fullSession.messages.slice().reverse().find((m: any) => m.role === "ai" && m.model);
         if (lastAi?.model && !hfHubId) setHfHubId(lastAi.model);
       }
@@ -642,7 +886,11 @@ function ChatPanel({
     }
   };
 
-  const handleNewChat = () => { setMessages([]); setCurrentSessionId(null); };
+  const handleNewChat = () => {
+    setMessages([]);
+    setCurrentSessionId(null);
+    routingSessionIdRef.current = createRoutingSessionId();
+  };
 
   const handleRenameSession = async (id: string, newTitle: string) => {
     if (!newTitle.trim()) {
@@ -685,7 +933,7 @@ function ChatPanel({
   };
 
   const sendMessage = useCallback(
-    async (textOverride?: string) => {
+    async (textOverride?: string, inferenceOverrides?: { maxNewTokens?: number }) => {
       const text = textOverride ?? "";
       const isHybrid = provider === "hybrid";
       const isLocal = provider === "local" || provider === "registry";
@@ -713,6 +961,7 @@ function ChatPanel({
 
       const startTime = Date.now();
       let aiContent = "";
+      let resolvedModelForHistory = isHybrid ? "Hybrid Router" : (hfHubId || provider);
       setMessages((prev) => [...prev, { role: "ai", content: "", model: isHybrid ? "Hybrid Router" : isLocal ? hfHubId : provider }]);
 
       try {
@@ -721,15 +970,36 @@ function ChatPanel({
           modelRegistryId: provider === "registry" ? selectedRegistryId : undefined,
           history,
           system_prompt: params.systemPrompt || undefined,
-          max_new_tokens: params.maxNewTokens === "" ? undefined : params.maxNewTokens,
+          max_new_tokens: inferenceOverrides?.maxNewTokens
+            ?? (params.maxNewTokens === "" ? undefined : params.maxNewTokens),
           temperature: params.temperature === "" ? undefined : params.temperature,
           top_k: params.topK === "" ? undefined : params.topK,
           top_p: params.topP === "" ? undefined : params.topP,
           repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
           provider: provider === "local" || provider === "registry" || isHybrid ? undefined : provider,
           routing_mode: isHybrid ? "hybrid" : undefined,
-          session_id: currentSessionId || undefined,
+          session_id: routingSessionIdRef.current,
           signal: abortController.signal,
+          onProgressInfo: (info: any) => {
+            if (!isHybrid || !info.selected_model) return;
+            resolvedModelForHistory = String(info.selected_model);
+            setMessages((prev) => {
+              const arr = [...prev];
+              arr[arr.length - 1] = {
+                ...arr[arr.length - 1],
+                model: String(info.selected_model),
+              };
+              return arr;
+            });
+            if (info.routing) {
+              onLog?.({
+                message: `Hybrid route: ${info.routing.subject} → ${info.selected_model}`,
+                type: 'info',
+                instanceId,
+                data: info.routing,
+              });
+            }
+          },
           onFinalInfo: (info: any) => {
             if (info.routing) {
               onLog?.({
@@ -737,6 +1007,25 @@ function ChatPanel({
                 type: "info",
                 instanceId,
                 data: info.routing,
+              });
+            }
+            if (info.manual_hybrid_metrics) {
+              const telemetry = info.manual_hybrid_metrics as ManualHybridMetrics;
+              resolvedModelForHistory = telemetry.selected_model || resolvedModelForHistory;
+              setMessages((prev) => {
+                const arr = [...prev];
+                arr[arr.length - 1] = {
+                  ...arr[arr.length - 1],
+                  model: telemetry.selected_model || arr[arr.length - 1].model,
+                  manualHybridMetrics: telemetry,
+                };
+                return arr;
+              });
+              onLog?.({
+                message: `Telemetry Hybrid: route ${Math.round(telemetry.router_latency_ms)} ms · switch ${Math.round(telemetry.model_switch_latency_ms)} ms · E2E ${Math.round(telemetry.end_to_end_latency_ms)} ms`,
+                type: 'success',
+                instanceId,
+                data: telemetry,
               });
             }
             if (info.input_parameters) {
@@ -783,15 +1072,24 @@ function ChatPanel({
         } catch { /* ignore */ }
 
         try {
-          const payload = { userMessage: text, aiMessage: aiContent, model: hfHubId, responseTime };
+          const payload = {
+            userMessage: text,
+            aiMessage: aiContent,
+            model: resolvedModelForHistory,
+            responseTime,
+          };
           if (currentSessionId) {
             await apiService.appendMessageToSession(currentSessionId, payload);
+            await fetchChatSessions();
           } else {
             const newSession = await apiService.createChatSession(payload);
             setCurrentSessionId(newSession._id);
-            fetchChatSessions();
+            await fetchChatSessions();
           }
-        } catch (err) { console.error("Failed to save session", err); }
+        } catch (err: any) {
+          console.error("Failed to save session", err);
+          toast.error(`Không lưu được lịch sử chat: ${err.response?.data?.error || err.message}`);
+        }
       } catch (error: any) {
         if (!error.name?.includes("Abort") && !error.message?.includes("aborted")) {
           const errorMsg = error.response?.data?.error || error.message;
@@ -804,9 +1102,25 @@ function ChatPanel({
               ...arr[arr.length - 1],
               content: `${friendlyError.title}\n\n${friendlyError.description}`,
               errorInfo: { raw: errorMsg, retryText: text },
+              ...(isHybrid ? {
+                manualHybridFailure: {
+                  measured_at: new Date().toISOString(),
+                  subject: HYBRID_SPEED_TEST_STEPS.find((step) => step.question === text)?.subject || null,
+                  failed_after_ms: Date.now() - startTime,
+                  error_message: String(errorMsg || 'Unknown Hybrid inference error'),
+                },
+              } : {}),
             };
             return arr;
           });
+          if (isHybrid) {
+            onLog?.({
+              message: `Hybrid FAILED sau ${Date.now() - startTime} ms: ${errorMsg}`,
+              type: 'error',
+              instanceId,
+              data: { question: text, error: errorMsg },
+            });
+          }
           onLog?.({ message: `Lỗi inference: ${error.message}`, type: "error", instanceId });
         } else {
           onLog?.({ message: `Inference bị huỷ`, type: "warning", instanceId });
@@ -819,6 +1133,48 @@ function ChatPanel({
     },
     [loading, hfHubId, modelLoaded, instanceId, params, currentSessionId, provider, messages, selectedRegistryId]
   );
+
+  const runNextHybridSpeedStep = useCallback(() => {
+    if (loading || hybridSpeedStep >= HYBRID_SPEED_TEST_STEPS.length) return;
+    const step = HYBRID_SPEED_TEST_STEPS[hybridSpeedStep];
+    sendMessage(step.question, { maxNewTokens: HYBRID_SPEED_TEST_MAX_NEW_TOKENS });
+    setHybridSpeedStep((current) => Math.min(current + 1, HYBRID_SPEED_TEST_STEPS.length));
+  }, [hybridSpeedStep, loading, sendMessage]);
+
+  const resetHybridSpeedTest = useCallback(async () => {
+    if (loading) return;
+    try {
+      const unloadResults = await Promise.all([1, 2].map(slotId => apiService.unloadModel(slotId)));
+      const before = Number(unloadResults[0]?.vram_before_mb);
+      const after = Number(unloadResults[unloadResults.length - 1]?.vram_after_mb);
+      onLog?.({
+        message: Number.isFinite(before) && Number.isFinite(after)
+          ? `GPU slots 1-2: ${before} MB → ${after} MB sau unload`
+          : 'GPU slots 1-2 đã nhận lệnh unload',
+        type: 'success',
+        instanceId,
+        data: unloadResults,
+      });
+      if (fallbackHybridModelId) {
+        await apiService.loadModel(fallbackHybridModelId, { instanceId: 1, pinned: true });
+        onLog?.({
+          message: `Đã preload và ghim ${fallbackHybridModelId} ở GPU slot 1`,
+          type: 'success',
+          instanceId: 1,
+        });
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.error || error.message;
+      onLog?.({ message: `Unload GPU thất bại: ${message}`, type: 'error', instanceId });
+      toast.error(`Chưa giải phóng được GPU: ${message}`);
+      return;
+    }
+    setMessages([]);
+    setCurrentSessionId(null);
+    routingSessionIdRef.current = createRoutingSessionId();
+    setHybridSpeedStep(0);
+    toast.success('Đã xóa lượt đo và giải phóng GPU slots 1-2 để bắt đầu cold-start mới.');
+  }, [fallbackHybridModelId, instanceId, loading, onLog]);
 
   const sendMessageRef = useRef(sendMessage);
   useEffect(() => { sendMessageRef.current = sendMessage; }, [sendMessage]);
@@ -877,10 +1233,23 @@ function ChatPanel({
 
   const handleConfirmModel = async (modelOverride?: string) => {
     if (provider === "hybrid") {
-      setActiveModelId("Hybrid Router");
-      setModelLoaded(true);
+      setLoading(true);
       setLoadError(null);
+      try {
+        if (fallbackHybridModelId) {
+          await apiService.loadModel(fallbackHybridModelId, { instanceId: 1, pinned: true });
+        }
+        setActiveModelId("Hybrid Router");
+        setModelLoaded(true);
       toast.success("Hybrid Router đã sẵn sàng");
+      } catch (error: any) {
+        const errorMsg = error.response?.data?.error || error.message;
+        setLoadError(errorMsg);
+        setModelLoaded(false);
+        toast.error(getFriendlyError(errorMsg).title);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     const isLocalOrRegistry = provider === "local" || provider === "registry";
@@ -1208,6 +1577,54 @@ function ChatPanel({
                   : "Tai model"}
           </button>
 
+          {provider === 'hybrid' && manualHybridTurnCount > 0 && (
+            <>
+              <button
+                type="button"
+                className="api-btn"
+                onClick={() => exportManualHybridReport('json')}
+                title="Xuất đầy đủ dữ liệu từng lượt và thống kê dùng cho RP5"
+                style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                <Download size={14} /> Báo cáo JSON ({manualHybridTurnCount})
+              </button>
+              <button
+                type="button"
+                className="api-btn"
+                onClick={() => exportManualHybridReport('csv')}
+                title="Xuất bảng từng lượt để mở bằng Excel"
+              >
+                CSV
+              </button>
+            </>
+          )}
+
+          {provider === 'hybrid' && modelLoaded && (
+            <>
+              <button
+                type="button"
+                className="api-btn"
+                disabled={loading || hybridSpeedStep >= HYBRID_SPEED_TEST_STEPS.length}
+                onClick={runNextHybridSpeedStep}
+                title="Kịch bản hội thoại thực tế, tối đa 256 output token mỗi lượt"
+                style={{ background: '#eef2ff', color: '#3730a3', borderColor: '#a5b4fc' }}
+              >
+                {hybridSpeedStep >= HYBRID_SPEED_TEST_STEPS.length
+                  ? 'Đã đủ 6 lượt'
+                  : `Test tiếp ${hybridSpeedStep + 1}/6 · ${HYBRID_SPEED_TEST_STEPS[hybridSpeedStep].subject}`}
+              </button>
+              <button
+                type="button"
+                className="api-btn"
+                disabled={loading}
+                onClick={resetHybridSpeedTest}
+                title="Xóa telemetry và unload GPU slot để lần tiếp theo là cold-start"
+              >
+                Reset đo
+              </button>
+            </>
+          )}
+
           {modelLoaded && (provider === "local" || provider === "registry") && (
             <div style={{ position: 'relative' }} ref={unloadMenuRef}>
               <button
@@ -1334,6 +1751,61 @@ function ChatPanel({
                               <span className="meta-badge">
                                 {msg.responseTime.toFixed(2)}s
                                 {msg.model && !isCompareMode && ` - ${msg.model.split("/").pop()}`}
+                              </span>
+                            </div>
+                          )}
+                          {msg.manualHybridMetrics && (
+                            <div style={{
+                              marginTop: 6,
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: 5,
+                              fontSize: 10.5,
+                              color: '#475569',
+                            }}>
+                              <span className="param-tag">Route {Math.round(msg.manualHybridMetrics.router_latency_ms)} ms</span>
+                              <span className="param-tag">Switch {Math.round(msg.manualHybridMetrics.model_switch_latency_ms)} ms</span>
+                              <span className="param-tag">TTFT {msg.manualHybridMetrics.ttft_ms == null ? '—' : `${Math.round(msg.manualHybridMetrics.ttft_ms)} ms`}</span>
+                              <span className="param-tag">Generate {Math.round(msg.manualHybridMetrics.generation_latency_ms)} ms</span>
+                              <span className="param-tag">E2E {Math.round(msg.manualHybridMetrics.end_to_end_latency_ms)} ms</span>
+                              {typeof msg.manualHybridMetrics.token_usage?.output_tokens === 'number' && (
+                                <span className="param-tag">
+                                  Output {msg.manualHybridMetrics.token_usage.output_tokens} tok /{' '}
+                                  {(msg.manualHybridMetrics.token_usage.output_tokens / Math.max(0.001, msg.manualHybridMetrics.generation_latency_ms / 1000)).toFixed(1)} tok/s
+                                </span>
+                              )}
+                              {typeof msg.manualHybridMetrics.token_usage?.output_tokens === 'number'
+                                && typeof msg.parameters?.max_new_tokens === 'number'
+                                && msg.manualHybridMetrics.token_usage.output_tokens >= msg.parameters.max_new_tokens && (
+                                  <span
+                                    className="param-tag"
+                                    style={{ background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca' }}
+                                    title="The model reached max_new_tokens; the answer may be truncated."
+                                  >
+                                    OUTPUT LIMIT {msg.parameters.max_new_tokens}
+                                  </span>
+                                )}
+                              <span
+                                className="param-tag"
+                                style={{
+                                  background: msg.manualHybridMetrics.model_cache_hit ? '#ecfdf5' : '#fff7ed',
+                                  color: msg.manualHybridMetrics.model_cache_hit ? '#047857' : '#c2410c',
+                                  borderColor: msg.manualHybridMetrics.model_cache_hit ? '#a7f3d0' : '#fed7aa',
+                                }}
+                                title={`${msg.manualHybridMetrics.previous_model || 'empty'} → ${msg.manualHybridMetrics.selected_model || 'unknown'}`}
+                              >
+                                {msg.manualHybridMetrics.model_load_action}
+                              </span>
+                            </div>
+                          )}
+                          {msg.manualHybridFailure && (
+                            <div style={{ marginTop: 6, fontSize: 10.5 }}>
+                              <span
+                                className="param-tag"
+                                style={{ background: '#fef2f2', color: '#b91c1c', borderColor: '#fecaca' }}
+                                title={msg.manualHybridFailure.error_message}
+                              >
+                                FAILED sau {Math.round(msg.manualHybridFailure.failed_after_ms)} ms
                               </span>
                             </div>
                           )}

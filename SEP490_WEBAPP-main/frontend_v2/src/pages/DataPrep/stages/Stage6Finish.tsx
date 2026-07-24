@@ -21,9 +21,16 @@ const normalizeEvaluationSubject = (value: any): string => {
   if (['HISTORY', 'HIST'].includes(normalized)) return 'HISTORY';
   if (['PHYSICS', 'PHYSICAL'].includes(normalized)) return 'PHYSICS';
   if (['CHEMISTRY', 'CHEM'].includes(normalized)) return 'CHEMISTRY';
-  if (['GENERAL', 'OTHER', 'UNGROUPED', 'OUT_OF_SCOPE'].includes(normalized)) return 'GENERAL';
+  if (normalized === 'GENERAL') return 'GENERAL';
+  if (['OTHER', 'UNGROUPED', 'OUT_OF_SCOPE'].includes(normalized)) return 'OTHER';
   return normalized || 'GENERAL';
 };
+
+const evaluationSubjectFileName = (subject: string): string => subject
+  .trim()
+  .toLowerCase()
+  .replace(/[^a-z0-9_-]+/g, '_')
+  .replace(/^_+|_+$/g, '') || 'other';
 
 const toEvaluationMessages = (row: any): Array<{ role: string; content: string; labels?: string[] }> => {
   if (Array.isArray(row?.messages)) {
@@ -612,16 +619,22 @@ export const Stage6Finish: React.FC = () => {
       zip.file('train_dataset.json', JSON.stringify(pack.sft.train, null, 2));
       zip.file('validation_dataset.json', JSON.stringify(pack.sft.validation, null, 2));
       zip.file('test_dataset.json', JSON.stringify(pack.model_eval.test, null, 2));
-      const subjectsForPack = ['ENGLISH', 'MATH', 'HISTORY'];
+      const subjectsForPack = [...new Set(
+        [...pack.sft.train, ...pack.sft.validation]
+          .map((row: any) => normalizeEvaluationSubject(row?.subject))
+          .filter(Boolean),
+      )].sort();
       subjectsForPack.forEach(subject => {
         const subjectTrain = pack.sft.train.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
         const subjectValidation = pack.sft.validation.filter((row: any) => normalizeEvaluationSubject(row?.subject) === subject);
-        zip.file(`subjects/${subject.toLowerCase()}_train.json`, JSON.stringify(subjectTrain, null, 2));
-        zip.file(`subjects/${subject.toLowerCase()}_validation.json`, JSON.stringify(subjectValidation, null, 2));
+        const fileName = evaluationSubjectFileName(subject);
+        zip.file(`subjects/${fileName}_train.json`, JSON.stringify(subjectTrain, null, 2));
+        zip.file(`subjects/${fileName}_validation.json`, JSON.stringify(subjectValidation, null, 2));
       });
-      // General is the pooled baseline: it sees all approved subject data.
-      zip.file('subjects/general_train.json', JSON.stringify(pack.sft.train, null, 2));
-      zip.file('subjects/general_validation.json', JSON.stringify(pack.sft.validation, null, 2));
+      // Keep the pooled baseline explicit instead of presenting all-subject data
+      // as if it belonged to the GENERAL label.
+      zip.file('subjects/pooled_train.json', JSON.stringify(pack.sft.train, null, 2));
+      zip.file('subjects/pooled_validation.json', JSON.stringify(pack.sft.validation, null, 2));
       zip.file('router_calibration.json', JSON.stringify(pack.router.calibration, null, 2));
       zip.file('router_validation.json', JSON.stringify(pack.router.validation, null, 2));
       zip.file('router_test.json', JSON.stringify(pack.router.test, null, 2));

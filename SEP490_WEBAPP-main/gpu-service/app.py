@@ -120,12 +120,26 @@ _judge_context = threading.local()
 def _release_slot(slot_id: int):
     slot = _model_slots.pop(slot_id, None)
     if slot is None:
-        return
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            try:
+                torch.cuda.ipc_collect()
+            except Exception:
+                pass
+        return False
     del slot["model"]
     del slot["tokenizer"]
+    del slot
     gc.collect()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.ipc_collect()
+        except Exception:
+            pass
     print(f"\n--- Slot {slot_id}: GPU memory released ---\n")
+    return True
 
 # Giải phóng toàn bộ slots (backward-compat helper)
 def _release_gpu_memory():
@@ -2267,7 +2281,7 @@ def format_inference_prompt(tokenizer, system_prompt: str, history: list, user_i
 # ─────────────────────────────────────────────
 # Filter <think>...</think> khi stream
 # ─────────────────────────────────────────────
-def stream_without_thinking(streamer):
+def stream_without_thinking(streamer, min_chunk_chars: int = 32):
     """
     Accumulate buffer liên tục để tránh <think>/<think> bị split
     giữa 2 chunk (TextIteratorStreamer trả về từng token một).
@@ -2276,6 +2290,7 @@ def stream_without_thinking(streamer):
     CLOSE_TAG = "</think>"
 
     buffer        = ""
+    ready         = ""
     in_think      = False
     thinking_done = False
 
@@ -2284,13 +2299,17 @@ def stream_without_thinking(streamer):
 
         if not in_think and not thinking_done:
             if OPEN_TAG in buffer:
+                before_think, buffer = buffer.split(OPEN_TAG, 1)
+                ready += before_think
                 in_think = True
-                buffer = buffer.split(OPEN_TAG, 1)[1]
             else:
-                if len(buffer) > 10:
-                    yield buffer[:-10]
-                    buffer = buffer[-10:]
-                continue
+                # Keep only enough tail to detect a tag split across tokenizer
+                # chunks. Accumulate the safe text before yielding so Gemma-like
+                # tokenizers do not reach the browser one character at a time.
+                holdback = len(OPEN_TAG) - 1
+                if len(buffer) > holdback:
+                    ready += buffer[:-holdback]
+                    buffer = buffer[-holdback:]
 
         if in_think:
             if CLOSE_TAG in buffer:
@@ -2302,11 +2321,17 @@ def stream_without_thinking(streamer):
                 continue
 
         if thinking_done and buffer:
-            yield buffer
+            ready += buffer
             buffer = ""
 
-    if buffer and not in_think:
-        yield buffer
+        if len(ready) >= min_chunk_chars or ("\n" in ready and len(ready) >= 8):
+            yield ready
+            ready = ""
+
+    if not in_think:
+        ready += buffer
+    if ready:
+        yield ready
 
 
 print("✅ Inference helpers đã sẵn sàng.")
@@ -2326,7 +2351,10 @@ class ClusteringService:
     """
 
     def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Data Prep embeddings must not permanently reserve inference VRAM.
+        # Set CLUSTER_DEVICE=cuda explicitly only when GPU clustering is needed.
+        requested_device = os.environ.get("CLUSTER_DEVICE", "cpu").strip().lower()
+        self.device = "cuda" if requested_device == "cuda" and torch.cuda.is_available() else "cpu"
         print(f"[ClusteringService] Loading model on {self.device}...")
         self.model = SentenceTransformer("intfloat/multilingual-e5-base", device=self.device)
         self.model.max_seq_length = 512
@@ -3723,6 +3751,7 @@ def load_model():
     instance_id = data.get('instance_id') or data.get('instanceId') or 1
     slot_id = int(instance_id)
     force_reload = data.get('force_reload', False)
+    pin_model = bool(data.get('pinned', False))
 
     if not hf_model_id:
         return jsonify({"error": "Missing hf_model_id"}), 400
@@ -3735,7 +3764,13 @@ def load_model():
 
     try:
         current = _model_slots.get(slot_id)
+        if current and current["model_id"] != hf_model_id and current.get("pinned", False) and not force_reload:
+            return jsonify({
+                "error": f"Slot {slot_id} is pinned to {current['model_id']}; use another slot or force_reload."
+            }), 409
         if current and current["model_id"] == hf_model_id and not force_reload:
+            current["pinned"] = bool(current.get("pinned", False) or pin_model)
+            current["last_used_at"] = time.time()
             return jsonify({
                 "status": "success",
                 "message": f"Model đã được load ở slot {slot_id}, bỏ qua."
@@ -3759,7 +3794,10 @@ def load_model():
         _model_slots[slot_id] = {
             "model_id": hf_model_id,
             "model": model,
-            "tokenizer": tokenizer
+            "tokenizer": tokenizer,
+            "pinned": pin_model,
+            "loaded_at": time.time(),
+            "last_used_at": time.time(),
         }
 
         return jsonify({
@@ -3784,6 +3822,9 @@ def model_slot_status():
             "loaded": current is not None,
             "model_id": current["model_id"] if current else None,
             "busy": _slot_locks[slot_id].locked(),
+            "pinned": bool(current.get("pinned", False)) if current else False,
+            "loaded_at": current.get("loaded_at") if current else None,
+            "last_used_at": current.get("last_used_at") if current else None,
         }
     return jsonify({"status": "success", "slots": slots}), 200
 
@@ -3793,9 +3834,22 @@ def unload_model(slot_id):
     lock = _slot_locks.get(slot_id)
     if not lock:
         return jsonify({"error": "Invalid slot"}), 400
+    vram_before_mb, _, _ = get_gpu_stats()
     with lock:
-        _release_slot(slot_id)
-    return jsonify({"status": "success", "message": f"Slot {slot_id} unloaded"}), 200
+        released = _release_slot(slot_id)
+    vram_after_mb, _, _ = get_gpu_stats()
+    return jsonify({
+        "status": "success",
+        "message": f"Slot {slot_id} unloaded",
+        "released": released,
+        "vram_before_mb": vram_before_mb,
+        "vram_after_mb": vram_after_mb,
+        "active_slots": {
+            str(sid): entry["model_id"]
+            for sid, entry in _model_slots.items()
+        },
+        "cluster_device": _service.device,
+    }), 200
 
 
 @app.route('/api/infer/stop/<int:slot_id>', methods=['POST'])
@@ -3828,6 +3882,7 @@ def infer_model_stream():
     model      = slot["model"]
     tokenizer  = slot["tokenizer"]
     loaded_id  = slot["model_id"]
+    slot["last_used_at"] = time.time()
 
     text_input    = data.get('text_input')
     system_prompt = data.get('system_prompt', DEFAULT_SYSTEM_PROMPT)
@@ -3903,9 +3958,22 @@ def infer_model_stream():
             do_sample=gen_do_sample,
         )
 
+        generation_errors = []
+
         def _run_generate():
-            with lock:
-                model.generate(**generation_kwargs)
+            try:
+                with lock:
+                    model.generate(**generation_kwargs)
+            except Exception as exc:
+                generation_errors.append(exc)
+                traceback.print_exc()
+                # model.generate normally closes the streamer itself. If it
+                # raises in the background thread, explicitly send the sentinel
+                # so the Flask response cannot hang forever in status=started.
+                try:
+                    streamer.on_finalized_text("", stream_end=True)
+                except Exception:
+                    pass
 
         # ✅ Thứ tự đúng: clear → add stopping_criteria → start thread
         _slot_abort_events[slot_id].clear()
@@ -3916,25 +3984,44 @@ def infer_model_stream():
 
         def generate_stream():
             full_response = []
-            for text in stream_without_thinking(streamer):
-                full_response.append(text)
-                yield f"data: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"
-            generated_text = "".join(full_response)
-            # Count with the exact tokenizer loaded for this model.  Emitting
-            # this as a final SSE event lets benchmark clients record measured
-            # token use instead of estimating it from characters or words.
-            output_token_count = len(tokenizer.encode(generated_text, add_special_tokens=False))
-            usage = {
-                "input_tokens": input_token_count,
-                "output_tokens": output_token_count,
-                "total_tokens": input_token_count + output_token_count,
-                "accounting": "model_tokenizer",
-            }
-            inference_logs_db[inference_id]["generated_text"] = generated_text
-            inference_logs_db[inference_id]["usage"] = usage
-            inference_logs_db[inference_id]["status"] = "completed"
-            yield f"data: {json.dumps({'usage': usage, 'inference_id': inference_id}, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
+            completed = False
+            try:
+                for text in stream_without_thinking(streamer):
+                    full_response.append(text)
+                    inference_logs_db[inference_id]["generated_text"] = "".join(full_response)
+                    inference_logs_db[inference_id]["status"] = "streaming"
+                    yield f"data: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"
+
+                generated_text = "".join(full_response)
+                if generation_errors:
+                    error_message = str(generation_errors[0])
+                    inference_logs_db[inference_id]["status"] = "error"
+                    inference_logs_db[inference_id]["error_message"] = error_message
+                    yield f"data: {json.dumps({'error': error_message, 'inference_id': inference_id}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                # Count with the exact tokenizer loaded for this model. Emitting
+                # this as a final SSE event lets benchmark clients record
+                # measured token use instead of estimating from characters.
+                output_token_count = len(tokenizer.encode(generated_text, add_special_tokens=False))
+                usage = {
+                    "input_tokens": input_token_count,
+                    "output_tokens": output_token_count,
+                    "total_tokens": input_token_count + output_token_count,
+                    "accounting": "model_tokenizer",
+                }
+                inference_logs_db[inference_id]["generated_text"] = generated_text
+                inference_logs_db[inference_id]["usage"] = usage
+                inference_logs_db[inference_id]["status"] = "completed"
+                completed = True
+                yield f"data: {json.dumps({'usage': usage, 'inference_id': inference_id}, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            finally:
+                if not completed and inference_logs_db[inference_id].get("status") not in ("error", "completed"):
+                    _slot_abort_events[slot_id].set()
+                    inference_logs_db[inference_id]["status"] = "interrupted"
+                    inference_logs_db[inference_id]["error_message"] = "Client/tunnel disconnected before generation completed."
 
         return Response(generate_stream(), mimetype='text/event-stream')
 

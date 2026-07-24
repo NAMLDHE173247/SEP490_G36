@@ -1,6 +1,7 @@
 import { RouterSignal, RoutingContext, RoutingIntent, RoutingSubject } from './routingTypes';
 
 const SUBJECT_TERMS: Record<string, Array<[string, number]>> = {
+  OTHER: [['xin chào', 5], ['chào bạn', 5], ['cảm ơn', 5], ['hẹn gặp lại', 5], ['tạm biệt', 5], ['hello', 5], ['thank you', 5], ['goodbye', 5]],
   ENGLISH: [['english', 5], ['tieng anh', 5], ['grammar', 5], ['vocabulary', 5], ['reading', 4], ['writing', 4], ['phat am', 4], ['passive voice', 5], ['tenses', 4]],
   MATH: [['đạo hàm', 5], ['tích phân', 5], ['phương trình bậc hai', 5], ['xác suất', 5], ['ma trận', 5], ['logarit', 5], ['hàm số', 4], ['tam giác', 3], ['phân số', 3], ['nghiệm', 2], ['phương trình', 2], ['đồ thị hàm', 3]],
   PHYSICS: [['rơi tự do', 5], ['định luật newton', 5], ['gia tốc', 5], ['vận tốc', 5], ['lực ma sát', 5], ['động năng', 5], ['thế năng', 5], ['điện trở', 5], ['cường độ dòng điện', 5], ['nhiệt lượng', 4], ['chuyển động', 3], ['quãng đường', 2], ['khối lượng riêng', 4], ['dao động', 4], ['tần số', 3], ['áp suất', 4]],
@@ -19,7 +20,9 @@ const INTENT_TERMS: Array<[RoutingIntent, string[]]> = [
 
 const normalize = (value: string) => value.toLowerCase().normalize('NFC').replace(/\s+/g, ' ').trim();
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
-const containsTerm = (text: string, term: string) => text.includes(term);
+const containsTerm = (text: string, term: string) => term === 'ph'
+  ? /(?:^|\s|[.,;:!?()])ph(?:$|\s|[.,;:!?()])/.test(text)
+  : text.includes(term);
 
 export const ruleBasedRoute = (context: RoutingContext): RouterSignal => {
   const question = normalize(context.question);
@@ -36,7 +39,7 @@ export const ruleBasedRoute = (context: RoutingContext): RouterSignal => {
     }
     matches.set(subject, found);
   }
-  if (isFollowUp && context.previousSubject && !['UNKNOWN', 'GENERAL'].includes(context.previousSubject)) {
+  if (isFollowUp && context.previousSubject && !['UNKNOWN', 'GENERAL', 'OTHER'].includes(context.previousSubject)) {
     scores.set(context.previousSubject, (scores.get(context.previousSubject) || 0) + 4);
     matches.set(context.previousSubject, [...(matches.get(context.previousSubject) || []), 'conversation_state']);
   }

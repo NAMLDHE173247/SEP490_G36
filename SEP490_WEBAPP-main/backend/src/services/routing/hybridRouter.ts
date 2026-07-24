@@ -5,7 +5,21 @@ import { DEFAULT_ROUTING_THRESHOLDS, HybridRoutingDecision, RoutingContext, Rout
 
 type ModelMap = Partial<Record<string, string>>;
 
-const attachModel = (signal: RouterSignal, map: ModelMap) => map[signal.subject] || map.GENERAL || map.DEFAULT;
+const normalizeDeploymentSubject = (signal: RouterSignal, map: ModelMap): RouterSignal => {
+  // GENERAL is the legacy label for greetings and casual conversation.
+  // New datasets and model registries use OTHER.
+  if (signal.subject === 'GENERAL' && map.OTHER && !map.GENERAL) {
+    return { ...signal, subject: 'OTHER' };
+  }
+  return signal;
+};
+
+const attachModel = (signal: RouterSignal, map: ModelMap) =>
+  map[signal.subject]
+  || (signal.subject === 'GENERAL' ? map.OTHER : undefined)
+  || map.GENERAL
+  || map.OTHER
+  || map.DEFAULT;
 
 export const hybridRoute = async (args: {
   context: RoutingContext;
@@ -20,16 +34,22 @@ export const hybridRoute = async (args: {
   const thresholds = { ...DEFAULT_ROUTING_THRESHOLDS, ...(args.thresholds || {}) };
   const rule = ruleBasedRoute(args.context);
 
-  const finish = (signal: RouterSignal, strategy: HybridRoutingDecision['strategy'], llmCalled: boolean, llmResult?: RouterSignal): HybridRoutingDecision => ({
-    ...signal,
-    strategy,
-    selectedModel: attachModel(signal, args.modelMap),
-    fallbackUsed: signal.subject === 'GENERAL' || !args.modelMap[signal.subject],
-    llmCalled,
-    latencyMs: Date.now() - started,
-    ruleResult: rule,
-    ...(llmResult ? { llmResult } : {}),
-  });
+  const finish = (signal: RouterSignal, strategy: HybridRoutingDecision['strategy'], llmCalled: boolean, llmResult?: RouterSignal): HybridRoutingDecision => {
+    const resolvedSignal = normalizeDeploymentSubject(signal, args.modelMap);
+    return {
+      ...resolvedSignal,
+      strategy,
+      selectedModel: attachModel(resolvedSignal, args.modelMap),
+      fallbackUsed:
+        resolvedSignal.subject === 'OTHER'
+        || resolvedSignal.subject === 'GENERAL'
+        || !args.modelMap[resolvedSignal.subject],
+      llmCalled,
+      latencyMs: Date.now() - started,
+      ruleResult: rule,
+      ...(llmResult ? { llmResult } : {}),
+    };
+  };
 
   if (mode === 'rule') return finish(rule, rule.needClarification ? 'clarification' : 'rule', false);
   if (mode === 'oracle') return finish(rule, 'oracle', false);
