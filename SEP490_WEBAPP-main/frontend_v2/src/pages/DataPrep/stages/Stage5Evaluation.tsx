@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { Check, Eye, X, Settings, Database, Plus, Search, HelpCircle, BarChart2, RefreshCw, AlertCircle, Calendar, Download, FileText, Sparkles, MessageSquare, ChevronLeft, ChevronRight, Play, ChevronDown } from 'lucide-react';
 import { useDataPrep } from '../DataPrepContext';
 import { Tooltip, getPageNumbers } from '../utils';
+import { useStage4Data } from '../../../hooks/useStage4Data';
 import './Stage5Evaluation.css';
 
 export const Stage5Evaluation: React.FC = () => {
   const dataPrep = useDataPrep();
+  const versionId = window.localStorage.getItem('current_version_id');
+  const { results, latestJob, runMultiEval, error: multiEvalError } = useStage4Data(versionId);
   const {
     currentSubStep5, setCurrentSubStep5,
     judgeModels, setJudgeModels,
@@ -18,9 +21,10 @@ export const Stage5Evaluation: React.FC = () => {
     sepEvalMinScore, setSepEvalMinScore,
     sepRunningEval, setSepRunningEval
   } = dataPrep;
+  const isEvalRunning = sepRunningEval || latestJob?.status === 'running' || latestJob?.status === 'pending';
 
 
-  const evalItems = [
+  const demoEvalItems = [
     {
       id: 'eval_428051',
       subject: 'MATH',
@@ -33,9 +37,9 @@ export const Stage5Evaluation: React.FC = () => {
         ['Student', 'Hinh nhu la n*x^(n-1) a?'],
       ],
       models: [
-        { name: 'OPENROUTER', rec: 'Reject', score: 4.0, color: 'rose' },
-        { name: 'DEEPSEEK', rec: 'Pass', score: 7.8, color: 'emerald' },
-        { name: 'GROQ', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
+        { name: 'GEMINI 2.5 FLASH', rec: 'Reject', score: 4.0, color: 'rose' },
+        { name: 'DEEPSEEK V4 FLASH', rec: 'Pass', score: 7.8, color: 'emerald' },
+        { name: 'CHATGPT GPT-4', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
       ],
     },
     {
@@ -49,11 +53,34 @@ export const Stage5Evaluation: React.FC = () => {
         ['AI Tutor', 'Em thu nghi xem vi sao xe phanh lai dung duoc tren mat duong?'],
       ],
       models: [
-        { name: 'OPENROUTER', rec: 'Pass', score: 8.8, color: 'emerald' },
-        { name: 'DEEPSEEK', rec: 'Pass', score: 8.4, color: 'emerald' },
+        { name: 'GEMINI 2.5 FLASH', rec: 'Pass', score: 8.8, color: 'emerald' },
+        { name: 'DEEPSEEK V4 FLASH', rec: 'Pass', score: 8.4, color: 'emerald' },
       ],
     },
   ];
+
+  const modelLabels: Record<string, string> = {
+    gemini: 'GEMINI 2.5 FLASH',
+    deepseek: 'DEEPSEEK V4 FLASH',
+    openai: 'CHATGPT GPT-4',
+  };
+  const evalItems = results.length > 0 ? results.map((result: any) => ({
+    id: String(result.sampleIdRef?.sampleId || result.sampleIdRef?._id || result.sampleId || result._id),
+    subject: result.subject || 'UNGROUPED',
+    score: Number(result.averageOverall ?? result.averageScore ?? 0),
+    recommendation: result.finalRecommendation || result.recommendation || 'Need Rewrite',
+    conflict: Boolean(result.hasConflict),
+    messages: (result.sampleIdRef?.data?.messages || []).map((message: any) => [
+      message.role === 'assistant' ? 'AI Tutor' : 'Student',
+      String(message.content || ''),
+    ]),
+    models: Object.entries(result.modelScores || {}).map(([name, scorecard]: [string, any]) => ({
+      name: modelLabels[name] || name.toUpperCase(),
+      rec: scorecard?.recommendation || 'Need Rewrite',
+      score: Number(scorecard?.overall || 0),
+      color: scorecard?.recommendation === 'Pass' ? 'emerald' : scorecard?.recommendation === 'Reject' ? 'rose' : 'amber',
+    })),
+  })) : demoEvalItems;
 
   const visibleEvalItems = evalItems.filter((item) => {
     const matchesRec = sepEvalRecommendation === 'all' || item.recommendation === sepEvalRecommendation;
@@ -72,9 +99,9 @@ export const Stage5Evaluation: React.FC = () => {
           </div>
           <div className="sep490-check-list">
             {[
-              ['openrouter', 'Gemini (Flash 1.5)', 'Default education judge'],
-              ['groq', 'Groq Llama 3', 'High precision verification'],
-              ['deepseek', 'Deepseek (R1/V3)', 'Advanced logic judge'],
+              ['gemini', 'Gemini 2.5 Flash', 'Fast education-quality judge'],
+              ['deepseek', 'DeepSeek V4 Flash', 'Advanced logic and factuality judge'],
+              ['openai', 'ChatGPT GPT-4', 'Independent high-precision verification'],
             ].map(([key, label, desc]) => (
               <label key={key} className={judgeModels[key] ? 'active' : ''}>
                 <input
@@ -96,28 +123,38 @@ export const Stage5Evaluation: React.FC = () => {
           </label>
           <button
             className="sep490-primary full"
-            onClick={() => {
+            disabled={!versionId || isEvalRunning || Object.values(judgeModels).every((enabled) => !enabled)}
+            onClick={async () => {
+              const selectedModels = Object.entries(judgeModels).filter(([, enabled]) => enabled).map(([name]) => name);
               setSepRunningEval(true);
-              window.setTimeout(() => setSepRunningEval(false), 900);
+              try {
+                await runMultiEval(selectedModels, 'n - 2 to n + 2', 2);
+              } catch (runError: any) {
+                window.alert(runError?.message || 'Không thể khởi chạy Multi-Eval.');
+              } finally {
+                setSepRunningEval(false);
+              }
             }}
           >
-            <Sparkles size={14} className={sepRunningEval ? 'sep490-spin' : ''} />
-            Start AI verification & refinement
+            <Sparkles size={14} className={isEvalRunning ? 'sep490-spin' : ''} />
+            {isEvalRunning ? 'AI verification is running...' : 'Start AI verification & refinement'}
           </button>
+          {!versionId && <small style={{ color: '#b91c1c' }}>Chưa có Dataset Version đang hoạt động.</small>}
+          {multiEvalError && <small style={{ color: '#b91c1c' }}>{multiEvalError}</small>}
         </section>
 
         <section className="sep490-panel">
           <div className="sep490-panel-head compact">
             <h3>Verification Status</h3>
-            <span className="sep490-pill emerald">{sepRunningEval ? 'RUNNING' : 'COMPLETE'}</span>
+            <span className={`sep490-pill ${latestJob?.status === 'failed' ? 'rose' : 'emerald'}`}>{isEvalRunning ? 'RUNNING' : latestJob?.status?.toUpperCase() || 'READY'}</span>
           </div>
-          <div className="sep490-progress large"><span style={{ width: sepRunningEval ? '62%' : '100%' }} /></div>
+          <div className="sep490-progress large"><span style={{ width: `${latestJob?.progress?.total ? Math.round((latestJob.progress.evaluated / latestJob.progress.total) * 100) : isEvalRunning ? 5 : 0}%` }} /></div>
           <div className="sep490-status-grid">
-            <div><span>Evaluated</span><strong>{sepRunningEval ? 6 : 9}</strong></div>
-            <div><span>Processing</span><strong>{sepRunningEval ? 3 : 0}</strong></div>
+            <div><span>Evaluated</span><strong>{latestJob?.progress?.evaluated || 0}</strong></div>
+            <div><span>Processing</span><strong>{latestJob?.progress?.processing || 0}</strong></div>
             <div><span>Auto refined</span><strong>2</strong></div>
-            <div><span>API errors</span><strong>0</strong></div>
-            <div><span>Conflicts</span><strong className="amber">1</strong></div>
+            <div><span>API errors</span><strong>{latestJob?.progress?.failed || 0}</strong></div>
+            <div><span>Conflicts</span><strong className="amber">{latestJob?.progress?.conflictCount || 0}</strong></div>
           </div>
         </section>
       </div>

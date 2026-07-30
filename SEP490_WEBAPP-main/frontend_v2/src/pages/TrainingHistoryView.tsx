@@ -887,7 +887,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                 <button
                                   className="btn-blue-outline"
                                   onClick={(e) => handleResume(e, item)}
-                                  disabled={!(item.latest_checkpoint_file_id || (item.pushToHub && item.hfRepoId)) || resumeLoading === item.jobId}
+                                  disabled={!(item.workerUrl || item.latest_checkpoint_file_id || (item.pushToHub && item.hfRepoId)) || resumeLoading === item.jobId}
                                 >
                                   {resumeLoading === item.jobId ? 'Đang khôi phục...' : 'Resume (Tiếp tục)'}
                                 </button>

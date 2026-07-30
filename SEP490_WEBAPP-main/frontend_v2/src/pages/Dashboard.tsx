@@ -25,7 +25,6 @@ import SupervisorReviewView from './SupervisorReviewView';
 import CheckerReviewView from './CheckerReviewView';
 import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
-import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
 import RouterBenchmarkView from './RouterBenchmarkView';
 
@@ -56,7 +55,6 @@ function Dashboard() {
       case 'checker': return 'Checker Review';
       case 'supervisor': return 'Dashboard';
       case 'staff': return 'My Tasks';
-      case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
     }
   };
@@ -82,7 +80,6 @@ function Dashboard() {
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
-    { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
   ];
 
   const [activeTab, setActiveTabState] = useState(() => {
@@ -133,7 +130,7 @@ function Dashboard() {
         (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
         (activeTab === 'Staff Rewrite' && user.role === 'staff') ||
-        (activeTab === 'Task Detail' && user.role === 'admin') ||
+        (activeTab === 'Task Detail' && ['admin', 'supervisor', 'checker'].includes(user.role)) ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
 
       if (!isValid) {
@@ -220,13 +217,10 @@ function Dashboard() {
         return <CheckerRewriteView />;
       case 'My Stats':
         return <MyStatsView />;
-      case 'Reviewer Dashboard':
-        return <ReviewerDashboardView />;
       case 'API Keys':
         return <ApiKeySettingsPage />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
-        if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
         if (user.role === 'checker') return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;

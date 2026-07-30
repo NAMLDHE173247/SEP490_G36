@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
+import crypto from 'crypto';
 import FormData from 'form-data';
 const fetch = async (url: any, init?: any) => {
   const module = await import('node-fetch');
@@ -335,6 +336,11 @@ export const startTraining = async (req: Request, res: Response) => {
       zipMetadata?.systemPrompt ||
       'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.'
     ).trim();
+    const effectiveSystemPromptVersion = String(
+      systemPromptVersion ||
+      zipMetadata?.systemPromptVersion ||
+      ('autotrain-' + crypto.createHash('sha256').update(effectiveSystemPrompt, 'utf8').digest('hex').slice(0, 12))
+    ).trim();
     console.log(`[Backend] Starting job ${job_id} → model=${model_name} epochs=${epochsNum}`);
     console.log(`[Backend] Train system_prompt chars=${effectiveSystemPrompt.length} preview="${effectiveSystemPrompt.slice(0, 90)}"`);
 
@@ -369,6 +375,7 @@ export const startTraining = async (req: Request, res: Response) => {
       hf_repo_id: hf_repo_id || '',
       hf_token: hf_token || '',
       system_prompt: effectiveSystemPrompt,
+      system_prompt_version: effectiveSystemPromptVersion,
       // Google Drive for checkpoint saving
       drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
       service_account: parsedGoogleCredentials,
@@ -483,7 +490,7 @@ export const startTraining = async (req: Request, res: Response) => {
         baseModel: model_name,
         // Dataset & Prompt traceability from ZIP metadata
         systemPrompt: effectiveSystemPrompt,
-        systemPromptVersion: systemPromptVersion || zipMetadata?.systemPromptVersion || '',
+        systemPromptVersion: effectiveSystemPromptVersion,
         datasetVersionId: zipMetadata?.datasetVersionId || undefined,
         datasetSource: (datasetSource as string) || (datasetFile ? 'local' : cloudLoadedDataset ? 'cloud' : 'hub'),
         datasetName: datasetFile ? datasetFile.originalname : cloudLoadedDataset ? path.basename(cloudLoadedDataset) : dataset,
@@ -860,19 +867,38 @@ export const resumeTraining = async (req: Request, res: Response) => {
       (typeof snapshotConfig.hf_token === 'string' ? snapshotConfig.hf_token : '') ||
       (typeof history.hfToken === 'string' ? history.hfToken : '');
 
-    // Determine checkpoint source:
-    // Priority 1: latest_checkpoint_file_id (e.g. Google Drive file ID)
-    // Priority 2: hfRepoId if pushToHub was enabled (checkpoint saved to HF Hub)
-    const checkpointId = history.latest_checkpoint_file_id || history.hfRepoId || null;
-    const checkpointSource = history.latest_checkpoint_file_id
-      ? 'drive'
-      : history.hfRepoId && history.pushToHub
-        ? 'hf'
-        : null;
+    // Prefer the checkpoint on the worker's persistent volume. This survives a
+    // container/GPU-process restart and avoids downloading a remote checkpoint.
+    let hasWorkerCheckpoint = false;
+    if (history.workerUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const probeResponse = await fetch(`${history.workerUrl}/api/train/checkpoint/${jobId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          signal: controller.signal as any,
+        });
+        clearTimeout(timeout);
+        const probeData: any = await probeResponse.json();
+        hasWorkerCheckpoint = probeResponse.ok && probeData.available === true;
+      } catch (error) {
+        console.warn(`[Backend] Worker checkpoint probe failed for ${jobId}:`, error);
+      }
+    }
+
+    // Fallback order: Google Drive, then Hugging Face Hub.
+    const checkpointId = hasWorkerCheckpoint ? jobId : history.latest_checkpoint_file_id || history.hfRepoId || null;
+    const checkpointSource = hasWorkerCheckpoint
+      ? 'worker'
+      : history.latest_checkpoint_file_id
+        ? 'drive'
+        : history.hfRepoId && history.pushToHub
+          ? 'hf'
+          : null;
 
     if (!checkpointId) {
       return res.status(400).json({
-        error: 'Cannot resume: No checkpoint found. Train with Push to Hub or wait for a Drive checkpoint.'
+        error: 'Cannot resume: No checkpoint found on the GPU worker, Hugging Face Hub, or Google Drive.'
       });
     }
 
@@ -936,7 +962,9 @@ export const resumeTraining = async (req: Request, res: Response) => {
     }
 
     // 4. Forward to GPU Service
-    const workerUrl = workerManager.getNextWorker();
+    const workerUrl = checkpointSource === 'worker' && history.workerUrl
+      ? history.workerUrl
+      : workerManager.getNextWorker();
     console.log(`[Backend] Forwarding to GPU service: ${workerUrl}/api/train/start`);
     workerManager.incrementJobs(workerUrl);
 

@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
+import crypto from 'crypto';
+import os from 'os';
+import path from 'path';
+import { spawn } from 'child_process';
 import FormData from 'form-data';
 const fetch = async (url: any, init?: any) => {
   const module = await import('node-fetch');
@@ -16,6 +20,141 @@ import { apiKeyService } from '../services/apiKeyService';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
 dotenv.config();
 
+type LargeLlmReferenceJob = {
+  jobId: string;
+  ownerId: string;
+  evalId: string;
+  model: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  progress: number;
+  detail: string;
+  result?: Record<string, any>;
+  error?: string;
+  createdAt: string;
+};
+
+const largeLlmReferenceJobs = new Map<string, LargeLlmReferenceJob>();
+
+type PromptTrace = {
+  content: string;
+  source: 'test_file' | 'zip_metadata' | 'training_history' | 'service_default';
+  version: string;
+  hash: string;
+};
+
+function readEvaluationRecords(filePath: string): any[] {
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const parsedRecords: any[] = filePath.toLowerCase().endsWith('.jsonl')
+    ? raw.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
+    : (() => {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      })();
+  return parsedRecords.flatMap(record => {
+    if (Array.isArray(record?.conversations)) return record.conversations;
+    if (Array.isArray(record?.items)) return record.items;
+    return [record];
+  });
+}
+
+function validateLockedTestFile(filePath: string) {
+  const records = readEvaluationRecords(filePath);
+  const aliases: Record<string, string> = {
+    EN: 'ENGLISH', ENG: 'ENGLISH', ENGLISH: 'ENGLISH',
+    MATH: 'MATH', MATHEMATICS: 'MATH',
+    HIS: 'HISTORY', HIST: 'HISTORY', HISTORY: 'HISTORY',
+  };
+  const counts: Record<string, number> = {};
+  const seen = new Set<string>();
+  const errors: string[] = [];
+  records.forEach((record, index) => {
+    const metadata = record?.metadata && typeof record.metadata === 'object' ? record.metadata : {};
+    const itemId = String(record?.item_id || record?.itemId || record?.id || metadata.item_id || metadata.id || '').trim();
+    const rawSubject = String(record?.subject || record?.course || record?.label || metadata.subject || '').trim().toUpperCase();
+    const subject = aliases[rawSubject] || rawSubject;
+    if (!itemId) errors.push(`row ${index + 1}: missing explicit item_id`);
+    else if (seen.has(itemId)) errors.push(`duplicate item_id: ${itemId}`);
+    seen.add(itemId);
+    if (!['ENGLISH', 'MATH', 'HISTORY'].includes(subject)) errors.push(`${itemId || index + 1}: invalid subject ${subject || 'missing'}`);
+    else counts[subject] = (counts[subject] || 0) + 1;
+    const messages = Array.isArray(record?.messages) ? record.messages : [];
+    const userCount = messages.filter((message: any) => message?.role === 'user').length;
+    if (userCount !== 1) errors.push(`${itemId || index + 1}: expected exactly one user message, found ${userCount}`);
+    if (!String(record?.reference_answer || '').trim() && !(Array.isArray(record?.gold_key_points) && record.gold_key_points.length > 0)) {
+      errors.push(`${itemId || index + 1}: missing reference_answer/gold_key_points`);
+    }
+  });
+  const confirmatorySampleSize = Object.keys(counts).length > 0
+    && Object.values(counts).every(count => count === 50);
+  if (!records.length) errors.push('dataset is empty');
+  if (errors.length) throw new Error(errors.slice(0, 12).join('; '));
+  return {
+    itemCount: records.length,
+    subjectCounts: counts,
+    expectedItemsPerSubject: 50,
+    confirmatorySampleSize,
+    fileSha256: crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
+    contentSha256: crypto.createHash('sha256').update(JSON.stringify(records), 'utf8').digest('hex'),
+  };
+}
+
+function readEmbeddedSystemPrompt(filePath: string): string {
+  const records = readEvaluationRecords(filePath);
+  const prompts = new Set<string>();
+  for (const record of records) {
+    const topLevel = typeof record?.system_prompt === 'string' ? record.system_prompt.trim() : '';
+    if (topLevel) prompts.add(topLevel);
+    if (Array.isArray(record?.messages)) {
+      for (const message of record.messages) {
+        if (String(message?.role || '').toLowerCase() !== 'system') continue;
+        const content = typeof message?.content === 'string' ? message.content.trim() : '';
+        if (content) prompts.add(content);
+      }
+    }
+  }
+  if (prompts.size > 1) {
+    // Row-level prompts are legacy data only when a TrainingHistory prompt is
+    // available. Do not reject an otherwise valid locked test just because an
+    // older export contains mixed prompts; the AutoTrain prompt is injected
+    // uniformly at replay time.
+    console.warn('[Backend] Test dataset contains multiple embedded system prompts; ignoring them in favour of the AutoTrain prompt.');
+    return '';
+  }
+  return [...prompts][0] || '';
+}
+
+function resolveEvaluationPrompt(
+  embeddedPrompt: string,
+  zipMetadata: DatasetMetadata | null,
+  history: { systemPrompt?: string; systemPromptVersion?: string },
+): PromptTrace {
+  const zipPrompt = String(zipMetadata?.systemPrompt || '').trim();
+  const historyPrompt = String(history.systemPrompt || '').trim();
+  const defaultPrompt = 'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.';
+  // The prompt registered with AutoTrain is the canonical experimental
+  // condition. Test exports may contain an older per-row prompt; using that
+  // prompt at evaluation would turn a Base-vs-Fine-tuned comparison into a
+  // different-prompt experiment.
+  const content = historyPrompt || zipPrompt || embeddedPrompt || defaultPrompt;
+  const source: PromptTrace['source'] = historyPrompt
+    ? 'training_history'
+    : zipPrompt
+      ? 'zip_metadata'
+      : embeddedPrompt
+        ? 'test_file'
+        : 'service_default';
+  const hash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+  const declaredVersion = source === 'training_history'
+    ? String(history.systemPromptVersion || '').trim()
+    : String(zipMetadata?.systemPromptVersion || '').trim();
+  return {
+    content,
+    source,
+    version: declaredVersion || `${source}-${hash.slice(0, 12)}`,
+    hash,
+  };
+}
+
 function getOwnerFilter(req: Request): { ownerId?: string } {
   const ownerId = getAuthUserId(req);
   return ownerId ? { ownerId } : {};
@@ -27,11 +166,13 @@ function getOwnerFilter(req: Request): { ownerId?: string } {
 type GpuStatus = {
   can_create_eval: boolean;
   active_evals: number;
+  active_training: boolean;
   max_evals: number;
   vram_free_mb: number;
   vram_total_mb: number;
   vram_used_mb: number;
   gpu_util: number;
+  eval_checkpoint_protocol: number;
 };
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -55,11 +196,13 @@ async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
     const result = {
       can_create_eval: data.can_create_eval ?? true,
       active_evals: data.active_evals ?? 0,
+      active_training: data.active_training ?? false,
       max_evals: data.max_evals ?? 3,
       vram_free_mb: data.vram_free_mb ?? (data.vram_total_mb - data.vram_used_mb),
       vram_total_mb: data.vram_total_mb,
       vram_used_mb: data.vram_used_mb,
       gpu_util: data.gpu_util ?? 0,
+      eval_checkpoint_protocol: Number(data.eval_checkpoint_protocol ?? 0),
     };
 
       return result;
@@ -80,6 +223,62 @@ async function getGpuStatus(): Promise<GpuStatus | null> {
     if (attempt < 3) await wait(attempt * 1000);
   }
   return null;
+}
+
+type GpuActiveEvaluation = { eval_job_id: string; status: string; job_id?: string };
+
+type GpuEvalRecoveryState = {
+  state: 'active' | 'resumable' | 'completed' | 'missing' | 'unknown';
+  payload?: any;
+};
+
+async function getGpuEvalRecoveryState(evalJobId: string): Promise<GpuEvalRecoveryState> {
+  try {
+    const response = await fetch(
+      `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(evalJobId)}`,
+      {
+        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        signal: AbortSignal.timeout(7000),
+      },
+    );
+    const text = await response.text();
+    let payload: any = null;
+    try { payload = JSON.parse(text); } catch { payload = { error: text.slice(0, 500) }; }
+
+    if (response.status === 404 && payload?.status === 'NOT_FOUND') {
+      return { state: 'missing', payload };
+    }
+    if (!response.ok) return { state: 'unknown', payload };
+
+    const status = String(payload?.status || '').toUpperCase();
+    if (['PENDING', 'RUNNING', 'EVALUATING'].includes(status)) return { state: 'active', payload };
+    if (status === 'INTERRUPTED' && payload?.resumable === true) return { state: 'resumable', payload };
+    if (status === 'COMPLETED') return { state: 'completed', payload };
+    return { state: 'unknown', payload };
+  } catch {
+    return { state: 'unknown' };
+  }
+}
+
+async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> {
+  try {
+    const response = await fetch(`${configService.getGpuUrl()}/api/eval/active`, {
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!response.ok) return null; // Compatibility with workers not deployed yet.
+    const payload = await response.json() as any;
+    if (!Array.isArray(payload?.jobs)) return null;
+    return payload.jobs
+      .filter((job: any) => typeof job?.eval_job_id === 'string' && job.eval_job_id)
+      .map((job: any) => ({
+        eval_job_id: String(job.eval_job_id),
+        status: String(job.status || 'UNKNOWN'),
+        job_id: job.job_id ? String(job.job_id) : undefined,
+      }));
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +311,7 @@ function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
   return perConvResults
     .filter((r: any) => r !== null && r !== undefined)
     .map((r: any) => ({
+      item_id:         r.item_id ? String(r.item_id) : undefined,
       conv_index:      Number(r.conv_index ?? 0),
       num_turns:       Number(r.num_turns ?? 0),
       avg_latency_ms:  Number(r.avg_latency_ms ?? 0),
@@ -121,6 +321,23 @@ function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
       input_tokens:    Number(r.input_tokens ?? 0),
       output_tokens:   Number(r.output_tokens ?? 0),
       total_tokens:    Number(r.total_tokens ?? 0),
+      generation_status: r.generation_status ? String(r.generation_status) : undefined,
+      failure_type:    r.failure_type == null ? null : String(r.failure_type),
+      first_attempt_failed: Boolean(r.first_attempt_failed),
+      output_limit_reached: Boolean(r.output_limit_reached),
+      telemetry:       r.telemetry && typeof r.telemetry === 'object' ? r.telemetry : {},
+      prompt_trace:    r.prompt_trace && typeof r.prompt_trace === 'object' ? r.prompt_trace : {},
+      reference_trace: r.reference_trace && typeof r.reference_trace === 'object' ? r.reference_trace : {},
+      reference_answer: r.reference_answer ? String(r.reference_answer) : '',
+      gold_key_points: Array.isArray(r.gold_key_points) ? r.gold_key_points.map(String) : [],
+      judge_status:    r.judge_status ? String(r.judge_status) : undefined,
+      judge_response_id: r.judge_response_id ? String(r.judge_response_id) : undefined,
+      effective_judge_model: r.effective_judge_model ? String(r.effective_judge_model) : undefined,
+      judge_error:     r.judge_error ? String(r.judge_error) : undefined,
+      judge_router_metadata: r.judge_router_metadata ?? null,
+      judge_blinded:   Boolean(r.judge_blinded),
+      judge_randomization_seed: r.judge_randomization_seed == null
+        ? undefined : Number(r.judge_randomization_seed),
       replay_turns:     Array.isArray(r.replay_turns) ? r.replay_turns : [],
       criteria_scores: r.criteria_scores ?? {},
       criteria_reasons: r.criteria_reasons ?? {},
@@ -155,6 +372,14 @@ function normalizeEvalResult(result: any) {
     baseSummary,
     delta:              result.delta ?? null,
     flags:              Array.isArray(result.flags) ? result.flags : [],
+    researchStatistics: result.researchStatistics ?? null,
+    hypothesisDecisions: result.hypothesisDecisions ?? null,
+    pairIntegrity:      result.pairIntegrity ?? null,
+    confirmatoryEligible: Boolean(result.confirmatoryEligible),
+    datasetValidation:  result.datasetValidation ?? null,
+    protocolManifest:   result.protocolManifest ?? null,
+    environmentManifest: result.environmentManifest ?? null,
+    loadMetrics:        result.loadMetrics ?? null,
     gpuResult:          result,
   };
 }
@@ -163,6 +388,9 @@ function normalizeEvalResult(result: any) {
 function getJudgeValidationError(results: IEvalResult[]): string | null {
   const failureMarkers = ['judge_error', 'parse_miss', 'no_api_key', 'judge failed'];
   for (const item of results) {
+    if (item.judge_status === 'failed') {
+      return `AI Judge failed for item ${item.item_id || item.conv_index}: ${item.judge_error || 'missing score'}`;
+    }
     for (const reason of Object.values(item.criteria_reasons || {})) {
       const value = String(reason || '').toLowerCase();
       if (failureMarkers.some(marker => value.includes(marker))) {
@@ -239,6 +467,22 @@ export const runEvaluation = async (req: Request, res: Response) => {
 
     // 3. Tạo eval_job_id
     const eval_job_id = `eval_${uuidv4()}`;
+    const baseModelRepo = String(history.baseModel || '').trim();
+    const requestedBaseModel = String(req.body.base_model_hf_repo || '').trim();
+    if (!baseModelRepo) {
+      fs.unlink(evalFile.path, () => {});
+      if (zipTempDir) cleanupTempDir(zipTempDir);
+      return res.status(400).json({
+        error: 'TrainingHistory does not contain the exact precursor Base model required for paired evaluation.',
+      });
+    }
+    if (requestedBaseModel && requestedBaseModel !== baseModelRepo) {
+      fs.unlink(evalFile.path, () => {});
+      if (zipTempDir) cleanupTempDir(zipTempDir);
+      return res.status(400).json({
+        error: `Base model mismatch: training job used ${baseModelRepo}, not ${requestedBaseModel}.`,
+      });
+    }
     console.log(`[Backend] Starting eval ${eval_job_id} for job ${jobId} → model=${history.hfRepoId}`);
     console.log(`[Backend] base_model_hf_repo from req.body: '${req.body.base_model_hf_repo}'`);
     console.log(`[Backend] req.body keys:`, Object.keys(req.body));
@@ -252,13 +496,82 @@ export const runEvaluation = async (req: Request, res: Response) => {
       });
     }
 
-    const evalSystemPrompt = String(
-      history.systemPrompt ||
-      zipMetadata?.systemPrompt ||
-      'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.'
-    ).trim();
-    console.log(`[Backend] Eval system_prompt chars=${evalSystemPrompt.length} preview="${evalSystemPrompt.slice(0, 90)}"`);
-    console.log('[Backend] Eval generation: max_new_tokens=192 temperature=0.2 top_p=0.9 repetition_penalty=1.15');
+    let lockedDatasetTrace: ReturnType<typeof validateLockedTestFile>;
+    try {
+      lockedDatasetTrace = validateLockedTestFile(evalFile.path);
+      const declaredTestHash = String(zipMetadata?.datasetHashes?.test_sha256 || '').trim();
+      if (declaredTestHash && declaredTestHash !== lockedDatasetTrace.contentSha256) {
+        throw new Error(`test_dataset hash mismatch: metadata=${declaredTestHash}, actual=${lockedDatasetTrace.contentSha256}`);
+      }
+    } catch (datasetErr: any) {
+      fs.unlink(evalFile.path, () => {});
+      if (zipTempDir) cleanupTempDir(zipTempDir);
+      return res.status(400).json({
+        error: 'invalid_locked_test_dataset',
+        message: datasetErr.message || 'Dataset does not satisfy the locked RP5 protocol.',
+      });
+    }
+
+    let embeddedSystemPrompt = '';
+    try {
+      embeddedSystemPrompt = readEmbeddedSystemPrompt(evalFile.path);
+    } catch (promptErr: any) {
+      fs.unlink(evalFile.path, () => {});
+      if (zipTempDir) cleanupTempDir(zipTempDir);
+      return res.status(400).json({
+        error: 'invalid_test_system_prompt',
+        message: promptErr.message || 'Could not read system prompt from test dataset.',
+      });
+    }
+    const promptTrace = resolveEvaluationPrompt(embeddedSystemPrompt, zipMetadata, history);
+    const evalSystemPrompt = promptTrace.content;
+    if (embeddedSystemPrompt && history.systemPrompt && embeddedSystemPrompt.trim() !== history.systemPrompt.trim()) {
+      console.warn('[Backend] Test-file system prompt differs from TrainingHistory; the AutoTrain prompt is authoritative and the embedded prompt was ignored.');
+    }
+    console.log(
+      `[Backend] Eval system_prompt source=${promptTrace.source} version=${promptTrace.version} ` +
+      `hash=${promptTrace.hash.slice(0, 12)} chars=${evalSystemPrompt.length}`
+    );
+    console.log('[Backend] Locked RP5 generation: greedy, max_new_tokens=512, warmup=1, bootstrap=10000');
+
+    const existingRecoverableEval = await ModelEvaluation.findOne({
+      ownerId,
+      jobId,
+      datasetFileHash: lockedDatasetTrace.fileSha256,
+      status: { $in: ['PENDING', 'RUNNING', 'EVALUATING', 'INTERRUPTED', 'DISCONNECTED'] },
+    }).sort({ startedAt: -1 }).select('modelEvalId status').lean();
+    if (existingRecoverableEval) {
+      const recovery = await getGpuEvalRecoveryState(existingRecoverableEval.modelEvalId);
+      if (recovery.state === 'missing') {
+        await ModelEvaluation.updateOne(
+          { modelEvalId: existingRecoverableEval.modelEvalId, ownerId },
+          {
+            $set: {
+              status: 'FAILED',
+              error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
+              failureStage: 'gpu_checkpoint_missing',
+              completedAt: new Date(),
+            },
+          },
+        );
+      } else {
+        fs.unlink(evalFile.path, () => {});
+        if (zipTempDir) cleanupTempDir(zipTempDir);
+        const resumable = recovery.state === 'resumable';
+        const active = recovery.state === 'active';
+        return res.status(active || resumable ? 409 : 503).json({
+          error: 'eval_already_active_or_resumable',
+          message: resumable
+            ? 'Evaluation này có checkpoint đã được GPU xác nhận. Hãy bấm Resume để tránh tốn token.'
+            : active
+              ? 'Evaluation cùng dataset đang chạy. Hãy kết nối lại tiến trình thay vì tạo job trùng.'
+              : 'Chưa xác minh được job cũ trên GPU. Không tạo job trùng cho đến khi kết nối GPU ổn định.',
+          eval_job_id: existingRecoverableEval.modelEvalId,
+          status: existingRecoverableEval.status,
+          resumable,
+        });
+      }
+    }
 
     const config = {
       eval_job_id,
@@ -269,13 +582,24 @@ export const runEvaluation = async (req: Request, res: Response) => {
       judge_model:          RESEARCH_MODEL_CATALOG.judge,
       judge_provider:       'openrouter',
       judge_api_key:        judgeApiKey,
-      base_model_hf_repo:   req.body.base_model_hf_repo || '',
+      base_model_hf_repo:   baseModelRepo,
       system_prompt:        evalSystemPrompt,
-      max_new_tokens:       192,
-      temperature:          0.2,
-      top_p:                0.9,
-      repetition_penalty:   1.15,
+      system_prompt_source: promptTrace.source,
+      system_prompt_version:promptTrace.version,
+      system_prompt_hash:   promptTrace.hash,
+      protocol_mode:        'locked_single_turn',
+      prompt_variant:       'P1',
+      subject_override:     '',
+      max_new_tokens:       512,
+      warmup_runs:          1,
+      bootstrap_resamples:  10000,
+      bootstrap_seed:       42,
+      temperature:          0,
+      top_p:                1,
+      repetition_penalty:   1,
       eval_file_name:       zipMetadata?.datasetVersionName || uploadedEvalFileName,
+      dataset_file_sha256:  lockedDatasetTrace.fileSha256,
+      subject_counts:       lockedDatasetTrace.subjectCounts,
     };
 
     // 4. Tạo Evaluation record trong MongoDB với status PENDING
@@ -293,10 +617,18 @@ export const runEvaluation = async (req: Request, res: Response) => {
       judgeModel:   config.judge_model,
       // Dataset & Prompt traceability from ZIP metadata
       systemPrompt:       evalSystemPrompt,
-      systemPromptVersion:zipMetadata?.systemPromptVersion || '',
+      systemPromptVersion:promptTrace.version,
+      systemPromptSource: promptTrace.source,
+      systemPromptHash:   promptTrace.hash,
       datasetVersionId:   zipMetadata?.datasetVersionId || '',
       datasetVersionName: zipMetadata?.datasetVersionName || uploadedEvalFileName,
+      datasetMetadata:    zipMetadata || undefined,
+      datasetFileHash:    lockedDatasetTrace.fileSha256,
+      datasetValidation:  lockedDatasetTrace,
       summary: {
+        knowledge: 0,
+        socratic: 0,
+        exploratory_overall: 0,
         overall: 0,
         group_a: 0, group_b: 0, group_c: 0, group_d: 0,
         criteria: {},
@@ -323,6 +655,22 @@ export const runEvaluation = async (req: Request, res: Response) => {
         { status: 'FAILED', error: 'GPU service không phản hồi trước khi dispatch evaluation.', failureStage: 'gpu_preflight', completedAt: new Date() },
       );
       return res.status(503).json({ error: 'gpu_offline', message: 'GPU service không phản hồi' });
+    }
+    if (gpuStatus.eval_checkpoint_protocol < 1) {
+      fs.unlink(evalFile.path, () => {});
+      await ModelEvaluation.updateOne(
+        { modelEvalId: eval_job_id, ownerId },
+        {
+          status: 'FAILED',
+          error: 'GPU worker đang chạy app.py cũ, chưa hỗ trợ Eval checkpoint protocol v1.',
+          failureStage: 'gpu_checkpoint_capability',
+          completedAt: new Date(),
+        },
+      );
+      return res.status(503).json({
+        error: 'gpu_checkpoint_not_deployed',
+        message: 'GPU đang chạy app.py cũ chưa có checkpoint. Hãy restart worker bằng bản standalone mới trước khi chạy Eval để tránh mất token.',
+      });
     }
     if (!gpuStatus.can_create_eval) {
       fs.unlink(evalFile.path, () => {});
@@ -466,16 +814,27 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
       const text = await response.text();
       if (!response.ok) {
         consecutiveGpuStatusErrors += 1;
-        const terminalGpuError = response.status === 404 || consecutiveGpuStatusErrors >= 3;
+        // A localtunnel endpoint can briefly route to a stale worker while the
+        // active GPU job continues on the correct worker. A single 404 is not
+        // proof that the GPU job was lost; require repeated failures.
+        let errorPayload: any = null;
+        try { errorPayload = JSON.parse(text); } catch { errorPayload = null; }
+        const missingGpuJob = response.status === 404 && errorPayload?.status === 'NOT_FOUND';
+        const terminalGpuError = consecutiveGpuStatusErrors >= 3;
+        const terminalStatus = missingGpuJob ? 'LOST' : 'DISCONNECTED';
         const statusPayload = {
-          status: terminalGpuError ? 'FAILED' : (response.status === 404 ? 'NOT_FOUND' : 'GPU_STATUS_ERROR'),
+          status: terminalGpuError ? terminalStatus : 'GPU_STATUS_ERROR',
           progress: 0,
-          stage_label: terminalGpuError ? 'GPU worker khong phan hoi' : (response.status === 404 ? 'GPU khong tim thay job' : 'Loi GPU status'),
-          stage_detail:
-            response.status === 404
-              ? 'Backend con ban ghi eval nhung GPU worker khong con tien trinh nay. Neu GPU vua restart, can chay lai evaluation.'
-              : `GPU status endpoint tra ve HTTP ${response.status} (${consecutiveGpuStatusErrors}/3).`,
+          stage_label: terminalGpuError
+            ? (missingGpuJob ? 'GPU không còn Eval Job' : 'Mất kết nối GPU')
+            : 'Kết nối GPU tạm thời lỗi',
+          stage_detail: terminalGpuError
+            ? (missingGpuJob
+                ? 'GPU xác nhận không có job và không có checkpoint có thể Resume.'
+                : 'Chưa thể xác nhận job hoặc checkpoint vì GPU không phản hồi. Không tự chạy lại evaluation.')
+            : `GPU status endpoint trả về HTTP ${response.status} (${consecutiveGpuStatusErrors}/3). Đang thử lại; không chạy lại evaluation lúc này.`,
           error: text?.slice(0, 300),
+          resumable: false,
         };
         res.write(`data: ${JSON.stringify(statusPayload)}\n\n`);
         if (terminalGpuError) {
@@ -483,11 +842,11 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
           await ModelEvaluation.updateOne(
             { modelEvalId: evalJobId, ownerId },
             {
-              status: 'FAILED',
+              status: missingGpuJob ? 'FAILED' : 'DISCONNECTED',
               error: statusPayload.error || statusPayload.stage_detail,
-              failureStage: 'gpu_status',
+              failureStage: missingGpuJob ? 'gpu_job_lost' : 'gpu_status_unreachable',
               gpuResult: statusPayload,
-              completedAt: new Date(),
+              ...(missingGpuJob ? { completedAt: new Date() } : {}),
             },
           );
           res.write(`event: end\ndata: ${JSON.stringify(statusPayload)}\n\n`);
@@ -510,6 +869,26 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
           { status: data.status }
         );
         res.write(`data: ${JSON.stringify(data)}\n\n`);
+        return;
+      }
+
+      if (data.status === 'INTERRUPTED') {
+        clearInterval(intervalId);
+        const resumable = data.resumable === true;
+        await ModelEvaluation.updateOne(
+          { modelEvalId: evalJobId, ownerId },
+          {
+            status: resumable ? 'INTERRUPTED' : 'DISCONNECTED',
+            error: String(data.error || data.stage_detail || 'Evaluation interrupted.').slice(0, 1000),
+            failureStage: resumable ? 'gpu_interrupted_checkpointed' : 'gpu_interrupted_unverified',
+          },
+        );
+        const safePayload = resumable
+          ? { ...data, resumable: true }
+          : { ...data, status: 'DISCONNECTED', resumable: false };
+        res.write(`data: ${JSON.stringify(safePayload)}\n\n`);
+        res.write(`event: end\ndata: ${JSON.stringify(safePayload)}\n\n`);
+        res.end();
         return;
       }
 
@@ -570,20 +949,217 @@ export const getActiveEvaluation = async (req: Request, res: Response) => {
   const ownerId = getAuthUserId(req);
   if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const evaluation = await ModelEvaluation.findOne({
+  const activeStatuses = ['PENDING', 'RUNNING', 'EVALUATING'];
+  const gpuEvaluations = await getGpuActiveEvaluations();
+  let evaluation: any = null;
+
+  if (gpuEvaluations) {
+    const gpuEvalIds = gpuEvaluations.map(job => job.eval_job_id);
+    evaluation = gpuEvalIds.length
+      ? await ModelEvaluation.findOne({ ownerId, modelEvalId: { $in: gpuEvalIds } })
+        .sort({ startedAt: -1 })
+        .select('modelEvalId jobId status startedAt')
+        .lean()
+      : null;
+
+    // Reconcile stale DB rows individually. Absence from /active does not prove
+    // that a checkpoint exists, so never manufacture a resumable state here.
+    const staleEvaluations = await ModelEvaluation.find({
+      ownerId,
+      status: { $in: activeStatuses },
+      modelEvalId: { $nin: gpuEvalIds },
+      startedAt: { $lt: new Date(Date.now() - 2 * 60 * 1000) },
+    }).select('modelEvalId').lean();
+    for (const stale of staleEvaluations) {
+      const recovery = await getGpuEvalRecoveryState(stale.modelEvalId);
+      if (recovery.state === 'missing') {
+        await ModelEvaluation.updateOne(
+          { modelEvalId: stale.modelEvalId, ownerId },
+          { $set: {
+            status: 'FAILED',
+            error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
+            failureStage: 'gpu_job_lost',
+            completedAt: new Date(),
+          } },
+        );
+      } else if (recovery.state === 'resumable') {
+        await ModelEvaluation.updateOne(
+          { modelEvalId: stale.modelEvalId, ownerId },
+          { $set: { status: 'INTERRUPTED', failureStage: 'gpu_interrupted_checkpointed' } },
+        );
+      } else if (recovery.state === 'unknown') {
+        await ModelEvaluation.updateOne(
+          { modelEvalId: stale.modelEvalId, ownerId },
+          { $set: { status: 'DISCONNECTED', failureStage: 'gpu_status_unreachable' } },
+        );
+      }
+    }
+  } else {
+    // Backward-compatible path until the updated worker image is deployed.
+    evaluation = await ModelEvaluation.findOne({
+      ownerId,
+      status: { $in: activeStatuses },
+    })
+      .sort({ startedAt: -1 })
+      .select('modelEvalId jobId status startedAt')
+      .lean();
+  }
+
+  if (evaluation) return res.json(evaluation);
+
+  const interruptedEvaluation = await ModelEvaluation.findOne({
     ownerId,
-    status: { $in: ['PENDING', 'RUNNING', 'EVALUATING'] },
+    status: { $in: ['INTERRUPTED', 'DISCONNECTED'] },
   })
-    .sort({ startedAt: -1 })
+    .sort({ updatedAt: -1 })
     .select('modelEvalId jobId status startedAt')
     .lean();
+  if (interruptedEvaluation) {
+    const recovery = await getGpuEvalRecoveryState(interruptedEvaluation.modelEvalId);
+    if (recovery.state === 'resumable') {
+      return res.json({ ...interruptedEvaluation, status: 'INTERRUPTED', resumable: true });
+    }
+    if (recovery.state === 'active') {
+      return res.json({ ...interruptedEvaluation, status: recovery.payload?.status || 'RUNNING', resumable: false });
+    }
+    if (recovery.state === 'missing') {
+      await ModelEvaluation.updateOne(
+        { modelEvalId: interruptedEvaluation.modelEvalId, ownerId },
+        { $set: {
+          status: 'FAILED',
+          error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
+          failureStage: 'gpu_checkpoint_missing',
+          completedAt: new Date(),
+        } },
+      );
+    } else {
+      return res.json({
+        ...interruptedEvaluation,
+        status: 'DISCONNECTED',
+        resumable: false,
+        reason: 'gpu_unreachable',
+        message: 'Chưa thể xác nhận job hoặc checkpoint vì GPU không phản hồi.',
+      });
+    }
+  }
 
-  return res.json(evaluation || null);
+  const gpuStatus = await getGpuStatus();
+  if (!gpuStatus) {
+    return res.json({
+      modelEvalId: null,
+      reason: 'gpu_offline',
+      message: 'GPU worker không phản hồi.',
+    });
+  }
+
+  if (gpuStatus.active_training) {
+    return res.json({
+      modelEvalId: null,
+      reason: 'training_active',
+      message: 'GPU đang chạy AutoTrain, không có Eval Job của tài khoản hiện tại.',
+      gpuStatus,
+    });
+  }
+
+  if (gpuStatus.active_evals > 0) {
+    const gpuEvalIds = gpuEvaluations?.map(job => job.eval_job_id) || [];
+    const trackedActiveEvaluations = gpuEvalIds.length
+      ? await ModelEvaluation.countDocuments({ modelEvalId: { $in: gpuEvalIds } })
+      : await ModelEvaluation.countDocuments({ status: { $in: activeStatuses } });
+    return res.json({
+      modelEvalId: null,
+      reason: trackedActiveEvaluations > 0 ? 'another_account' : 'untracked_gpu_job',
+      message: trackedActiveEvaluations > 0
+        ? 'GPU đang chạy Eval Job của tài khoản khác.'
+        : 'GPU đang chạy một Eval Job không còn bản ghi tương ứng trong backend.',
+      gpuStatus,
+    });
+  }
+
+  if (!gpuStatus.can_create_eval) {
+    return res.json({
+      modelEvalId: null,
+      reason: 'insufficient_vram',
+      message: 'GPU không có Eval Job đang chạy nhưng VRAM trống dưới ngưỡng an toàn.',
+      gpuStatus,
+    });
+  }
+
+  return res.json({ modelEvalId: null, reason: 'idle', message: 'Không có Eval Job đang chạy.' });
+};
+
+export const resumeEvaluation = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { evalJobId } = req.params;
+  const evaluation = await ModelEvaluation.findOne({ modelEvalId: evalJobId, ownerId }).lean();
+  if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
+  if (evaluation.status === 'COMPLETED') {
+    return res.status(409).json({ error: 'Evaluation is already completed.' });
+  }
+
+  const [judgeApiKey, history] = await Promise.all([
+    apiKeyService.getApiKeyForUser(ownerId, 'openrouter'),
+    TrainingHistory.findOne({ jobId: evaluation.jobId, ownerId }).select('hfToken').lean(),
+  ]);
+  if (!judgeApiKey) {
+    return res.status(400).json({ error: 'missing_openrouter_key', message: 'OpenRouter API key is required to resume Judge.' });
+  }
+
+  const gpuResponse = await fetch(`${configService.getGpuUrl()}/api/eval/resume/${encodeURIComponent(evalJobId)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+      'Bypass-Tunnel-Reminder': 'true',
+    },
+    body: JSON.stringify({
+      judge_api_key: judgeApiKey,
+      hf_token: String((history as any)?.hfToken || ''),
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const responseText = await gpuResponse.text();
+  let payload: any;
+  try { payload = JSON.parse(responseText); } catch { payload = { error: responseText.slice(0, 500) }; }
+
+  if (!gpuResponse.ok) {
+    if (gpuResponse.status === 404 && payload?.error === 'checkpoint_not_found') {
+      await ModelEvaluation.updateOne(
+        { modelEvalId: evalJobId, ownerId },
+        {
+          $set: {
+            status: 'FAILED',
+            error: 'GPU worker has no durable checkpoint for this evaluation.',
+            failureStage: 'gpu_checkpoint_missing',
+            completedAt: new Date(),
+          },
+        },
+      );
+    }
+    const status = gpuResponse.status === 404 ? 409 : gpuResponse.status;
+    return res.status(status).json({
+      ...payload,
+      message: payload?.error === 'checkpoint_not_found'
+        ? 'Eval cũ chưa có checkpoint nên không thể cứu; hãy chạy lại sau khi deploy bản checkpoint mới.'
+        : payload?.message,
+    });
+  }
+
+  await ModelEvaluation.updateOne(
+    { modelEvalId: evalJobId, ownerId },
+    {
+      $set: { status: 'RUNNING', startedAt: new Date() },
+      $unset: { completedAt: 1, error: 1, failureStage: 1 },
+    },
+  );
+  return res.status(202).json(payload);
 };
 
 // ---------------------------------------------------------------------------
-// Helper nội bộ: lấy kết quả từ GPU → lưu Evaluation MongoDB
-//               → TrainingHistory: status COMPLETED (train xong), auto-pin nếu chưa có
+// Helper nội bộ: lấy kết quả từ GPU → lưu Evaluation MongoDB.
+// Evaluation completion must never change the user's official/pinned model.
 // ---------------------------------------------------------------------------
 async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<{ saved: boolean; error?: string }> {
   try {
@@ -604,7 +1180,7 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
     }
 
     const normalized = normalizeEvalResult(result);
-    const judgeValidationError = getJudgeValidationError(normalized.results);
+    const judgeValidationError = getJudgeValidationError([...normalized.results, ...normalized.baseResults]);
     if (judgeValidationError) {
       await ModelEvaluation.updateOne(
         { modelEvalId: evalJobId, ownerId },
@@ -644,20 +1220,32 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
         startedAt:          result.startedAt ? new Date(result.startedAt) : new Date(),
         completedAt:        result.completedAt ? new Date(result.completedAt) : new Date(),
         flags:              normalized.flags,
+        researchStatistics: normalized.researchStatistics,
+        hypothesisDecisions: normalized.hypothesisDecisions,
+        pairIntegrity:      normalized.pairIntegrity,
+        confirmatoryEligible: normalized.confirmatoryEligible,
+        datasetValidation:  normalized.datasetValidation,
+        protocolManifest:   normalized.protocolManifest,
+        environmentManifest: normalized.environmentManifest,
+        loadMetrics:        normalized.loadMetrics,
       },
       { upsert: true }
     );
 
-    // Training job vẫn là COMPLETED; Leaderboard dựa vào pinnedEvalId (auto-pin lần eval đầu)
-    const history = await TrainingHistory.findOne({ jobId: result.jobId, ownerId });
-    const updateFields: Record<string, any> = { status: 'COMPLETED' };
-    if (!history?.pinnedEvalId) {
-      updateFields.pinnedEvalId = evalJobId;
-      console.log(`[Backend] 📌 Auto-pinned first eval ${evalJobId} for job ${result.jobId}`);
-    }
-    await TrainingHistory.updateOne({ jobId: result.jobId, ownerId }, updateFields);
+    // Keep training complete, but leave pinnedEvalId untouched. Pinning is an
+    // explicit user action through POST /model-eval/pin/:evalId only.
+    await TrainingHistory.updateOne(
+      { jobId: result.jobId, ownerId },
+      { $set: { status: 'COMPLETED' } },
+    );
 
-    console.log(`[Backend] ✅ Eval result saved for ${evalJobId}, job ${result.jobId} → COMPLETED + pin nếu cần`);
+    console.log(`[Backend] ✅ Eval result saved for ${evalJobId}, job ${result.jobId} → COMPLETED (not pinned)`);
+    // MongoDB is now authoritative; release potentially large replay/Judge
+    // checkpoint files from the worker volume without affecting the result.
+    void fetch(`${configService.getGpuUrl()}/api/eval/checkpoint/${encodeURIComponent(evalJobId)}`, {
+      method: 'DELETE',
+      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+    }).catch(error => console.warn(`[Backend] Could not clean eval checkpoint ${evalJobId}:`, error));
     return { saved: true };
   } catch (err: any) {
     console.error(`[Backend] _fetchAndSaveResult error for ${evalJobId}:`, err.message);
@@ -695,7 +1283,7 @@ export const saveEvalResult = async (req: Request, res: Response) => {
     }
 
     const normalized = normalizeEvalResult(result);
-    const judgeValidationError = getJudgeValidationError(normalized.results);
+    const judgeValidationError = getJudgeValidationError([...normalized.results, ...normalized.baseResults]);
     if (judgeValidationError) {
       return res.status(422).json({ error: judgeValidationError, status: 'FAILED' });
     }
@@ -718,19 +1306,24 @@ export const saveEvalResult = async (req: Request, res: Response) => {
         baseSummary:        normalized.baseSummary,
         delta:              normalized.delta,
         gpuResult:          normalized.gpuResult,
+        researchStatistics: normalized.researchStatistics,
+        hypothesisDecisions: normalized.hypothesisDecisions,
+        pairIntegrity:      normalized.pairIntegrity,
+        confirmatoryEligible: normalized.confirmatoryEligible,
+        datasetValidation:  normalized.datasetValidation,
+        protocolManifest:   normalized.protocolManifest,
+        environmentManifest: normalized.environmentManifest,
+        loadMetrics:        normalized.loadMetrics,
         startedAt: result.startedAt ? new Date(result.startedAt) : new Date(),
         completedAt: result.completedAt ? new Date(result.completedAt) : new Date(),
       },
       { upsert: true, returnDocument: 'after' }
     );
 
-    const history = await TrainingHistory.findOne({ jobId: result.jobId, ownerId });
-    const updateFields: Record<string, any> = { status: 'COMPLETED' };
-    if (!history?.pinnedEvalId) {
-      updateFields.pinnedEvalId = result.modelEvalId;
-      console.log(`[Backend] 📌 Auto-pinned eval ${result.modelEvalId} for job ${result.jobId} (save endpoint)`);
-    }
-    await TrainingHistory.updateOne({ jobId: result.jobId, ownerId }, updateFields);
+    await TrainingHistory.updateOne(
+      { jobId: result.jobId, ownerId },
+      { $set: { status: 'COMPLETED' } },
+    );
 
     console.log(`[Backend] ✅ Eval saved via /api/model-eval/save for job ${result.jobId}`);
     return res.status(200).json({ message: 'Eval saved successfully' });
@@ -744,6 +1337,27 @@ export const saveEvalResult = async (req: Request, res: Response) => {
 // GET /api/model-eval/:evalId
 // Trả Evaluation record cho ModelEvalResultScreen
 // ---------------------------------------------------------------------------
+export const exportEvaluationArtifact = async (req: Request, res: Response) => {
+  try {
+    const ownerFilter = getOwnerFilter(req);
+    const evaluation = await ModelEvaluation.findOne({
+      modelEvalId: req.params.evalId,
+      ...ownerFilter,
+    }).lean();
+    if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
+
+    const artifact: Record<string, any> = { ...evaluation };
+    delete artifact.ownerId;
+    delete artifact.__v;
+    const safeId = String(evaluation.modelEvalId).replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeId}_rp5_artifact.json"`);
+    return res.status(200).send(JSON.stringify(artifact, null, 2));
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to export evaluation artifact' });
+  }
+};
+
 export const getEvaluation = async (req: Request, res: Response) => {
   try {
     const ownerFilter = getOwnerFilter(req);
@@ -765,6 +1379,195 @@ export const getEvaluation = async (req: Request, res: Response) => {
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to get evaluation' });
   }
+};
+
+// ---------------------------------------------------------------------------
+// Large-LLM contextual references. These runs intentionally remain separate
+// from the paired Base-vs-FT causal comparison.
+// ---------------------------------------------------------------------------
+export const getLargeLlmReferenceModels = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+    const response = await fetch('https://openrouter.ai/api/v1/models');
+    if (!response.ok) throw new Error(`OpenRouter catalog returned HTTP ${response.status}`);
+    const payload: any = await response.json();
+    const eligibleModels = (Array.isArray(payload?.data) ? payload.data : [])
+      .filter((model: any) => {
+        const parameters = Array.isArray(model?.supported_parameters) ? model.supported_parameters : [];
+        const modality = String(model?.architecture?.modality || '');
+        return (parameters.includes('max_tokens') || parameters.includes('max_completion_tokens'))
+          && (!modality || modality.includes('text'));
+      })
+      .map((model: any) => ({
+        id: String(model.id),
+        name: String(model.name || model.id),
+        contextLength: Number(model.context_length || 0),
+        created: Number(model.created || 0),
+        promptPrice: model.pricing?.prompt ?? null,
+        completionPrice: model.pricing?.completion ?? null,
+      }));
+
+    // The OpenRouter catalog contains more than 1,000 eligible models.  The
+    // UI keeps a bounded list for responsiveness, but the relevant reference
+    // model must not disappear merely because it is older than newer catalog
+    // entries.  Keep it at the front when it remains available in the catalog.
+    const pinnedReferenceIds = new Set([
+      'qwen/qwen-2.5-72b-instruct',
+    ]);
+    const pinnedModels = eligibleModels
+      .filter((model: any) => pinnedReferenceIds.has(model.id))
+      .sort((a: any, b: any) => a.name.localeCompare(b.name));
+    const recentModels = eligibleModels
+      .filter((model: any) => !pinnedReferenceIds.has(model.id))
+      .sort((a: any, b: any) => b.created - a.created || a.name.localeCompare(b.name))
+      .slice(0, 1000);
+    const models = [...pinnedModels, ...recentModels];
+    return res.json({ models });
+  } catch (err: any) {
+    return res.status(502).json({ error: err.message || 'Could not load OpenRouter model catalog' });
+  }
+};
+
+export const runLargeLlmReference = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+  const evalId = String(req.params.evalId || '');
+  const model = String(req.body?.model || '').trim();
+  const uploaded = req.file;
+  if (!uploaded) return res.status(400).json({ error: 'locked_test_file_required' });
+  if (!/^[A-Za-z0-9._:/-]{3,200}$/.test(model)) {
+    fs.unlink(uploaded.path, () => {});
+    return res.status(400).json({ error: 'invalid_model_id' });
+  }
+
+  let extractedTempDir = '';
+  let datasetPath = uploaded.path;
+  let datasetName = uploaded.originalname;
+  try {
+    const evaluation = await ModelEvaluation.findOne({ ownerId, modelEvalId: evalId, status: 'COMPLETED' }).lean();
+    if (!evaluation) throw Object.assign(new Error('Evaluation not found or not completed'), { statusCode: 404 });
+    const openRouterKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    if (!openRouterKey) throw Object.assign(new Error('OpenRouter API key is not configured'), { statusCode: 422 });
+    const catalogResponse = await fetch('https://openrouter.ai/api/v1/models');
+    const catalogPayload: any = catalogResponse.ok ? await catalogResponse.json() : { data: [] };
+    const exactModel = (Array.isArray(catalogPayload?.data) ? catalogPayload.data : [])
+      .find((item: any) => String(item?.id || '') === model);
+    if (!exactModel) {
+      throw Object.assign(
+        new Error('Model không tồn tại trên OpenRouter. Hãy chọn model bằng thẻ trong danh sách, không nhập tên tự do.'),
+        { statusCode: 422 },
+      );
+    }
+
+    if (isZipFile(uploaded.originalname)) {
+      const extracted = extractForEvaluation(uploaded.path);
+      datasetPath = extracted.dataFilePath;
+      datasetName = extracted.dataFileName;
+      extractedTempDir = extracted.tempDir;
+    }
+    const validation = validateLockedTestFile(datasetPath);
+    const expectedHash = String((evaluation.datasetValidation as any)?.contentSha256 || '');
+    if (expectedHash && validation.contentSha256 !== expectedHash) {
+      throw Object.assign(new Error('Tập test không trùng với lần Base–FT đang xem.'), { statusCode: 422 });
+    }
+
+    const scriptCandidates = [
+      path.resolve(process.cwd(), '..', 'scripts', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', '..', '..', 'scripts', 'run_large_llm_reference.py'),
+    ];
+    const scriptPath = scriptCandidates.find(candidate => fs.existsSync(candidate));
+    if (!scriptPath) throw new Error('Large-LLM runner script was not found');
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sep490-large-llm-'));
+    const outputPath = path.join(tempDir, 'result.json');
+    const referenceJobId = `large-llm-${uuidv4()}`;
+    const job: LargeLlmReferenceJob = {
+      jobId: referenceJobId,
+      ownerId,
+      evalId,
+      model,
+      status: 'PENDING',
+      progress: 0,
+      detail: `Đã khóa ${validation.itemCount} câu từ ${datasetName}`,
+      createdAt: new Date().toISOString(),
+    };
+    largeLlmReferenceJobs.set(referenceJobId, job);
+
+    const args = [
+      '-u',
+      scriptPath,
+      '--dataset', datasetPath,
+      '--model', model,
+      '--output', outputPath,
+      '--judge-model', String(evaluation.judgeModel || RESEARCH_MODEL_CATALOG.judge),
+      '--prompt-variant', 'P1',
+      '--prompt-version', String(evaluation.systemPromptVersion || evaluation.protocolManifest?.prompt_version || 'RP4-locked-v1'),
+      '--max-new-tokens', '512',
+      '--seed', '42',
+    ];
+    const python = process.env.RP5_PYTHON || 'python';
+    const child = spawn(python, args, {
+      cwd: path.dirname(scriptPath),
+      env: { ...process.env, OPENROUTER_API_KEY: openRouterKey },
+      windowsHide: true,
+    });
+    job.status = 'RUNNING';
+    job.detail = `Đang chạy ${model}`;
+
+    let stderr = '';
+    const onOutput = (chunk: Buffer) => {
+      const text = chunk.toString('utf8');
+      const matches = [...text.matchAll(/\[(\d+)\/(\d+)\]/g)];
+      const latest = matches[matches.length - 1];
+      if (latest) {
+        const current = Number(latest[1]);
+        const total = Math.max(1, Number(latest[2]));
+        job.progress = Math.min(95, Math.round(current * 95 / total));
+        job.detail = `Đã xử lý ${current}/${total} câu`;
+      }
+    };
+    child.stdout.on('data', onOutput);
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString('utf8')}`.slice(-8000);
+    });
+    child.on('error', error => {
+      job.status = 'FAILED';
+      job.error = error.message;
+      job.detail = 'Không khởi động được runner';
+    });
+    child.on('close', code => {
+      try {
+        if (code !== 0 || !fs.existsSync(outputPath)) throw new Error(stderr.trim() || `Runner exited with code ${code}`);
+        job.result = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+        job.status = 'COMPLETED';
+        job.progress = 100;
+        job.detail = 'Đã hoàn tất so sánh LLM lớn';
+      } catch (error: any) {
+        job.status = 'FAILED';
+        job.error = error.message || 'Large-LLM reference failed';
+        job.detail = 'Chạy LLM lớn thất bại';
+      } finally {
+        if (extractedTempDir) cleanupTempDir(extractedTempDir);
+        fs.unlink(uploaded.path, () => {});
+        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+      }
+    });
+
+    return res.status(202).json({ referenceJobId, status: job.status });
+  } catch (err: any) {
+    if (extractedTempDir) cleanupTempDir(extractedTempDir);
+    fs.unlink(uploaded.path, () => {});
+    return res.status(Number(err.statusCode || 500)).json({ error: err.message || 'Could not start large-LLM reference' });
+  }
+};
+
+export const getLargeLlmReferenceStatus = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+  const job = largeLlmReferenceJobs.get(String(req.params.referenceJobId || ''));
+  if (!job || job.ownerId !== ownerId) return res.status(404).json({ error: 'Reference job not found' });
+  return res.json(job);
 };
 
 // ---------------------------------------------------------------------------
@@ -822,6 +1625,15 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
           totalConversations: displayEval?.totalConversations ?? 0,
           flags: displayEval?.flags ?? [],
           scores: {
+            knowledge: displayEval?.status === 'COMPLETED'
+              ? displayEval?.summary?.knowledge ?? displayEval?.summary?.criteria?.B1 ?? null
+              : null,
+            socratic: displayEval?.status === 'COMPLETED'
+              ? displayEval?.summary?.socratic ?? displayEval?.summary?.group_a ?? null
+              : null,
+            exploratory_overall: displayEval?.status === 'COMPLETED'
+              ? displayEval?.summary?.exploratory_overall ?? displayEval?.summary?.overall ?? null
+              : null,
             overall:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
             group_a:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
             group_b:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
@@ -896,6 +1708,12 @@ export const pinEvaluation = async (req: Request, res: Response) => {
     if (!evalDoc) {
       return res.status(404).json({ error: 'Evaluation not found or not completed' });
     }
+    if (!evalDoc.confirmatoryEligible) {
+      return res.status(422).json({
+        error: 'Only confirmatory-eligible evaluations can be pinned as official.',
+        flags: evalDoc.flags || [],
+      });
+    }
 
     // Update pinnedEvalId trên TrainingHistory (ghi đè eval cũ)
     const result = await TrainingHistory.findOneAndUpdate(
@@ -920,9 +1738,31 @@ export const pinEvaluation = async (req: Request, res: Response) => {
   }
 };
 
+export const unpinEvaluation = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { evalId } = req.params;
+    const evalDoc = await ModelEvaluation.findOne({ ownerId, modelEvalId: evalId }).select('jobId').lean();
+    if (!evalDoc) return res.status(404).json({ error: 'Evaluation not found' });
+
+    const result = await TrainingHistory.findOneAndUpdate(
+      { jobId: evalDoc.jobId, ownerId, pinnedEvalId: evalId },
+      { $set: { pinnedEvalId: null } },
+      { returnDocument: 'after' },
+    );
+    if (!result) return res.status(409).json({ error: 'Evaluation is not currently pinned.' });
+
+    return res.status(200).json({ message: 'Evaluation unpinned', jobId: evalDoc.jobId, pinnedEvalId: null });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to unpin evaluation' });
+  }
+};
+
 // ---------------------------------------------------------------------------
 // DELETE /api/model-eval/:evalId
-// Xóa eval; nếu đang pin → auto-pin eval COMPLETED mới nhất còn lại (hoặc null)
+// Xóa eval; nếu đang pin thì bỏ pin. Never choose a replacement automatically.
 // ---------------------------------------------------------------------------
 export const deleteEvaluation = async (req: Request, res: Response) => {
   try {
@@ -943,15 +1783,11 @@ export const deleteEvaluation = async (req: Request, res: Response) => {
 
     await ModelEvaluation.deleteOne({ ownerId, modelEvalId: evalId });
 
-    let newPinnedEvalId: string | null = null;
+    let newPinnedEvalId: string | null = history?.pinnedEvalId ?? null;
     if (wasPinned) {
-      const newest = await ModelEvaluation.findOne({ ownerId, jobId, status: 'COMPLETED' })
-        .sort({ completedAt: -1 })
-        .select('modelEvalId')
-        .lean();
-      newPinnedEvalId = newest?.modelEvalId ?? null;
-      await TrainingHistory.updateOne({ jobId, ownerId }, { $set: { pinnedEvalId: newPinnedEvalId } });
-      console.log(`[Backend] After delete, repinned job ${jobId} → ${newPinnedEvalId ?? 'null'}`);
+      newPinnedEvalId = null;
+      await TrainingHistory.updateOne({ jobId, ownerId }, { $set: { pinnedEvalId: null } });
+      console.log(`[Backend] Deleted pinned eval ${evalId}; job ${jobId} is now unpinned.`);
     }
 
     return res.json({
@@ -1018,6 +1854,12 @@ export const compareEvaluations = async (req: Request, res: Response) => {
       conv_index: number;
       num_turns_a: number;
       num_turns_b: number;
+      knowledge_a: number;
+      knowledge_b: number;
+      delta_knowledge: number;
+      socratic_a: number;
+      socratic_b: number;
+      delta_socratic: number;
       overall_a: number;
       overall_b: number;
       delta_overall: number;
@@ -1026,13 +1868,27 @@ export const compareEvaluations = async (req: Request, res: Response) => {
     for (const rowB of evalB.results || []) {
       const rowA = mapA.get(rowB.conv_index);
       if (!rowA) continue;
+      const knowledgeA = rowA.group_scores?.knowledge ?? rowA.criteria_scores?.B1 ?? 0;
+      const knowledgeB = rowB.group_scores?.knowledge ?? rowB.criteria_scores?.B1 ?? 0;
+      const socraticA = rowA.group_scores?.socratic
+        ?? ((Number(rowA.criteria_scores?.A1 || 0) + Number(rowA.criteria_scores?.A2 || 0) + Number(rowA.criteria_scores?.A3 || 0)) / 3);
+      const socraticB = rowB.group_scores?.socratic
+        ?? ((Number(rowB.criteria_scores?.A1 || 0) + Number(rowB.criteria_scores?.A2 || 0) + Number(rowB.criteria_scores?.A3 || 0)) / 3);
       matchedSamples.push({
         conv_index: rowB.conv_index,
         num_turns_a: rowA.num_turns,
         num_turns_b: rowB.num_turns,
-        overall_a: rowA.group_scores?.overall ?? 0,
-        overall_b: rowB.group_scores?.overall ?? 0,
-        delta_overall: (rowB.group_scores?.overall ?? 0) - (rowA.group_scores?.overall ?? 0),
+        knowledge_a: knowledgeA,
+        knowledge_b: knowledgeB,
+        delta_knowledge: knowledgeB - knowledgeA,
+        socratic_a: socraticA,
+        socratic_b: socraticB,
+        delta_socratic: socraticB - socraticA,
+        overall_a: rowA.group_scores?.exploratory_overall ?? rowA.group_scores?.overall ?? 0,
+        overall_b: rowB.group_scores?.exploratory_overall ?? rowB.group_scores?.overall ?? 0,
+        delta_overall:
+          (rowB.group_scores?.exploratory_overall ?? rowB.group_scores?.overall ?? 0)
+          - (rowA.group_scores?.exploratory_overall ?? rowA.group_scores?.overall ?? 0),
       });
     }
 
@@ -1048,10 +1904,23 @@ export const compareEvaluations = async (req: Request, res: Response) => {
     const sB = evalB.summary;
 
     const scoreSummary = {
+      knowledge: {
+        a: sA?.knowledge ?? sA?.criteria?.B1 ?? null,
+        b: sB?.knowledge ?? sB?.criteria?.B1 ?? null,
+        winner: scoreWinner(sA?.knowledge ?? sA?.criteria?.B1, sB?.knowledge ?? sB?.criteria?.B1),
+      },
+      socratic: {
+        a: sA?.socratic ?? sA?.group_a ?? null,
+        b: sB?.socratic ?? sB?.group_a ?? null,
+        winner: scoreWinner(sA?.socratic ?? sA?.group_a, sB?.socratic ?? sB?.group_a),
+      },
       overall: {
-        a: sA?.overall ?? null,
-        b: sB?.overall ?? null,
-        winner: scoreWinner(sA?.overall, sB?.overall),
+        a: sA?.exploratory_overall ?? sA?.overall ?? null,
+        b: sB?.exploratory_overall ?? sB?.overall ?? null,
+        winner: scoreWinner(
+          sA?.exploratory_overall ?? sA?.overall,
+          sB?.exploratory_overall ?? sB?.overall,
+        ),
       },
       group_a: {
         a: sA?.group_a ?? null,

@@ -168,7 +168,10 @@ const buildClassificationMetrics = (gold: string[], predicted: string[]) => {
     const f1 = precision + recall ? (2 * precision * recall) / (precision + recall) : 0;
     perClass[label] = { precision, recall, f1, support };
   }
-  const macroF1 = labels.length ? labels.reduce((sum, label) => sum + perClass[label].f1, 0) / labels.length : 0;
+  const supportedLabels = labels.filter(label => perClass[label].support > 0);
+  const macroF1 = supportedLabels.length
+    ? supportedLabels.reduce((sum, label) => sum + perClass[label].f1, 0) / supportedLabels.length
+    : 0;
   return { labels, per_class: perClass, macro_f1: macroF1, confusion_matrix: confusionMatrix };
 };
 

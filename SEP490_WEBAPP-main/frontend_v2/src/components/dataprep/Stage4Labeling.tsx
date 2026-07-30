@@ -1487,9 +1487,9 @@ export const Stage4Labeling: React.FC = () => {
           {/* ===== STEP 8: AUTOMATED AI SCORING ===== */}
           {false && currentSubStep4 === 8 && (() => {
             const aiModels = [
-              { key: 'gemini', label: 'Gemini Model', desc: 'Default Gemini model (gemini-2.0-flash)', color: '#4f46e5', badge: 'Recommended' },
-              { key: 'deepseek', label: 'Deepseek R1/V3', desc: 'Advanced pedagogical logic, free', color: '#0891b2', badge: 'Free' },
-              { key: 'openai', label: 'OpenAI GPT', desc: 'GPT-4o-mini via OpenAI', color: '#059669', badge: '' },
+              { key: 'gemini', label: 'Gemini 2.5 Flash', desc: 'Fast education-quality judge', color: '#4f46e5', badge: 'Recommended' },
+              { key: 'deepseek', label: 'DeepSeek V4 Flash', desc: 'Advanced logic and factuality judge', color: '#0891b2', badge: '' },
+              { key: 'openai', label: 'ChatGPT GPT-4', desc: 'Independent high-precision verification', color: '#059669', badge: '' },
             ];
             const selectedCount = Object.values(judgeModels).filter(Boolean).length;
 
@@ -1666,7 +1666,7 @@ export const Stage4Labeling: React.FC = () => {
                       <span style={{ fontSize: '13px', fontWeight: '800', color: '#6d28d9' }}>AI Score (0–10)</span>
                     </div>
                     <p style={{ margin: 0, fontSize: '12px', color: '#5b21b6', lineHeight: 1.5 }}>
-                      Mỗi conversation được 3 mô hình (OpenRouter, Deepseek, Groq) chấm độc lập dựa trên: tính đúng đắn về mặt sư phạm,
+                      Mỗi conversation được 3 mô hình (Gemini 2.5 Flash, DeepSeek V4 Flash, ChatGPT GPT-4) chấm độc lập dựa trên: tính đúng đắn về mặt sư phạm,
                       mức độ phù hợp giữa câu hỏi của học sinh và phản hồi của trợ giảng, tính rõ ràng và an toàn của nội dung.
                       Cột <strong>Avg AI</strong> là trung bình điểm của các mô hình đã chấm. Ô hiển thị <strong>-</strong> nghĩa là mô hình đó chưa chấm.
                     </p>
@@ -1727,9 +1727,9 @@ export const Stage4Labeling: React.FC = () => {
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Mã hội thoại</th>
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase' }}>Môn học</th>
                           <th style={{ padding: '12px 14px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '11px', textTransform: 'uppercase', maxWidth: '200px' }}>Vấn đề</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>OpenRouter</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#4f46e5', fontSize: '11px', textTransform: 'uppercase', background: '#f0f4ff' }}>Gemini 2.5</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#0891b2', fontSize: '11px', textTransform: 'uppercase', background: '#ecfeff' }}>Deepseek</th>
-                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>Groq</th>
+                          <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#059669', fontSize: '11px', textTransform: 'uppercase', background: '#f0fdf4' }}>GPT-4</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#7c3aed', fontSize: '11px', textTransform: 'uppercase', background: '#f5f3ff' }}>Trung bình AI</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#ea580c', fontSize: '11px', textTransform: 'uppercase', background: '#fff7ed', borderLeft: '2px solid #e2e8f0' }}>Điểm luật Staff</th>
                           <th style={{ padding: '12px 14px', textAlign: 'center', fontWeight: '700', color: '#dc2626', fontSize: '11px', textTransform: 'uppercase' }}>Xung đột</th>
@@ -1934,7 +1934,7 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                           <h4 style={{ margin: '0 0 14px 0', fontSize: '13px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Điểm đánh giá (chỉ xem)</h4>
                           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                            {[{ label: 'OpenRouter', val: scores.openrouter, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'Deepseek', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'OpenAI', val: scores.groq, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
+                            {[{ label: 'Gemini 2.5 Flash', val: scores.openrouter, color: '#4f46e5', bg: '#e0e7ff' }, { label: 'DeepSeek V4 Flash', val: scores.deepseek, color: '#0891b2', bg: '#cffafe' }, { label: 'ChatGPT GPT-4', val: scores.groq, color: '#059669', bg: '#d1fae5' }].map(({ label: lbl, val, color, bg }) => (
                               <div key={lbl} style={{ background: bg, borderRadius: '8px', padding: '10px 16px', textAlign: 'center', minWidth: '80px' }}>
                                 <div style={{ fontSize: '11px', fontWeight: '700', color, marginBottom: '4px' }}>{lbl}</div>
                                 <div style={{ fontSize: '20px', fontWeight: '900', color: val == null ? '#cbd5e1' : val >= 7 ? '#15803d' : val >= 5 ? '#d97706' : '#dc2626' }}>{val != null ? val.toFixed(1) : '-'}</div>
@@ -2991,7 +2991,7 @@ export const Stage4Labeling: React.FC = () => {
                   {[
                     { label: 'Conversations', value: totalConv, sub: `${totalMsg} messages`, color: '#4f46e5', bg: '#eef2ff', Icon: MessageSquare },
                     { label: 'Gold Rate', value: `${goldRate}%`, sub: `${goldCount} / ${totalConv} conv`, color: '#15803d', bg: '#f0fdf4', Icon: Award },
-                    { label: 'Avg AI Score', value: avgAIScore, sub: 'OpenRouter + Deepseek', color: '#0891b2', bg: '#f0f9ff', Icon: Bot },
+                    { label: 'Avg AI Score', value: avgAIScore, sub: 'Gemini 2.5 + DeepSeek V4 + GPT-4', color: '#0891b2', bg: '#f0f9ff', Icon: Bot },
                     { label: 'Subjects', value: subjectData.length, sub: subjectData.length ? 'from current dataset' : 'no subject data', color: '#7c3aed', bg: '#f5f3ff', Icon: BookOpen },
                     { label: 'Conflict', value: conflictCount, sub: `${conflictData.filter(c => c.resolved).length} resolved`, color: '#dc2626', bg: '#fff5f5', Icon: AlertTriangle },
                   ].map(({ label, value, sub, color, bg, Icon }) => (
@@ -3208,7 +3208,7 @@ export const Stage4Labeling: React.FC = () => {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                       <thead>
                         <tr style={{ background: '#fafafa', borderBottom: '1px solid #f1f5f9' }}>
-                          {['ID', 'Subject', 'OpenRouter', 'Deepseek', 'Staff Rule Score', 'Delta', 'Status'].map(h => (
+                          {['ID', 'Subject', 'Gemini 2.5', 'DeepSeek V4', 'Staff Rule Score', 'Delta', 'Status'].map(h => (
                             <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontWeight: '700', color: '#475569', fontSize: '10px', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>

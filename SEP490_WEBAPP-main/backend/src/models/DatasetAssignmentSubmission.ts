@@ -14,7 +14,14 @@ export interface IDatasetAssignmentSubmission extends Document {
   batchCount: number;
   taskType: string;
   priority: string;
+  /** @deprecated Kept for older clients; mirrors staffDeadline. */
   deadline?: Date;
+  staffDeadline?: Date;
+  checkerDeadline?: Date;
+  staffReminderSentAt?: Date;
+  staffOverdueNotifiedAt?: Date;
+  checkerReminderSentAt?: Date;
+  checkerOverdueNotifiedAt?: Date;
   supervisor?: string;
   checker?: string;
   dataset?: string;
@@ -71,6 +78,12 @@ const DatasetAssignmentSubmissionSchema = new Schema<IDatasetAssignmentSubmissio
     taskType: { type: String, default: 'labeling' },
     priority: { type: String, default: 'medium' },
     deadline: { type: Date },
+    staffDeadline: { type: Date, index: true },
+    checkerDeadline: { type: Date, index: true },
+    staffReminderSentAt: { type: Date },
+    staffOverdueNotifiedAt: { type: Date },
+    checkerReminderSentAt: { type: Date },
+    checkerOverdueNotifiedAt: { type: Date },
     supervisor: { type: String },
     checker: { type: String },
     dataset: { type: String },

@@ -42,6 +42,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [taskName, setTaskName] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
+  const [checkerDeadline, setCheckerDeadline] = useState('');
   const [overlapCount, setOverlapCount] = useState(1);
   const [conflictThreshold, setConflictThreshold] = useState(0.6);
   const [loading, setLoading] = useState(false);
@@ -58,6 +59,8 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setTaskName('');
       setPriority('medium');
       setDeadline('');
+      setCheckerDeadline('');
+      setSelectedChecker('');
       setOverlapCount(1);
       setConflictThreshold(0.6);
       setError('');
@@ -166,6 +169,15 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setError('Tên Task là bắt buộc');
       return;
     }
+    if (!deadline) {
+      setError('Hạn nộp của Staff là bắt buộc');
+      return;
+    }
+    if (overlapCount > 1 && selectedChecker && !checkerDeadline) {
+      setError('Vui lòng chọn hạn review cho Checker');
+      return;
+    }
+    const toEndOfDayIso = (date: string) => new Date(`${date}T23:59:59.999`).toISOString();
     setSubmitting(true);
     setError('');
     try {
@@ -174,7 +186,8 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         aiAssigneeIds: aiStaff.filter(id => selectedStaff.includes(id)),
         taskName: taskName.trim(),
         priority,
-        deadline: deadline || undefined,
+        staffDeadline: toEndOfDayIso(deadline),
+        checkerDeadline: selectedChecker && checkerDeadline ? toEndOfDayIso(checkerDeadline) : undefined,
         overlapCount,
         similarityThreshold: conflictThreshold,
         checkerId: overlapCount > 1 ? (selectedChecker || undefined) : undefined,
@@ -467,8 +480,8 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                   </select>
                 </div>
                 <div className="ta-config-group">
-                  <label><Calendar size={14} /> Deadline</label>
-                  <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
+                  <label><Calendar size={14} /> Hạn nộp của Staff</label>
+                  <input type="date" required min={new Date().toISOString().slice(0, 10)} value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
                 </div>
               </div>
 
@@ -479,6 +492,20 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                     <option value="">-- Admin/Supervisor tự xử lý --</option>
                     {checkers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
                   </select>
+                  {selectedChecker && (
+                    <>
+                      <label><Calendar size={14} /> Hạn review của Checker</label>
+                      <input
+                        type="date"
+                        required
+                        min={deadline ? new Date(new Date(`${deadline}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)}
+                        value={checkerDeadline}
+                        onChange={e => setCheckerDeadline(e.target.value)}
+                        className="ta-input"
+                      />
+                      <small>Hạn Checker phải sau hạn Staff.</small>
+                    </>
+                  )}
                   <small>Checker chỉ nhận mẫu có mức đồng thuận thấp hơn {Math.round(conflictThreshold * 100)}%.</small>
                 </div>
               ) : (
@@ -563,7 +590,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
             </button>
           )}
           {step === 3 && (
-            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting || !taskName.trim()}>
+            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting || !taskName.trim() || !deadline || Boolean(selectedChecker && !checkerDeadline)}>
               {submitting ? 'Đang giao việc...' : '🚀 Giao việc'}
             </button>
           )}

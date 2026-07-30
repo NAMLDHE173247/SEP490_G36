@@ -377,6 +377,7 @@ export const Stage3Labeling: React.FC = () => {
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
   const [taskDeadline, setTaskDeadline] = React.useState('');
+  const [taskCheckerDeadline, setTaskCheckerDeadline] = React.useState('');
   const [assignedSupervisorId, setAssignedSupervisorId] = React.useState('');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
   const [overlapCount, setOverlapCount] = React.useState(1);
@@ -3198,7 +3199,7 @@ export const Stage3Labeling: React.FC = () => {
                           </select>
                         </div>
                         <div className="ct-form-group">
-                          <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
+                          <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn nộp của Staff</label>
                           <input type="date" className="ct-input" required min={new Date().toISOString().slice(0, 10)} value={taskDeadline} onChange={(e) => setTaskDeadline(e.target.value)} style={!taskDeadline ? { borderColor: '#ef4444' } : undefined} />
                           {!taskDeadline && <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Bắt buộc chọn hạn chót.</span>}
                         </div>
@@ -3217,6 +3218,21 @@ export const Stage3Labeling: React.FC = () => {
                                 <option key={checker._id} value={checker._id}>{checker.name || checker.email} (Checker)</option>
                               ))}
                             </select>
+                            {assignedCheckerId && (
+                              <div style={{ marginTop: 10 }}>
+                                <label><Calendar size={14} style={{ marginRight: 4 }} /> Hạn review của Checker</label>
+                                <input
+                                  type="date"
+                                  className="ct-input"
+                                  required
+                                  min={taskDeadline ? new Date(new Date(`${taskDeadline}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)}
+                                  value={taskCheckerDeadline}
+                                  onChange={(e) => setTaskCheckerDeadline(e.target.value)}
+                                  style={!taskCheckerDeadline ? { borderColor: '#ef4444' } : undefined}
+                                />
+                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Hạn Checker phải sau hạn Staff.</div>
+                              </div>
+                            )}
                           </div>
                           <div className="ct-form-group" style={{ marginBottom: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3444,7 +3460,7 @@ export const Stage3Labeling: React.FC = () => {
                   <button
                     className="ct-btn-create"
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
-                    disabled={isAssigning || !taskNameInput.trim() || !taskDeadline}
+                    disabled={isAssigning || !taskNameInput.trim() || !taskDeadline || Boolean(overlapCount >= 2 && assignedCheckerId && !taskCheckerDeadline)}
                     onClick={async () => {
                       const selectedIds = staffAssignments['__selected__'] || [];
                       if (selectedIds.length === 0) return;
@@ -3452,6 +3468,9 @@ export const Stage3Labeling: React.FC = () => {
                       if (!taskDeadline) { toast.warning('Vui lòng chọn hạn chót cho Task.'); return; }
                       const deadlineDate = new Date(`${taskDeadline}T23:59:59`);
                       if (deadlineDate.getTime() < Date.now()) { toast.warning('Hạn chót không được nằm trong quá khứ.'); return; }
+                      if (overlapCount >= 2 && assignedCheckerId && !taskCheckerDeadline) { toast.warning('Vui lòng chọn hạn review của Checker.'); return; }
+                      const checkerDeadlineDate = taskCheckerDeadline ? new Date(`${taskCheckerDeadline}T23:59:59`) : null;
+                      if (checkerDeadlineDate && checkerDeadlineDate.getTime() <= deadlineDate.getTime()) { toast.warning('Hạn Checker phải sau hạn Staff.'); return; }
                       let versionId: string;
                       try { versionId = await ensureDatasetVersionId(); } catch (e: any) { alert('Missing dataset version: ' + (e.message || '')); return; }
 
@@ -3462,7 +3481,8 @@ export const Stage3Labeling: React.FC = () => {
                           aiAssigneeIds: aiSelected.filter(id => selectedIds.includes(id)),
                           taskName: taskNameInput.trim(),
                           priority: taskPriority,
-                           deadline: deadlineDate.toISOString(),
+                           staffDeadline: deadlineDate.toISOString(),
+                           checkerDeadline: checkerDeadlineDate?.toISOString(),
                            overlapCount,
                            similarityThreshold: conflictThreshold,
                            checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined

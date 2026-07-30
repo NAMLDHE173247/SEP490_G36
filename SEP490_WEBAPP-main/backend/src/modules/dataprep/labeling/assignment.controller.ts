@@ -37,13 +37,52 @@ function parseSavedLabel(snapshot?: string): any {
 }
 
 function resolveAssignmentSupervisor(req: Request, supervisorId?: string): string | undefined {
-  const cleanSupervisorId = String(supervisorId || '').trim();
-  if (cleanSupervisorId) return cleanSupervisorId;
-
   const authUser = (req as any).user;
   const role = String(authUser?.role || '').toLowerCase();
-  if (role !== 'supervisor' && role !== 'checker') return undefined;
-  return String(authUser?.id || authUser?._id || authUser?.userId || '').trim() || undefined;
+  const actorId = String(authUser?.id || authUser?._id || authUser?.userId || '').trim();
+  if (role === 'supervisor') return actorId || undefined;
+  if (role === 'admin') return String(supervisorId || '').trim() || undefined;
+  return undefined;
+}
+
+function getRequestUserId(req: Request): string {
+  const authUser = (req as any).user;
+  return String(authUser?.id || authUser?._id || authUser?.userId || '');
+}
+
+function isSubmissionOwner(req: Request, submission: any): boolean {
+  const userId = getRequestUserId(req);
+  return Boolean(userId) && String(submission?.assigneeId || '') === userId;
+}
+
+function canManageSubmission(req: Request, submission: any): boolean {
+  const role = String((req as any).user?.role || '').toLowerCase();
+  if (role === 'admin') return true;
+  return role === 'supervisor' && String(submission?.supervisor || '') === getRequestUserId(req);
+}
+
+function getStaffDeadline(submission: any): Date | undefined {
+  const value = submission?.staffDeadline || submission?.deadline;
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function getDeadlineState(submission: any) {
+  const now = Date.now();
+  const staffDeadline = getStaffDeadline(submission);
+  const checkerDeadline = submission?.checkerDeadline ? new Date(submission.checkerDeadline) : undefined;
+  const validCheckerDeadline = checkerDeadline && !Number.isNaN(checkerDeadline.getTime()) ? checkerDeadline : undefined;
+  const staffDone = ['submitted', 'approved', 'completed'].includes(String(submission?.status));
+  const checkerDone = ['approved', 'completed'].includes(String(submission?.status));
+  return {
+    staffDeadline: staffDeadline?.toISOString(),
+    checkerDeadline: validCheckerDeadline?.toISOString(),
+    isStaffOverdue: Boolean(staffDeadline && !staffDone && staffDeadline.getTime() < now),
+    isCheckerOverdue: Boolean(validCheckerDeadline && !checkerDone && validCheckerDeadline.getTime() < now),
+    submittedLate: Boolean(staffDeadline && submission?.submittedAt && new Date(submission.submittedAt).getTime() > staffDeadline.getTime()),
+    reviewedLate: Boolean(validCheckerDeadline && submission?.approvedAt && new Date(submission.approvedAt).getTime() > validCheckerDeadline.getTime()),
+  };
 }
 
 export class AssignmentController {
@@ -172,12 +211,26 @@ export class AssignmentController {
   async createAutoAssignment(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { assigneeIds, taskName, priority, deadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId, similarityThreshold } = req.body;
+      const { assigneeIds, taskName, priority, deadline, staffDeadline, checkerDeadline, overlapCount: rawOverlap, aiAssigneeIds, supervisorId, checkerId, similarityThreshold } = req.body;
       const assignedBy = (req as any).user?.id || (req as any).user?._id || 'admin';
       const assignmentSupervisor = resolveAssignmentSupervisor(req, supervisorId);
 
       if (!assigneeIds || !assigneeIds.length) {
         return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên' });
+      }
+      const uniqueAssigneeIds = [...new Set<string>(assigneeIds.map((id: any) => String(id)))];
+      if (uniqueAssigneeIds.length !== assigneeIds.length || uniqueAssigneeIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+        return res.status(400).json({ success: false, error: 'Danh sách Staff không hợp lệ hoặc bị trùng.' });
+      }
+      const activeStaffCount = await User.countDocuments({ _id: { $in: uniqueAssigneeIds }, role: 'staff', status: 'active' });
+      if (activeStaffCount !== uniqueAssigneeIds.length) {
+        return res.status(400).json({ success: false, error: 'Chỉ có thể giao task cho Staff đang active.' });
+      }
+      if (checkerId) {
+        const checker = mongoose.Types.ObjectId.isValid(String(checkerId))
+          ? await User.findOne({ _id: checkerId, role: 'checker', status: 'active' }).select('_id').lean()
+          : null;
+        if (!checker) return res.status(400).json({ success: false, error: 'Checker không hợp lệ hoặc chưa active.' });
       }
 
       // Danh sách nhân viên được phép dùng AI key của hệ thống
@@ -188,12 +241,23 @@ export class AssignmentController {
       if (!cleanTaskName) {
         return res.status(400).json({ success: false, error: 'Tên Task là bắt buộc' });
       }
-      if (!deadline) {
-        return res.status(400).json({ success: false, error: 'Hạn chót của Task là bắt buộc' });
+      const rawStaffDeadline = staffDeadline || deadline;
+      if (!rawStaffDeadline) {
+        return res.status(400).json({ success: false, error: 'Hạn nộp của Staff là bắt buộc' });
       }
-      const parsedDeadline = new Date(deadline);
-      if (Number.isNaN(parsedDeadline.getTime()) || parsedDeadline.getTime() < Date.now()) {
-        return res.status(400).json({ success: false, error: 'Hạn chót không hợp lệ hoặc đã nằm trong quá khứ' });
+      const parsedStaffDeadline = new Date(rawStaffDeadline);
+      if (Number.isNaN(parsedStaffDeadline.getTime()) || parsedStaffDeadline.getTime() < Date.now()) {
+        return res.status(400).json({ success: false, error: 'Hạn nộp của Staff không hợp lệ hoặc đã nằm trong quá khứ' });
+      }
+      let parsedCheckerDeadline: Date | undefined;
+      if (checkerId) {
+        if (!checkerDeadline) {
+          return res.status(400).json({ success: false, error: 'Hạn review của Checker là bắt buộc khi đã chọn Checker' });
+        }
+        parsedCheckerDeadline = new Date(checkerDeadline);
+        if (Number.isNaN(parsedCheckerDeadline.getTime()) || parsedCheckerDeadline.getTime() <= parsedStaffDeadline.getTime()) {
+          return res.status(400).json({ success: false, error: 'Hạn review của Checker phải muộn hơn hạn nộp của Staff' });
+        }
       }
 
       const overlapCount = Math.max(1, parseInt(rawOverlap) || 1);
@@ -274,7 +338,9 @@ export class AssignmentController {
             batchCount: group.sampleIds.length,
             taskType: 'labeling',
             priority: priority || 'medium',
-            deadline: parsedDeadline,
+            deadline: parsedStaffDeadline,
+            staffDeadline: parsedStaffDeadline,
+            checkerDeadline: parsedCheckerDeadline,
             supervisor: assignmentSupervisor,
             checker: checkerId ? String(checkerId) : undefined,
             labeledCount: 0,
@@ -357,6 +423,20 @@ export class AssignmentController {
 
       if (!assigneeIds || !assigneeIds.length || !sampleCount) {
         return res.status(400).json({ success: false, error: 'Missing required fields' });
+      }
+      const uniqueAssigneeIds = [...new Set<string>(assigneeIds.map((id: any) => String(id)))];
+      if (uniqueAssigneeIds.length !== assigneeIds.length || uniqueAssigneeIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+        return res.status(400).json({ success: false, error: 'Danh sách Staff không hợp lệ hoặc bị trùng.' });
+      }
+      const activeStaffCount = await User.countDocuments({ _id: { $in: uniqueAssigneeIds }, role: 'staff', status: 'active' });
+      if (activeStaffCount !== uniqueAssigneeIds.length) {
+        return res.status(400).json({ success: false, error: 'Chỉ có thể giao task cho Staff đang active.' });
+      }
+      if (checkerId) {
+        const checker = mongoose.Types.ObjectId.isValid(String(checkerId))
+          ? await User.findOne({ _id: checkerId, role: 'checker', status: 'active' }).select('_id').lean()
+          : null;
+        if (!checker) return res.status(400).json({ success: false, error: 'Checker không hợp lệ hoặc chưa active.' });
       }
 
       const aiAllowed = new Set<string>((Array.isArray(aiAssigneeIds) ? aiAssigneeIds : []).map((x: any) => String(x)));
@@ -475,14 +555,38 @@ export class AssignmentController {
       if (String(fromAssigneeId) === String(toAssigneeId)) {
         return res.status(400).json({ success: false, error: 'Người thay thế phải khác người cũ' });
       }
+      const replacementStaff = mongoose.Types.ObjectId.isValid(String(toAssigneeId))
+        ? await User.findOne({ _id: toAssigneeId, role: 'staff', status: 'active' }).select('_id').lean()
+        : null;
+      if (!replacementStaff) {
+        return res.status(400).json({ success: false, error: 'Người thay thế phải là Staff đang active.' });
+      }
 
       const version = await DatasetVersion.findById(versionId).lean();
       if (!version) return res.status(404).json({ success: false, error: 'Không tìm thấy DatasetVersion' });
       const projectId = (version as any).projectId;
 
-      const fromSamples = await DatasetSampleAssignment.find({
+      const actorIsSupervisor = String((req as any).user?.role || '') === 'supervisor';
+      const sourceSubmissionFilter: any = {
+        datasetVersionId: versionId,
+        assigneeId: fromAssigneeId,
+        active: { $ne: false },
+        ...(actorIsSupervisor ? { supervisor: getRequestUserId(req) } : {}),
+      };
+      const fromSubs = await DatasetAssignmentSubmission.find(sourceSubmissionFilter);
+      if (actorIsSupervisor && fromSubs.length === 0) {
+        return res.status(403).json({ success: false, error: 'Supervisor can only replace Staff in their own tasks.' });
+      }
+
+      const fromSampleQuery: any = {
         datasetVersionId: versionId, assigneeId: fromAssigneeId, active: { $ne: false },
-      });
+      };
+      if (actorIsSupervisor) {
+        fromSampleQuery.$or = fromSubs.map((sub: any) => ({
+          sampleIndex: { $gte: Number(sub.batchStart), $lt: Number(sub.batchStart) + Number(sub.batchCount) },
+        }));
+      }
+      const fromSamples = await DatasetSampleAssignment.find(fromSampleQuery);
       if (fromSamples.length === 0) {
         return res.status(404).json({ success: false, error: 'Người này không còn mẫu nào đang xử lý trong dataset' });
       }
@@ -509,10 +613,6 @@ export class AssignmentController {
       );
 
       // 3) Tạo submission cho người mới + khóa submission người cũ
-      const fromSubs = await DatasetAssignmentSubmission.find({
-        datasetVersionId: versionId, assigneeId: fromAssigneeId, active: { $ne: false },
-      });
-
       const buildSub = (src: any) => ({
         projectId,
         datasetVersionId: versionId,
@@ -523,7 +623,9 @@ export class AssignmentController {
         batchCount: src?.batchCount || fromSamples.length,
         taskType: src?.taskType || 'labeling',
         priority: src?.priority || 'medium',
-        deadline: src?.deadline,
+        deadline: (src as any)?.staffDeadline || src?.deadline,
+        staffDeadline: (src as any)?.staffDeadline || src?.deadline,
+        checkerDeadline: (src as any)?.checkerDeadline,
         supervisor: src?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId),
         checker: src?.checker,
         dataset: src?.dataset || version.projectName,
@@ -585,15 +687,40 @@ export class AssignmentController {
       if (!Array.isArray(assigneeIds) || assigneeIds.length === 0) {
         return res.status(400).json({ success: false, error: 'Cần chọn ít nhất 1 nhân viên để thêm' });
       }
+      const uniqueAssigneeIds = [...new Set<string>(assigneeIds.map((id: any) => String(id)))];
+      const activeStaffCount = await User.countDocuments({ _id: { $in: uniqueAssigneeIds }, role: 'staff', status: 'active' });
+      if (uniqueAssigneeIds.length !== assigneeIds.length || activeStaffCount !== uniqueAssigneeIds.length) {
+        return res.status(400).json({ success: false, error: 'Chỉ có thể thêm danh sách Staff active, không trùng lặp.' });
+      }
       const aiAllowed = new Set<string>((Array.isArray(aiAssigneeIds) ? aiAssigneeIds : []).map((x: any) => String(x)));
 
       const version = await DatasetVersion.findById(versionId).lean();
       if (!version) return res.status(404).json({ success: false, error: 'Không tìm thấy DatasetVersion' });
       const projectId = (version as any).projectId;
+      const actorIsSupervisor = String((req as any).user?.role || '') === 'supervisor';
+      if (actorIsSupervisor && !fromAssigneeId) {
+        return res.status(400).json({ success: false, error: 'Supervisor must select a source Staff task.' });
+      }
+
+      const sourceSubmission = await DatasetAssignmentSubmission.findOne({
+        datasetVersionId: versionId,
+        ...(fromAssigneeId ? { assigneeId: fromAssigneeId } : {}),
+        active: { $ne: false },
+        ...(actorIsSupervisor ? { supervisor: getRequestUserId(req) } : {}),
+      }).select('supervisor checker deadline staffDeadline checkerDeadline batchStart batchCount').lean();
+      if (actorIsSupervisor && !sourceSubmission) {
+        return res.status(403).json({ success: false, error: 'Supervisor can only add Staff to their own tasks.' });
+      }
 
       // Nguồn mẫu để copy
       const sampleQuery: any = { datasetVersionId: versionId, active: { $ne: false } };
       if (fromAssigneeId) sampleQuery.assigneeId = fromAssigneeId;
+      if (actorIsSupervisor && sourceSubmission) {
+        sampleQuery.sampleIndex = {
+          $gte: Number((sourceSubmission as any).batchStart),
+          $lt: Number((sourceSubmission as any).batchStart) + Number((sourceSubmission as any).batchCount),
+        };
+      }
       let sourceSamples = await DatasetSampleAssignment.find(sampleQuery).sort({ sampleIndex: 1 }).lean();
       // Khử trùng theo sampleIndex (nếu lấy toàn version có thể trùng do overlap)
       const seen = new Set<number>();
@@ -606,11 +733,6 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Không tìm thấy mẫu nào để gán thêm' });
       }
       const startIndex = sourceSamples[0].sampleIndex;
-      const sourceSubmission = await DatasetAssignmentSubmission.findOne({
-        datasetVersionId: versionId,
-        ...(fromAssigneeId ? { assigneeId: fromAssigneeId } : {}),
-        active: { $ne: false },
-      }).select('supervisor checker').lean();
       const assignmentSupervisor = (sourceSubmission as any)?.supervisor || resolveAssignmentSupervisor(req, (req.body as any).supervisorId);
       const assignmentChecker = (sourceSubmission as any)?.checker || (req.body as any).checkerId;
 
@@ -642,6 +764,9 @@ export class AssignmentController {
           priority: 'medium',
           supervisor: assignmentSupervisor,
           checker: assignmentChecker ? String(assignmentChecker) : undefined,
+          deadline: (sourceSubmission as any)?.staffDeadline || (sourceSubmission as any)?.deadline,
+          staffDeadline: (sourceSubmission as any)?.staffDeadline || (sourceSubmission as any)?.deadline,
+          checkerDeadline: (sourceSubmission as any)?.checkerDeadline,
           dataset: version.projectName,
           version: version.versionName,
           totalSamples: sourceSamples.length,
@@ -682,12 +807,26 @@ export class AssignmentController {
       const { assigneeId, reason } = req.body;
       if (!assigneeId) return res.status(400).json({ success: false, error: 'Thiếu assigneeId' });
 
+      const submissionFilter: any = { datasetVersionId: versionId, assigneeId, active: { $ne: false } };
+      if (String((req as any).user?.role || '') === 'supervisor') submissionFilter.supervisor = getRequestUserId(req);
+      const authorizedSubmissions = await DatasetAssignmentSubmission.find(submissionFilter).select('assigneeId batchStart batchCount').lean();
+      if (!authorizedSubmissions.length) {
+        return res.status(404).json({ success: false, error: 'No manageable active task was found for this Staff.' });
+      }
+
       const sampleRes = await DatasetSampleAssignment.updateMany(
-        { datasetVersionId: versionId, assigneeId, active: { $ne: false } },
+        {
+          datasetVersionId: versionId,
+          assigneeId,
+          active: { $ne: false },
+          $or: authorizedSubmissions.map((sub: any) => ({
+            sampleIndex: { $gte: Number(sub.batchStart), $lt: Number(sub.batchStart) + Number(sub.batchCount) },
+          })),
+        },
         { $set: { active: false, revokedAt: new Date() } }
       );
       const subRes = await DatasetAssignmentSubmission.updateMany(
-        { datasetVersionId: versionId, assigneeId, active: { $ne: false } },
+        submissionFilter,
         { $set: { active: false, revokedAt: new Date(), revokedReason: reason || 'Gỡ khỏi task' } }
       );
 
@@ -710,7 +849,7 @@ export class AssignmentController {
    */
   async getMyTasks(req: Request, res: Response) {
     try {
-      const userId = req.query.userId || (req as any).user?.id || (req as any).user?._id;
+      const userId = getRequestUserId(req);
       if (!userId) {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
@@ -718,10 +857,10 @@ export class AssignmentController {
       const myTasks = await DatasetAssignmentSubmission.find({ assigneeId: userId }).sort({ createdAt: -1 });
 
       // Transform _id to id for frontend compatibility
-      const transformedTasks = myTasks.map(t => ({
-        ...t.toObject(),
-        id: t._id.toString()
-      }));
+      const transformedTasks = myTasks.map(t => {
+        const plain = t.toObject();
+        return { ...plain, ...getDeadlineState(plain), id: t._id.toString() };
+      });
 
       return res.status(200).json({ success: true, data: transformedTasks });
     } catch (error: any) {
@@ -734,9 +873,11 @@ export class AssignmentController {
    * API: Lấy TẤT CẢ các Tasks cho Manager (Manager Dashboard)
    * GET /api/dataprep/assignments/all (LEGACY - keep for now)
    */
-  async getAllTasks(_req: Request, res: Response) {
+  async getAllTasks(req: Request, res: Response) {
     try {
-      const allTasks = await DatasetAssignmentSubmission.find().sort({ createdAt: -1 });
+      const role = String((req as any).user?.role || '').toLowerCase();
+      const filter = role === 'admin' ? {} : { supervisor: getRequestUserId(req) };
+      const allTasks = await DatasetAssignmentSubmission.find(filter).sort({ createdAt: -1 });
       return res.status(200).json({ success: true, data: allTasks });
     } catch (error: any) {
       console.error('[AssignmentController] Error fetching all tasks:', error);
@@ -758,26 +899,7 @@ export class AssignmentController {
       }
       let submissionFilter: any = {};
       if (role === 'supervisor' || role === 'checker') {
-        const supervisorUsers = await User.find({ role: { $in: ['supervisor', 'checker'] } }).select('_id').lean();
-        const supervisorIds = supervisorUsers.map((user: any) => String(user._id));
-        if (role === 'checker') {
-          submissionFilter = {
-            $or: [
-              { checker: viewerId },
-              { checker: { $exists: false } },
-              { checker: '' },
-            ],
-          };
-        } else {
-          submissionFilter = {
-            $or: [
-              { supervisor: viewerId },
-              { supervisor: { $exists: false } },
-              { supervisor: '' },
-              { supervisor: { $nin: supervisorIds } },
-            ],
-          };
-        }
+        submissionFilter = role === 'checker' ? { checker: viewerId } : { supervisor: viewerId };
       }
       const submissions = await DatasetAssignmentSubmission.find(submissionFilter);
       const versionIds = [...new Set(submissions.map(s => String(s.datasetVersionId)))];
@@ -818,7 +940,13 @@ export class AssignmentController {
             version: sub.version || vid,
             totalSamples: 0,
             labeledCount: 0,
-            dueDate: sub.deadline || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            dueDate: getStaffDeadline(sub) || null,
+            staffDeadline: getStaffDeadline(sub) || null,
+            checkerDeadline: (sub as any).checkerDeadline || null,
+            isStaffOverdue: false,
+            isCheckerOverdue: false,
+            submittedLateCount: 0,
+            reviewedLateCount: 0,
             status: 'in_progress',
             priority: sub.priority || 'medium',
             checkerId: sub.checker || undefined,
@@ -855,7 +983,13 @@ export class AssignmentController {
           status: sub.status,
           active: (sub as any).active !== false,
           aiAssistEnabled: !!(sub as any).aiAssistEnabled,
+          ...getDeadlineState(sub),
         });
+        const deadlineState = getDeadlineState(sub);
+        grouped[groupId].isStaffOverdue ||= deadlineState.isStaffOverdue;
+        grouped[groupId].isCheckerOverdue ||= deadlineState.isCheckerOverdue;
+        if (deadlineState.submittedLate) grouped[groupId].submittedLateCount += 1;
+        if (deadlineState.reviewedLate) grouped[groupId].reviewedLateCount += 1;
         // A grouped batch is reviewable as soon as any assignee submits. Do not
         // leave its status stuck on whichever submission was iterated first.
         const statusRank: Record<string, number> = { rejected: 0, pending: 1, in_progress: 2, draft: 2, submitted: 3, approved: 4, completed: 4 };
@@ -922,9 +1056,10 @@ export class AssignmentController {
         // On time submissions
         const completedOnTime = userSubmissions.filter(s => {
           if (!['submitted', 'approved', 'completed'].includes(s.status)) return false;
-          if (!s.deadline) return true;
+          const staffDeadline = getStaffDeadline(s);
+          if (!staffDeadline) return true;
           const submittedDate = s.submittedAt || s.updatedAt || new Date();
-          return new Date(submittedDate).getTime() <= new Date(s.deadline).getTime();
+          return new Date(submittedDate).getTime() <= staffDeadline.getTime();
         }).length;
         const onTimeRate = tasksDone > 0 ? Number(((completedOnTime / tasksDone) * 100).toFixed(1)) : 100.0;
 
@@ -990,7 +1125,7 @@ export class AssignmentController {
           samples: sub.totalSamples,
           done: sub.status === 'submitted' || sub.status === 'approved' ? sub.totalSamples : sub.labeledCount,
           submittedAt: sub.submittedAt ? new Date(sub.submittedAt).toISOString().replace('T', ' ').substring(0, 16) : null,
-          onTime: sub.deadline && sub.submittedAt ? new Date(sub.submittedAt).getTime() <= new Date(sub.deadline).getTime() : true,
+          onTime: getStaffDeadline(sub) && sub.submittedAt ? new Date(sub.submittedAt).getTime() <= getStaffDeadline(sub)!.getTime() : true,
         }));
 
         // Activity log items
@@ -1068,6 +1203,10 @@ export class AssignmentController {
       } else if (baseName === 'Default Task') {
         query.name = /^Batch \d+$/;
       }
+      const role = String((req as any).user?.role || '').toLowerCase();
+      const viewerId = getRequestUserId(req);
+      if (role === 'checker') query.checker = viewerId;
+      if (role === 'supervisor') query.supervisor = viewerId;
 
       const subs = await DatasetAssignmentSubmission.find(query);
       if (subs.length === 0) {
@@ -1367,6 +1506,9 @@ export class AssignmentController {
       if (!submission) {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
+      if (!isSubmissionOwner(req, submission)) {
+        return res.status(403).json({ success: false, error: 'You can only access your own task.' });
+      }
 
       // Find the assignments for this batch/submission
       // In our logic, the samples for this batch start at submission.batchStart with length batchCount
@@ -1449,9 +1591,12 @@ export class AssignmentController {
       if (!submission) {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
+      if (!isSubmissionOwner(req, submission)) {
+        return res.status(403).json({ success: false, error: 'You can only edit your own task.' });
+      }
 
-      if (submission.status === 'submitted') {
-        return res.status(400).json({ success: false, error: 'Batch already submitted' });
+      if (submission.status === 'submitted' || submission.status === 'approved') {
+        return res.status(409).json({ success: false, error: 'Submitted or approved tasks cannot be edited.' });
       }
 
       // Đã bị rút/thay thế: giữ lịch sử nhưng không cho sửa tiếp
@@ -1544,8 +1689,14 @@ export class AssignmentController {
       if (!submission) {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
+      if (!isSubmissionOwner(req, submission)) {
+        return res.status(403).json({ success: false, error: 'You can only submit your own task.' });
+      }
       if ((submission as any).active === false) {
-        return res.status(403).json({ success: false, error: 'Task này đã bị thu hồi/thay thế.' });
+        return res.status(403).json({ success: false, error: 'This task has been revoked or reassigned.' });
+      }
+      if (['submitted', 'approved'].includes(String(submission.status))) {
+        return res.status(409).json({ success: false, error: 'This task has already been submitted or approved.' });
       }
       const indexes: number[] = Array.isArray(sampleIndexes) ? sampleIndexes.map((n: any) => Number(n)).filter((n) => Number.isFinite(n)) : [];
       if (indexes.length === 0) {
@@ -1621,6 +1772,22 @@ export class AssignmentController {
         return res.status(400).json({ success: false, error: 'Cần chọn Project (hoặc Version) để xem hàng đợi.' });
       }
       const filter: any = { active: { $ne: false } };
+      const reviewerRole = String((req as any).user?.role || '').toLowerCase();
+      const reviewerId = getRequestUserId(req);
+      if (reviewerRole === 'checker') filter.checkerId = reviewerId;
+      if (reviewerRole === 'supervisor') {
+        const ownedSubmissions = await DatasetAssignmentSubmission.find({ supervisor: reviewerId, active: { $ne: false } })
+          .select('datasetVersionId assigneeId batchStart batchCount')
+          .lean();
+        if (!ownedSubmissions.length) {
+          return res.status(200).json({ success: true, data: [], total: 0, page: 1, limit: Math.min(100, Math.max(1, parseInt(limit) || 20)) });
+        }
+        filter.$or = ownedSubmissions.map((submission: any) => ({
+          datasetVersionId: submission.datasetVersionId,
+          assigneeId: submission.assigneeId,
+          sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+        }));
+      }
       if (projectId) filter.projectId = projectId;
       if (versionId) filter.datasetVersionId = versionId;
       if (assigneeId) filter.assigneeId = assigneeId;
@@ -1712,6 +1879,33 @@ export class AssignmentController {
       }
 
       const sas = await DatasetSampleAssignment.find({ _id: { $in: assignmentIds } });
+      if (sas.length !== assignmentIds.length) {
+        return res.status(404).json({ success: false, error: 'One or more sample assignments were not found.' });
+      }
+      const reviewerRole = String((req as any).user?.role || '').toLowerCase();
+      if (reviewerRole === 'checker' && sas.some((sa: any) => String(sa.checkerId || '') !== String(reviewerId))) {
+        return res.status(403).json({ success: false, error: 'Checker can only review samples explicitly assigned to them.' });
+      }
+      if (reviewerRole === 'supervisor') {
+        const supervisorSubmissions = await DatasetAssignmentSubmission.find({
+          supervisor: String(reviewerId),
+          datasetVersionId: { $in: sas.map((sa: any) => sa.datasetVersionId) },
+          assigneeId: { $in: sas.map((sa: any) => sa.assigneeId) },
+          active: { $ne: false },
+        }).select('datasetVersionId assigneeId batchStart batchCount').lean();
+        const ownsEverySample = sas.every((sa: any) => supervisorSubmissions.some((submission: any) =>
+          String(submission.datasetVersionId) === String(sa.datasetVersionId)
+          && String(submission.assigneeId) === String(sa.assigneeId)
+          && Number(sa.sampleIndex) >= Number(submission.batchStart)
+          && Number(sa.sampleIndex) < Number(submission.batchStart) + Number(submission.batchCount)
+        ));
+        if (!ownsEverySample) {
+          return res.status(403).json({ success: false, error: 'Supervisor can only review samples in their own tasks.' });
+        }
+      }
+      if (sas.some((sa: any) => String(sa.reviewStatus || '') !== 'submitted')) {
+        return res.status(409).json({ success: false, error: 'Only submitted samples can be reviewed.' });
+      }
       for (const sa of sas) {
         (sa as any).reviewStatus = action === 'approve' ? 'approved' : 'rejected';
         (sa as any).reviewedAt = new Date();
@@ -1818,6 +2012,16 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
 
+      if (!isSubmissionOwner(req, submission)) {
+        return res.status(403).json({ success: false, error: 'You can only submit your own task.' });
+      }
+      if ((submission as any).active === false) {
+        return res.status(403).json({ success: false, error: 'This task has been revoked or reassigned.' });
+      }
+      if (['submitted', 'approved'].includes(String(submission.status))) {
+        return res.status(409).json({ success: false, error: 'This task has already been submitted or approved.' });
+      }
+
       // ── Step 1: Nếu FE gửi kèm labels, upsert soft-label trước khi promote ──
       // Điều này đảm bảo staff chưa Save Draft vẫn có labels được lưu đúng.
       if (labelsPayload && typeof labelsPayload === 'object') {
@@ -1877,22 +2081,23 @@ export class AssignmentController {
         const actor = actorId ? await User.findById(actorId).select('name email').lean() : null;
         const actorName = String((actor as any)?.name || (actor as any)?.email || submission.assigneeId || 'Staff');
         const submitMessage = `${actorName} submitted ${submission.name || 'labeling task'}.`;
-        await Stage4Notification.insertMany([
-          {
+        const notifications: any[] = [{
+          datasetVersionId: submission.datasetVersionId,
+          recipientRole: 'admin',
+          actorId,
+          type: 'success',
+          message: submitMessage,
+        }];
+        if (mongoose.Types.ObjectId.isValid(String(submission.supervisor || ''))) {
+          notifications.push({
             datasetVersionId: submission.datasetVersionId,
-            recipientRole: 'admin',
+            recipientId: new mongoose.Types.ObjectId(String(submission.supervisor)),
             actorId,
             type: 'success',
             message: submitMessage,
-          },
-          {
-            datasetVersionId: submission.datasetVersionId,
-            recipientRole: 'supervisor',
-            actorId,
-            type: 'success',
-            message: submitMessage,
-          },
-        ]);
+          });
+        }
+        await Stage4Notification.insertMany(notifications);
       }
 
       // Check conflicts and only notify checker if there is actual conflict
@@ -2055,8 +2260,29 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
 
+      if (!canManageSubmission(req, submission)) {
+        return res.status(403).json({ success: false, error: 'Supervisor can only approve tasks assigned to them.' });
+      }
+
+      if (submission.status === 'approved') {
+        return res.status(200).json({ success: true, data: submission });
+      }
+
       if (submission.status !== 'submitted') {
         return res.status(400).json({ success: false, error: `Không thể duyệt submission ở trạng thái "${submission.status}". Chỉ duyệt được khi status = "submitted".` });
+      }
+
+      if ((submission as any).checker) {
+        const pendingCheckerSamples = await DatasetSampleAssignment.countDocuments({
+          datasetVersionId: submission.datasetVersionId,
+          assigneeId: submission.assigneeId,
+          sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+          active: { $ne: false },
+          reviewStatus: { $ne: 'approved' },
+        });
+        if (pendingCheckerSamples > 0) {
+          return res.status(409).json({ success: false, error: `Checker must approve all samples first (${pendingCheckerSamples} remaining).` });
+        }
       }
 
       // Check if this specific staff has any pending conflicts in this version
@@ -2145,6 +2371,10 @@ export class AssignmentController {
         return res.status(404).json({ success: false, error: 'Submission not found' });
       }
 
+      if (!canManageSubmission(req, submission)) {
+        return res.status(403).json({ success: false, error: 'Supervisor can only reject tasks assigned to them.' });
+      }
+
       if (submission.status !== 'submitted') {
         return res.status(400).json({ success: false, error: `Không thể reject submission ở trạng thái "${submission.status}".` });
       }
@@ -2179,7 +2409,11 @@ export class AssignmentController {
       }
 
       const result = await DatasetAssignmentSubmission.updateMany(
-        { datasetVersionId: versionId, assigneeId },
+        {
+          datasetVersionId: versionId,
+          assigneeId,
+          ...(String((req as any).user?.role || '') === 'supervisor' ? { supervisor: getRequestUserId(req) } : {}),
+        },
         { $set: { aiAssistEnabled: enabled } }
       );
 
@@ -2197,28 +2431,58 @@ export class AssignmentController {
   async updateBatchChecker(req: Request, res: Response) {
     try {
       const { versionId } = req.params;
-      const { batchName, checkerId } = req.body;
+      const { batchName, checkerId, checkerDeadline } = req.body;
       if (!batchName) {
         return res.status(400).json({ success: false, error: 'Missing batchName' });
       }
       
+      const query: any = {
+        datasetVersionId: versionId,
+        name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+        ...(String((req as any).user?.role || '') === 'supervisor' ? { supervisor: getRequestUserId(req) } : {}),
+      };
+      const existingSubs = await DatasetAssignmentSubmission.find(query).select('deadline staffDeadline checkerDeadline assigneeId batchStart batchCount').lean();
+      if (!existingSubs.length) return res.status(404).json({ success: false, error: 'No manageable batch was found.' });
+      let parsedCheckerDeadline: Date | undefined;
+      if (checkerId) {
+        const checker = mongoose.Types.ObjectId.isValid(String(checkerId))
+          ? await User.findOne({ _id: checkerId, role: 'checker', status: 'active' }).select('_id').lean()
+          : null;
+        if (!checker) return res.status(400).json({ success: false, error: 'Checker không hợp lệ hoặc chưa active.' });
+        const rawCheckerDeadline = checkerDeadline || (existingSubs[0] as any)?.checkerDeadline;
+        if (!rawCheckerDeadline) {
+          return res.status(400).json({ success: false, error: 'Hạn review của Checker là bắt buộc' });
+        }
+        parsedCheckerDeadline = new Date(rawCheckerDeadline);
+        const latestStaffDeadline = existingSubs.reduce((latest, sub: any) => {
+          const value = getStaffDeadline(sub)?.getTime() || 0;
+          return Math.max(latest, value);
+        }, 0);
+        if (Number.isNaN(parsedCheckerDeadline.getTime()) || parsedCheckerDeadline.getTime() <= latestStaffDeadline) {
+          return res.status(400).json({ success: false, error: 'Hạn Checker phải muộn hơn hạn Staff' });
+        }
+      }
+
       // Update DatasetAssignmentSubmission
       await DatasetAssignmentSubmission.updateMany(
-        { datasetVersionId: versionId, name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) },
-        { $set: { checker: checkerId || undefined } }
+        query,
+        checkerId
+          ? { $set: { checker: checkerId, checkerDeadline: parsedCheckerDeadline }, $unset: { checkerReminderSentAt: 1, checkerOverdueNotifiedAt: 1 } }
+          : { $unset: { checker: 1, checkerDeadline: 1, checkerReminderSentAt: 1, checkerOverdueNotifiedAt: 1 } }
       );
       
       // Fetch submissions to update corresponding sample assignments
-      const subs = await DatasetAssignmentSubmission.find({
-        datasetVersionId: versionId,
-        name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      }).select('_id assigneeId').lean();
-      
-      const assigneeIds = subs.map(s => s.assigneeId);
+      const subs = await DatasetAssignmentSubmission.find(query).select('_id assigneeId batchStart batchCount').lean();
+      const sampleScopes = subs.map((sub: any) => ({
+        assigneeId: sub.assigneeId,
+        sampleIndex: { $gte: Number(sub.batchStart), $lt: Number(sub.batchStart) + Number(sub.batchCount) },
+      }));
       
       await DatasetSampleAssignment.updateMany(
-        { datasetVersionId: versionId, assigneeId: { $in: assigneeIds } },
-        { $set: { checkerId: checkerId ? new mongoose.Types.ObjectId(String(checkerId)) : undefined } }
+        { datasetVersionId: versionId, $or: sampleScopes },
+        checkerId
+          ? { $set: { checkerId: new mongoose.Types.ObjectId(String(checkerId)) } }
+          : { $unset: { checkerId: 1 } }
       );
       
       broadcastAssignmentUpdate({ type: 'assignment_updated', versionId, action: 'update_checker' });

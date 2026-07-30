@@ -164,12 +164,17 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'staff' | 'reviewer' | 'checker';
+  role: 'admin' | 'supervisor' | 'staff' | 'checker';
   status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
 export const apiService = {
-  getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
+  getTrainingExportData: async (versionId: string): Promise<{
+    total: number;
+    labeledSamples: number;
+    systemPrompt?: { id?: string | null; name?: string | null; content?: string | null };
+    data: any[];
+  }> => {
     const response = await api.get(`/dataprep/export/${versionId}/training-data`);
     return response.data;
   },
@@ -752,6 +757,27 @@ export const apiService = {
     const response = await api.get(`/model-eval/${evalId}`);
     return response.data;
   },
+  exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
+    const response = await api.get(`/model-eval/${evalId}/export`, { responseType: 'blob' });
+    return response.data;
+  },
+  getLargeLlmReferenceModels: async (): Promise<any> => {
+    const response = await api.get('/model-eval/large-llm/models');
+    return response.data;
+  },
+  runLargeLlmReference: async (evalId: string, model: string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('model', model);
+    formData.append('eval_file', file);
+    const response = await api.post(`/model-eval/${evalId}/large-llm/run`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  getLargeLlmReferenceStatus: async (referenceJobId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/large-llm/status/${referenceJobId}`);
+    return response.data;
+  },
   runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
     const formData = new FormData();
     formData.append('eval_file', file);
@@ -764,12 +790,20 @@ export const apiService = {
     });
     return response.data;
   },
+  resumeEvaluation: async (evalJobId: string): Promise<any> => {
+    const response = await api.post(`/model-eval/resume/${encodeURIComponent(evalJobId)}`);
+    return response.data;
+  },
   getEvalHistory: async (jobId: string): Promise<any> => {
     const response = await api.get(`/model-eval/history/${jobId}`);
     return response.data;
   },
   pinEvaluation: async (evalId: string): Promise<any> => {
     const response = await api.post(`/model-eval/pin/${evalId}`);
+    return response.data;
+  },
+  unpinEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.delete(`/model-eval/pin/${evalId}`);
     return response.data;
   },
   deleteEvaluation: async (evalId: string): Promise<any> => {

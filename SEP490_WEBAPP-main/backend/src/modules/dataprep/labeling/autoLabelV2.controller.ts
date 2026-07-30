@@ -23,13 +23,21 @@ export class AutoLabelV2Controller {
       // Chỉ cho dùng AI key của hệ thống nếu task này được cấp quyền AI
       const submissionId = (req.params as any).submissionId;
       if (submissionId) {
-        const submission = await DatasetAssignmentSubmission.findById(submissionId).select('aiAssistEnabled active').lean();
+        const submission = await DatasetAssignmentSubmission.findById(submissionId).select('assigneeId aiAssistEnabled active status').lean();
         if (!submission) {
           res.status(404).json({ success: false, error: 'Không tìm thấy task.' });
           return;
         }
         if ((submission as any).active === false) {
           res.status(403).json({ success: false, error: 'Task đã bị thu hồi/thay thế.' });
+          return;
+        }
+        if (String((submission as any).assigneeId || '') !== String(ownerId)) {
+          res.status(403).json({ success: false, error: 'You can only use AI assistance for your own task.' });
+          return;
+        }
+        if (['submitted', 'approved'].includes(String((submission as any).status || ''))) {
+          res.status(409).json({ success: false, error: 'Submitted or approved tasks are read-only.' });
           return;
         }
         if (!(submission as any).aiAssistEnabled) {

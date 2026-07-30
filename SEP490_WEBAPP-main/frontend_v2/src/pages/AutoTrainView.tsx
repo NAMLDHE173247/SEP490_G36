@@ -4,7 +4,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import JSZip from 'jszip';
 import {
   Zap,
   History,
@@ -156,54 +155,6 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       }
     }
   }, []);
-
-  // If Data Prep created an Evaluation Pack, prepare its SFT train/validation
-  // ZIP in memory. The AutoTrain wizard opens with the dataset already loaded;
-  // the user does not need to download and re-upload an intermediate file.
-  useEffect(() => {
-    if (config.localFile) return;
-    const rawPack = localStorage.getItem('hybrid_evaluation_pack_v1');
-    if (!rawPack) return;
-
-    try {
-      const pack = JSON.parse(rawPack);
-      const trainRows = Array.isArray(pack?.sft?.train) ? pack.sft.train : [];
-      const validationRows = Array.isArray(pack?.sft?.validation) ? pack.sft.validation : [];
-      if (!trainRows.length) return;
-
-      void (async () => {
-        const zip = new JSZip();
-        zip.file('train_dataset.json', JSON.stringify(trainRows, null, 2));
-        zip.file('validation_dataset.json', JSON.stringify(validationRows, null, 2));
-        zip.file('_metadata.json', JSON.stringify({
-          datasetVersionId: pack.dataset_version_id,
-          totalTrain: trainRows.length,
-          totalValidation: validationRows.length,
-          evaluationPackSchema: pack.schema_version,
-        }, null, 2));
-        const blob = await zip.generateAsync({ type: 'blob' });
-        const file = new File([blob], `evaluation_pack_train_${pack.dataset_version_id || 'latest'}.zip`, { type: 'application/zip' });
-        setConfig(current => ({
-          ...current,
-          datasetSource: 'local',
-          localFile: file,
-          columnMapping: 'messages',
-          projectName: current.projectName === 'my-first-lm-project'
-            ? `Evaluation Pack ${pack.dataset_version_id || 'latest'}`
-            : current.projectName,
-        }));
-        setPreviewData({
-          rows: trainRows.slice(0, 5).map((row: any) => formatRowPreview(row)),
-          totalRecords: trainRows.length,
-          totalTokens: Math.round(JSON.stringify(trainRows).length / 4),
-          headers: ['messages'],
-          qualityChecks: [{ level: 'ok', message: `Evaluation Pack đã nạp ${trainRows.length} mẫu train và ${validationRows.length} mẫu validation.` }],
-        });
-      })().catch(error => console.warn('[AutoTrain] Could not prepare Evaluation Pack:', error));
-    } catch (error) {
-      console.warn('[AutoTrain] Invalid Evaluation Pack:', error);
-    }
-  }, [config.localFile]);
 
   // Auto-fetch system prompt from DataPrep Step 12 if available.
   // We want to keep it synced with the latest prompt from Data Prep.

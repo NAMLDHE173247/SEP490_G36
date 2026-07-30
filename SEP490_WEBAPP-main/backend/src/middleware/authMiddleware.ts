@@ -16,7 +16,7 @@ function getRequestToken(req: Request): string | null {
   // Native EventSource cannot attach an Authorization header. Keep query tokens
   // narrowly scoped to authenticated SSE endpoints instead of accepting them on
   // every API route (where they can leak through logs and browser history).
-  if (req.method === 'GET' && (req.path.includes('/stream/') || req.path.endsWith('/events'))) {
+  if (req.method === 'GET' && (req.path.includes('/stream/') || req.path.endsWith('/stream') || req.path.endsWith('/events'))) {
     const queryToken = req.query.token || req.query.access_token;
     if (typeof queryToken === 'string' && queryToken.trim()) {
       return queryToken;

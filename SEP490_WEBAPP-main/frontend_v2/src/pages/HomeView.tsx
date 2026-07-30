@@ -5,7 +5,7 @@ import {
   MessageSquare, Database, Zap, Package, BarChart2, ArrowRight,
   Activity, Clock, Users, UserPlus, UserCheck, Shield, ShieldCheck,
   ShieldAlert, Ban, CheckCircle2, TrendingUp, AlertTriangle,
-  ClipboardList, GitBranch, ChevronRight, ClipboardCheck
+  ClipboardList, GitBranch, ChevronRight
 } from 'lucide-react';
 import '../styles/home.css';
 
@@ -192,14 +192,12 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
         const adminCount = usersList.filter((u: any) => u.role === 'admin').length;
         const supervisorCount = usersList.filter((u: any) => u.role === 'supervisor').length;
         const staffCount = usersList.filter((u: any) => u.role === 'staff').length;
-        const reviewerCount = usersList.filter((u: any) => u.role === 'reviewer').length;
         const checkerCount = usersList.filter((u: any) => u.role === 'checker').length;
 
         setRoleDistribution([
           { role: 'Admin', count: adminCount, color: '#f59e0b', icon: <ShieldCheck size={14} style={{ color: '#f59e0b' }} /> },
           { role: 'Supervisor', count: supervisorCount, color: '#10b981', icon: <ShieldAlert size={14} style={{ color: '#10b981' }} /> },
           { role: 'Staff', count: staffCount, color: '#6366f1', icon: <Shield size={14} style={{ color: '#6366f1' }} /> },
-          { role: 'Reviewer', count: reviewerCount, color: '#8b5cf6', icon: <ClipboardCheck size={14} style={{ color: '#8b5cf6' }} /> },
           { role: 'Checker', count: checkerCount, color: '#f43f5e', icon: <ShieldAlert size={14} style={{ color: '#f43f5e' }} /> }
         ]);
 
@@ -327,7 +325,6 @@ function AdminHomeView({ setActiveTab, dashboardStats }) {
       case 'Admin': return 'role-dot-admin';
       case 'Supervisor': return 'role-dot-supervisor';
       case 'Staff': return 'role-dot-staff';
-      case 'Reviewer': return 'role-dot-reviewer';
       case 'Checker': return 'role-dot-checker';
       default: return '';
     }

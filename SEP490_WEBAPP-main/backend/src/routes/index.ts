@@ -43,11 +43,17 @@ import {
   getEvaluatedModels,
   getEvalHistory,
   pinEvaluation,
+  unpinEvaluation,
   deleteEvaluation,
   compareEvaluations,
   getGpuStatusEndpoint,
   getActiveEvaluation,
-  reviewConversation
+  resumeEvaluation,
+  reviewConversation,
+  exportEvaluationArtifact,
+  getLargeLlmReferenceModels,
+  runLargeLlmReference,
+  getLargeLlmReferenceStatus,
 } from '../controllers/evalModelController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
@@ -243,13 +249,19 @@ router.use('/model-eval', authMiddleware, requireManager);
 router.patch('/model-eval/:evalId/review/:convIndex', authMiddleware, requireManager, reviewConversation);
 router.get('/model-eval/gpu-status', getGpuStatusEndpoint);  // ⚠️ trước wildcard
 router.get('/model-eval/active', getActiveEvaluation);
+router.post('/model-eval/resume/:evalJobId', resumeEvaluation);
 router.get('/model-eval/leaderboard', authMiddleware, getEvaluatedModels);
 router.post('/model-eval/run/:jobId', authMiddleware, requireManager, upload.single('eval_file'), runEvaluation);
 router.get('/model-eval/stream/:evalJobId', authMiddleware, streamEvalStatus);
 router.post('/model-eval/save', authMiddleware, requireManager, saveEvalResult);
 router.get('/model-eval/history/:jobId', authMiddleware, getEvalHistory);
-router.post('/model-eval/pin/:evalId', pinEvaluation);         // ⚠️ phải đứng trước /:evalId
+router.post('/model-eval/pin/:evalId', authMiddleware, requireManager, pinEvaluation); // explicit user action
+router.delete('/model-eval/pin/:evalId', authMiddleware, requireManager, unpinEvaluation);
 router.get('/model-eval/compare', compareEvaluations);         // ⚠️ trước GET /:evalId
+router.get('/model-eval/large-llm/models', authMiddleware, requireManager, getLargeLlmReferenceModels);
+router.get('/model-eval/large-llm/status/:referenceJobId', authMiddleware, requireManager, getLargeLlmReferenceStatus);
+router.post('/model-eval/:evalId/large-llm/run', authMiddleware, requireManager, upload.single('eval_file'), runLargeLlmReference);
+router.get('/model-eval/:evalId/export', exportEvaluationArtifact);
 router.delete('/model-eval/:evalId', deleteEvaluation);        // ⚠️ trước GET /:evalId
 router.get('/model-eval/:evalId', getEvaluation);              // ⚠️ wildcard — đứng cuối cùng
 

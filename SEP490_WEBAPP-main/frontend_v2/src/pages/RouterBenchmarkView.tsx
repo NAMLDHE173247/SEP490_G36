@@ -330,14 +330,12 @@ export default function RouterBenchmarkView() {
       {results && <section style={{ ...cardStyle, marginTop: 16 }}>
         <h2 style={headingStyle}>3. Kết quả Router — báo cáo RP4</h2>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 850 }}>
-            <thead><tr>{['Mode', 'Subject accuracy', 'Macro-F1', 'Intent accuracy', 'Exact match', 'Wrong-route', 'Router latency', 'LLM call rate', 'Router LLM calls', 'Stability', 'Router tokens'].map(item => <th key={item} style={thStyle}>{item}</th>)}</tr></thead>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead><tr>{['Mode', 'Subject accuracy', 'Macro-F1', 'Wrong-route', 'Router latency', 'LLM call rate', 'Router LLM calls', 'Stability', 'Router tokens'].map(item => <th key={item} style={thStyle}>{item}</th>)}</tr></thead>
             <tbody>{Object.entries(results).map(([mode, result]) => <tr key={mode}>
               <td style={tdStyle}><strong>{mode.toUpperCase()}</strong></td>
               <td style={tdStyle}>{pct(result.primary_subject_accuracy)}</td>
               <td style={tdStyle}>{pct(result.macro_f1)}</td>
-              <td style={tdStyle}>{result.intent_accuracy === null ? '— (chưa gán nhãn)' : pct(result.intent_accuracy)}</td>
-              <td style={tdStyle}>{result.exact_match_accuracy === null ? '— (chưa gán nhãn)' : pct(result.exact_match_accuracy)}</td>
               <td style={tdStyle}>{pct(1 - result.primary_subject_accuracy)}</td>
               <td style={tdStyle}>{Math.round(result.avg_router_latency_ms)} ms</td>
               <td style={tdStyle}>{pct(result.llm_call_rate)}</td>

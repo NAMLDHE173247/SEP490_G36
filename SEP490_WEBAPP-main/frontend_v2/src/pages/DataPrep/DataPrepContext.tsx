@@ -642,7 +642,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: false });
+  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');

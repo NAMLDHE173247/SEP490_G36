@@ -6,6 +6,7 @@ import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
 import { LabelSnapshot } from '../../../models/LabelSnapshot';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
+import { PromptLibraryItem } from '../../../models/PromptLibraryItem';
 import { getAuthUserId } from '../../../utils/auth';
 import { buildAssignmentConflictList } from '../../../services/labelAssignmentService';
 
@@ -23,6 +24,20 @@ export class CanonicalizeController {
       if (String(version.ownerId) !== String(viewerId) && !['admin', 'supervisor', 'checker'].includes(role)) {
         res.status(403).json({ error: 'Forbidden' });
         return;
+      }
+
+      let systemPromptContent = String((version as any).promptContentSnapshot || '').trim();
+      let systemPromptName = '';
+      const systemPromptId = (version as any).promptId ? String((version as any).promptId) : null;
+      if (systemPromptId) {
+        const prompt = await PromptLibraryItem.findOne({
+          _id: (version as any).promptId,
+          ownerId: version.ownerId,
+        }).lean();
+        if (prompt) {
+          systemPromptName = String((prompt as any).name || '');
+          if (!systemPromptContent) systemPromptContent = String((prompt as any).content || '').trim();
+        }
       }
 
       const items = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).sort({ createdAt: 1 }).lean();
@@ -121,7 +136,17 @@ export class CanonicalizeController {
           labels: { sample: Array.from(sampleLabels), messages: messageLabels },
         };
       });
-      res.json({ versionId, total: data.length, labeledSamples: data.filter(item => item.labels.sample.length || item.labels.messages.length).length, data });
+      res.json({
+        versionId,
+        total: data.length,
+        labeledSamples: data.filter(item => item.labels.sample.length || item.labels.messages.length).length,
+        systemPrompt: {
+          id: systemPromptId,
+          name: systemPromptName || null,
+          content: systemPromptContent || null,
+        },
+        data,
+      });
     } catch (error: any) {
       res.status(500).json({ error: error.message || 'Failed to build training data' });
     }

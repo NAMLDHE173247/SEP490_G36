@@ -37,7 +37,10 @@ function useStaffTasks() {
             priority: t.priority,
             taskType: t.taskType,
             createdAt: t.createdAt?.split('T')[0] || '',
-            deadline: t.deadline?.split('T')[0] || '',
+            deadline: (t.staffDeadline || t.deadline)?.split('T')[0] || '',
+            deadlineAt: t.staffDeadline || t.deadline || '',
+            isStaffOverdue: !!t.isStaffOverdue,
+            submittedLate: !!t.submittedLate,
             totalSamples: t.totalSamples || t.batchCount,
             labeledCount: t.labeledCount || 0,
             reviewedCount: 0,
@@ -194,7 +197,7 @@ function StaffTasksView({ onOpenTask }) {
 
   filtered.sort((a, b) => {
     switch (sortBy) {
-      case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
+      case 'deadline': return getDateTime(a.deadlineAt || a.deadline) - getDateTime(b.deadlineAt || b.deadline);
       case 'priority': {
         const order = { urgent: 0, high: 1, medium: 2, low: 3 };
         return order[a.priority] - order[b.priority];
@@ -358,8 +361,8 @@ function StaffTasksView({ onOpenTask }) {
           const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
           const statusInfo = STATUS_CONFIG[task.status];
           const priInfo = PRIORITY_CONFIG[task.priority];
-          const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
-          const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
+          const overdue = (task.isStaffOverdue || isOverdue(task.deadlineAt || task.deadline)) && !['submitted', 'approved', 'completed'].includes(task.status);
+          const nearDl = isNearDeadline(task.deadlineAt || task.deadline) && !['submitted', 'approved', 'completed'].includes(task.status);
 
           return (
             <div key={task.id} className={`st-task-card ${overdue ? 'overdue' : ''}`}>
@@ -399,7 +402,9 @@ function StaffTasksView({ onOpenTask }) {
                 </div>
                 <div className={`st-meta-row ${overdue ? 'deadline-overdue' : nearDl ? 'deadline-near' : ''}`}>
                   <Calendar size={13} />
-                  <span>Hạn chót: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  <span>Hạn nộp Staff: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  {overdue && <strong style={{ color: '#dc2626' }}>Quá hạn — bài nộp sẽ bị ghi nhận trễ</strong>}
+                  {task.submittedLate && <strong style={{ color: '#dc2626' }}>Đã nộp trễ</strong>}
                   {overdue && <span className="st-overdue-tag">Quá hạn!</span>}
                   {nearDl && <span className="st-near-tag">Sắp hết hạn</span>}
                 </div>

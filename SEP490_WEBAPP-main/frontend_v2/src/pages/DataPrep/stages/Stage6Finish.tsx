@@ -8,11 +8,20 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import './Stage6Finish.css';
 
-const EVALUATION_PACK_STORAGE_KEY = 'hybrid_evaluation_pack_v1';
+const EVALUATION_PACK_STORAGE_KEY = 'base_ft_evaluation_pack_v1';
+const SYSTEM_PROMPT_STORAGE_PREFIX = 'dataprep_locked_system_prompt_v1';
 const ROUTER_INTENTS = new Set([
   'solve_problem', 'explain_concept', 'give_hint', 'check_answer',
   'diagnose_error', 'ask_follow_up', 'ask_clarification'
 ]);
+
+const sha256Json = async (value: unknown): Promise<string> => {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('');
+};
 
 const normalizeEvaluationSubject = (value: any): string => {
   const normalized = String(value || '').trim().toUpperCase();
@@ -101,6 +110,32 @@ export const Stage6Finish: React.FC = () => {
   const activeVersionId = localStorage.getItem('current_version_id');
   const { results, qualityResult } = useStage4Data(activeVersionId);
 
+  const promptStorageKey = `${SYSTEM_PROMPT_STORAGE_PREFIX}:${activeVersionId || 'unknown'}`;
+
+  useEffect(() => {
+    if (promptText.trim()) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(promptStorageKey) || 'null');
+      if (saved?.content && String(saved.content).trim()) {
+        setPromptText(String(saved.content));
+        setPromptName(String(saved.name || 'Locked system prompt'));
+        setSelectedVersion(saved.id ? { ...saved, content: String(saved.content) } : null);
+      }
+    } catch (error) {
+      console.warn('[System Prompt] Could not restore the locked prompt:', error);
+    }
+  }, [promptStorageKey, promptText, setPromptName, setPromptText, setSelectedVersion]);
+
+  useEffect(() => {
+    const content = promptText.trim();
+    if (!content) return;
+    localStorage.setItem(promptStorageKey, JSON.stringify({
+      id: selectedVersion?.id || null,
+      name: promptName.trim() || selectedVersion?.name || 'Locked system prompt',
+      content,
+    }));
+  }, [promptName, promptStorageKey, promptText, selectedVersion]);
+
   // Local States
   const [downloadFormat, setDownloadFormat] = useState('json');
   const [showConfirmPush, setShowConfirmPush] = useState(false);
@@ -166,6 +201,28 @@ export const Stage6Finish: React.FC = () => {
     fetchPrompts();
   }, [fetchPrompts]);
 
+  useEffect(() => {
+    if (!activeVersionId || promptText.trim()) return;
+    let cancelled = false;
+    apiService.getTrainingExportData(activeVersionId)
+      .then(result => {
+        const snapshot = result.systemPrompt;
+        if (cancelled || !snapshot?.content?.trim()) return;
+        setPromptText(snapshot.content.trim());
+        setPromptName(snapshot.name || 'Dataset version system prompt');
+        setSelectedVersion(snapshot.id ? {
+          id: snapshot.id,
+          name: snapshot.name || 'Dataset version system prompt',
+          content: snapshot.content.trim(),
+        } : null);
+      })
+      .catch(() => {
+        // Older/unpublished versions may not expose a prompt snapshot. Export
+        // remains blocked until the user explicitly locks a prompt.
+      });
+    return () => { cancelled = true; };
+  }, [activeVersionId, promptText, setPromptName, setPromptText, setSelectedVersion]);
+
   const isStepCompleted = (num: number) => {
     if (num < currentSubStep6) return true;
     if (num === 12 && promptText && promptText.trim() !== '') return true;
@@ -184,11 +241,21 @@ export const Stage6Finish: React.FC = () => {
     }
     setIsLoadingVersions(true);
     try {
-      await apiService.createDatasetPrompt({
+      const created = await apiService.createDatasetPrompt({
         name: promptName.trim(),
         content: promptText.trim(),
         description: promptDesc.trim() || 'New prompt version'
       });
+      const savedPrompt = created?.prompt;
+      if (savedPrompt?._id) {
+        setSelectedVersion({
+          id: savedPrompt._id,
+          name: savedPrompt.name,
+          desc: savedPrompt.description || promptDesc.trim(),
+          date: new Date(savedPrompt.createdAt || Date.now()).toLocaleDateString(),
+          content: savedPrompt.content,
+        });
+      }
       alert('Đã lưu phiên bản System Prompt thành công!');
       await fetchPrompts();
     } catch (error: any) {
@@ -460,14 +527,40 @@ export const Stage6Finish: React.FC = () => {
    * Convert raw conversation data to standard ChatML format for fine-tuning.
    * Output: [ { messages: [ {role, content}, ... ] }, ... ]
    */
-  const toChatML = (data: any[]): any[] => {
-    return data.map((conv: any) => {
-      const messages: { role: string; content: string }[] = [];
+  const getLockedSystemPrompt = (): string => {
+    const content = promptText.trim();
+    if (!content) {
+      throw new Error('Chưa khóa System Prompt. Hãy chọn hoặc lưu một phiên bản prompt trước khi export.');
+    }
+    return content;
+  };
 
-      // 1. Insert system prompt if available
-      if (promptText && promptText.trim()) {
-        messages.push({ role: 'system', content: promptText.trim() });
-      }
+  const ensureLockedSystemPrompt = (): boolean => {
+    try {
+      getLockedSystemPrompt();
+      return true;
+    } catch (error: any) {
+      alert(error?.message || 'Chưa khóa System Prompt.');
+      return false;
+    }
+  };
+
+  const withLockedSystemPrompt = (
+    sourceMessages: Array<{ role: string; content: string; labels?: string[] }>,
+  ): Array<{ role: string; content: string; labels?: string[] }> => {
+    const content = getLockedSystemPrompt();
+    return [
+      { role: 'system', content },
+      ...sourceMessages.filter(message => String(message.role).toLowerCase() !== 'system'),
+    ];
+  };
+
+  const toChatML = (data: any[]): any[] => {
+    const lockedSystemPrompt = getLockedSystemPrompt();
+    return data.map((conv: any) => {
+      const messages: { role: string; content: string }[] = [
+        { role: 'system', content: lockedSystemPrompt },
+      ];
 
       // 2. Convert conversation messages
       if (Array.isArray(conv.messages)) {
@@ -495,7 +588,31 @@ export const Stage6Finish: React.FC = () => {
         conversation_id: conv.conversation_id || conv.id,
         subject: conv.subject || conv.subjectLabelWithHuman || conv.subjectLabelWithAI || 'UNGROUPED',
       };
-    }).filter(item => item.messages.length > 1); // Keep only items with actual conversation
+    }).filter(item => item.messages.some(message => message.role === 'user'));
+  };
+
+  const toLockedEvaluation = (data: any[]): any[] => {
+    return toChatML(data).map((conv: any) => {
+      const itemId = String(conv.conversation_id || '').trim();
+      if (!itemId) throw new Error('Locked test export requires conversation_id/id for every item.');
+      const messages = Array.isArray(conv.messages) ? conv.messages : [];
+      const system = messages.find((message: any) => message.role === 'system');
+      const userMessages = messages.filter((message: any) => message.role === 'user');
+      const assistantMessages = messages.filter((message: any) => message.role === 'assistant');
+      const user = userMessages[userMessages.length - 1];
+      if (!user?.content) throw new Error(`Item ${itemId} has no user question.`);
+      const referenceAnswer = String(assistantMessages[assistantMessages.length - 1]?.content || '').trim();
+      if (!referenceAnswer) throw new Error(`Item ${itemId} has no reference answer for confirmatory evaluation.`);
+      return {
+        item_id: itemId,
+        subject: normalizeEvaluationSubject(conv.subject),
+        messages: [
+          ...(system?.content ? [{ role: 'system', content: system.content }] : []),
+          { role: 'user', content: user.content },
+        ],
+        reference_answer: referenceAnswer,
+      };
+    });
   };
 
   const loadLabeledExportSource = async () => {
@@ -521,6 +638,7 @@ export const Stage6Finish: React.FC = () => {
     }
 
     try {
+      const lockedSystemPrompt = getLockedSystemPrompt();
       const sourceData = await loadLabeledExportSource();
       const sourceById = new Map<string, any>();
       sourceData.forEach((row: any, index: number) => {
@@ -533,13 +651,17 @@ export const Stage6Finish: React.FC = () => {
           const id = String(partitionRow?.conversation_id || partitionRow?.id || `case-${split.toLowerCase()}-${index + 1}`);
           const source = sourceById.get(id) || partitionRow;
           const sourceMessages = toEvaluationMessages(source);
-          const messages = sourceMessages.length > 0 ? sourceMessages : toEvaluationMessages(partitionRow);
+          const rawMessages = sourceMessages.length > 0 ? sourceMessages : toEvaluationMessages(partitionRow);
+          const messages = withLockedSystemPrompt(rawMessages);
           const userMessages = messages.filter(message => message.role === 'user');
           const lastUserIndex = Math.max(0, messages.map(message => message.role).lastIndexOf('user'));
           const question = String(userMessages[userMessages.length - 1]?.content || '').trim();
           const subject = normalizeEvaluationSubject(source?.subject || partitionRow?.subject);
           const intent = getEvaluationIntent(source, messages);
           const assistantAnswer = [...messages].reverse().find(message => message.role === 'assistant')?.content || '';
+          if (split === 'TEST' && !String(assistantAnswer).trim()) {
+            throw new Error(`Test item ${id} has no reference answer for confirmatory evaluation.`);
+          }
           const history = messages.slice(0, lastUserIndex).filter(message => message.role === 'user' || message.role === 'assistant');
           const turns = userMessages.map(message => message.content);
           const baseCase: any = {
@@ -552,6 +674,7 @@ export const Stage6Finish: React.FC = () => {
             gold_need_clarification: needsEvaluationClarification(question, source),
             challenge_type: history.length > 0 ? 'follow_up' : 'baseline',
             expected_language: inferEvaluationLanguage(question),
+            system_prompt: lockedSystemPrompt,
             provenance: `dataprep_version_${localStorage.getItem('current_version_id') || 'unknown'}`,
             review_status: 'needs_human_review',
           };
@@ -566,7 +689,12 @@ export const Stage6Finish: React.FC = () => {
             routerCase: baseCase,
             modelEvalCase: {
               ...baseCase,
-              messages: messages.map(message => ({ role: message.role, content: message.content })),
+              item_id: id,
+              subject,
+              messages: [
+                { role: 'system', content: lockedSystemPrompt },
+                { role: 'user', content: question },
+              ],
               reference_answer: String(assistantAnswer),
               gold_key_points: [],
               socratic_expectation: {
@@ -583,6 +711,14 @@ export const Stage6Finish: React.FC = () => {
       const validationRows = buildRows(splitResult.val, 'VALIDATION');
       const testRows = buildRows(splitResult.test, 'TEST');
       const versionId = localStorage.getItem('current_version_id');
+      const sftTrain = toChatML(trainRows.map(row => row.sourceRow));
+      const sftValidation = toChatML(validationRows.map(row => row.sourceRow));
+      const lockedTest = testRows.map(row => row.modelEvalCase);
+      const [trainHash, validationHash, testHash] = await Promise.all([
+        sha256Json(sftTrain),
+        sha256Json(sftValidation),
+        sha256Json(lockedTest),
+      ]);
       const pack = {
         schema_version: 'evaluation-pack-v1',
         dataset_role: 'dataprep_derived_evaluation_pack',
@@ -596,9 +732,9 @@ export const Stage6Finish: React.FC = () => {
           'reference_answer currently comes from the dataset assistant response; independently review before final RP5.',
         ],
         sft: {
-          train: trainRows.map(row => row.sourceRow),
-          validation: validationRows.map(row => row.sourceRow),
-          test: testRows.map(row => row.sourceRow),
+          train: sftTrain,
+          validation: sftValidation,
+          test: toChatML(testRows.map(row => row.sourceRow)),
         },
         router: {
           calibration: trainRows.map(row => row.routerCase),
@@ -606,8 +742,9 @@ export const Stage6Finish: React.FC = () => {
           test: testRows.map(row => row.routerCase),
         },
         model_eval: {
-          test: testRows.map(row => row.modelEvalCase),
+          test: lockedTest,
         },
+        dataset_hashes: { train_sha256: trainHash, validation_sha256: validationHash, test_sha256: testHash },
       };
 
       localStorage.setItem(EVALUATION_PACK_STORAGE_KEY, JSON.stringify(pack));
@@ -647,6 +784,11 @@ export const Stage6Finish: React.FC = () => {
         totalTest: testRows.length,
         exportedAt: pack.created_at,
         evaluationPackSchema: pack.schema_version,
+        systemPromptId: selectedVersion?.id || null,
+        systemPromptName: promptName.trim() || selectedVersion?.name || null,
+        systemPromptVersion: promptName.trim() || selectedVersion?.name || 'P1-locked',
+        systemPrompt: lockedSystemPrompt,
+        datasetHashes: pack.dataset_hashes,
       }, null, 2));
       const zipBlob = await zip.generateAsync({ type: 'blob' });
       saveAs(zipBlob, `evaluation_pack_${versionId || 'latest'}.zip`);
@@ -666,6 +808,7 @@ export const Stage6Finish: React.FC = () => {
       alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
       return;
     }
+    if (!ensureLockedSystemPrompt()) return;
     let sourceData: any[];
     try {
       sourceData = await loadLabeledExportSource();
@@ -704,7 +847,7 @@ export const Stage6Finish: React.FC = () => {
       const testData = select(splitResult.test || [], row.subject);
       if (trainData.length) zip.file(`${prefix}.train.json`, JSON.stringify(toChatML(trainData), null, 2));
       if (valData.length) zip.file(`${prefix}.validation.json`, JSON.stringify(toChatML(valData), null, 2));
-      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toChatML(testData), null, 2));
+      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toLockedEvaluation(testData), null, 2));
       exportedSubjects.push({
         subject: normalize(row.subject),
         prefix,
@@ -721,6 +864,10 @@ export const Stage6Finish: React.FC = () => {
       threshold: splitResult.threshold ?? splitThreshold,
       fileConvention: '<subject>.train.json | <subject>.validation.json | <subject>.test.json',
       subjects: exportedSubjects,
+      systemPromptId: selectedVersion?.id || null,
+      systemPromptName: promptName.trim() || selectedVersion?.name || null,
+      systemPromptVersion: promptName.trim() || selectedVersion?.name || 'P1-locked',
+      systemPrompt: getLockedSystemPrompt(),
       exportedAt: new Date().toISOString(),
     }, null, 2));
 
@@ -733,6 +880,7 @@ export const Stage6Finish: React.FC = () => {
       alert('Hãy chạy Split Guard trước khi export theo môn.');
       return;
     }
+    if (!ensureLockedSystemPrompt()) return;
     let sourceData: any[];
     try {
       sourceData = await loadLabeledExportSource();
@@ -763,11 +911,23 @@ export const Stage6Finish: React.FC = () => {
       alert(`Môn ${requestedSubject} chưa có đủ cả Train/Validation/Test.`);
       return;
     }
+    if (testData.length !== 50) {
+      alert(`Locked RP5 requires exactly 50 held-out test items for ${subject}; found ${testData.length}.`);
+      return;
+    }
 
+    const trainExport = toChatML(trainData);
+    const validationExport = toChatML(valData);
+    const testExport = toLockedEvaluation(testData);
+    const [trainHash, validationHash, testHash] = await Promise.all([
+      sha256Json(trainExport),
+      sha256Json(validationExport),
+      sha256Json(testExport),
+    ]);
     const zip = new JSZip();
-    zip.file('train_dataset.json', JSON.stringify(toChatML(trainData), null, 2));
-    zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
-    zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
+    zip.file('train_dataset.json', JSON.stringify(trainExport, null, 2));
+    zip.file('validation_dataset.json', JSON.stringify(validationExport, null, 2));
+    zip.file('test_dataset.json', JSON.stringify(testExport, null, 2));
     zip.file('_metadata.json', JSON.stringify({
       projectName,
       datasetVersionId: localStorage.getItem('current_version_id'),
@@ -778,6 +938,11 @@ export const Stage6Finish: React.FC = () => {
       totalTrain: trainData.length,
       totalValidation: valData.length,
       totalTest: testData.length,
+      systemPromptId: selectedVersion?.id || null,
+      systemPromptName: promptName.trim() || selectedVersion?.name || null,
+      systemPromptVersion: promptName.trim() || selectedVersion?.name || 'P1-locked',
+      systemPrompt: getLockedSystemPrompt(),
+      datasetHashes: { train_sha256: trainHash, validation_sha256: validationHash, test_sha256: testHash },
       exportedAt: new Date().toISOString(),
     }, null, 2));
     const content = await zip.generateAsync({ type: 'blob' });
@@ -792,6 +957,7 @@ export const Stage6Finish: React.FC = () => {
       alert('Safe Split chưa hoàn tất. Không thể export dữ liệu chưa được kiểm tra leakage.');
       return;
     }
+    if (!ensureLockedSystemPrompt()) return;
     let sourceData: any[];
     try {
       sourceData = await loadLabeledExportSource();
@@ -838,7 +1004,7 @@ export const Stage6Finish: React.FC = () => {
       zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
     }
     if (testData.length > 0) {
-      zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
+      zip.file('test_dataset.json', JSON.stringify(toLockedEvaluation(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });
@@ -850,6 +1016,7 @@ export const Stage6Finish: React.FC = () => {
       alert('Vui lòng nhập Hugging Face Token và Repository ID trước khi Push!');
       return;
     }
+    if (!ensureLockedSystemPrompt()) return;
 
     if (!splitResult || !splitResult.train) {
       alert('Chưa có dữ liệu Split. Vui lòng quay lại bước Split Guard để phân chia dữ liệu.');
@@ -900,6 +1067,7 @@ export const Stage6Finish: React.FC = () => {
       alert('Chưa có dữ liệu Split. Vui lòng phân chia dữ liệu trước khi Sync.');
       return;
     }
+    if (!ensureLockedSystemPrompt()) return;
 
     setIsSyncing(true);
     setSyncSuccess(false);

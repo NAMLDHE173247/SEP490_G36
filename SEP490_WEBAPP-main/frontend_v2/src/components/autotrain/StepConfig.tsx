@@ -70,7 +70,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
   // Keep the full training configuration visible for reproducible research
   // runs (Version 1 exposed these fields by default).
   const [showAdvanced, setShowAdvanced] = useState(true);
-  const [showHfPush, setShowHfPush] = useState(false);
+  const [showHfPush, setShowHfPush] = useState(true);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [savePresetName, setSavePresetName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -719,6 +719,10 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
           {showHfPush && (
             <div className="at-panel-body" style={{ animation: 'atSlideIn 0.2s ease-out' }}>
+              <div style={{ display: 'flex', gap: 10, padding: 12, marginBottom: 12, borderRadius: 10, background: '#fff7ed', color: '#9a3412', fontSize: 13, lineHeight: 1.5 }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span><strong>Khuyến nghị bật để chống mất tiến độ:</strong> hệ thống lưu checkpoint mỗi 10 bước trên GPU. Repo Hugging Face giúp Resume ngay cả khi máy GPU/Colab bị mất hoàn toàn; nếu chỉ restart container trên cùng máy, checkpoint volume cục bộ vẫn được dùng.</span>
+              </div>
               <div className="at-form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="at-form-group">
                   <label className="at-label">Repo ID</label>

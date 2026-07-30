@@ -18,6 +18,9 @@ const REWRITE_REASON_VI_MAP: Record<string, string> = {
   'Incomplete answer': 'Câu trả lời chưa hoàn thiện',
 };
 
+const canStaffEditRewriteTask = (task: any) =>
+  !task?.status || ['assigned', 'redo', 'rejected'].includes(String(task.status));
+
 interface StaffRewriteViewProps {
   task: any; // Grouped rewrite task project
   onBack: () => void;
@@ -247,7 +250,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
 
   // Export handlers
   const exportAsExcel = () => {
-    const editable = rewriteTasks.filter((t: any) => !['approved', 'rejected'].includes(t.status));
+    const editable = rewriteTasks.filter(canStaffEditRewriteTask);
     const data = editable.map((t: any) => {
       const ctxStr = t.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
       return {
@@ -273,7 +276,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   };
 
   const exportAsJson = () => {
-    const editable = rewriteTasks.filter((t: any) => !['approved', 'rejected'].includes(t.status));
+    const editable = rewriteTasks.filter(canStaffEditRewriteTask);
     const data = editable.map((t: any) => {
       const ctxStr = t.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
       return {
@@ -329,7 +332,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
       const validRows = rows.filter(r => {
         const tid = String(r['Mã câu hỏi (Task ID)'] || r['Task ID'] || '');
         const txt = String(r['Nội dung viết lại mới (Điền vào đây)'] || r['Rewritten Text'] || '').trim();
-        return ownTasks.has(tid) && txt;
+        return ownTasks.has(tid) && canStaffEditRewriteTask(ownTasks.get(tid)) && txt;
       });
       
       if (validRows.length === 0) {
@@ -465,8 +468,8 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
         </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="sr-table-select">
           <option value="all">Tất cả ({rewriteTasks.length})</option>
-          <option value="pending">Chưa sửa ({rewriteTasks.filter(t => !['submitted', 'approved'].includes(t.status) && !t.submittedText).length})</option>
-          <option value="draft">Bản nháp ({rewriteTasks.filter(t => !['submitted', 'approved'].includes(t.status) && t.submittedText).length})</option>
+          <option value="pending">Chưa sửa ({rewriteTasks.filter(t => !['submitted', 'approved', 'checker_approved', 'rejected', 'redo'].includes(t.status) && !t.submittedText).length})</option>
+          <option value="draft">Bản nháp ({rewriteTasks.filter(t => !['submitted', 'approved', 'checker_approved', 'rejected', 'redo'].includes(t.status) && t.submittedText).length})</option>
           <option value="submitted">Đã nộp ({rewriteTasks.filter(t => t.status === 'submitted').length})</option>
           <option value="approved">Đã duyệt ({rewriteTasks.filter(t => t.status === 'approved').length})</option>
           <option value="rejected">Bị từ chối ({rewriteTasks.filter(t => t.status === 'rejected').length})</option>

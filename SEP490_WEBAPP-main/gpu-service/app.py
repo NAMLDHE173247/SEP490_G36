@@ -15,6 +15,8 @@ import traceback
 import hashlib
 import urllib.request
 import urllib.error
+import platform
+import importlib.metadata
 
 import torch
 import pynvml
@@ -32,6 +34,18 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.cluster import DBSCAN, KMeans
 from collections import defaultdict
+
+from locked_eval_protocol import (
+    decide_hypotheses,
+    extract_item_metadata,
+    normalize_subject,
+    operational_summary,
+    paired_integrity,
+    paired_research_statistics,
+    sha256_text,
+    stable_json_hash,
+    validate_locked_dataset,
+)
 
 
 # --- THƯ VIỆN AI ---
@@ -70,14 +84,59 @@ def _read_secret(name: str, default: str = "") -> str:
 
 # 0. CÀI ĐẶT MÔI TRƯỜNG
 os.environ["TORCHDYNAMO_DISABLE"] = "1"
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+# Global synchronous CUDA materially distorts the latency being measured.
+# Timed sections synchronize explicitly instead.
+os.environ.setdefault('CUDA_LAUNCH_BLOCKING', '0')
 
 app = Flask(__name__)
 UPLOAD_FOLDER = './dataset_uploads'
 LOCAL_CHECKPOINT_BASE = "/tmp/checkpoints_"
+EVAL_CHECKPOINT_BASE = os.path.join(LOCAL_CHECKPOINT_BASE, "eval_jobs")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(LOCAL_CHECKPOINT_BASE, exist_ok=True)
+os.makedirs(EVAL_CHECKPOINT_BASE, exist_ok=True)
+
+_eval_checkpoint_lock = threading.RLock()
+
+
+def _eval_checkpoint_dir(eval_job_id: str) -> str:
+    path = os.path.join(EVAL_CHECKPOINT_BASE, secure_filename(eval_job_id))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _eval_checkpoint_path(eval_job_id: str, name: str) -> str:
+    return os.path.join(_eval_checkpoint_dir(eval_job_id), f"{secure_filename(name)}.json")
+
+
+def _save_eval_checkpoint(eval_job_id: str, name: str, value) -> None:
+    """Atomically persist resumable eval state on the checkpoint volume."""
+    path = _eval_checkpoint_path(eval_job_id, name)
+    temp_path = f"{path}.tmp"
+    with _eval_checkpoint_lock:
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+
+
+def _load_eval_checkpoint(eval_job_id: str, name: str, default=None):
+    path = _eval_checkpoint_path(eval_job_id, name)
+    try:
+        with _eval_checkpoint_lock, open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return default
+
+
+def _update_eval_manifest(eval_job_id: str, **updates) -> dict:
+    manifest = _load_eval_checkpoint(eval_job_id, "manifest", {}) or {}
+    manifest.update(updates)
+    manifest["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _save_eval_checkpoint(eval_job_id, "manifest", manifest)
+    return manifest
 
 jobs_db = {}
 job_queue = collections.deque()
@@ -373,7 +432,10 @@ DEFAULT_SOCRATIC_PROMPT = (
 def formatting_prompts_func(examples, tokenizer, col_map="messages", default_system=None):
     texts = []
 
-    system_to_use = default_system if default_system else DEFAULT_SOCRATIC_PROMPT
+    # The AutoTrain prompt is the canonical condition for every training row.
+    # Dataset exports may retain old row-level prompts from a previous version.
+    canonical_system = str(default_system or "").strip()
+    fallback_system = DEFAULT_SOCRATIC_PROMPT
     # Kiểm tra cột dữ liệu thực tế
     if col_map not in examples:
         # Nếu không tìm thấy cột map, thử dùng 'messages', 'conversations', 'instruction' hoặc cột đầu tiên không phải metadata/tracking
@@ -406,13 +468,22 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
         # Đảm bảo là list
         if not isinstance(messages, list):
             messages = [{"role": "user", "content": str(messages)}]
+        else:
+            # Do not mutate source objects while Dataset.map reuses batches.
+            messages = [dict(message) for message in messages if isinstance(message, dict)]
 
         # Kiểm tra xem mẫu đã có System Prompt chưa
+        if canonical_system:
+            # The prompt configured in AutoTrain wins over legacy prompts
+            # embedded in individual dataset rows.
+            messages = [msg for msg in messages if msg.get("role") != "system"]
+            messages.insert(0, {"role": "system", "content": canonical_system})
+
         has_system = any(msg.get("role") == "system" for msg in messages if isinstance(msg, dict))
 
         # Nếu chưa có, chèn system prompt mặc định vào ĐẦU mảng
         if not has_system:
-            messages.insert(0, {"role": "system", "content": system_to_use})
+            messages.insert(0, {"role": "system", "content": fallback_system})
 
         # SỬ DỤNG TOKENIZER ĐỂ ÁP DỤNG CHAT TEMPLATE CỦA MÔ HÌNH
         try:
@@ -440,7 +511,7 @@ class AssistantOnlyDataCollator:
         self.tokenizer = tokenizer
         self.text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         self.padder = DataCollatorWithPadding(tokenizer=self.text_tokenizer, padding=True)
-        
+
         # DYNAMICALLY DETECT THE ASSISTANT HEADER BY FORMATTING A DUMMY MESSAGE
         try:
             dummy = [{"role": "assistant", "content": "MAGICAL_CONTENT_12345"}]
@@ -456,7 +527,7 @@ class AssistantOnlyDataCollator:
         batch = self.padder(features)
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
-        
+
         # Default labels for Causal LM: input_ids with padding tokens masked to -100
         labels = torch.where(attention_mask == 1, input_ids, torch.tensor(-100, device=input_ids.device))
 
@@ -687,7 +758,7 @@ BATCH_SIZE = 5  # số conversation mỗi lần gọi API
 SOCRATIC_JUDGE_SYSTEM_BATCH = """Bạn là chuyên gia đánh giá chất lượng hội thoại gia sư theo phương pháp Socratic.
 Bạn sẽ nhận một DANH SÁCH các hội thoại được đánh số. Chấm điểm TỪNG hội thoại độc lập theo 9 tiêu chí (thang 0-5).
 Ưu tiên ghi nhận những điểm tốt — chỉ trừ điểm khi lỗi rõ ràng và ảnh hưởng đến chất lượng học tập.
-Lưu ý đặc biệt: A1 ≤ 1 (liên tục đưa đáp án trực tiếp mà không dẫn dắt) là vi phạm hard constraint và sẽ cap nhóm A.
+Lưu ý đặc biệt: A1 ≤ 1 (liên tục đưa đáp án trực tiếp mà không dẫn dắt) là một violation flag cần báo cáo riêng. Không dùng cờ này để hạ điểm K/S hoặc để thay thế các điểm B, C, D.
 
 NGUYÊN TẮC ĐỘC LẬP TIÊU CHÍ — BẮT BUỘC:
 - A1 CHỈ đo việc gia sư có tự tiết lộ đáp án/lời giải mà học sinh chưa nêu hay không.
@@ -810,6 +881,13 @@ DEFAULT_SOCRATIC_SYSTEM = (
     "- Dùng tiếng Việt tự nhiên, thân thiện; thông thường không quá 80 từ mỗi lượt."
 )
 
+JUDGE_REFERENCE_POLICY = (
+    "\n\nREFERENCE POLICY: When a reference answer or gold key points are provided, "
+    "use them only as hidden scoring evidence for factual coverage. They were never "
+    "shown to Base or Fine-tuned models. Do not reward verbatim copying, and do not "
+    "penalize a different but correct Socratic path."
+)
+
 _CRITERIA_KEYS = [
     "A1_answer_withholding", "A2_scaffolding_quality", "A3_adaptive_response",
     "B1_factual_accuracy", "B2_grade_level", "C1_robustness",
@@ -828,14 +906,29 @@ _SHORT_TO_FULL = {
 }
 
 def _zero_scores(reason: str) -> dict:
-    return {k: {"score": 0, "reason": reason} for k in _CRITERIA_KEYS}
+    return {
+        **{k: {"score": None, "reason": reason} for k in _CRITERIA_KEYS},
+        "_judge_status": "failed",
+        "_judge_error": reason,
+    }
 
-def _build_conv_text(idx: int, system_prompt: str, turns: list) -> str:
+def _build_conv_text(idx: int, system_prompt: str, turns: list,
+                     reference_answer: str = "", gold_key_points: list | None = None) -> str:
     lines = [f"=== HỘI THOẠI {idx} ===",
              f"[SYSTEM PROMPT]\n{system_prompt}",
              "[HỘI THOẠI]"]
     for t in turns:
         lines.append(f"Học sinh: {t['user']}\nGia sư: {t['model_response']}")
+    if reference_answer:
+        lines.append(
+            "[REFERENCE FOR JUDGE ONLY - NEVER SHOWN TO THE MODEL]\n"
+            + reference_answer
+        )
+    if gold_key_points:
+        lines.append(
+            "[GOLD KEY POINTS FOR JUDGE ONLY]\n"
+            + json.dumps(gold_key_points, ensure_ascii=False)
+        )
     return "\n\n".join(lines)
 
 # ── Scoring constants ─────────────────────────────────────────────────
@@ -849,11 +942,108 @@ EVAL_STAGES = {
     "judge":       {"pct": 87, "label": "Chấm điểm LLM judge"},
     "finalize":    {"pct": 98, "label": "Tổng hợp kết quả"},
 }
+EVAL_STAGE_RANGES = {
+    "replay_base": (3, 28),
+    "replay_ft": (28, 53),
+    "replay": (3, 53),
+    "judge_base": (53, 70),
+    "judge_ft": (53, 87),
+    "judge": (53, 87),
+}
 
 # OpenRouter no longer exposes the legacy `-001` identifier.  Keeping that
 # stale name made every Judge request return HTTP 400 and the old fallback
 # silently displayed those failures as zero scores.
 DEFAULT_JUDGE_MODEL = "google/gemini-2.5-flash"
+
+def _score_latency(avg_ms: float) -> float:
+    if avg_ms <= 2000:  return 5.0
+    if avg_ms <= 4000:  return 4.0
+    if avg_ms <= 7000:  return 3.0
+    if avg_ms <= 12000: return 2.0
+    return 1.0
+
+def _compute_group_scores_research(criteria: dict) -> dict:
+    a1 = criteria.get("A1", 0.0)
+    a2 = criteria.get("A2", 0.0)
+    a3 = criteria.get("A3", 0.0)
+    b1 = criteria.get("B1", 0.0)
+    b2 = criteria.get("B2", 0.0)
+    c1 = criteria.get("C1", 0.0)
+    c2 = criteria.get("C2", 0.0)
+    c3 = criteria.get("C3", 0.0)
+    d1 = criteria.get("D1", 0.0)
+    d2 = criteria.get("D2", 0.0)
+
+    # RP4 v4 research-primary outcomes. Keep knowledge and Socratic behaviour
+    # separate so style or machine-dependent latency cannot compensate for a
+    # factual or pedagogical failure.
+    knowledge = b1
+    socratic = (a1 + a2 + a3) / 3.0
+
+    # Historical composite retained only for backward-compatible dashboards.
+    # It is exploratory and must not be used to select a winning model.
+    legacy_group_a = a1 * 0.5 + a2 * 0.3 + a3 * 0.2
+    if a1 <= 1.0:
+        legacy_group_a = min(legacy_group_a, 1.0)
+    legacy_group_b = b1 * 0.6 + b2 * 0.4
+    legacy_group_c = c1 * 0.4 + c2 * 0.4 + c3 * 0.2
+    legacy_group_d = d1 * 0.5 + d2 * 0.5
+    exploratory_overall = (
+        legacy_group_a * 0.40
+        + legacy_group_b * 0.25
+        + legacy_group_c * 0.25
+        + legacy_group_d * 0.10
+    )
+
+    return {
+        "knowledge": round(knowledge, 3),
+        "socratic": round(socratic, 3),
+        "answer_withholding_violation": (a1 <= 1.0),
+        "secondary": {
+            "grade_level": round(b2, 3),
+            "robustness": round(c1, 3),
+            "coherence": round(c2, 3),
+            "tone": round(c3, 3),
+            "hallucination": round(d1, 3),
+        },
+        "operational": {"latency_score_exploratory": round(d2, 3)},
+        "exploratory_overall": round(exploratory_overall, 3),
+        # Deprecated aliases for old stored results and UI builds.
+        "group_a": round(legacy_group_a, 3),
+        "group_b": round(legacy_group_b, 3),
+        "group_c": round(legacy_group_c, 3),
+        "group_d": round(legacy_group_d, 3),
+        "overall": round(exploratory_overall, 3),
+        "a1_hard_constraint_triggered": (a1 <= 1.0),
+    }
+
+# ── Replay conversation với model ─────────────────────────────────────
+class _FirstTokenTimingStreamer:
+    """Record the first generated-token time without changing decoded output."""
+
+    def __init__(self):
+        self.first_token_at = None
+        self._prompt_seen = False
+
+    def put(self, value):
+        # Decoder-only generate() first sends the complete prompt, then one token.
+        try:
+            token_count = int(value.numel())
+        except Exception:
+            token_count = 1
+        if not self._prompt_seen and token_count > 1:
+            self._prompt_seen = True
+            return
+        if self.first_token_at is None:
+            try:
+                torch.cuda.synchronize()
+            except Exception:
+                pass
+            self.first_token_at = time.perf_counter()
+
+    def end(self):
+        return None
 
 def _score_latency(avg_ms: float) -> float:
     if avg_ms <= 2000:  return 5.0
@@ -874,9 +1064,13 @@ def _compute_group_scores(criteria: dict) -> dict:
     d1 = criteria.get("D1", 0.0)
     d2 = criteria.get("D2", 0.0)
 
+    # Legacy dashboard groups are retained for backward compatibility only.
+    # Confirmatory RP4/RP5 estimands are K=B1 and S=mean(A1,A2,A3).
+    knowledge_k = b1
+    socratic_s = (a1 + a2 + a3) / 3.0
     group_a = a1 * 0.5 + a2 * 0.3 + a3 * 0.2
     if a1 <= 1.0:
-        group_a = min(group_a, 1.0)
+        group_a = min(group_a, 2.0)
 
     group_b = b1 * 0.6 + b2 * 0.4
     group_c = c1 * 0.4 + c2 * 0.4 + c3 * 0.2
@@ -885,31 +1079,85 @@ def _compute_group_scores(criteria: dict) -> dict:
     overall = group_a * 0.40 + group_b * 0.25 + group_c * 0.25 + group_d * 0.10
 
     return {
+        "knowledge_k": round(knowledge_k, 3),
+        "socratic_s": round(socratic_s, 3),
+        "knowledge": round(knowledge_k, 3),
+        "socratic": round(socratic_s, 3),
+        "exploratory_overall": round(overall, 3),
         "group_a": round(group_a, 3),
         "group_b": round(group_b, 3),
         "group_c": round(group_c, 3),
         "group_d": round(group_d, 3),
         "overall": round(overall, 3),
+        "legacy_overall": round(overall, 3),
+        "legacy_only": True,
         "a1_hard_constraint_triggered": (a1 <= 1.0),
     }
 
 # ── Replay conversation với model ─────────────────────────────────────
-def replay_conversation(conv: dict, model, tokenizer, max_new_tokens: int = 512,
-                        default_system_prompt: str | None = None,
-                        temperature: float = 0.2,
-                        top_p: float = 0.9,
-                        repetition_penalty: float = 1.15) -> dict:
+# Keep raw model output for audit, but evaluate the exact text exposed to the
+# student. DeepSeek-R1-style templates can start a hidden thinking block in
+# the prompt itself, which leaves a closing </think> tag in decoded output.
+def visible_model_response(raw_response: str) -> str:
+    text = str(raw_response or "").strip()
+    if "</think>" in text:
+        text = text.rsplit("</think>", 1)[1]
+    text = re.sub(r"<think>[\s\S]*?</think>", "", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"^\s*\[(?:SCAF|HINT|LOGIC_BREAKDOWN|IDENTIFY_INCORRECT_ANSWER|DIRECT_ANSWER|CONCEPT_CLARIFY)\]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text.strip()
+
+def replay_conversation(
+    conv: dict,
+    model,
+    tokenizer,
+    max_new_tokens: int = 512,
+    protocol_mode: str = "locked_single_turn",
+    prompt_variant: str = "P1",
+    system_prompt_override: str = "",
+    system_prompt_version: str = "",
+    item_index: int = 0,
+) -> dict:
     messages = conv.get("messages", [])
 
-    system_prompt = (default_system_prompt or DEFAULT_SOCRATIC_SYSTEM).strip() or DEFAULT_SOCRATIC_SYSTEM
-    for m in messages:
-        if m.get("role") == "system":
-            system_prompt = m.get("content", DEFAULT_SOCRATIC_SYSTEM)
-            break
+    item_meta = extract_item_metadata(conv, item_index)
+    dataset_system_prompt = next(
+        (m.get("content", "") for m in messages if m.get("role") == "system"),
+        "",
+    )
+    if prompt_variant.upper() == "P0":
+        system_prompt = ""
+        prompt_source = "P0_no_system_prompt"
+    elif system_prompt_override:
+        system_prompt = system_prompt_override
+        prompt_source = "run_config_override"
+    elif dataset_system_prompt:
+        system_prompt = dataset_system_prompt
+        prompt_source = "dataset_system_message"
+    else:
+        system_prompt = DEFAULT_SOCRATIC_SYSTEM
+        prompt_source = "service_default"
 
     user_turns = [m["content"] for m in messages if m.get("role") == "user"]
+    if protocol_mode == "locked_single_turn" and user_turns:
+        # Strict validation is performed before replay. This slice prevents
+        # model-generated history from leaking into later test inputs.
+        user_turns = user_turns[:1]
     if not user_turns:
-        return {"system_prompt": system_prompt, "turns": [], "avg_latency_ms": 0.0, "assistant_turns": []}
+        return {
+            **item_meta,
+            "system_prompt": system_prompt,
+            "turns": [],
+            "avg_latency_ms": 0.0,
+            "assistant_turns": [],
+            "generation_status": "invalid_input",
+            "failure_type": "missing_user_message",
+            "first_attempt_failed": True,
+        }
 
     turns = []
     assistant_turns = []
@@ -921,7 +1169,10 @@ def replay_conversation(conv: dict, model, tokenizer, max_new_tokens: int = 512,
         conversation_history.append({"role": "user", "content": user_content})
 
         try:
-            messages_for_template = [{"role": "system", "content": system_prompt}] + conversation_history
+            messages_for_template = []
+            if system_prompt:
+                messages_for_template.append({"role": "system", "content": system_prompt})
+            messages_for_template += conversation_history
             try:
                 prompt = tokenizer.apply_chat_template(
                     messages_for_template,
@@ -936,11 +1187,25 @@ def replay_conversation(conv: dict, model, tokenizer, max_new_tokens: int = 512,
                     add_generation_prompt=True,
                 )
         except Exception:
-            prompt = f"### System:\n{system_prompt}\n\n### Instruction:\n{user_content}\n\n### Response:"
+            system_block = f"### System:\n{system_prompt}\n\n" if system_prompt else ""
+            prompt = f"{system_block}### Instruction:\n{user_content}\n\n### Response:"
 
         inputs = tokenizer([prompt], return_tensors="pt").to("cuda")
         input_tokens = int(inputs["input_ids"].shape[-1])
-        t0 = time.time()
+        prompt_hash = sha256_text(system_prompt) if system_prompt else None
+        rendered_input_hash = sha256_text(prompt)
+        tracker = _FirstTokenTimingStreamer()
+        try:
+            torch.cuda.reset_peak_memory_stats()
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+        t0 = time.perf_counter()
+        generation_status = "success"
+        failure_type = None
+        output_limit_reached = False
+        output_tokens = 0
+        raw_response = ""
         try:
             outputs = model.generate(
                 **inputs,
@@ -948,84 +1213,169 @@ def replay_conversation(conv: dict, model, tokenizer, max_new_tokens: int = 512,
                 use_cache=True,
                 pad_token_id=tokenizer.eos_token_id,
                 do_sample=False,
-                temperature=temperature,
-                top_p=top_p,
-                repetition_penalty=repetition_penalty,
+                streamer=tracker,
             )
-            latency_ms = (time.time() - t0) * 1000
-            output_tokens = max(0, int(outputs.shape[-1]) - input_tokens)
-            # Decode only newly generated tokens; text-based prompt stripping can
-            # leak the chat template/history when whitespace is normalized.
+            try:
+                torch.cuda.synchronize()
+            except Exception:
+                pass
+            completed_at = time.perf_counter()
             generated_ids = outputs[0, input_tokens:]
-            response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            output_tokens = int(generated_ids.shape[-1])
+            raw_response = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            response = visible_model_response(raw_response)
+            final_token_id = int(generated_ids[-1].item()) if output_tokens else None
+            eos_ids = tokenizer.eos_token_id
+            if eos_ids is None:
+                eos_ids = []
+            elif not isinstance(eos_ids, (list, tuple, set)):
+                eos_ids = [eos_ids]
+            output_limit_reached = output_tokens >= max_new_tokens and final_token_id not in eos_ids
+            if not response:
+                generation_status = "failed"
+                failure_type = "empty_visible_output"
         except Exception as e:
-            latency_ms = (time.time() - t0) * 1000
-            output_tokens = 0
-            response = f"[ERROR: {e}]"
+            try:
+                torch.cuda.synchronize()
+            except Exception:
+                pass
+            completed_at = time.perf_counter()
+            raw_response = ""
+            response = ""
+            generation_status = "failed"
+            failure_type = "generation_error"
+            generation_error = str(e)[:500]
+
+        e2e_ms = (completed_at - t0) * 1000
+        ttft_ms = (
+            (tracker.first_token_at - t0) * 1000
+            if tracker.first_token_at is not None
+            else None
+        )
+        decode_ms = max(0.0, e2e_ms - (ttft_ms or e2e_ms))
+        tpot_ms = decode_ms / (output_tokens - 1) if output_tokens > 1 and ttft_ms is not None else None
+        tokens_per_second = (output_tokens - 1) / (decode_ms / 1000) if output_tokens > 1 and decode_ms > 0 else None
+        words = len(response.split())
+        words_per_minute = words / (e2e_ms / 60000) if e2e_ms > 0 else None
+        characters_per_second = len(response) / (e2e_ms / 1000) if e2e_ms > 0 else None
+        try:
+            peak_vram_mb = torch.cuda.max_memory_allocated() / (1024 ** 2)
+        except Exception:
+            peak_vram_mb = None
 
         turns.append({
             "user": user_content,
             "model_response": response,
-            "latency_ms": round(latency_ms, 1),
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
+            "raw_model_response": raw_response,
+            "latency_ms": round(e2e_ms, 1),
+            "generation_status": generation_status,
+            "failure_type": failure_type,
+            "generation_error": generation_error if failure_type == "generation_error" else None,
+            "output_limit_reached": output_limit_reached,
+            "telemetry": {
+                "ttft_ms": round(ttft_ms, 3) if ttft_ms is not None else None,
+                "e2e_ms": round(e2e_ms, 3),
+                "tpot_ms": round(tpot_ms, 6) if tpot_ms is not None else None,
+                "tokens_per_second": round(tokens_per_second, 6) if tokens_per_second is not None else None,
+                "tokens_per_minute": round(tokens_per_second * 60, 6) if tokens_per_second is not None else None,
+                "words_per_minute": round(words_per_minute, 6) if words_per_minute is not None else None,
+                "characters_per_second": round(characters_per_second, 6) if characters_per_second is not None else None,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "peak_vram_allocated_mb": round(peak_vram_mb, 3) if peak_vram_mb is not None else None,
+            },
+            "prompt_trace": {
+                "prompt_variant": prompt_variant.upper(),
+                "prompt_version": system_prompt_version or "UNVERSIONED",
+                "prompt_source": prompt_source,
+                "prompt_applied": bool(system_prompt),
+                "system_prompt_hash": prompt_hash,
+                "rendered_input_hash": rendered_input_hash,
+            },
         })
         assistant_turns.append(response)
-        conversation_history.append({"role": "assistant", "content": response})
+        if protocol_mode != "locked_single_turn":
+            conversation_history.append({"role": "assistant", "content": response})
 
     avg_latency = round(sum(t["latency_ms"] for t in turns) / len(turns), 1) if turns else 0.0
 
     return {
+        **item_meta,
         "system_prompt": system_prompt,
+        "system_prompt_hash": sha256_text(system_prompt) if system_prompt else None,
+        "system_prompt_version": system_prompt_version or "UNVERSIONED",
+        "prompt_variant": prompt_variant.upper(),
+        "prompt_source": prompt_source,
+        "reference_answer": str(conv.get("reference_answer") or ""),
+        "gold_key_points": conv.get("gold_key_points") if isinstance(conv.get("gold_key_points"), list) else [],
         "turns": turns,
         "replay_turns": [
             {
                 "user": t["user"][:500],
                 "model": t["model_response"][:800],
+                "raw_model": t["raw_model_response"][:800],
                 "latency_ms": t["latency_ms"],
-                "input_tokens": t["input_tokens"],
-                "output_tokens": t["output_tokens"],
-                "total_tokens": t["total_tokens"],
+                "telemetry": t["telemetry"],
+                "generation_status": t["generation_status"],
+                "failure_type": t["failure_type"],
+                "output_limit_reached": t["output_limit_reached"],
+                "prompt_trace": t["prompt_trace"],
             }
             for t in turns
         ],
         "avg_latency_ms": avg_latency,
-        "input_tokens": sum(t["input_tokens"] for t in turns),
-        "output_tokens": sum(t["output_tokens"] for t in turns),
-        "total_tokens": sum(t["total_tokens"] for t in turns),
         "assistant_turns": assistant_turns,
+        "generation_status": turns[0]["generation_status"] if turns else "invalid_input",
+        "failure_type": turns[0]["failure_type"] if turns else "missing_user_message",
+        "first_attempt_failed": bool(turns and turns[0]["generation_status"] != "success"),
+        "output_limit_reached": bool(turns and turns[0]["output_limit_reached"]),
+        "telemetry": turns[0]["telemetry"] if turns else {},
+        "prompt_trace": turns[0]["prompt_trace"] if turns else {},
     }
 
 def _run_single_replay(job_id, eval_job_id, valid_convs, model, tokenizer,
                        stage_key: str, label: str,
-                       system_prompt: str | None = None,
-                       max_new_tokens: int = 192,
-                       temperature: float = 0.2,
-                       top_p: float = 0.9,
-                       repetition_penalty: float = 1.15) -> list:
+                       max_new_tokens: int = 512,
+                       protocol_mode: str = "locked_single_turn",
+                       prompt_variant: str = "P1",
+                       system_prompt_override: str = "",
+                       system_prompt_version: str = "") -> list:
     total = len(valid_convs)
-    results = []
+    checkpoint_name = f"{stage_key}_results"
+    saved_results = _load_eval_checkpoint(eval_job_id, checkpoint_name, [])
+    results = saved_results if isinstance(saved_results, list) else []
+    if len(results) > total:
+        results = []
+    resume_index = len(results)
     _eval_log(job_id, f"[▶️] {label}: {total} conversations...")
+    if resume_index:
+        _eval_log(job_id, f"[♻️] {label}: tiếp tục từ {resume_index + 1}/{total}; giữ {resume_index} kết quả đã checkpoint.")
     model.eval()
     FastLanguageModel.for_inference(model)
-    for idx, conv in enumerate(valid_convs):
+    for idx in range(resume_index, total):
+        conv = valid_convs[idx]
         _eval_log(job_id, f"  [{label} {idx+1}/{total}]")
         result = replay_conversation(
-            conv, model, tokenizer,
+            conv,
+            model,
+            tokenizer,
             max_new_tokens=max_new_tokens,
-            default_system_prompt=system_prompt,
-            temperature=temperature,
-            top_p=top_p,
-            repetition_penalty=repetition_penalty,
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_override=system_prompt_override,
+            system_prompt_version=system_prompt_version,
+            item_index=idx,
         )
         results.append(result)
+        _save_eval_checkpoint(eval_job_id, checkpoint_name, results)
         last_turn = result["turns"][-1] if result["turns"] else None
         _eval_progress(
             eval_job_id, stage_key, f"{idx+1}/{total}",
             current=idx+1, total=total,
             sample={
                 "index": idx,
+                "item_id": result.get("item_id"),
+                "subject": result.get("subject"),
                 "instruction": result["turns"][0]["user"] if result["turns"] else "",
                 "ft_answer": last_turn["model_response"] if last_turn else None,
             }
@@ -1034,12 +1384,18 @@ def _run_single_replay(job_id, eval_job_id, valid_convs, model, tokenizer,
 
 def _summarize(per_conv_results: list) -> dict:
     valid = [r for r in per_conv_results if r is not None]
-    n = max(1, len(valid))
+    score_bearing_statuses = {"success", "not_required_generation_failure_scored_zero"}
+    scored = [
+        r for r in valid
+        if r.get("judge_status") in score_bearing_statuses
+        and r.get("criteria_scores", {}).get("B1") is not None
+    ]
+    n = max(1, len(scored))
 
     def _avg(key_path):
         keys = key_path.split(".")
         vals = []
-        for r in valid:
+        for r in scored:
             v = r
             try:
                 for k in keys: v = v[k]
@@ -1050,7 +1406,8 @@ def _summarize(per_conv_results: list) -> dict:
     criteria = {k: _avg(f"criteria_scores.{k}")
                 for k in ["A1","A2","A3","B1","B2","C1","C2","C3","D1","D2"]}
     groups   = {k: _avg(f"group_scores.{k}")
-                for k in ["group_a","group_b","group_c","group_d","overall"]}
+                for k in ["knowledge", "socratic", "exploratory_overall",
+                          "group_a", "group_b", "group_c", "group_d", "overall"]}
     non_sc   = {
         "bleu":                    _avg("non_scoring.bleu"),
         "rouge_l":                 _avg("non_scoring.rouge_l"),
@@ -1060,10 +1417,34 @@ def _summarize(per_conv_results: list) -> dict:
     avg_input_tokens = _avg("input_tokens")
     avg_output_tokens = _avg("output_tokens")
     avg_total_tokens = _avg("total_tokens")
-    avg_conf = round(sum(r.get("confidence", {}).get("overall", 1.0) for r in valid) / n, 3)
-    low_conf = sum(1 for r in valid if r.get("confidence", {}).get("is_low", False))
+    confidence_values = [
+        (r.get("confidence") or {}).get("overall") for r in scored
+        if (r.get("confidence") or {}).get("overall") is not None
+    ]
+    avg_conf = round(sum(confidence_values) / len(confidence_values), 3) if confidence_values else None
+    low_conf = sum(1 for r in scored if (r.get("confidence") or {}).get("is_low", False))
 
     return {
+        "knowledge":            groups["knowledge"],
+        "socratic":             groups["socratic"],
+        "primary_outcomes": {
+            "knowledge": groups["knowledge"],
+            "socratic": groups["socratic"],
+        },
+        "secondary_metrics": {
+            "grade_level": criteria["B2"],
+            "robustness": criteria["C1"],
+            "coherence": criteria["C2"],
+            "tone": criteria["C3"],
+            "hallucination": criteria["D1"],
+        },
+        "answer_withholding_violation_rate": round(
+            sum(1 for r in scored if r.get("criteria_scores", {}).get("A1", 5.0) <= 1.0)
+            / n,
+            3,
+        ),
+        "exploratory_overall":  groups["exploratory_overall"],
+        # Deprecated alias for old clients; not a research-primary outcome.
         "overall":              groups["overall"],
         "group_a":              groups["group_a"],
         "group_b":              groups["group_b"],
@@ -1074,18 +1455,31 @@ def _summarize(per_conv_results: list) -> dict:
         "avg_input_tokens":     avg_input_tokens,
         "avg_output_tokens":    avg_output_tokens,
         "avg_total_tokens":     avg_total_tokens,
-        "total_input_tokens":   sum(int(r.get("input_tokens", 0)) for r in valid),
-        "total_output_tokens":  sum(int(r.get("output_tokens", 0)) for r in valid),
-        "total_tokens":         sum(int(r.get("total_tokens", 0)) for r in valid),
+        "total_input_tokens":   sum(int(r.get("telemetry", {}).get("input_tokens", r.get("input_tokens", 0)) or 0) for r in valid),
+        "total_output_tokens":  sum(int(r.get("telemetry", {}).get("output_tokens", r.get("output_tokens", 0)) or 0) for r in valid),
+        "total_tokens":         sum(int((r.get("telemetry", {}).get("input_tokens", 0) or 0) + (r.get("telemetry", {}).get("output_tokens", 0) or 0)) for r in valid),
         "non_scoring":          non_sc,
         "max_possible":         5,
         "avg_confidence":       avg_conf,
         "low_confidence_count": low_conf,
+        "planned_items":        len(valid),
+        "scored_items":         len(scored),
+        "judge_failure_count":  sum(1 for r in valid if r.get("judge_status") == "failed"),
+        "generation_failure_scored_zero_count": sum(
+            1 for r in valid if r.get("judge_status") == "not_required_generation_failure_scored_zero"
+        ),
+        "operational":          operational_summary(valid),
     }
 
 # ── Gọi API cho 1 batch (tối đa BATCH_SIZE conversations) ─────────────
 class _JudgeResponseError(ValueError):
     """The provider replied, but its rubric payload is not valid JSON/data."""
+
+
+class _JudgeRateLimitError(RuntimeError):
+    def __init__(self, message: str, retry_after: float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after
 
 
 def _parse_judge_reply(reply: str, expected_count: int) -> list:
@@ -1160,9 +1554,15 @@ def _parse_judge_reply(reply: str, expected_count: int) -> list:
 
 
 def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
-                         strict_retry: bool = False) -> str:
+                         strict_retry: bool = False) -> tuple[str, dict]:
     parts = [
-        _build_conv_text(i, replay["system_prompt"], replay["turns"])
+        _build_conv_text(
+            i,
+            replay["system_prompt"],
+            replay["turns"],
+            replay.get("reference_answer", ""),
+            replay.get("gold_key_points", []),
+        )
         for i, replay in enumerate(batch_replays)
     ]
     batch_text = "\n\n".join(parts)
@@ -1180,9 +1580,10 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
         "max_tokens": 1500 * len(batch_replays),
         "temperature": 0,
         "messages": [
-            {"role": "system", "content": SOCRATIC_JUDGE_SYSTEM_BATCH + retry_contract},
+            {"role": "system", "content": SOCRATIC_JUDGE_SYSTEM_BATCH + JUDGE_REFERENCE_POLICY + retry_contract},
             {"role": "user", "content": batch_text},
         ],
+        "provider": {"allow_fallbacks": False},
     }).encode("utf-8")
     openrouter_request = urllib.request.Request(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -1193,6 +1594,7 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
             "Content-Type": "application/json",
             "HTTP-Referer": "http://localhost:3000",
             "X-Title": "SEP490 AIFC Evaluation",
+            "X-OpenRouter-Metadata": "enabled",
         },
     )
     try:
@@ -1200,6 +1602,13 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
             response_data = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:1000]
+        if exc.code == 429:
+            retry_header = exc.headers.get("Retry-After") if exc.headers else None
+            try:
+                retry_after = float(retry_header) if retry_header else None
+            except (TypeError, ValueError):
+                retry_after = None
+            raise _JudgeRateLimitError(f"OpenRouter Judge HTTP 429: {body}", retry_after) from exc
         raise RuntimeError(f"OpenRouter Judge HTTP {exc.code}: {body}") from exc
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"OpenRouter trả về response envelope sai JSON: {exc}") from exc
@@ -1207,8 +1616,10 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
     choices = response_data.get("choices") or []
     if not choices:
         provider_error = response_data.get("error") or "missing choices"
+        if isinstance(provider_error, dict) and int(provider_error.get("code") or 0) == 429:
+            raise _JudgeRateLimitError(f"OpenRouter Judge rate limited: {provider_error}")
         raise RuntimeError(f"OpenRouter Judge không có kết quả: {provider_error}")
-    return choices[0].get("message", {}).get("content", "") or ""
+    return choices[0].get("message", {}).get("content", "") or "", response_data
 
 
 def _judge_batch_resilient(batch_replays: list, judge_model: str,
@@ -1216,11 +1627,31 @@ def _judge_batch_resilient(batch_replays: list, judge_model: str,
     """Retry malformed JSON, then split the batch so one bad reply cannot kill the run."""
     parse_errors = []
     for attempt in range(2):
-        reply = _request_judge_reply(
-            batch_replays, judge_model, api_key, strict_retry=(attempt > 0)
-        )
+        reply = ""
+        response_data = {}
+        for rate_attempt in range(6):
+            try:
+                reply, response_data = _request_judge_reply(
+                    batch_replays, judge_model, api_key, strict_retry=(attempt > 0)
+                )
+                break
+            except _JudgeRateLimitError as exc:
+                if rate_attempt == 5:
+                    raise
+                delay = min(120.0, exc.retry_after or (5.0 * (2 ** rate_attempt)))
+                print(
+                    f"[~] Judge 429 rate limit; giữ checkpoint và thử lại sau "
+                    f"{delay:.0f}s ({rate_attempt + 1}/6)."
+                )
+                time.sleep(delay)
         try:
-            return _parse_judge_reply(reply, len(batch_replays))
+            parsed = _parse_judge_reply(reply, len(batch_replays))
+            for item in parsed:
+                item["_judge_status"] = "success"
+                item["_judge_response_id"] = response_data.get("id")
+                item["_effective_judge_model"] = response_data.get("model")
+                item["_judge_router_metadata"] = response_data.get("openrouter_metadata")
+            return parsed
         except _JudgeResponseError as exc:
             parse_errors.append(str(exc))
             print(
@@ -1303,9 +1734,17 @@ def _run_batch_judge(job_id, eval_job_id, valid_convs, replay_results,
     """
     import statistics
 
-    per_conv_results = []
     total = len(replay_results)
+    checkpoint_name = f"{stage_key}_results"
+    saved_results = _load_eval_checkpoint(eval_job_id, checkpoint_name, [])
+    per_conv_results = saved_results if isinstance(saved_results, list) else []
+    valid_checkpoint_lengths = {0, total}
+    valid_checkpoint_lengths.update(range(BATCH_SIZE, total, BATCH_SIZE))
+    if len(per_conv_results) not in valid_checkpoint_lengths:
+        per_conv_results = []
     _eval_log(job_id, f"[⚖️] {label}: {total} conversations | batch={BATCH_SIZE} | judge={judge_model}...")
+    if per_conv_results:
+        _eval_log(job_id, f"[♻️] {label}: giữ {len(per_conv_results)}/{total} kết quả Judge đã checkpoint.")
     _eval_progress(eval_job_id, stage_key, "Đang gọi LLM judge (batch)...")
 
     # Zip cùng valid_convs để lấy original assistant turns cho ngram
@@ -1314,13 +1753,25 @@ def _run_batch_judge(job_id, eval_job_id, valid_convs, replay_results,
 
     for chunk_idx, chunk in enumerate(chunks):
         start_global = chunk_idx * BATCH_SIZE
+        if start_global < len(per_conv_results):
+            continue
         _eval_log(job_id, f"  [Batch {chunk_idx+1}/{len(chunks)}] conv {start_global+1}–{start_global+len(chunk)}")
-        _eval_progress(eval_job_id, stage_key, f"Batch {chunk_idx+1}/{len(chunks)}")
+        _eval_progress(
+            eval_job_id,
+            stage_key,
+            f"Batch {chunk_idx+1}/{len(chunks)}",
+            current=start_global,
+            total=total,
+        )
 
         replays_in_chunk = [r for _, r in chunk]
 
         # Lọc conv None (replay thất bại) — không gửi API, trả None luôn
-        valid_in_chunk = [(i, r) for i, r in enumerate(replays_in_chunk) if r is not None]
+        valid_in_chunk = [
+            (i, r)
+            for i, r in enumerate(replays_in_chunk)
+            if r is not None and r.get("generation_status") == "success"
+        ]
         batch_raw = [None] * len(chunk)
 
         if valid_in_chunk:
@@ -1331,19 +1782,108 @@ def _run_batch_judge(job_id, eval_job_id, valid_convs, replay_results,
 
         # Map từng conv trong chunk → per_conv_results
         for local_i, ((conv, replay), raw_scores) in enumerate(zip(chunk, batch_raw)):
-            if replay is None or raw_scores is None:
+            if replay is None:
                 per_conv_results.append(None)
                 continue
 
-            _audit_a1_consistency(replay, raw_scores)
+            if raw_scores is None:
+                # Locked missing-output policy: a model-generation failure has
+                # zero tutoring utility, so it receives 0 on every quality
+                # criterion and remains in the paired denominator.  This is
+                # distinct from a judge/API failure, which is missing
+                # measurement and must never be silently converted to zero.
+                failure_criteria = {
+                    key: 0.0 for key in ("A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "D1", "D2")
+                }
+                per_conv_results.append({
+                    "item_id": replay.get("item_id"),
+                    "subject": replay.get("subject", "UNKNOWN"),
+                    "conv_index": start_global + local_i,
+                    "num_turns": len(replay.get("turns", [])),
+                    "avg_latency_ms": replay.get("avg_latency_ms", 0),
+                    "replay_turns": replay.get("replay_turns", []),
+                    "criteria_scores": failure_criteria,
+                    "group_scores": _compute_group_scores_research(failure_criteria),
+                    "criteria_reasons": {
+                        key: "Pre-specified score 0: model did not produce a valid response."
+                        for key in failure_criteria
+                    },
+                    "confidence": None,
+                    "non_scoring": {},
+                    "generation_status": replay.get("generation_status", "failed"),
+                    "failure_type": replay.get("failure_type") or "generation_failed",
+                    "first_attempt_failed": True,
+                    "output_limit_reached": replay.get("output_limit_reached", False),
+                    "telemetry": replay.get("telemetry", {}),
+                    "input_tokens": int(replay.get("telemetry", {}).get("input_tokens", 0) or 0),
+                    "output_tokens": int(replay.get("telemetry", {}).get("output_tokens", 0) or 0),
+                    "total_tokens": int(replay.get("telemetry", {}).get("input_tokens", 0) or 0)
+                                    + int(replay.get("telemetry", {}).get("output_tokens", 0) or 0),
+                    "prompt_trace": replay.get("prompt_trace", {}),
+                    "reference_trace": {
+                        "present": bool(replay.get("reference_answer") or replay.get("gold_key_points")),
+                        "reference_answer_hash": sha256_text(replay.get("reference_answer", ""))
+                            if replay.get("reference_answer") else None,
+                        "gold_key_points_hash": stable_json_hash(replay.get("gold_key_points", []))
+                            if replay.get("gold_key_points") else None,
+                    },
+                    "reference_answer": replay.get("reference_answer", ""),
+                    "gold_key_points": replay.get("gold_key_points", []),
+                    "judge_status": "not_required_generation_failure_scored_zero",
+                })
+                continue
+
+            judge_status = raw_scores.get("_judge_status", "failed")
+            item_meta = {
+                "item_id": replay.get("item_id"),
+                "subject": replay.get("subject", "UNKNOWN"),
+                "generation_status": replay.get("generation_status", "unknown"),
+                "failure_type": replay.get("failure_type"),
+                "first_attempt_failed": replay.get("first_attempt_failed", False),
+                "output_limit_reached": replay.get("output_limit_reached", False),
+                "telemetry": replay.get("telemetry", {}),
+                "input_tokens": int(replay.get("telemetry", {}).get("input_tokens", 0) or 0),
+                "output_tokens": int(replay.get("telemetry", {}).get("output_tokens", 0) or 0),
+                "total_tokens": int(replay.get("telemetry", {}).get("input_tokens", 0) or 0)
+                                + int(replay.get("telemetry", {}).get("output_tokens", 0) or 0),
+                "prompt_trace": replay.get("prompt_trace", {}),
+                "reference_trace": {
+                    "present": bool(replay.get("reference_answer") or replay.get("gold_key_points")),
+                    "reference_answer_hash": sha256_text(replay.get("reference_answer", ""))
+                        if replay.get("reference_answer") else None,
+                    "gold_key_points_hash": stable_json_hash(replay.get("gold_key_points", []))
+                        if replay.get("gold_key_points") else None,
+                },
+                "reference_answer": replay.get("reference_answer", ""),
+                "gold_key_points": replay.get("gold_key_points", []),
+                "judge_status": judge_status,
+                "judge_response_id": raw_scores.get("_judge_response_id"),
+                "effective_judge_model": raw_scores.get("_effective_judge_model"),
+                "judge_error": raw_scores.get("_judge_error"),
+                "judge_router_metadata": raw_scores.get("_judge_router_metadata"),
+            }
+            if judge_status != "success":
+                per_conv_results.append({
+                    **item_meta,
+                    "conv_index": start_global + local_i,
+                    "num_turns": len(replay["turns"]),
+                    "avg_latency_ms": replay["avg_latency_ms"],
+                    "replay_turns": replay.get("replay_turns", []),
+                    "criteria_scores": {},
+                    "group_scores": {},
+                    "criteria_reasons": {},
+                    "confidence": None,
+                    "non_scoring": {},
+                })
+                continue
 
             criteria_scores = {
-                short: float(raw_scores.get(full, {}).get("score", 0))
+                short: float(raw_scores.get(full, {}).get("score"))
                 for short, full in _SHORT_TO_FULL.items()
             }
             criteria_scores["D2"] = _score_latency(replay["avg_latency_ms"])
 
-            group_scores = _compute_group_scores(criteria_scores)
+            group_scores = _compute_group_scores_research(criteria_scores)
 
             # Confidence: std của 9 criteria trong 1 lần chấm (D2 bỏ qua — objective)
             scores_vals = [criteria_scores[k] for k in _SHORT_TO_FULL]
@@ -1362,12 +1902,10 @@ def _run_batch_judge(job_id, eval_job_id, valid_convs, replay_results,
             qdr = compute_question_detection_rate(model_responses)
 
             per_conv_results.append({
+                **item_meta,
                 "conv_index":      start_global + local_i,
                 "num_turns":       len(replay["turns"]),
                 "avg_latency_ms":  replay["avg_latency_ms"],
-                "input_tokens":    replay.get("input_tokens", 0),
-                "output_tokens":   replay.get("output_tokens", 0),
-                "total_tokens":    replay.get("total_tokens", 0),
                 "replay_turns":    replay.get("replay_turns", []),
                 "criteria_scores": criteria_scores,
                 "group_scores":    group_scores,
@@ -1387,58 +1925,617 @@ def _run_batch_judge(job_id, eval_job_id, valid_convs, replay_results,
                 },
             })
 
+        # Persist only after the whole batch is mapped. A crash can therefore
+        # replay at most one batch and never pays again for earlier batches.
+        _save_eval_checkpoint(eval_job_id, checkpoint_name, per_conv_results)
+
     valid_count = sum(1 for r in per_conv_results if r is not None)
     _eval_log(job_id, f"[✅] {label}: {valid_count}/{total} conversations chấm thành công.")
     return per_conv_results
 
+
+def _run_blinded_paired_judge(
+    job_id,
+    eval_job_id,
+    valid_convs,
+    base_replay,
+    ft_replay,
+    judge_model: str,
+    seed: int = 42,
+) -> tuple[list, list]:
+    """Blind and shuffle Base/FT outputs before the same judge pass."""
+    import random
+
+    entries = []
+    for index, (conversation, base_item, ft_item) in enumerate(zip(valid_convs, base_replay, ft_replay)):
+        entries.append({"condition": "base", "index": index, "conversation": conversation, "replay": base_item})
+        entries.append({"condition": "ft", "index": index, "conversation": conversation, "replay": ft_item})
+    random.Random(seed).shuffle(entries)
+
+    scored = _run_batch_judge(
+        job_id,
+        eval_job_id,
+        [entry["conversation"] for entry in entries],
+        [entry["replay"] for entry in entries],
+        judge_model,
+        stage_key="judge_ft",
+        label="Judge blinded Base/FT",
+    )
+    base_results = [None] * len(valid_convs)
+    ft_results = [None] * len(valid_convs)
+    for entry, result in zip(entries, scored):
+        if result is not None:
+            result["conv_index"] = entry["index"]
+            result["judge_blinded"] = True
+            result["judge_randomization_seed"] = seed
+        target = base_results if entry["condition"] == "base" else ft_results
+        target[entry["index"]] = result
+    return base_results, ft_results
+
 def _compute_eval_flags(valid_results: list, summary: dict) -> list:
     import statistics
     flags = []
-    total = len(valid_results)
+    scored_results = [
+        r for r in valid_results
+        if r
+        and r.get("judge_status") in {"success", "not_required_generation_failure_scored_zero"}
+        and r.get("criteria_scores", {}).get("B1") is not None
+    ]
+    total = len(scored_results)
     if total == 0:
         return flags
 
     constraint_count = sum(
-        1 for r in valid_results
+        1 for r in scored_results
         if r.get("criteria_scores", {}).get("A1", 5.0) <= 1.0
     )
     if constraint_count / total > 0.3:
         flags.append("high_constraint_violation_rate")
 
-    overalls = [r.get("group_scores", {}).get("overall", 0) for r in valid_results]
-    if len(overalls) >= 2:
-        std = statistics.stdev(overalls)
-        if std > 1.2:
-            flags.append("high_score_variance")
+    knowledge_scores = [r.get("group_scores", {}).get("knowledge", 0) for r in scored_results]
+    socratic_scores = [r.get("group_scores", {}).get("socratic", 0) for r in scored_results]
+    if len(knowledge_scores) >= 2 and (
+        statistics.stdev(knowledge_scores) > 1.2
+        or statistics.stdev(socratic_scores) > 1.2
+    ):
+        flags.append("high_primary_outcome_variance")
 
-    avg_overall = sum(overalls) / len(overalls)
-    if avg_overall < 1.8:
-        flags.append("very_low_overall")
+    avg_knowledge = sum(knowledge_scores) / len(knowledge_scores)
+    avg_socratic = sum(socratic_scores) / len(socratic_scores)
+    if avg_knowledge < 1.8:
+        flags.append("very_low_knowledge")
+    if avg_socratic < 1.8:
+        flags.append("very_low_socratic")
 
-    confidences = [r.get("confidence", {}).get("overall", 1.0) for r in valid_results]
-    avg_conf = sum(confidences) / len(confidences)
-    if avg_conf < 0.6:
+    confidences = [
+        r.get("confidence", {}).get("overall") for r in scored_results
+        if isinstance(r.get("confidence"), dict)
+        and r.get("confidence", {}).get("overall") is not None
+    ]
+    if confidences and sum(confidences) / len(confidences) < 0.6:
         flags.append("low_judge_confidence")
 
     if summary.get("avg_latency_ms", 0) > 10000:
         flags.append("high_latency")
 
-    avg_a = summary.get("group_a", 0)
-    avg_b = summary.get("group_b", 0)
-    avg_c = summary.get("group_c", 0)
-    if avg_a < 2.0 and (avg_b + avg_c) / 2 > 3.5:
+    if summary.get("socratic", 0) < 2.0 and summary.get("knowledge", 0) > 3.5:
         flags.append("socratic_underperforming")
 
     return flags
 
 # ── Main eval function ────────────────────────────────────────────────
+def _resolve_hf_revision(repo_id: str, token: str | None = None) -> str | None:
+    """Resolve a mutable Hugging Face repo name to an immutable commit SHA."""
+    if not repo_id:
+        return None
+    try:
+        return HfApi().model_info(repo_id=repo_id, token=token or None).sha
+    except Exception as exc:
+        print(f"[!] Could not resolve HF revision for {repo_id}: {exc}")
+        return None
+
+
+def _tokenizer_manifest(tokenizer) -> dict:
+    chat_template = getattr(tokenizer, "chat_template", None) or ""
+    try:
+        vocab_hash = stable_json_hash(tokenizer.get_vocab())
+    except Exception:
+        vocab_hash = None
+    try:
+        special_tokens_hash = stable_json_hash(getattr(tokenizer, "special_tokens_map", {}) or {})
+    except Exception:
+        special_tokens_hash = None
+    return {
+        "class": tokenizer.__class__.__name__,
+        "name_or_path": getattr(tokenizer, "name_or_path", None),
+        "vocab_size": getattr(tokenizer, "vocab_size", None),
+        "chat_template_hash": sha256_text(chat_template) if chat_template else None,
+        "vocab_hash": vocab_hash,
+        "special_tokens_map_hash": special_tokens_hash,
+        "bos_token_id": getattr(tokenizer, "bos_token_id", None),
+        "eos_token_id": getattr(tokenizer, "eos_token_id", None),
+        "pad_token_id": getattr(tokenizer, "pad_token_id", None),
+    }
+
+
+def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
+                        active_model, tokenizer, max_seq,
+                        judge_model=DEFAULT_JUDGE_MODEL,
+                        base_model=None, base_tokenizer=None,
+                        base_model_repo=None, ft_model_repo=None,
+                        protocol_mode="locked_single_turn",
+                        prompt_variant="P1",
+                        system_prompt_override="",
+                        system_prompt_version="",
+                        subject_override="",
+                        max_new_tokens=512,
+                        warmup_runs=1,
+                        bootstrap_resamples=10000,
+                        bootstrap_seed=42,
+                        hf_token=""):
+    """
+    Eval multi-turn conversation.
+    - single mode: chá»‰ cÃ³ active_model (FT)
+    - paired mode: cÃ³ thÃªm base_model â†’ so sÃ¡nh delta
+    """
+    run_started_at = datetime.datetime.now(datetime.timezone.utc)
+    effective_max_seq = max(int(max_seq), 4096)
+
+    # 1. Load dataset
+    conversations = []
+    ext = os.path.splitext(eval_file_path)[1].lower()
+    try:
+        if ext == ".jsonl":
+            with open(eval_file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try: conversations.append(json.loads(line))
+                        except: pass
+        else:
+            with open(eval_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict) and isinstance(data.get("conversations"), list):
+                conversations = data["conversations"]
+            elif isinstance(data, dict) and isinstance(data.get("items"), list):
+                conversations = data["items"]
+            else:
+                conversations = data if isinstance(data, list) else [data]
+    except Exception as e:
+        _eval_log(job_id, f"[Eval] Lá»—i Ä‘á»c file: {e}")
+        return
+
+    # Normalize
+    valid_convs = []
+    for c in conversations:
+        msgs = c.get("messages", [])
+        if any(m.get("role") == "user" for m in msgs):
+            cleaned = []
+            for m in msgs:
+                if cleaned and cleaned[-1]["role"] == m["role"] == "assistant":
+                    cleaned[-1]["content"] += "\n" + m["content"]
+                else:
+                    cleaned.append(m)
+            valid_convs.append({**c, "messages": cleaned})
+
+    if not valid_convs:
+        _eval_log(job_id, "[Eval] KhÃ´ng cÃ³ conversation há»£p lá»‡.")
+        return
+
+    normalized_subject_override = normalize_subject(subject_override) if subject_override else ""
+    if normalized_subject_override:
+        for index, conversation in enumerate(valid_convs):
+            existing_subject = extract_item_metadata(conversation, index)["subject"]
+            if existing_subject != "UNKNOWN" and existing_subject != normalized_subject_override:
+                raise ValueError(
+                    f"Subject mismatch at item {index}: dataset={existing_subject}, run={normalized_subject_override}"
+                )
+            conversation["subject"] = normalized_subject_override
+
+    strict_locked = protocol_mode == "locked_single_turn"
+    validation = validate_locked_dataset(valid_convs, strict=strict_locked)
+    for warning in validation["warnings"][:20]:
+        _eval_log(job_id, f"[âš ï¸] Dataset warning: {warning}")
+    if not validation["valid"]:
+        detail = "; ".join(validation["errors"][:10])
+        raise ValueError(f"Dataset khÃ´ng Ä‘áº¡t locked protocol: {detail}")
+
+    total = len(valid_convs)
+    # Models are intentionally loaded sequentially inside this function to
+    # avoid CPU/GPU OOM, so paired mode is determined by the locked Base repo.
+    is_paired = bool(base_model_repo)
+    eval_mode = "paired" if is_paired else "single"
+    _eval_log(job_id, f"[ðŸ“Š] Mode: {eval_mode} | {total} conversations")
+    _eval_log(
+        job_id,
+        f"[ðŸ”’] Protocol={protocol_mode} | Prompt={prompt_variant.upper()}:{system_prompt_version or 'UNVERSIONED'} "
+        f"| max_new_tokens={max_new_tokens} | bootstrap={bootstrap_resamples}",
+    )
+    effective_hf_token = hf_token or _read_secret("HF_TOKEN") or None
+    resolved_revisions = {
+        "base": _resolve_hf_revision(base_model_repo, effective_hf_token) if is_paired else None,
+        "fine_tuned": _resolve_hf_revision(ft_model_repo, effective_hf_token),
+    }
+    if strict_locked and not resolved_revisions["fine_tuned"]:
+        raise ValueError("Locked run requires an immutable Fine-tuned Hugging Face revision")
+    if strict_locked and is_paired and not resolved_revisions["base"]:
+        raise ValueError("Locked paired run requires an immutable Base Hugging Face revision")
+
+    checkpoint_identity = {
+        "dataset_hash": stable_json_hash(valid_convs),
+        "base_repo": base_model_repo if is_paired else None,
+        "base_revision": resolved_revisions["base"],
+        "fine_tuned_repo": ft_model_repo,
+        "fine_tuned_revision": resolved_revisions["fine_tuned"],
+        "judge_model": judge_model,
+        "protocol_mode": protocol_mode,
+        "prompt_variant": prompt_variant.upper(),
+        "system_prompt_hash": sha256_text(system_prompt_override) if system_prompt_override else None,
+        "system_prompt_version": system_prompt_version,
+        "max_new_tokens": int(max_new_tokens),
+        "bootstrap_seed": int(bootstrap_seed),
+    }
+    saved_identity = _load_eval_checkpoint(eval_job_id, "identity", None)
+    if saved_identity is not None and saved_identity != checkpoint_identity:
+        raise ValueError("Eval checkpoint identity mismatch; refusing to mix results from a changed dataset/model/prompt.")
+    _save_eval_checkpoint(eval_job_id, "identity", checkpoint_identity)
+
+    # 2. Warmup FT model (Bá» qua vÃ¬ ta sáº½ khá»Ÿi Ä‘á»™ng tá»«ng model)
+    _eval_progress(eval_job_id, "warmup", "GPU ready")
+
+    # 3. Replay
+    # --- Tá»I Æ¯U Bá»˜ NHá»š: Cháº¡y Replay Base trÆ°á»›c, rá»“i xÃ³a khá»i RAM, sau Ä‘Ã³ má»›i cháº¡y Replay FT ---
+    base_replay = None
+    load_metrics = {}
+    tokenizer_manifests = {}
+    if is_paired:
+        _eval_log(job_id, "[ðŸ”„] Loading Base model Ä‘á»ƒ Replay...")
+        import gc, torch
+        load_started = time.perf_counter()
+        base_model, base_tokenizer = FastLanguageModel.from_pretrained(
+            model_name=base_model_repo,
+            revision=resolved_revisions["base"],
+            max_seq_length=effective_max_seq,
+            load_in_4bit=True,
+            token=effective_hf_token,
+        )
+        if getattr(base_tokenizer, "pad_token", None) is None:
+            base_tokenizer.pad_token = base_tokenizer.eos_token
+        base_tokenizer.padding_side = "right"
+        tokenizer_manifests["base"] = _tokenizer_manifest(base_tokenizer)
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+        load_metrics["base_load_ms"] = round((time.perf_counter() - load_started) * 1000, 3)
+        load_metrics["base_vram_allocated_after_load_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
+
+        for warm_index in range(max(0, int(warmup_runs))):
+            _eval_log(job_id, f"[ðŸ”¥] Base warm-up {warm_index + 1}/{warmup_runs}")
+            replay_conversation(
+                valid_convs[0], base_model, base_tokenizer,
+                max_new_tokens=min(32, int(max_new_tokens)),
+                protocol_mode=protocol_mode,
+                prompt_variant=prompt_variant,
+                system_prompt_override=system_prompt_override,
+                system_prompt_version=system_prompt_version,
+                item_index=0,
+            )
+
+        base_replay = _run_single_replay(
+            job_id, eval_job_id, valid_convs,
+            base_model, base_tokenizer,
+            stage_key="replay_base", label="Replay Base",
+            max_new_tokens=max_new_tokens,
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_override=system_prompt_override,
+            system_prompt_version=system_prompt_version,
+        )
+
+        # XÃ“A BASE MODEL KHá»ŽI RAM NGAY Láº¬P Tá»¨C
+        _eval_log(job_id, "[ðŸ—‘ï¸] XÃ³a Base model khá»i GPU Ä‘á»ƒ nhÆ°á»ng chá»— cho FT model...")
+        unload_started = time.perf_counter()
+        del base_model; del base_tokenizer
+        gc.collect(); torch.cuda.empty_cache()
+        try:
+            torch.cuda.synchronize()
+        except Exception:
+            pass
+        load_metrics["base_unload_ms"] = round((time.perf_counter() - unload_started) * 1000, 3)
+        load_metrics["vram_allocated_after_base_unload_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
+
+    # Load FT model (lÃºc nÃ y GPU Ä‘Ã£ trá»‘ng hoÃ n toÃ n)
+    _eval_log(job_id, f"[ðŸ”„] Loading FT model ({ft_model_repo}) Ä‘á»ƒ Replay...")
+    import gc, torch
+    load_started = time.perf_counter()
+    ft_model, ft_tokenizer = FastLanguageModel.from_pretrained(
+        model_name=ft_model_repo,
+        revision=resolved_revisions["fine_tuned"],
+        max_seq_length=effective_max_seq,
+        load_in_4bit=True,
+        token=effective_hf_token,
+    )
+    if getattr(ft_tokenizer, "pad_token", None) is None:
+        ft_tokenizer.pad_token = ft_tokenizer.eos_token
+    ft_tokenizer.padding_side = "right"
+    tokenizer_manifests["fine_tuned"] = _tokenizer_manifest(ft_tokenizer)
+    if strict_locked and is_paired:
+        base_tok = tokenizer_manifests.get("base", {})
+        ft_tok = tokenizer_manifests.get("fine_tuned", {})
+        mismatch = None
+        if base_tok.get("vocab_size") != ft_tok.get("vocab_size"):
+            mismatch = "Base/FT tokenizer vocab_size mismatch"
+        elif base_tok.get("chat_template_hash") != ft_tok.get("chat_template_hash"):
+            mismatch = "Base/FT chat_template hash mismatch"
+        elif base_tok.get("vocab_hash") != ft_tok.get("vocab_hash"):
+            mismatch = "Base/FT tokenizer vocabulary hash mismatch"
+        elif base_tok.get("special_tokens_map_hash") != ft_tok.get("special_tokens_map_hash"):
+            mismatch = "Base/FT tokenizer special-token hash mismatch"
+        if mismatch:
+            del ft_model, ft_tokenizer
+            gc.collect()
+            torch.cuda.empty_cache()
+            raise ValueError(f"Locked pair invalid: {mismatch}")
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+    load_metrics["ft_load_ms"] = round((time.perf_counter() - load_started) * 1000, 3)
+    load_metrics["ft_vram_allocated_after_load_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
+
+    for warm_index in range(max(0, int(warmup_runs))):
+        _eval_log(job_id, f"[ðŸ”¥] FT warm-up {warm_index + 1}/{warmup_runs}")
+        replay_conversation(
+            valid_convs[0], ft_model, ft_tokenizer,
+            max_new_tokens=min(32, int(max_new_tokens)),
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_override=system_prompt_override,
+            system_prompt_version=system_prompt_version,
+            item_index=0,
+        )
+
+    ft_replay = _run_single_replay(
+        job_id, eval_job_id, valid_convs,
+        ft_model, ft_tokenizer,
+        stage_key="replay_ft" if is_paired else "replay", label="Replay FT",
+        max_new_tokens=max_new_tokens,
+        protocol_mode=protocol_mode,
+        prompt_variant=prompt_variant,
+        system_prompt_override=system_prompt_override,
+        system_prompt_version=system_prompt_version,
+    )
+
+    # CÃ³ thá»ƒ xÃ³a luÃ´n FT model vÃ¬ Ä‘Ã£ Replay xong (Ä‘á»ƒ dÆ° VRAM cho viá»‡c khÃ¡c náº¿u cáº§n)
+    _eval_log(job_id, "[ðŸ—‘ï¸] XÃ³a FT model khá»i GPU. Báº¯t Ä‘áº§u cháº¥m Ä‘iá»ƒm API...")
+    unload_started = time.perf_counter()
+    del ft_model; del ft_tokenizer
+    gc.collect(); torch.cuda.empty_cache()
+    try:
+        torch.cuda.synchronize()
+    except Exception:
+        pass
+    load_metrics["ft_unload_ms"] = round((time.perf_counter() - unload_started) * 1000, 3)
+    load_metrics["vram_allocated_after_ft_unload_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
+
+    # 4. Judge â€” Base/FT identities are hidden and their order is shuffled.
+    if is_paired:
+        base_per_conv, ft_per_conv = _run_blinded_paired_judge(
+            job_id,
+            eval_job_id,
+            valid_convs,
+            base_replay,
+            ft_replay,
+            judge_model,
+            seed=int(bootstrap_seed),
+        )
+    else:
+        ft_per_conv = _run_batch_judge(
+            job_id, eval_job_id, valid_convs, ft_replay,
+            judge_model,
+            stage_key="judge", label="Judge"
+        )
+        base_per_conv = None
+
+    # 5. Summarize
+    _eval_progress(eval_job_id, "finalize", "")
+    ft_summary   = _summarize(ft_per_conv)
+    base_summary = _summarize(base_per_conv) if is_paired else None
+    pair_integrity = (
+        paired_integrity(base_per_conv, ft_per_conv, judge_model)
+        if is_paired else None
+    )
+
+    # 6. Delta (paired only)
+    delta = None
+    if is_paired and base_summary:
+        delta = {
+            "overall":  round(ft_summary["overall"]  - base_summary["overall"],  3),
+            "group_a":  round(ft_summary["group_a"]  - base_summary["group_a"],  3),
+            "group_b":  round(ft_summary["group_b"]  - base_summary["group_b"],  3),
+            "group_c":  round(ft_summary["group_c"]  - base_summary["group_c"],  3),
+            "group_d":  round(ft_summary["group_d"]  - base_summary["group_d"],  3),
+            "criteria": {
+                k: round(ft_summary["criteria"][k] - base_summary["criteria"].get(k, 0), 3)
+                for k in ft_summary["criteria"]
+            },
+            "avg_latency_ms": round(ft_summary["avg_latency_ms"] - base_summary["avg_latency_ms"], 1),
+            "knowledge": round(ft_summary["knowledge"] - base_summary["knowledge"], 3),
+            "socratic": round(ft_summary["socratic"] - base_summary["socratic"], 3),
+        }
+
+    research_statistics = None
+    hypothesis_decisions = None
+    if is_paired and base_per_conv is not None:
+        research_statistics = paired_research_statistics(
+            ft_per_conv,
+            base_per_conv,
+            resamples=int(bootstrap_resamples),
+            seed=int(bootstrap_seed),
+        )
+        hypothesis_decisions = decide_hypotheses(
+            research_statistics,
+            ft_per_conv,
+            base_per_conv,
+        )
+
+    # 7. Flags (dá»±a trÃªn FT)
+    ft_valid = [r for r in ft_per_conv if r is not None]
+    ft_scored = [
+        r for r in ft_valid
+        if r.get("judge_status") in {"success", "not_required_generation_failure_scored_zero"}
+        and r.get("criteria_scores", {}).get("B1") is not None
+    ]
+    eval_flags = _compute_eval_flags(ft_valid, {
+        "group_a": ft_summary["group_a"],
+        "group_b": ft_summary["group_b"],
+        "group_c": ft_summary["group_c"],
+        "avg_latency_ms": ft_summary["avg_latency_ms"],
+    })
+    if pair_integrity and not pair_integrity["confirmatory_eligible"]:
+        eval_flags.append("confirmatory_pair_integrity_failed")
+    if pair_integrity and pair_integrity["rendered_input_hash_mismatches"]:
+        eval_flags.append("pair_input_mismatch")
+    if pair_integrity and pair_integrity["judge_model_mismatches"]:
+        eval_flags.append("judge_model_mismatch")
+    if pair_integrity and pair_integrity["judge_measurement_failures"]:
+        eval_flags.append("judge_measurement_failure")
+    if not validation.get("confirmatory_sample_size", False):
+        eval_flags.append("confirmatory_sample_size_not_met")
+    if not validation.get("confirmatory_reference_coverage", False):
+        eval_flags.append("confirmatory_reference_coverage_not_met")
+
+    _eval_log(
+        job_id,
+        f"[âœ…] FT K={ft_summary['knowledge']:.3f}/5 | S={ft_summary['socratic']:.3f}/5 "
+        f"| scored={len(ft_scored)}/{total}",
+    )
+    if is_paired:
+        _eval_log(
+            job_id,
+            f"     Base K={base_summary['knowledge']:.3f}/5 | S={base_summary['socratic']:.3f}/5",
+        )
+        _eval_log(job_id, f"     Delta K={delta['knowledge']:+.3f} | Delta S={delta['socratic']:+.3f}")
+    if eval_flags:
+        _eval_log(job_id, f"[âš ï¸] Flags: {', '.join(eval_flags)}")
+
+    run_completed_at = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        gpu_name = torch.cuda.get_device_name(0)
+        cuda_version = torch.version.cuda
+        torch_version = torch.__version__
+    except Exception:
+        gpu_name = None
+        cuda_version = None
+        torch_version = getattr(torch, "__version__", None)
+
+    protocol_manifest = {
+        "protocol_version": "RP4-locked-v1",
+        "protocol_mode": protocol_mode,
+        "single_turn": protocol_mode == "locked_single_turn",
+        "prompt_variant": prompt_variant.upper(),
+        "prompt_version": system_prompt_version or "UNVERSIONED",
+        "subject_override": normalized_subject_override or None,
+        "system_prompt_hash": sha256_text(system_prompt_override) if system_prompt_override else None,
+        "max_input_tokens": effective_max_seq,
+        "max_new_tokens": int(max_new_tokens),
+        "temperature": 0,
+        "do_sample": False,
+        "warmup_runs": int(warmup_runs),
+        "bootstrap_resamples": int(bootstrap_resamples),
+        "bootstrap_seed": int(bootstrap_seed),
+        "judge_requested_model": judge_model,
+        "judge_blinded_and_randomized": bool(is_paired),
+        "judge_randomization_seed": int(bootstrap_seed) if is_paired else None,
+        "base_model_repo": base_model_repo,
+        "base_model_revision": resolved_revisions["base"],
+        "fine_tuned_model_repo": ft_model_repo,
+        "fine_tuned_model_revision": resolved_revisions["fine_tuned"],
+        "tokenizers": tokenizer_manifests,
+        "judge_prompt_hash": sha256_text(SOCRATIC_JUDGE_SYSTEM_BATCH + JUDGE_REFERENCE_POLICY),
+        "generation_failure_quality_policy": (
+            "assign_zero_to_K_S_A1_A2_A3_and_diagnostic_criteria; "
+            "retain_item_in_paired_denominator; report_failure_separately"
+        ),
+        "judge_failure_policy": (
+            "missing_measurement; never_convert_to_zero; confirmatory_run_ineligible"
+        ),
+        "dataset_hash": validation["dataset_hash"],
+        "config_hash": None,
+    }
+    protocol_manifest["config_hash"] = stable_json_hash(protocol_manifest)
+    environment_manifest = {
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+        "torch": torch_version,
+        "cuda": cuda_version,
+        "gpu": gpu_name,
+        "load_in_4bit": True,
+        "cuda_launch_blocking": os.environ.get("CUDA_LAUNCH_BLOCKING", "0"),
+        "torchdynamo_disable": os.environ.get("TORCHDYNAMO_DISABLE", ""),
+        "packages": {
+            name: (
+                importlib.metadata.version(name)
+                if name in {dist.metadata.get("Name", "") for dist in importlib.metadata.distributions()}
+                else None
+            )
+            for name in ("unsloth", "transformers", "torch", "bitsandbytes", "peft")
+        },
+    }
+
+    eval_result = {
+        "modelEvalId":        eval_job_id,
+        "jobId":              job_id,
+        "status":             "COMPLETED",
+        "evalMode":           eval_mode,
+        "ftModelRepo":        ft_model_repo,
+        "baseModelRepo":      base_model_repo,
+        "totalConversations": total,
+        "validConversations": len(ft_scored),
+        "judgeModel":         judge_model,
+        "flags":              eval_flags,
+        "perConvResults":     ft_per_conv,
+        "summary":            ft_summary,
+        "basePerConvResults": base_per_conv,
+        "baseSummary":        base_summary,
+        "delta":              delta,
+        "researchStatistics": research_statistics,
+        "hypothesisDecisions": hypothesis_decisions,
+        "pairIntegrity":      pair_integrity,
+        "confirmatoryEligible": bool(
+            is_paired and validation["valid"] and pair_integrity
+            and pair_integrity["confirmatory_eligible"]
+            and validation.get("confirmatory_sample_size", False)
+            and validation.get("confirmatory_reference_coverage", False)
+        ),
+        "datasetValidation":  validation,
+        "protocolManifest":   protocol_manifest,
+        "environmentManifest": environment_manifest,
+        "loadMetrics":        load_metrics,
+        "startedAt":          run_started_at.isoformat().replace("+00:00", "Z"),
+        "completedAt":        run_completed_at.isoformat().replace("+00:00", "Z"),
+    }
+    jobs_db[job_id]['eval_result'] = eval_result
+    _eval_log(job_id, "[ðŸ’¾] Káº¿t quáº£ eval Ä‘Ã£ lÆ°u vÃ o jobs_db.")
+
+
+
 def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
                         active_model, tokenizer, max_seq,
                         judge_model=DEFAULT_JUDGE_MODEL,
                         base_model=None, base_tokenizer=None,
                         base_model_repo=None, ft_model_repo=None,
                         system_prompt: str | None = None,
-                        max_new_tokens: int = 192,
+                        protocol_mode: str = "locked_single_turn",
+                        prompt_variant: str = "P1",
+                        system_prompt_version: str = "",
+                        subject_override: str = "",
+                        max_new_tokens: int = 512,
+                        warmup_runs: int = 1,
+                        bootstrap_resamples: int = 10000,
+                        bootstrap_seed: int = 42,
+                        hf_token: str = "",
                         temperature: float = 0.2,
                         top_p: float = 0.9,
                         repetition_penalty: float = 1.15):
@@ -1447,6 +2544,34 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
     - single mode: chỉ có active_model (FT)
     - paired mode: có thêm base_model → so sánh delta
     """
+    if protocol_mode == "locked_single_turn":
+        if not base_model_repo or not ft_model_repo:
+            raise ValueError("Locked RP5 evaluation requires both exact Base and Fine-tuned model repositories")
+        return _run_locked_auto_evaluation(
+            job_id=job_id,
+            eval_job_id=eval_job_id,
+            eval_file_path=eval_file_path,
+            active_model=active_model,
+            tokenizer=tokenizer,
+            max_seq=max_seq,
+            judge_model=judge_model,
+            base_model=base_model,
+            base_tokenizer=base_tokenizer,
+            base_model_repo=base_model_repo,
+            ft_model_repo=ft_model_repo,
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_override=system_prompt or "",
+            system_prompt_version=system_prompt_version,
+            subject_override=subject_override,
+            max_new_tokens=max_new_tokens,
+            warmup_runs=warmup_runs,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
+            hf_token=hf_token,
+        )
+
+    # Legacy evaluator retained only for previously saved non-confirmatory runs.
     # 1. Load dataset
     conversations = []
     ext = os.path.splitext(eval_file_path)[1].lower()
@@ -1527,8 +2652,11 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
 
             avg_lat = sum(latencies)/len(latencies) if latencies else 0
             
+            replay_system_prompt = str(
+                c.get("system_prompt") or system_prompt or DEFAULT_SOCRATIC_SYSTEM
+            ).strip() or DEFAULT_SOCRATIC_SYSTEM
             ft_pre_generated_replays.append({
-                "system_prompt": system_prompt,
+                "system_prompt": replay_system_prompt,
                 "turns": turns_for_judge,
                 "assistant_turns": asst_turns,
                 "replay_turns": frontend_replay_turns,
@@ -1665,6 +2793,11 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
     delta = None
     if is_paired and base_summary:
         delta = {
+            "knowledge": round(ft_summary["knowledge"] - base_summary["knowledge"], 3),
+            "socratic": round(ft_summary["socratic"] - base_summary["socratic"], 3),
+            "exploratory_overall": round(
+                ft_summary["exploratory_overall"] - base_summary["exploratory_overall"], 3
+            ),
             "overall":  round(ft_summary["overall"]  - base_summary["overall"],  3),
             "group_a":  round(ft_summary["group_a"]  - base_summary["group_a"],  3),
             "group_b":  round(ft_summary["group_b"]  - base_summary["group_b"],  3),
@@ -1680,16 +2813,17 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
     # 7. Flags (dựa trên FT)
     ft_valid = [r for r in ft_per_conv if r is not None]
     eval_flags = _compute_eval_flags(ft_valid, {
-        "group_a": ft_summary["group_a"],
-        "group_b": ft_summary["group_b"],
-        "group_c": ft_summary["group_c"],
+        "knowledge": ft_summary["knowledge"],
+        "socratic": ft_summary["socratic"],
         "avg_latency_ms": ft_summary["avg_latency_ms"],
     })
 
-    _eval_log(job_id, f"[✅] FT Overall: {ft_summary['overall']:.3f}/5")
+    _eval_log(job_id, f"[Primary] FT Knowledge K: {ft_summary['knowledge']:.3f}/5")
+    _eval_log(job_id, f"[Primary] FT Socratic S: {ft_summary['socratic']:.3f}/5")
+    _eval_log(job_id, f"[Exploratory] FT legacy Overall: {ft_summary['exploratory_overall']:.3f}/5")
     if is_paired:
-        _eval_log(job_id, f"     Base Overall: {base_summary['overall']:.3f}/5")
-        _eval_log(job_id, f"     Delta Overall: {delta['overall']:+.3f}")
+        _eval_log(job_id, f"     Base K/S: {base_summary['knowledge']:.3f}/{base_summary['socratic']:.3f}")
+        _eval_log(job_id, f"     Delta K: {delta['knowledge']:+.3f}; Delta S: {delta['socratic']:+.3f}")
     if eval_flags:
         _eval_log(job_id, f"[⚠️] Flags: {', '.join(eval_flags)}")
 
@@ -1853,6 +2987,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         # user requested resume. Only the explicit Resume action supplies
         # `checkpoint_hf_repo`.
         resume_repo_id = config.get("checkpoint_hf_repo")
+        resume_worker_checkpoint = config.get("checkpoint_source") == "worker"
 
         def _is_valid_checkpoint_dir(p):
             if not os.path.isdir(p):
@@ -1928,6 +3063,16 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 except Exception as rng_error:
                     os.remove(rng_file)
                     print(f"[!] Removed incompatible RNG state {rng_file}: {rng_error}")
+
+        if resume_worker_checkpoint:
+            resume_from = _pick_valid_checkpoint_under(local_job_dir)
+            if not resume_from:
+                raise ValueError(f"Can't find a persistent worker checkpoint for job {job_id}")
+            print(f"[✅] Resuming from persistent worker checkpoint: {resume_from}")
+            jobs_db[job_id].setdefault('logs', []).append(
+                f"Resuming from persistent worker checkpoint: {resume_from}"
+            )
+            _normalize_checkpoint_rng_state(resume_from)
 
         if resume_repo_id:
             try:
@@ -2121,6 +3266,13 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         # 2.6. Bắt đầu huấn luyện (Tự động Resume nếu có checkpoint)
         trainer.train(resume_from_checkpoint = resume_from)
 
+        # A user stop is a resumable terminal state, not a completed training.
+        if jobs_db.get(job_id, {}).get('status') == 'STOPPED':
+            jobs_db[job_id].setdefault('logs', []).append(
+                f"Checkpoint retained at {local_job_dir}; use Resume to continue."
+            )
+            return
+
         if config.get('push_to_hub') and hf_repo_id:
             print(f"🎉 Training complete. Pushing final model to {hf_repo_id}...")
             model.push_to_hub(hf_repo_id, token=hf_token, commit_message="End of training push")
@@ -2142,8 +3294,13 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             'logs': error_logs,
         })
     finally:
-        if os.path.exists(local_job_dir):
+        final_status = jobs_db.get(job_id, {}).get('status')
+        if final_status == 'COMPLETED' and os.path.exists(local_job_dir):
             shutil.rmtree(local_job_dir)
+        elif os.path.exists(local_job_dir):
+            jobs_db.get(job_id, {}).setdefault('logs', []).append(
+                f"Persistent checkpoint retained for recovery: {local_job_dir}"
+            )
 
         if job_id in active_training_jobs:
             active_training_jobs.remove(job_id)
@@ -3284,14 +4441,10 @@ def _eval_progress(eval_job_id, stage: str, detail: str = "", current: int = 0, 
     stage_info = EVAL_STAGES.get(stage, {"pct": 0, "label": stage})
     pct = stage_info["pct"]
 
-    # T?nh progress n?i suy cho c?c stage c? sub-steps (replay v? judge)
-    if total > 0 and stage in ("replay", "judge"):
-        stages = list(EVAL_STAGES.keys())
-        idx = stages.index(stage) if stage in stages else -1
-        if idx > 0:
-            start_pct = EVAL_STAGES[stages[idx - 1]]["pct"]
-            end_pct = stage_info["pct"]
-            pct = int(start_pct + (end_pct - start_pct) * current / total)
+    # Interpolate every long stage so progress does not look frozen at 28/53/87%.
+    if total > 0 and stage in EVAL_STAGE_RANGES:
+        start_pct, end_pct = EVAL_STAGE_RANGES[stage]
+        pct = int(start_pct + (end_pct - start_pct) * min(current, total) / total)
 
     update = {
         "progress":      pct,
@@ -3305,13 +4458,21 @@ def _eval_progress(eval_job_id, stage: str, detail: str = "", current: int = 0, 
         update["current_sample"] = sample
 
     eval_jobs_db[eval_job_id].update(update)
+    _update_eval_manifest(eval_job_id, **update)
 def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
                           hf_token: str, eval_file_path: str, model_max_length: int,
                           judge_model: str = DEFAULT_JUDGE_MODEL,
                           judge_api_key: str = "",
                           base_hf_repo: str = "",
                           system_prompt: str = "",
-                          max_new_tokens: int = 192,
+                          protocol_mode: str = "locked_single_turn",
+                          prompt_variant: str = "P1",
+                          system_prompt_version: str = "",
+                          subject_override: str = "",
+                          max_new_tokens: int = 512,
+                          warmup_runs: int = 1,
+                          bootstrap_resamples: int = 10000,
+                          bootstrap_seed: int = 42,
                           temperature: float = 0.2,
                           top_p: float = 0.9,
                           repetition_penalty: float = 1.15):
@@ -3321,6 +4482,7 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
     chạy run_auto_evaluation(), lưu kết quả vào eval_jobs_db.
     """
     eval_jobs_db[eval_job_id]['status'] = 'RUNNING'
+    _update_eval_manifest(eval_job_id, status='RUNNING')
 
     def _log(msg):
         print(msg)
@@ -3334,17 +4496,19 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
         _judge_context.api_key = judge_api_key
         _release_gpu_memory()
 
-        _log(f"[🔄] Loading model từ HF Hub: {hf_repo_id}...")
-        model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=hf_repo_id,
-            max_seq_length=max(model_max_length, 4096),  # eval cần context dài hơn train
-            load_in_4bit=True,
-            token=hf_token or None,
-        )
-        if getattr(tokenizer, "pad_token", None) is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        tokenizer.padding_side = "right"
-        _log(f"[✅] FT model loaded.")
+        if protocol_mode != "locked_single_turn":
+            _log(f"[🔄] Loading legacy model from HF Hub: {hf_repo_id}...")
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=hf_repo_id,
+                max_seq_length=max(model_max_length, 4096),
+                load_in_4bit=True,
+                token=hf_token or None,
+            )
+            if getattr(tokenizer, "pad_token", None) is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.padding_side = "right"
+        else:
+            _log("[LOCKED] Base and Fine-tuned models will be loaded sequentially at immutable revisions.")
 
         base_model = base_tokenizer = None
         eval_jobs_db[eval_job_id]['status'] = 'EVALUATING'
@@ -3364,7 +4528,15 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
             base_model_repo=base_hf_repo,
             ft_model_repo=hf_repo_id,
             system_prompt=system_prompt,
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_version=system_prompt_version,
+            subject_override=subject_override,
             max_new_tokens=max_new_tokens,
+            warmup_runs=warmup_runs,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
+            hf_token=hf_token,
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
@@ -3372,10 +4544,12 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
 
         _log("[✅] Hoàn thành Eval.")
         eval_jobs_db[eval_job_id]['status'] = 'COMPLETED'
+        _update_eval_manifest(eval_job_id, status='COMPLETED', error=None)
 
     except Exception as e:
         _log(f"[❌] LỖI EVAL: {e}")
-        eval_jobs_db[eval_job_id].update({'status': 'FAILED', 'error': str(e)})
+        eval_jobs_db[eval_job_id].update({'status': 'INTERRUPTED', 'error': str(e)})
+        _update_eval_manifest(eval_job_id, status='INTERRUPTED', error=str(e))
 
     finally:
         if 'base_model' in locals() and base_model is not None:
@@ -3394,7 +4568,9 @@ def background_eval_task(eval_job_id: str, job_id: str, hf_repo_id: str,
         torch.cuda.empty_cache()
         
         _release_gpu_memory()
-        if eval_file_path and os.path.exists(eval_file_path):
+        checkpoint_root = os.path.abspath(EVAL_CHECKPOINT_BASE)
+        eval_path = os.path.abspath(eval_file_path) if eval_file_path else ''
+        if eval_path and os.path.exists(eval_path) and not eval_path.startswith(checkpoint_root + os.sep):
             os.remove(eval_file_path)
             print(f"[🗑️] Đã xóa eval file tạm: {eval_file_path}")
         _eval_slot_release()
@@ -3409,7 +4585,15 @@ def _run_evaluation_for_eval_job(eval_job_id, job_id, eval_file_path,
                                   base_model=None, base_tokenizer=None,
                                   base_model_repo=None, ft_model_repo=None,
                                   system_prompt: str = "",
-                                  max_new_tokens: int = 192,
+                                  protocol_mode: str = "locked_single_turn",
+                                  prompt_variant: str = "P1",
+                                  system_prompt_version: str = "",
+                                  subject_override: str = "",
+                                  max_new_tokens: int = 512,
+                                  warmup_runs: int = 1,
+                                  bootstrap_resamples: int = 10000,
+                                  bootstrap_seed: int = 42,
+                                  hf_token: str = "",
                                   temperature: float = 0.2,
                                   top_p: float = 0.9,
                                   repetition_penalty: float = 1.15):
@@ -3429,7 +4613,15 @@ def _run_evaluation_for_eval_job(eval_job_id, job_id, eval_file_path,
             base_model_repo=base_model_repo,
             ft_model_repo=ft_model_repo,
             system_prompt=system_prompt,
+            protocol_mode=protocol_mode,
+            prompt_variant=prompt_variant,
+            system_prompt_version=system_prompt_version,
+            subject_override=subject_override,
             max_new_tokens=max_new_tokens,
+            warmup_runs=warmup_runs,
+            bootstrap_resamples=bootstrap_resamples,
+            bootstrap_seed=bootstrap_seed,
+            hf_token=hf_token,
             temperature=temperature,
             top_p=top_p,
             repetition_penalty=repetition_penalty,
@@ -3439,6 +4631,7 @@ def _run_evaluation_for_eval_job(eval_job_id, job_id, eval_file_path,
             raw_result['jobId'] = job_id
             raw_result['modelEvalId'] = eval_job_id
             eval_jobs_db.setdefault(eval_job_id, {})['result'] = raw_result
+            _save_eval_checkpoint(eval_job_id, 'final_result', raw_result)
         else:
             raise RuntimeError("run_auto_evaluation hoàn thành nhưng không có eval_result")
     finally:
@@ -3486,6 +4679,11 @@ def start_training():
         'seed': int(parsed_config.get('seed', 3407)),
         'early_stopping_loss': float(parsed_config.get('early_stopping_loss', 0.5)),
         'early_stopping_patience': int(parsed_config.get('early_stopping_patience', 100)),
+        # Resume metadata must survive request parsing. Older code dropped these
+        # fields here, so the trainer always restarted from step 0.
+        'checkpoint_source': parsed_config.get('checkpoint_source'),
+        'checkpoint_hf_repo': parsed_config.get('checkpoint_hf_repo'),
+        'checkpoint_file_id': parsed_config.get('checkpoint_file_id'),
         'column_mapping': parsed_config.get('column_mapping') or parsed_config.get('columnMapping'),
     }
 
@@ -3544,6 +4742,31 @@ def get_status(job_id):
         return jsonify(res_info), 200
         
     return jsonify({"status": "NOT_FOUND"}), 200
+
+@app.route('/api/train/checkpoint/<job_id>')
+def get_local_checkpoint(job_id):
+    """Report the newest checkpoint retained on the persistent worker volume."""
+    job_dir = os.path.join(LOCAL_CHECKPOINT_BASE, secure_filename(job_id))
+    checkpoints = []
+    if os.path.isdir(job_dir):
+        for name in os.listdir(job_dir):
+            path = os.path.join(job_dir, name)
+            if os.path.isdir(path) and name.startswith('checkpoint-'):
+                try:
+                    step = int(name.rsplit('-', 1)[-1])
+                except ValueError:
+                    step = -1
+                if os.path.isfile(os.path.join(path, 'trainer_state.json')):
+                    checkpoints.append((step, path))
+    checkpoints.sort(key=lambda item: item[0], reverse=True)
+    if not checkpoints:
+        return jsonify({"available": False, "job_id": job_id}), 200
+    return jsonify({
+        "available": True,
+        "job_id": job_id,
+        "step": checkpoints[0][0],
+        "checkpoint": os.path.basename(checkpoints[0][1]),
+    }), 200
 
 @app.route('/api/train/queue-status')
 def get_train_queue_status():
@@ -3623,7 +4846,14 @@ def start_eval():
     judge_api_key = cfg.get('judge_api_key', '')
     base_hf_repo  = cfg.get('base_model_hf_repo', '')
     system_prompt = str(cfg.get('system_prompt', '') or '')
-    max_new_tokens = int(cfg.get('max_new_tokens', 192))
+    protocol_mode = str(cfg.get('protocol_mode', 'locked_single_turn') or 'locked_single_turn')
+    prompt_variant = str(cfg.get('prompt_variant', 'P1') or 'P1').upper()
+    system_prompt_version = str(cfg.get('system_prompt_version', '') or '')
+    subject_override = str(cfg.get('subject_override', '') or '')
+    max_new_tokens = int(cfg.get('max_new_tokens', 512))
+    warmup_runs = int(cfg.get('warmup_runs', 1))
+    bootstrap_resamples = int(cfg.get('bootstrap_resamples', 10000))
+    bootstrap_seed = int(cfg.get('bootstrap_seed', 42))
     temperature = float(cfg.get('temperature', 0.2))
     top_p = float(cfg.get('top_p', 0.9))
     repetition_penalty = float(cfg.get('repetition_penalty', 1.15))
@@ -3639,6 +4869,15 @@ def start_eval():
         return jsonify({"error": "Missing 'hf_repo_id' — model phải đã được push lên HF Hub"}), 400
 
     # ── GUARD: chặn eval nếu đang có train job active (tránh OOM trên single GPU) ──
+    if protocol_mode == 'locked_single_turn' and not base_hf_repo:
+        return jsonify({"error": "Locked RP5 evaluation requires base_model_hf_repo"}), 400
+    if protocol_mode == 'locked_single_turn' and prompt_variant not in ('P0', 'P1'):
+        return jsonify({"error": "prompt_variant must be P0 or P1"}), 400
+    if max_new_tokens < 1 or max_new_tokens > 2048:
+        return jsonify({"error": "max_new_tokens must be between 1 and 2048"}), 400
+    if bootstrap_resamples < 1000:
+        return jsonify({"error": "bootstrap_resamples must be at least 1000"}), 400
+
     active_train = any(
         v.get('status') == 'TRAINING'
         for k, v in jobs_db.items()
@@ -3660,6 +4899,26 @@ def start_eval():
         f"{eval_job_id}_{secure_filename(efile.filename)}"
     )
     efile.save(eval_file_path)
+
+    # Keep an immutable input copy and non-secret config on the persistent
+    # checkpoint volume. A restarted GPU process can resume with fresh secrets.
+    checkpoint_dir = _eval_checkpoint_dir(eval_job_id)
+    input_ext = os.path.splitext(secure_filename(efile.filename))[1] or '.json'
+    persistent_eval_file = os.path.join(checkpoint_dir, f"input{input_ext}")
+    shutil.copy2(eval_file_path, persistent_eval_file)
+    os.remove(eval_file_path)
+    safe_config = {
+        key: value for key, value in cfg.items()
+        if key not in {'hf_token', 'judge_api_key'}
+    }
+    _update_eval_manifest(
+        eval_job_id,
+        status='PENDING',
+        config=safe_config,
+        eval_file_path=persistent_eval_file,
+        resume_count=0,
+        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    )
 
     # --- check slot trước khi nhận job ---
     if not _eval_slot_acquire():
@@ -3684,13 +4943,118 @@ def start_eval():
 
     threading.Thread(
         target=background_eval_task,
-        args=(eval_job_id, job_id, hf_repo_id, hf_token, eval_file_path,
-              model_max_len, judge_model, judge_api_key, base_hf_repo,
-              system_prompt, max_new_tokens, temperature, top_p, repetition_penalty),
+        kwargs={
+            "eval_job_id": eval_job_id,
+            "job_id": job_id,
+            "hf_repo_id": hf_repo_id,
+            "hf_token": hf_token,
+            "eval_file_path": persistent_eval_file,
+            "model_max_length": model_max_len,
+            "judge_model": judge_model,
+            "judge_api_key": judge_api_key,
+            "base_hf_repo": base_hf_repo,
+            "system_prompt": system_prompt,
+            "protocol_mode": protocol_mode,
+            "prompt_variant": prompt_variant,
+            "system_prompt_version": system_prompt_version,
+            "subject_override": subject_override,
+            "max_new_tokens": max_new_tokens,
+            "warmup_runs": warmup_runs,
+            "bootstrap_resamples": bootstrap_resamples,
+            "bootstrap_seed": bootstrap_seed,
+            "temperature": temperature,
+            "top_p": top_p,
+            "repetition_penalty": repetition_penalty,
+        },
         daemon=True,
     ).start()
 
-    return jsonify({"message": "Eval job started", "eval_job_id": eval_job_id}), 201
+    return jsonify({
+        "message": "Eval job started",
+        "eval_job_id": eval_job_id,
+        "checkpoint_created": True,
+        "eval_checkpoint_protocol": 1,
+    }), 201
+
+
+@app.route('/api/eval/resume/<eval_job_id>', methods=['POST'])
+def resume_eval(eval_job_id):
+    """Resume an interrupted eval from durable replay/Judge checkpoints."""
+    current = eval_jobs_db.get(eval_job_id)
+    if current and current.get('status') in ('PENDING', 'RUNNING', 'EVALUATING'):
+        return jsonify({"error": "eval_already_running", "eval_job_id": eval_job_id}), 409
+
+    manifest = _load_eval_checkpoint(eval_job_id, 'manifest', None)
+    if not manifest:
+        return jsonify({"error": "checkpoint_not_found", "eval_job_id": eval_job_id}), 404
+    if manifest.get('status') == 'COMPLETED':
+        return jsonify({"error": "eval_already_completed", "eval_job_id": eval_job_id}), 409
+
+    cfg = dict(manifest.get('config') or {})
+    eval_file_path = str(manifest.get('eval_file_path') or '')
+    if not eval_file_path or not os.path.isfile(eval_file_path):
+        return jsonify({"error": "checkpoint_input_missing", "eval_job_id": eval_job_id}), 409
+
+    secrets = request.get_json(silent=True) or {}
+    hf_token = str(secrets.get('hf_token') or _read_secret('HF_TOKEN') or '')
+    judge_api_key = str(secrets.get('judge_api_key') or _read_secret('OPENROUTER_API_KEY') or '')
+    if not judge_api_key:
+        return jsonify({"error": "missing_judge_api_key"}), 400
+    if not _eval_slot_acquire():
+        return jsonify({"error": "worker_busy", "message": "GPU không còn Eval slot trống."}), 409
+
+    job_id = str(cfg.get('job_id') or '')
+    hf_repo_id = str(cfg.get('hf_repo_id') or '')
+    if not job_id or not hf_repo_id:
+        _eval_slot_release()
+        return jsonify({"error": "checkpoint_config_invalid"}), 409
+
+    eval_jobs_db[eval_job_id] = {
+        'status': 'PENDING',
+        'progress': int(manifest.get('progress') or 0),
+        'logs': ['[RESUME] Khôi phục Eval từ checkpoint bền vững.'],
+        'job_id': job_id,
+    }
+    _update_eval_manifest(
+        eval_job_id,
+        status='PENDING',
+        error=None,
+        resume_count=int(manifest.get('resume_count') or 0) + 1,
+    )
+
+    threading.Thread(
+        target=background_eval_task,
+        kwargs={
+            'eval_job_id': eval_job_id,
+            'job_id': job_id,
+            'hf_repo_id': hf_repo_id,
+            'hf_token': hf_token,
+            'eval_file_path': eval_file_path,
+            'model_max_length': int(cfg.get('model_max_length', 2048)),
+            'judge_model': str(cfg.get('judge_model') or DEFAULT_JUDGE_MODEL),
+            'judge_api_key': judge_api_key,
+            'base_hf_repo': str(cfg.get('base_model_hf_repo') or ''),
+            'system_prompt': str(cfg.get('system_prompt') or ''),
+            'protocol_mode': str(cfg.get('protocol_mode') or 'locked_single_turn'),
+            'prompt_variant': str(cfg.get('prompt_variant') or 'P1'),
+            'system_prompt_version': str(cfg.get('system_prompt_version') or ''),
+            'subject_override': str(cfg.get('subject_override') or ''),
+            'max_new_tokens': int(cfg.get('max_new_tokens', 512)),
+            'warmup_runs': int(cfg.get('warmup_runs', 1)),
+            'bootstrap_resamples': int(cfg.get('bootstrap_resamples', 10000)),
+            'bootstrap_seed': int(cfg.get('bootstrap_seed', 42)),
+            'temperature': float(cfg.get('temperature', 0)),
+            'top_p': float(cfg.get('top_p', 1)),
+            'repetition_penalty': float(cfg.get('repetition_penalty', 1)),
+        },
+        daemon=True,
+    ).start()
+
+    return jsonify({
+        "message": "Eval resumed from checkpoint",
+        "eval_job_id": eval_job_id,
+        "resume_count": int(manifest.get('resume_count') or 0) + 1,
+    }), 202
 
 
 
@@ -3698,10 +5062,25 @@ def start_eval():
 def get_eval_status(eval_job_id):
     entry = eval_jobs_db.get(eval_job_id)
     if not entry:
+        manifest = _load_eval_checkpoint(eval_job_id, 'manifest', None)
+        if manifest:
+            status = manifest.get('status', 'INTERRUPTED')
+            if status in {'RUNNING', 'EVALUATING', 'PENDING'}:
+                status = 'INTERRUPTED'
+            return jsonify({
+                "status": status,
+                "progress": manifest.get('progress', 0),
+                "stage": manifest.get('stage', ''),
+                "stage_label": "Có checkpoint — có thể Resume",
+                "stage_detail": manifest.get('error') or 'GPU process đã restart; checkpoint vẫn còn trên volume.',
+                "error": manifest.get('error'),
+                "resumable": status != 'COMPLETED',
+            }), 200
         return jsonify({"status": "NOT_FOUND"}), 404
 
     return jsonify({
         "status":        entry.get('status', 'UNKNOWN'),
+        "resumable":     entry.get('status') == 'INTERRUPTED',
         "progress":      entry.get('progress', 0),
         "stage":         entry.get("stage", ""),
         "stage_label":   entry.get("stage_label", ""),
@@ -3712,6 +5091,33 @@ def get_eval_status(eval_job_id):
         **({"current_sample": entry["current_sample"]} if "current_sample" in entry else {}),
         **({"error": entry["error"]} if "error" in entry else {}),
     }), 200
+
+
+@app.route('/api/eval/active', methods=['GET'])
+def get_active_eval_jobs():
+    """Expose worker-owned active IDs so the backend can reconcile Mongo state."""
+    active_statuses = {'PENDING', 'RUNNING', 'EVALUATING'}
+    jobs = [
+        {
+            'eval_job_id': eval_job_id,
+            'status': entry.get('status', 'UNKNOWN'),
+            'job_id': entry.get('job_id'),
+        }
+        for eval_job_id, entry in eval_jobs_db.items()
+        if entry.get('status') in active_statuses
+    ]
+    return jsonify({'jobs': jobs, 'count': len(jobs)}), 200
+
+
+@app.route('/api/eval/checkpoint/<eval_job_id>', methods=['DELETE'])
+def delete_eval_checkpoint(eval_job_id):
+    current = eval_jobs_db.get(eval_job_id)
+    if current and current.get('status') in {'PENDING', 'RUNNING', 'EVALUATING'}:
+        return jsonify({'error': 'eval_still_running'}), 409
+    checkpoint_dir = os.path.join(EVAL_CHECKPOINT_BASE, secure_filename(eval_job_id))
+    if os.path.isdir(checkpoint_dir):
+        shutil.rmtree(checkpoint_dir)
+    return jsonify({'deleted': True, 'eval_job_id': eval_job_id}), 200
 
 
 
@@ -3728,14 +5134,22 @@ def get_eval_result_v2(eval_job_id):
     """
     entry = eval_jobs_db.get(eval_job_id)
     if not entry:
+        persisted_result = _load_eval_checkpoint(eval_job_id, 'final_result', None)
+        if persisted_result:
+            return jsonify(persisted_result), 200
+    if not entry:
         return jsonify({"error": "Eval job không tồn tại"}), 404
 
     status = entry.get('status')
     if status in ('PENDING', 'RUNNING', 'EVALUATING'):
         return jsonify({"status": status}), 202
 
-    if status == 'FAILED':
-        return jsonify({"status": "FAILED", "error": entry.get('error', '')}), 200
+    if status in ('FAILED', 'INTERRUPTED'):
+        return jsonify({
+            "status": status,
+            "error": entry.get('error', ''),
+            "resumable": status == 'INTERRUPTED',
+        }), 200
 
     result = entry.get('result')
     if not result:
@@ -4060,10 +5474,20 @@ def get_resources():
     with _active_eval_lock:
         active = _active_eval_count
 
+    active_training = any(
+        value.get('status') == 'TRAINING'
+        for key, value in jobs_db.items()
+        if not key.startswith('__eval_tmp_')
+    )
+
     # Ngưỡng VRAM tối thiểu để nhận thêm 1 eval job (MB)
     VRAM_MIN_FREE_MB = 5120  # 5 GB
 
-    can_create = (active < GPU_EVAL_SLOTS) and (vram_free_mb >= VRAM_MIN_FREE_MB)
+    can_create = (
+        not active_training
+        and active < GPU_EVAL_SLOTS
+        and vram_free_mb >= VRAM_MIN_FREE_MB
+    )
 
     return jsonify({
         "vram_used_mb":    vram_used_mb,
@@ -4071,9 +5495,11 @@ def get_resources():
         "vram_free_mb":    vram_free_mb,
         "gpu_util":        util.gpu,
         "active_evals":    active,
+        "active_training": active_training,
         "max_evals":       GPU_EVAL_SLOTS,
         "can_create_eval": can_create,
         "vram_min_free_mb": VRAM_MIN_FREE_MB,
+        "eval_checkpoint_protocol": 1,
     }), 200
 
 

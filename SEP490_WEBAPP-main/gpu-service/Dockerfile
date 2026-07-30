@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir --force-reinstall "bitsandbytes==0.43.3"
 RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
 # --- Bước 4: Copy source code ---
-COPY app.py .
+COPY app.py locked_eval_protocol.py ./
 
 # Tạo thư mục cần thiết
 RUN mkdir -p /app/dataset_uploads /tmp/checkpoints_
@@ -54,12 +54,10 @@ RUN mkdir -p /app/dataset_uploads /tmp/checkpoints_
 ENV HOST=0.0.0.0
 ENV PORT=5000
 ENV BACKEND_URL=""
-ENV ANTHROPIC_API_KEY=""
-ENV HF_TOKEN=""
 
 # Tắt Torch compile để tránh lỗi trên một số GPU
 ENV TORCHDYNAMO_DISABLE=1
-ENV CUDA_LAUNCH_BLOCKING=1
+ENV CUDA_LAUNCH_BLOCKING=0
 
 # Tăng timeout cho HuggingFace download
 ENV HF_HUB_DOWNLOAD_TIMEOUT=120
@@ -68,6 +66,6 @@ EXPOSE 5000
 
 # Healthcheck — project backend có thể ping endpoint này
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:5000/api/train/status/health || exit 1
+    CMD curl -f http://localhost:5000/health || exit 1
 
 CMD ["python", "app.py"]

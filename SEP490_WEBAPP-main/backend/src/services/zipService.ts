@@ -12,6 +12,11 @@ export interface DatasetMetadata {
   totalValidation?: number;
   totalTest?: number;
   exportedAt?: string;
+  datasetHashes?: {
+    train_sha256?: string;
+    validation_sha256?: string;
+    test_sha256?: string;
+  };
 }
 
 export interface ZipExtractionResult {
