@@ -754,7 +754,7 @@ export const apiService = {
     return response.data;
   },
   getEvaluationDetail: async (evalId: string): Promise<any> => {
-    const response = await api.get(`/model-eval/${evalId}`);
+    const response = await api.get(`/model-eval/${evalId}`, { timeout: 30000 });
     return response.data;
   },
   exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
@@ -816,7 +816,13 @@ export const apiService = {
     });
     return response.data;
   },
-  reviewConversation: async (evalId: string, convIndex: number, review: { verdict: 'agree' | 'disagree' | 'skip'; note?: string; reviewer?: string }): Promise<any> => {
+  reviewConversation: async (evalId: string, convIndex: number, review: {
+    verdict?: 'agree' | 'disagree' | 'skip';
+    note?: string;
+    reviewer?: string;
+    human_scores?: Record<string, number>;
+    human_reasons?: Record<string, string>;
+  }): Promise<any> => {
     const response = await api.patch(`/model-eval/${evalId}/review/${convIndex}`, review);
     return response.data;
   },

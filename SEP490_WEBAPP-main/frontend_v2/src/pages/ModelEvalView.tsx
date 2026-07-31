@@ -29,7 +29,8 @@ import {
   Database,
   CheckCircle2,
   Gauge,
-  BarChart3
+  BarChart3,
+  ClipboardCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -44,6 +45,7 @@ import {
 } from 'recharts';
 import { api, apiService } from '../services/api';
 import { getAuthToken } from '../services/authSession';
+import { cappedSocraticScore } from '../constants/humanAuditRubric';
 import '../styles/modeleval.css';
 
 interface LeaderboardItem {
@@ -111,6 +113,9 @@ interface LargeLlmReference {
   outputLimitRate: number | null;
   costPer100Usd: number | null;
   outputTokensMean: number | null;
+  totalInputTokens: number | null;
+  totalOutputTokens: number | null;
+  totalTokens: number | null;
   runValidity: string;
   protocolMatch: boolean;
   protocolNotes: string[];
@@ -131,7 +136,6 @@ export default function ModelEvalView() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'breakdown' | 'paired' | 'large-llm' | 'samples'>('paired');
-  const [selectedConvIndex, setSelectedConvIndex] = useState<number | null>(null);
   const [detailEvalHistory, setDetailEvalHistory] = useState<any[]>([]);
   const [largeLlmReferences, setLargeLlmReferences] = useState<LargeLlmReference[]>([]);
   const [largeLlmCatalog, setLargeLlmCatalog] = useState<any[]>([]);
@@ -140,14 +144,6 @@ export default function ModelEvalView() {
   const [largeLlmTestFile, setLargeLlmTestFile] = useState<File | null>(null);
   const [largeLlmRuns, setLargeLlmRuns] = useState<Record<string, any>>({});
   const [startingLargeLlmRun, setStartingLargeLlmRun] = useState(false);
-
-  // Human review form state
-  const [reviewVerdict, setReviewVerdict] = useState<'agree' | 'disagree' | 'skip'>('agree');
-  const [reviewNote, setReviewNote] = useState('');
-  const [reviewerName, setReviewerName] = useState(() => {
-    return localStorage.getItem('user_name') || 'Supervisor';
-  });
-  const [submittingReview, setSubmittingReview] = useState(false);
 
   // Comparison view state
   const [compareData, setCompareData] = useState<any>(null);
@@ -521,7 +517,6 @@ export default function ModelEvalView() {
     setEvaluationDetail(null);
     setDetailEvalHistory([]);
     setDetailLoadError(null);
-    setSelectedConvIndex(null);
 
     let fileToUpload: File | null = uploadedFile;
 
@@ -593,7 +588,6 @@ export default function ModelEvalView() {
     setLoadingDetail(true);
     setViewMode('detail');
     setSelectedEvalId(evalId);
-    setSelectedConvIndex(null);
     setEvaluationDetail(null);
     setDetailEvalHistory([]);
     setDetailLoadError(null);
@@ -609,9 +603,12 @@ export default function ModelEvalView() {
           console.error('Failed to fetch evaluation history:', historyErr);
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch evaluation details:', err);
-      setDetailLoadError('Không tải được chi tiết lần đánh giá này. Hãy thử lại; nếu vẫn lỗi, kết quả có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.');
+      const timedOut = err?.code === 'ECONNABORTED';
+      setDetailLoadError(timedOut
+        ? 'Máy chủ không phản hồi trong 30 giây. Kiểm tra backend rồi bấm Thử lại.'
+        : 'Không tải được chi tiết lần đánh giá này. Hãy thử lại; nếu vẫn lỗi, kết quả có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.');
       toast.error('Không thể tải chi tiết kết quả đánh giá');
     } finally {
       setLoadingDetail(false);
@@ -761,59 +758,12 @@ export default function ModelEvalView() {
     }
   };
 
-  // Open Conversation Audit Panel
-  const handleOpenAudit = (index: number) => {
-    const resultItem = evaluationDetail?.results?.find((r: any) => r.conv_index === index);
-    if (!resultItem) return;
-    setSelectedConvIndex(index);
-    setReviewVerdict(resultItem.human_review?.verdict || 'agree');
-    setReviewNote(resultItem.human_review?.note || '');
-  };
-
-  // Submit human audit review
-  const handleSaveAuditReview = async () => {
-    if (selectedConvIndex === null || !selectedEvalId) return;
-    setSubmittingReview(true);
-    try {
-      const reviewPayload = {
-        verdict: reviewVerdict,
-        note: reviewNote,
-        reviewer: reviewerName
-      };
-      await apiService.reviewConversation(selectedEvalId, selectedConvIndex, reviewPayload);
-      
-      toast.success('Đã lưu thẩm định thủ công!');
-      
-      // Update local state details to avoid full refetch
-      setEvaluationDetail((prev: any) => {
-        if (!prev) return null;
-        const updatedResults = prev.results.map((r: any) => {
-          if (r.conv_index === selectedConvIndex) {
-            return {
-              ...r,
-              human_review: {
-                verdict: reviewVerdict,
-                note: reviewNote,
-                reviewer: reviewerName,
-                reviewed_at: new Date()
-              }
-            };
-          }
-          return r;
-        });
-        return {
-          ...prev,
-          results: updatedResults
-        };
-      });
-      
-      setSelectedConvIndex(null);
-    } catch (err: any) {
-      console.error('Failed to save audit review:', err);
-      toast.error(err.response?.data?.error || 'Không thể lưu thẩm định');
-    } finally {
-      setSubmittingReview(false);
-    }
+  const openHumanAuditTab = (convIndex?: number) => {
+    const evalId = evaluationDetail?.modelEvalId || selectedEvalId;
+    if (!evalId) return;
+    localStorage.setItem('human_audit_eval_id', evalId);
+    if (typeof convIndex === 'number') localStorage.setItem('human_audit_conv_index', String(convIndex));
+    window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'Human Audit' }));
   };
 
   // Export Leaderboard CSV
@@ -846,10 +796,13 @@ export default function ModelEvalView() {
     document.body.removeChild(link);
   };
 
-  const getAuditVerdictBadge = (verdict?: string) => {
-    if (!verdict) return <span className="audit-badge none">Chưa duyệt</span>;
-    if (verdict === 'agree') return <span className="audit-badge agree">Đồng ý</span>;
-    if (verdict === 'disagree') return <span className="audit-badge disagree">Lệch ý</span>;
+  const getAuditVerdictBadge = (review?: any) => {
+    if (!review) return <span className="audit-badge none">Chưa duyệt</span>;
+    if (review.verdict === 'skip') return <span className="audit-badge skip">Bỏ qua</span>;
+    if (review.conflict?.severity === 'critical') return <span className="audit-badge disagree">Conflict nghiêm trọng</span>;
+    if (review.conflict?.has_conflict) return <span className="audit-badge disagree">{review.conflict.severity} conflict</span>;
+    if (review.verdict === 'agree') return <span className="audit-badge agree">Khớp AI</span>;
+    if (review.verdict === 'disagree') return <span className="audit-badge disagree">Lệch ý (bản cũ)</span>;
     return <span className="audit-badge skip">Bỏ qua</span>;
   };
 
@@ -863,8 +816,8 @@ export default function ModelEvalView() {
   // Calculate overall metrics if details are loaded
   const detailsStats = React.useMemo(() => {
     if (!evaluationDetail) return null;
-    const reviewed = evaluationDetail.results.filter((r: any) => r.human_review);
-    const agreed = reviewed.filter((r: any) => r.human_review.verdict === 'agree').length;
+    const reviewed = evaluationDetail.results.filter((r: any) => r.human_review?.human_scores);
+    const agreed = reviewed.filter((r: any) => !r.human_review?.conflict?.has_conflict).length;
     return {
       knowledge: evaluationDetail.summary?.knowledge ?? evaluationDetail.summary?.criteria?.B1 ?? 0,
       socratic: evaluationDetail.summary?.socratic ?? evaluationDetail.summary?.group_a ?? 0,
@@ -873,8 +826,9 @@ export default function ModelEvalView() {
       avgTotalTokens: evaluationDetail.summary?.avg_total_tokens || 0,
       totalTokens: evaluationDetail.summary?.total_tokens || 0,
       factuality: evaluationDetail.summary?.knowledge ?? evaluationDetail.summary?.criteria?.B1 ?? evaluationDetail.summary?.group_b ?? 0,
-      totalReviewed: reviewed.length,
-      agreementRate: reviewed.length > 0 ? Math.round((agreed / reviewed.length) * 100) : null
+      totalReviewed: evaluationDetail.humanAudit?.reviewed_items ?? reviewed.length,
+      agreementRate: reviewed.length > 0 ? Math.round((agreed / reviewed.length) * 100) : null,
+      conflictCount: evaluationDetail.humanAudit?.conflict_items ?? 0,
     };
   }, [evaluationDetail]);
 
@@ -1009,6 +963,7 @@ export default function ModelEvalView() {
         const results = Array.isArray(artifact.results) ? artifact.results : [];
         const e2eValues = results.map((row: any) => Number(row.telemetry?.e2e_ms)).filter(Number.isFinite);
         const throughputValues = results.map((row: any) => Number(row.telemetry?.tokens_per_second)).filter(Number.isFinite);
+        const inputTokenValues = results.map((row: any) => Number(row.telemetry?.input_tokens)).filter(Number.isFinite);
         const outputTokenValues = results.map((row: any) => Number(row.telemetry?.output_tokens)).filter(Number.isFinite);
         const scored = results.filter((row: any) => row.criteria_scores?.A1 !== undefined);
         const artifactHash = artifact.datasetValidation?.dataset_hash ?? artifact.protocolManifest?.dataset_hash;
@@ -1032,6 +987,9 @@ export default function ModelEvalView() {
           outputLimitRate: Number.isFinite(Number(artifact.summary?.output_limit_rate)) ? Number(artifact.summary.output_limit_rate) : null,
           costPer100Usd: Number.isFinite(Number(artifact.summary?.generation_cost_per_100_items_usd)) ? Number(artifact.summary.generation_cost_per_100_items_usd) : null,
           outputTokensMean: average(outputTokenValues),
+          totalInputTokens: inputTokenValues.reduce((sum: number, value: number) => sum + value, 0),
+          totalOutputTokens: outputTokenValues.reduce((sum: number, value: number) => sum + value, 0),
+          totalTokens: [...inputTokenValues, ...outputTokenValues].reduce((sum: number, value: number) => sum + value, 0),
           runValidity: String(artifact.runValidity || 'unknown'),
           protocolMatch: notes.length === 0,
           protocolNotes: notes,
@@ -1059,6 +1017,7 @@ export default function ModelEvalView() {
     const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     const e2e = results.map((row: any) => Number(row.telemetry?.e2e_ms)).filter(Number.isFinite);
     const throughput = results.map((row: any) => Number(row.telemetry?.tokens_per_second)).filter(Number.isFinite);
+    const inputTokens = results.map((row: any) => Number(row.telemetry?.input_tokens)).filter(Number.isFinite);
     const outputTokens = results.map((row: any) => Number(row.telemetry?.output_tokens)).filter(Number.isFinite);
     const scored = results.filter((row: any) => row.criteria_scores?.A1 !== undefined);
     const notes: string[] = [];
@@ -1077,6 +1036,9 @@ export default function ModelEvalView() {
       outputLimitRate: Number.isFinite(Number(artifact?.summary?.output_limit_rate)) ? Number(artifact.summary.output_limit_rate) : null,
       costPer100Usd: Number.isFinite(Number(artifact?.summary?.generation_cost_per_100_items_usd)) ? Number(artifact.summary.generation_cost_per_100_items_usd) : null,
       outputTokensMean: mean(outputTokens),
+      totalInputTokens: inputTokens.reduce((sum: number, value: number) => sum + value, 0),
+      totalOutputTokens: outputTokens.reduce((sum: number, value: number) => sum + value, 0),
+      totalTokens: [...inputTokens, ...outputTokens].reduce((sum: number, value: number) => sum + value, 0),
       runValidity: String(artifact?.runValidity || 'unknown'),
       protocolMatch: notes.length === 0,
       protocolNotes: notes,
@@ -1180,16 +1142,6 @@ export default function ModelEvalView() {
   }, [evaluationDetail]);
 
   const largeLlmComparisonRows = React.useMemo(() => {
-    const LOCAL_GPU_USD_PER_HOUR = 0.35;
-    // Local models have no token invoice. This shows a transparent runtime
-    // equivalent: mean sequential E2E time on a T4-priced GPU.
-    const localCostPer100 = (summary: any) => {
-      const e2eMeanMs = Number(
-        summary?.operational?.metrics?.e2e_ms?.mean ?? summary?.avg_latency_ms
-      );
-      if (!Number.isFinite(e2eMeanMs) || e2eMeanMs <= 0) return '—';
-      return `$${((e2eMeanMs * 100 / 3_600_000) * LOCAL_GPU_USD_PER_HOUR).toFixed(4)}`;
-    };
     const percent = (value: unknown) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${(Number(value) * 100).toFixed(1)}%` : '—';
     const number = (value: unknown, digits = 2) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—';
     return [
@@ -1250,11 +1202,32 @@ export default function ModelEvalView() {
         ref: (item: LargeLlmReference) => number(item.outputTokensMean, 1),
       },
       {
-        label: 'Chi phí / 100 câu (USD)',
-        help: 'Local: quy đổi E2E trung bình theo T4 $0.35/GPU-giờ, chạy tuần tự. API: usage token × giá provider. Đây là chi phí suy ra, không phải bill Colab.',
-        base: localCostPer100(evaluationDetail?.baseSummary),
-        ft: localCostPer100(evaluationDetail?.summary),
-        ref: (item: LargeLlmReference) => item.costPer100Usd === null ? '—' : `$${item.costPer100Usd.toFixed(4)}`,
+        label: 'Tổng output tokens (toàn bộ test)',
+        help: 'Tổng token model đã thực sự sinh trên toàn bộ tập test; không phải ước lượng chi phí.',
+        base: number(evaluationDetail?.baseSummary?.total_output_tokens, 0),
+        ft: number(evaluationDetail?.summary?.total_output_tokens, 0),
+        ref: (item: LargeLlmReference) => number(item.totalOutputTokens, 0),
+      },
+      {
+        label: 'Tổng input tokens (toàn bộ test)',
+        help: 'Token của system prompt, bài đọc, câu hỏi và context gửi vào model trong toàn bộ run.',
+        base: number(evaluationDetail?.baseSummary?.total_input_tokens, 0),
+        ft: number(evaluationDetail?.summary?.total_input_tokens, 0),
+        ref: (item: LargeLlmReference) => number(item.totalInputTokens, 0),
+      },
+      {
+        label: 'Tổng input + output tokens (toàn bộ test)',
+        help: 'Khối lượng token toàn phần của run, bao gồm prompt/bài đọc/câu hỏi và phản hồi sinh ra.',
+        base: number(evaluationDetail?.baseSummary?.total_tokens, 0),
+        ft: number(evaluationDetail?.summary?.total_tokens, 0),
+        ref: (item: LargeLlmReference) => number(item.totalTokens, 0),
+      },
+      {
+        label: 'API cost trực tiếp / 100 câu (USD)',
+        help: 'Local không gọi API nên direct API charge bằng $0. GPU, điện và training được báo cáo qua token, tốc độ và latency; Large LLM dùng usage token × giá provider thực tế.',
+        base: '$0.0000',
+        ft: '$0.0000',
+        ref: (item: LargeLlmReference) => Number.isFinite(Number(item.costPer100Usd)) ? `$${Number(item.costPer100Usd).toFixed(4)}` : '—',
       },
     ];
   }, [evaluationDetail, evalOverview]);
@@ -2247,7 +2220,20 @@ export default function ModelEvalView() {
               {detailTab === 'samples' && (
                 <div className="tab-content-samples">
                   <div className="samples-list-header mb-4">
-                    <p className="text-sm text-muted">Click chuột vào bất kỳ lượt hội thoại nào bên dưới để mở giao diện thẩm định (Audit Panel) đối chiếu replay và điểm AI Judge.</p>
+                    <div>
+                      <strong>50 hội thoại đã lưu của lần đánh giá</strong>
+                      <p className="text-sm text-muted">Dữ liệu này chỉ là danh sách kết quả. Việc replay và chấm thủ công được thực hiện trong tab Human Audit Replay riêng.</p>
+                    </div>
+                    <div className="audit-progress-summary">
+                      <span>{evaluationDetail.humanAudit?.reviewed_items || 0}/{evaluationDetail.results?.length || 0} đã chấm</span>
+                      <span className={(evaluationDetail.humanAudit?.conflict_items || 0) > 0 ? 'has-conflict' : ''}>
+                        {evaluationDetail.humanAudit?.conflict_items || 0} conflict
+                      </span>
+                      <span>{evaluationDetail.humanAudit?.pending_items ?? evaluationDetail.results?.length ?? 0} đang chờ</span>
+                      <button type="button" className="btn-primary" onClick={() => openHumanAuditTab()}>
+                        <ClipboardCheck size={16} /> Mở Human Audit Replay
+                      </button>
+                    </div>
                   </div>
                   <div className="samples-table-wrapper card">
                     <table className="samples-table">
@@ -2270,7 +2256,7 @@ export default function ModelEvalView() {
                             <tr 
                               key={row.conv_index || idx} 
                               className={`sample-row-item ${isReviewed ? 'reviewed' : ''}`}
-                              onClick={() => handleOpenAudit(row.conv_index)}
+                              onClick={() => openHumanAuditTab(row.conv_index)}
                             >
                               <td className="font-mono text-xs font-semibold text-primary">{row.item_id || `Conv #${row.conv_index}`}</td>
                               <td className="sample-instruction-preview">
@@ -2279,10 +2265,10 @@ export default function ModelEvalView() {
                               <td className="text-center font-medium">{row.num_turns}</td>
                               <td className="text-center text-muted">{(row.avg_latency_ms / 1000).toFixed(1)}s</td>
                               <td className="text-center font-bold text-primary">{row.group_scores?.knowledge?.toFixed(1) ?? row.criteria_scores?.B1?.toFixed?.(1) ?? '-'}</td>
-                              <td className="text-center font-bold text-main">{row.group_scores?.socratic?.toFixed(1) ?? '-'}</td>
-                              <td className="text-center">{getAuditVerdictBadge(row.human_review?.verdict)}</td>
+                              <td className="text-center font-bold text-main">{cappedSocraticScore(row.criteria_scores)?.toFixed(1) ?? '-'}</td>
+                              <td className="text-center">{getAuditVerdictBadge(row.human_review)}</td>
                               <td className="text-right text-primary font-semibold text-xs">
-                                Thẩm định &rarr;
+                                Mở Human Audit &rarr;
                               </td>
                             </tr>
                           );
@@ -2691,141 +2677,6 @@ export default function ModelEvalView() {
         </div>
       )}
 
-      {/* 5. SLIDE-OUT PANEL: CONVERSATION HUMAN AUDIT REVIEW */}
-      {selectedConvIndex !== null && evaluationDetail && (
-        (() => {
-          const resultItem = evaluationDetail.results?.find((r: any) => r.conv_index === selectedConvIndex);
-          if (!resultItem) return null;
-          return (
-            <div className="audit-slide-overlay" onClick={() => setSelectedConvIndex(null)}>
-              <div className="audit-slide-panel card" onClick={(e) => e.stopPropagation()}>
-                <div className="audit-panel-header">
-                  <div>
-                    <h3>Thẩm định Hội thoại: Conv #{selectedConvIndex}</h3>
-                    <p className="text-xs text-muted">Kiểm duyệt kết quả đánh giá tự động của AI Judge</p>
-                  </div>
-                  <button className="btn-close-audit" onClick={() => setSelectedConvIndex(null)}>
-                    <X size={20} />
-                  </button>
-                </div>
-
-                <div className="audit-panel-body">
-                  {/* Visual chat bubble transcript replay */}
-                  <div className="chat-replay-container">
-                    <h4>Nội dung Replay hội thoại</h4>
-                    <div className="chat-bubbles-list">
-                      {resultItem.replay_turns?.map((turn: any, tIdx: number) => (
-                        <div key={tIdx} className="chat-turn-group">
-                          <div className="bubble student shadow-sm">
-                            <span className="bubble-role">Học sinh</span>
-                            <p>{turn.user}</p>
-                          </div>
-                          <div className="bubble assistant font-normal shadow-sm">
-                            <span className="bubble-role text-primary">Gia sư (Fine-tuned)</span>
-                            <p>{turn.model}</p>
-                            <span className="bubble-latency">
-                              <Clock size={10} /> {(turn.latency_ms / 1000).toFixed(2)}s
-                              {' · '}{turn.total_tokens ?? 0} tokens
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                      {(!resultItem.replay_turns || resultItem.replay_turns.length === 0) && (
-                        <div className="text-center text-muted italic py-6">Không có lượt thoại replay được lưu.</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* AI Judge criteria reason details and scoring */}
-                  <div className="judge-scoring-details mt-6">
-                    <h4>Điểm số chi tiết từ AI Judge</h4>
-                    <div className="group-overall-metric mb-3">
-                      <span>Primary K / S:</span>
-                      <span className="font-bold text-lg text-primary ml-2">Kiến thức {resultItem.group_scores?.knowledge?.toFixed(2) ?? resultItem.criteria_scores?.B1?.toFixed?.(2)} · Gợi mở {resultItem.group_scores?.socratic?.toFixed(2)} / 5</span>
-                    </div>
-
-                    <div className="criteria-reasons-list">
-                      {Object.entries(resultItem.criteria_scores || {}).map(([key, scoreVal]: any) => {
-                        const reasonText = resultItem.criteria_reasons?.[key] || 'Không có lý giải.';
-                        return (
-                          <div key={key} className="criteria-reason-item card">
-                            <div className="crit-reason-header">
-                              <span className="crit-badge">{key}</span>
-                              <span className="crit-score-val">{scoreVal?.toFixed(1)} / 5.0</span>
-                            </div>
-                            <div className="crit-reason-text">{reasonText}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Human validation audit review form */}
-                  <div className="human-audit-form border-t pt-4 mt-6">
-                    <h4>Đánh giá thẩm định của Supervisor</h4>
-                    <div className="form-group mb-4">
-                      <label>Kết luận của bạn (Verdict)</label>
-                      <div className="verdict-options mt-2">
-                        <button 
-                          type="button" 
-                          className={`verdict-btn agree ${reviewVerdict === 'agree' ? 'active' : ''}`}
-                          onClick={() => setReviewVerdict('agree')}
-                        >
-                          <Check size={14} /> Đồng ý với AI Judge
-                        </button>
-                        <button 
-                          type="button" 
-                          className={`verdict-btn disagree ${reviewVerdict === 'disagree' ? 'active' : ''}`}
-                          onClick={() => setReviewVerdict('disagree')}
-                        >
-                          <X size={14} /> Điểm số AI không đúng
-                        </button>
-                        <button 
-                          type="button" 
-                          className={`verdict-btn skip ${reviewVerdict === 'skip' ? 'active' : ''}`}
-                          onClick={() => setReviewVerdict('skip')}
-                        >
-                          Bỏ qua lượt này
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="form-group mb-4">
-                      <label>Ý kiến giải trình của Supervisor</label>
-                      <textarea 
-                        className="form-input text-sm"
-                        rows={3}
-                        placeholder="Nêu rõ lý do nếu bạn không đồng ý với kết quả chấm điểm của AI..."
-                        value={reviewNote}
-                        onChange={(e) => setReviewNote(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group mb-4">
-                      <label>Tên người thẩm định (Reviewer)</label>
-                      <input 
-                        type="text" 
-                        className="form-input" 
-                        value={reviewerName}
-                        onChange={(e) => setReviewerName(e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <button 
-                      className="btn-primary w-full py-2.5 mt-2" 
-                      onClick={handleSaveAuditReview}
-                      disabled={submittingReview}
-                    >
-                      {submittingReview ? 'Đang lưu thẩm định...' : 'Lưu kết quả thẩm định'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()
-      )}
     </div>
   );
 }

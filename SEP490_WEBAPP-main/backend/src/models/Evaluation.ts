@@ -79,6 +79,24 @@ export interface IEvalResult {
     note?: string;
     reviewer?: string;
     reviewed_at: Date;
+    rubric_version?: string;
+    human_scores?: Record<string, number>;
+    human_reasons?: Record<string, string>;
+    human_outcomes?: {
+      knowledge_k: number;
+      socratic_s_raw: number;
+      socratic_s: number;
+      a1_cap_applied: boolean;
+    };
+    ai_scores_snapshot?: Record<string, number>;
+    conflict?: {
+      has_conflict: boolean;
+      severity: 'none' | 'minor' | 'major' | 'critical';
+      criteria: string[];
+      max_delta: number;
+      summary: string;
+      deltas: Record<string, number>;
+    };
   };
 }
 

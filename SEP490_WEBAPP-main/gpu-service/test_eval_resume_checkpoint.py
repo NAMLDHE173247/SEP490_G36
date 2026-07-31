@@ -34,6 +34,16 @@ def load_functions(*names, extra_globals=None):
 
 
 class EvalCheckpointTests(unittest.TestCase):
+    def test_a1_guardrail_caps_primary_socratic_score(self):
+        compute = load_functions("_compute_group_scores_research")["_compute_group_scores_research"]
+        result = compute({
+            "A1": 1, "A2": 5, "A3": 5,
+            "B1": 5, "B2": 5, "C1": 5, "C2": 5, "C3": 5, "D1": 5, "D2": 5,
+        })
+        self.assertEqual(result["socratic_uncapped"], 3.667)
+        self.assertEqual(result["socratic"], 1.0)
+        self.assertTrue(result["socratic_cap_applied"])
+
     def test_atomic_checkpoint_round_trip(self):
         with tempfile.TemporaryDirectory() as checkpoint_root:
             namespace = load_functions(

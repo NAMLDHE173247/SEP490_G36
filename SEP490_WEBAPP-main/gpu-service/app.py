@@ -885,7 +885,15 @@ JUDGE_REFERENCE_POLICY = (
     "\n\nREFERENCE POLICY: When a reference answer or gold key points are provided, "
     "use them only as hidden scoring evidence for factual coverage. They were never "
     "shown to Base or Fine-tuned models. Do not reward verbatim copying, and do not "
-    "penalize a different but correct Socratic path."
+    "penalize a different but correct Socratic path.\n"
+    "HUMAN-ALIGNED RUBRIC POLICY: A2 covers stepwise scaffolding, correct mistake "
+    "detection, and a concrete actionable next step. A3 covers adaptation and "
+    "personalization to the learner's latest response and apparent level. B2 covers "
+    "grade-level fit. C2 covers multi-turn context consistency. C3 covers patient, "
+    "encouraging, non-judgmental tone. D1 covers invented facts, context, sources, "
+    "or learner statements. Score these dimensions independently. A1 <= 1 is the "
+    "answer-withholding guardrail; the application applies the non-compensatory "
+    "Socratic cap after scoring."
 )
 
 _CRITERIA_KEYS = [
@@ -979,7 +987,10 @@ def _compute_group_scores_research(criteria: dict) -> dict:
     # separate so style or machine-dependent latency cannot compensate for a
     # factual or pedagogical failure.
     knowledge = b1
-    socratic = (a1 + a2 + a3) / 3.0
+    socratic_raw = (a1 + a2 + a3) / 3.0
+    # A1 is a non-compensatory guardrail. Directly revealing the answer cannot
+    # be offset by strong style/adaptation scores in the Socratic outcome.
+    socratic = min(socratic_raw, 1.0) if a1 <= 1.0 else socratic_raw
 
     # Historical composite retained only for backward-compatible dashboards.
     # It is exploratory and must not be used to select a winning model.
@@ -999,6 +1010,8 @@ def _compute_group_scores_research(criteria: dict) -> dict:
     return {
         "knowledge": round(knowledge, 3),
         "socratic": round(socratic, 3),
+        "socratic_uncapped": round(socratic_raw, 3),
+        "socratic_cap_applied": (a1 <= 1.0),
         "answer_withholding_violation": (a1 <= 1.0),
         "secondary": {
             "grade_level": round(b2, 3),

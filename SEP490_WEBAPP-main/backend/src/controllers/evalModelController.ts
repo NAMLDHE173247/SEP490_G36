@@ -18,6 +18,13 @@ import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import {
+  HUMAN_AUDIT_RUBRIC_VERSION,
+  buildHumanAuditSummary,
+  computeHumanOutcomes,
+  deriveHumanAiConflict,
+  validateHumanAuditScores,
+} from '../services/humanAuditService';
 dotenv.config();
 
 type LargeLlmReferenceJob = {
@@ -1347,6 +1354,7 @@ export const exportEvaluationArtifact = async (req: Request, res: Response) => {
     if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
 
     const artifact: Record<string, any> = { ...evaluation };
+    artifact.humanAudit = buildHumanAuditSummary((evaluation.results || []) as any[]);
     delete artifact.ownerId;
     delete artifact.__v;
     const safeId = String(evaluation.modelEvalId).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1375,6 +1383,7 @@ export const getEvaluation = async (req: Request, res: Response) => {
       ...doc,
       isPinned: history?.pinnedEvalId === evalId,
       projectName: history?.projectName ?? '',
+      humanAudit: buildHumanAuditSummary((doc.results || []) as any[]),
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to get evaluation' });
@@ -1987,7 +1996,7 @@ export const compareEvaluations = async (req: Request, res: Response) => {
 
 // ---------------------------------------------------------------------------
 // PATCH /api/model-eval/:evalId/review/:convIndex
-// Body: { verdict: 'agree'|'disagree'|'skip', note?: string, reviewer?: string }
+// Body: { verdict?: 'skip', human_scores?: A1..D1, human_reasons?: {}, note?, reviewer }
 // ---------------------------------------------------------------------------
 export const reviewConversation = async (req: Request, res: Response) => {
   try {
@@ -1997,9 +2006,9 @@ export const reviewConversation = async (req: Request, res: Response) => {
     }
 
     const { evalId, convIndex } = req.params;
-    const { verdict, note, reviewer } = req.body;
+    const { verdict, note, reviewer, human_scores, human_reasons } = req.body;
 
-    if (!['agree', 'disagree', 'skip'].includes(verdict)) {
+    if (verdict && !['agree', 'disagree', 'skip'].includes(verdict)) {
       return res.status(400).json({ error: 'verdict phải là agree | disagree | skip' });
     }
 
@@ -2015,31 +2024,55 @@ export const reviewConversation = async (req: Request, res: Response) => {
     const convResult = evalDoc.results.find((r: any) => r.conv_index === idx);
     if (!convResult) return res.status(404).json({ error: `Conversation ${idx} not found` });
 
-    // Update human_review
-    convResult.human_review = {
-      verdict,
-      note: note?.trim() || undefined,
-      reviewer: reviewer?.trim() || 'anonymous',
-      reviewed_at: new Date(),
-    };
+    const reviewerName = String(reviewer || '').trim();
+    if (!reviewerName) return res.status(400).json({ error: 'Cần tên người thẩm định' });
+
+    let review: Record<string, any>;
+    if (verdict === 'skip') {
+      review = {
+        verdict: 'skip',
+        note: String(note || '').trim() || undefined,
+        reviewer: reviewerName,
+        reviewed_at: new Date(),
+        rubric_version: HUMAN_AUDIT_RUBRIC_VERSION,
+      };
+    } else {
+      let validated;
+      try {
+        validated = validateHumanAuditScores(human_scores, human_reasons);
+      } catch (validationError: any) {
+        return res.status(400).json({ error: validationError.message || 'Điểm Human Audit không hợp lệ' });
+      }
+      const humanOutcomes = computeHumanOutcomes(validated.scores);
+      const conflict = deriveHumanAiConflict(
+        convResult.criteria_scores as unknown as Record<string, unknown>,
+        validated.scores,
+      );
+      review = {
+        verdict: conflict.has_conflict ? 'disagree' : 'agree',
+        note: String(note || '').trim() || undefined,
+        reviewer: reviewerName,
+        reviewed_at: new Date(),
+        rubric_version: HUMAN_AUDIT_RUBRIC_VERSION,
+        human_scores: validated.scores,
+        human_reasons: validated.reasons,
+        human_outcomes: humanOutcomes,
+        ai_scores_snapshot: { ...(convResult.criteria_scores as unknown as Record<string, number>) },
+        conflict,
+      };
+    }
+
+    convResult.human_review = review as any;
 
     await evalDoc.save();
 
-    // Tính lại review stats
-    const reviewed = evalDoc.results.filter((r: any) => r.human_review?.verdict !== 'skip' && r.human_review);
-    const agreed   = reviewed.filter((r: any) => r.human_review?.verdict === 'agree').length;
-    const total    = evalDoc.results.filter((r: any) => r.human_review).length;
+    const stats = buildHumanAuditSummary(evalDoc.results as any[]);
 
     return res.json({
       message: 'Review saved',
       conv_index: idx,
-      verdict,
-      stats: {
-        total_reviewed: total,
-        agreed,
-        disagreed: reviewed.length - agreed,
-        agreement_rate: reviewed.length > 0 ? Math.round((agreed / reviewed.length) * 100) : null,
-      },
+      review,
+      humanAudit: stats,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

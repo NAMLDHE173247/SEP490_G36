@@ -190,7 +190,14 @@ def score_batches(results: list[dict], api_key: str, judge_model: str, judge_pro
                         "criteria_reasons": reasons,
                         "group_scores": {
                             "knowledge_k": criteria["B1"],
-                            "socratic_s": round((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 6),
+                            "socratic_s_raw": round((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 6),
+                            "socratic_s": round(
+                                min((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 1.0)
+                                if criteria["A1"] <= 1
+                                else (criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3,
+                                6,
+                            ),
+                            "a1_cap_applied": criteria["A1"] <= 1,
                         },
                         "judge_status": "success",
                         "judge_response_id": reply.get("id"),

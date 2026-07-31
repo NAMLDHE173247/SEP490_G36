@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History, ListChecks
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -27,6 +27,7 @@ import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
 import RouterBenchmarkView from './RouterBenchmarkView';
+import HumanAuditReplayView from './HumanAuditReplayView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -75,6 +76,7 @@ function Dashboard() {
     { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Human Audit', label: 'Human Audit Replay', icon: <ListChecks size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Router Benchmark', label: 'Router Benchmark', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -189,6 +191,8 @@ function Dashboard() {
         return <ModelRegistryView />;
       case 'Model Eval':
         return <ModelEvalView />;
+      case 'Human Audit':
+        return <HumanAuditReplayView />;
       case 'Router Benchmark':
         return <RouterBenchmarkView />;
       case 'Version Data Prep':
