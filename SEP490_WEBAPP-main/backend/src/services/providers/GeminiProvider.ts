@@ -18,7 +18,7 @@ export class GeminiProvider implements ILlmProvider {
         }
 
         const modelConfig: any = {
-            model: modelOverride || 'gemini-2.0-flash',
+            model: modelOverride || 'gemini-2.5-flash',
             generationConfig: config,
         };
 

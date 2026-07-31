@@ -6,6 +6,12 @@ import './Stage3AiReview.css';
 
 type Props = { versionId: string | null; samples: any[]; dashboard: any; onRefresh?: () => void };
 
+const MODEL_LABELS: Record<string, string> = {
+  gemini: 'Gemini 2.5 Flash',
+  deepseek: 'DeepSeek V4 Flash',
+  openai: 'ChatGPT GPT-4',
+};
+
 const resultKey = (result: any) => String(result?.sampleIdRef?._id || result?.sampleId || '');
 const staffScoreOf = (result: any) => {
   const value = Number(result?.scores?.human ?? result?.scores?.Human);
@@ -21,7 +27,7 @@ export const Stage3AiReview: React.FC<Props> = ({ versionId, samples, dashboard,
   const [selectedId, setSelectedId] = React.useState<string>('');
   const [comparison, setComparison] = React.useState<any>(null);
   const [loadingComparison, setLoadingComparison] = React.useState(false);
-  const [models, setModels] = React.useState<Record<string, boolean>>({ gemini: true, deepseek: true, openai: false });
+  const [models, setModels] = React.useState<Record<string, boolean>>({ gemini: true, deepseek: true, openai: true });
   const [starting, setStarting] = React.useState(false);
   const [conflictThreshold, setConflictThreshold] = React.useState(2);
   const { results, latestJob, runMultiEval, refreshData, error } = useStage4Data(versionId);
@@ -69,7 +75,7 @@ export const Stage3AiReview: React.FC<Props> = ({ versionId, samples, dashboard,
 
   return <div className="s3-scoring-compact">
     <div className="s3-scoring-head"><div><h3><Bot size={18}/> AI Scoring</h3><p>Chọn mô hình và ngưỡng conflict. Điểm chi tiết được xem tại Quality Review.</p></div><button className="s3-primary" onClick={run} disabled={running || !versionId || Object.values(models).every(v => !v)}>{running ? <><Loader2 className="spin" size={16}/> Đang chấm...</> : <><Play size={16}/> Chạy AI Scoring</>}</button></div>
-    <div className="s3-scoring-settings"><div><label>Mô hình chấm điểm</label><div className="s3-models">{Object.keys(models).map(name => <label key={name}><input type="checkbox" checked={models[name]} onChange={() => setModels(old => ({...old, [name]: !old[name]}))}/><span>{name}</span></label>)}</div></div><div className="s3-threshold"><label>Ngưỡng xung đột: <strong>{conflictThreshold.toFixed(1)} điểm</strong></label><input type="range" min="0.5" max="5" step="0.5" value={conflictThreshold} onChange={e => setConflictThreshold(Number(e.target.value))}/><small>Chênh lệch AI–Staff từ mức này sẽ chuyển sang Quality Review.</small></div></div>
+    <div className="s3-scoring-settings"><div><label>Mô hình chấm điểm</label><div className="s3-models">{Object.keys(models).map(name => <label key={name}><input type="checkbox" checked={models[name]} onChange={() => setModels(old => ({...old, [name]: !old[name]}))}/><span>{MODEL_LABELS[name] || name}</span></label>)}</div></div><div className="s3-threshold"><label>Ngưỡng xung đột: <strong>{conflictThreshold.toFixed(1)} điểm</strong></label><input type="range" min="0.5" max="5" step="0.5" value={conflictThreshold} onChange={e => setConflictThreshold(Number(e.target.value))}/><small>Chênh lệch AI–Staff từ mức này sẽ chuyển sang Quality Review.</small></div></div>
     <div className="s3-job-progress"><div><span>Tiến độ chấm</span><strong>{evaluated} / {total} ({progressPercent}%)</strong></div><div className="s3-progress-track"><span style={{width: `${progressPercent}%`}}/></div><small>{latestJob?.status === 'failed' ? latestJob.errorMessage || 'Job thất bại' : latestJob?.status === 'completed' ? `Hoàn tất · ${latestJob.progress?.conflictCount || 0} conflict` : running ? 'Đang xử lý...' : 'Sẵn sàng chạy'}</small></div>
     {error && <div className="s3-error">{error}</div>}
   </div>;
@@ -80,7 +86,7 @@ export const Stage3AiReview: React.FC<Props> = ({ versionId, samples, dashboard,
     <section className="s3-review-hero">
       <div><span className="s3-eyebrow"><Bot size={15}/> AI CROSS-CHECK</span><h2>Kiểm duyệt nhãn Staff bằng AI</h2><p>AI chấm trên cùng hội thoại, sau đó hệ thống đối chiếu với kết quả Staff để ưu tiên các mẫu cần người quản lý xem lại.</p></div>
       <div className="s3-run-box">
-        <div className="s3-models">{Object.keys(models).map(name => <label key={name}><input type="checkbox" checked={models[name]} onChange={() => setModels(old => ({...old, [name]: !old[name]}))}/><span>{name}</span></label>)}</div>
+        <div className="s3-models">{Object.keys(models).map(name => <label key={name}><input type="checkbox" checked={models[name]} onChange={() => setModels(old => ({...old, [name]: !old[name]}))}/><span>{MODEL_LABELS[name] || name}</span></label>)}</div>
         <button className="s3-primary" onClick={run} disabled={running || !versionId || Object.values(models).every(v => !v)}>{running ? <><Loader2 className="spin" size={16}/> AI đang chấm</> : <><Play size={16}/> Chạy AI chấm điểm</>}</button>
       </div>
     </section>

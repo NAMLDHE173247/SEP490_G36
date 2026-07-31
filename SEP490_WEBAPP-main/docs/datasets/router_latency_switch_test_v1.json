@@ -1,0 +1,81 @@
+{
+  "schema_version": "router_latency_switch_v1",
+  "dataset_role": "engineering_latency_switch_pilot",
+  "warning": "This file measures model switching and cache behavior only. It is not the final subject-quality test set.",
+  "recommended_conditions": ["oracle", "hybrid"],
+  "recommended_repetitions": 3,
+  "cases": [
+    {
+      "id": "LAT-001-COLD-MATH",
+      "scenario": "cold_start",
+      "question": "Tính đạo hàm của hàm số y = x^2 + 3x.",
+      "gold_subject": "MATH",
+      "turns": [
+        "Tính đạo hàm của hàm số y = x^2 + 3x."
+      ],
+      "turn_gold_subjects": ["MATH"]
+    },
+    {
+      "id": "LAT-002-WARM-SAME-MATH",
+      "scenario": "same_model_warm_reuse",
+      "question": "Giải phương trình x^2 - 5x + 6 = 0.",
+      "gold_subject": "MATH",
+      "turns": [
+        "Giải phương trình x^2 - 5x + 6 = 0.",
+        "Em nghĩ hai nghiệm là 2 và 3, đúng không?",
+        "Vậy em kiểm tra lại bằng cách thay x = 2 như thế nào?"
+      ],
+      "turn_gold_subjects": ["MATH", "MATH", "MATH"]
+    },
+    {
+      "id": "LAT-003-GENERAL-TO-MATH",
+      "scenario": "general_to_specialist",
+      "question": "Xin chào, bạn có thể hỗ trợ tôi học bài không?",
+      "gold_subject": "GENERAL",
+      "turns": [
+        "Xin chào, bạn có thể hỗ trợ tôi học bài không?",
+        "Tính tổ hợp C(14,2) và gợi ý cho em bước đầu tiên."
+      ],
+      "turn_gold_subjects": ["GENERAL", "MATH"]
+    },
+    {
+      "id": "LAT-004-RETURN-OLD-MODEL",
+      "scenario": "return_to_previous_model",
+      "question": "Phân tích đa thức x^2 - 9 thành nhân tử.",
+      "gold_subject": "MATH",
+      "turns": [
+        "Phân tích đa thức x^2 - 9 thành nhân tử.",
+        "Chiến thắng Bạch Đằng năm 938 có ý nghĩa gì?",
+        "Quay lại bài toán trước, vì sao x^2 - 9 là hiệu hai bình phương?"
+      ],
+      "turn_gold_subjects": ["MATH", "HISTORY", "MATH"]
+    },
+    {
+      "id": "LAT-005-FOUR-MODEL-THRASH",
+      "scenario": "multi_model_eviction_and_return",
+      "question": "Xin chào, hôm nay mình học nhiều môn nhé.",
+      "gold_subject": "GENERAL",
+      "turns": [
+        "Xin chào, hôm nay mình học nhiều môn nhé.",
+        "Giải phương trình 2x + 5 = 17.",
+        "Nguyên nhân chính của Cách mạng tháng Tám năm 1945 là gì?",
+        "Explain the difference between 'since' and 'for' in English.",
+        "Cảm ơn bạn, tạm biệt nhé."
+      ],
+      "turn_gold_subjects": ["GENERAL", "MATH", "HISTORY", "ENGLISH", "GENERAL"]
+    },
+    {
+      "id": "LAT-006-FOLLOWUP-CLARIFY",
+      "scenario": "follow_up_and_clarification",
+      "question": "Hiệp định Genève năm 1954 có nội dung chính nào?",
+      "gold_subject": "HISTORY",
+      "turns": [
+        "Hiệp định Genève năm 1954 có nội dung chính nào?",
+        "Còn ý thứ hai thì sao?",
+        "Giải thích tiếp phần đó giúp em.",
+        "Cái này thuộc môn nào vậy?"
+      ],
+      "turn_gold_subjects": ["HISTORY", "HISTORY", "HISTORY", "GENERAL"]
+    }
+  ]
+}

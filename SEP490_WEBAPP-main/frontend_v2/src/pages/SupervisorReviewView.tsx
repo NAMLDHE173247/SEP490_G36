@@ -51,6 +51,7 @@ type QueueItem = AssignmentConflictItem & {
 type ReviewRow = {
   assignmentId:string; sampleIndex:number; sampleId:string; versionId:string; projectId:string;
   assigneeId?:string; assigneeName:string; reviewStatus:string; preview:string; label:any; taskName:string; datasetName:string;
+  task?:any;
 };
 type ReviewGroup = {
   key:string; versionId:string; sampleId:string; sampleIndex:number; preview:string; taskName:string; datasetName:string; rows:ReviewRow[]; conflictItem?:QueueItem;
@@ -66,6 +67,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
   const [error, setError] = useState<string|null>(null);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'severity'|'deadline'>('severity');
+  const [projectStatusFilter, setProjectStatusFilter] = useState<'all'|'todo'|'completed'>('all');
+  const [priorityFilter, setPriorityFilter] = useState<'all'|'high'|'medium'|'low'>('all');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<QueueItem|null>(null);
 
@@ -73,6 +76,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
   const [activeTab, setActiveTab] = useState<'quick_reviews' | 'rewrites' | 'history'>('quick_reviews');
 
   const [rewriteTasks, setRewriteTasks] = useState<any[]>([]);
+  const [rewriteStatusFilter, setRewriteStatusFilter] = useState<'all' | 'pending' | 'approved' | 'redo'>('all');
+  const [rewriteQuery, setRewriteQuery] = useState('');
   const [loadingRewrites, setLoadingRewrites] = useState(false);
   const [reviewingRewrite, setReviewingRewrite] = useState<any | null>(null);
   const [rewriteReviewNote, setRewriteReviewNote] = useState('');
@@ -90,6 +95,17 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
       setLoadingRewrites(false);
     }
   };
+
+  const visibleRewriteTasks = useMemo(() => {
+    const normalizedQuery = rewriteQuery.trim().toLowerCase();
+    return rewriteTasks.filter(task => {
+      const status = String(task.status || '');
+      const statusGroup = status === 'approved' ? 'approved' : ['redo', 'rejected'].includes(status) ? 'redo' : 'pending';
+      const matchesStatus = rewriteStatusFilter === 'all' || rewriteStatusFilter === statusGroup;
+      const haystack = `${task.convId || ''} ${task.staffName || task.assigneeName || task.assigneeId?.name || ''} ${task.checkerName || ''} ${task.reason || ''}`.toLowerCase();
+      return matchesStatus && (!normalizedQuery || haystack.includes(normalizedQuery));
+    });
+  }, [rewriteTasks, rewriteStatusFilter, rewriteQuery]);
 
   const loadQueue = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -122,6 +138,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
             ...row,
             taskName: task.name||task.taskName||'Task chưa đặt tên',
             datasetName: task.dataset||task.datasetName||task.projectName||'Dataset',
+            task,
           })) as ReviewRow[];
       }));
 
@@ -217,7 +234,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
           versionId: vid,
           projectName: row.taskName,
           datasetName: row.datasetName,
-          task: null,
+          task: row.task || null,
           conflicts: [],
           reviewRows: [],
           quickReviews: [],
@@ -284,11 +301,34 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
     return projects.find(p => p.versionId === selectedVersionId) || null;
   }, [projects, selectedVersionId]);
 
+  const filteredProjects = useMemo(() => {
+    const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    const normalizedQuery = query.trim().toLowerCase();
+    return projects
+      .filter(project => {
+        const pendingCount = project.quickReviews.length;
+        const statusMatches = projectStatusFilter === 'all'
+          || (projectStatusFilter === 'todo' && pendingCount > 0)
+          || (projectStatusFilter === 'completed' && pendingCount === 0);
+        const priority = String(project.task?.priority || 'medium').toLowerCase();
+        const priorityMatches = priorityFilter === 'all' || priority === priorityFilter;
+        const queryMatches = !normalizedQuery
+          || `${project.projectName} ${project.datasetName}`.toLowerCase().includes(normalizedQuery);
+        return statusMatches && priorityMatches && queryMatches;
+      })
+      .sort((a, b) => {
+        const aPriority = String(a.task?.priority || 'medium').toLowerCase();
+        const bPriority = String(b.task?.priority || 'medium').toLowerCase();
+        return (priorityRank[aPriority] ?? 1) - (priorityRank[bPriority] ?? 1)
+          || a.projectName.localeCompare(b.projectName, 'vi');
+      });
+  }, [projects, projectStatusFilter, priorityFilter, query]);
+
   const overallKPIs = useMemo(() => {
     let totalPendingConflicts = 0;
     let totalResolved = 0;
     projects.forEach(p => {
-      totalPendingConflicts += p.overlapReviews.length;
+      totalPendingConflicts += p.quickReviews.length;
       totalResolved += p.resolvedConflictsCount;
     });
     return {
@@ -379,38 +419,64 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
           <section className="sv-project-directory">
             <div className="directory-header">
               <h2>Danh sách dự án hoạt động</h2>
-              <p>Chọn một dự án để xem danh sách chi tiết và giải quyết xung đột nhãn.</p>
+              <p>Ưu tiên các dự án còn submission một Staff cần Supervisor duyệt.</p>
+            </div>
+
+            <div className="workspace-filters-bar" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 18 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 260px' }}>
+                <Search size={16} />
+                <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm theo tên dự án hoặc dataset..." />
+              </label>
+              <select value={projectStatusFilter} onChange={event => setProjectStatusFilter(event.target.value as any)}>
+                <option value="all">Tất cả trạng thái</option>
+                <option value="todo">Cần làm</option>
+                <option value="completed">Đã hoàn thành</option>
+              </select>
+              <select value={priorityFilter} onChange={event => setPriorityFilter(event.target.value as any)}>
+                <option value="all">Tất cả ưu tiên</option>
+                <option value="high">Ưu tiên cao</option>
+                <option value="medium">Ưu tiên trung bình</option>
+                <option value="low">Ưu tiên thấp</option>
+              </select>
+              <span style={{ color: '#64748b', fontSize: 13 }}>{filteredProjects.length}/{projects.length} dự án</span>
             </div>
 
             {loading && items.length === 0 ? (
               <div className="sv-skeletons">
                 {[1, 2, 3].map(i => <div key={i} className="sv-skeleton" />)}
               </div>
-            ) : projects.length === 0 ? (
+            ) : filteredProjects.length === 0 ? (
               <div className="sv-state empty-state">
                 <Inbox size={48} />
-                <h3>Không tìm thấy dữ liệu dự án</h3>
-                <p>Hiện tại không có tác vụ gán nhãn nào cần xử lý hoặc các tác vụ đang trống.</p>
+                <h3>Không có dự án phù hợp bộ lọc</h3>
+                <p>Thử đổi trạng thái, mức ưu tiên hoặc từ khóa tìm kiếm.</p>
               </div>
             ) : (
               <div className="project-grid">
-                {projects.map(p => {
-                  const totalConflicts = p.conflicts.length;
-                  const resolved = p.resolvedConflictsCount;
-                  const pct = totalConflicts > 0 ? Math.round((resolved / totalConflicts) * 100) : 100;
-                  const pendingTotal = p.overlapReviews.length;
+                {filteredProjects.map(p => {
+                  const totalReviews = new Set(p.reviewRows.map(row => row.sampleId)).size;
+                  const resolved = new Set(p.reviewRows.filter(row => row.reviewStatus === 'approved').map(row => row.sampleId)).size;
+                  const pct = totalReviews > 0 ? Math.round((resolved / totalReviews) * 100) : 100;
+                  const pendingTotal = p.quickReviews.length;
+                  const priority = String(p.task?.priority || 'medium').toLowerCase();
+                  const priorityLabel = priority === 'high' ? 'Cao' : priority === 'low' ? 'Thấp' : 'Trung bình';
 
                   return (
                     <article key={p.versionId} className="project-card" onClick={() => selectProject(p.versionId)}>
                       <div className="project-card-body">
-                        <span className="project-tag">Dataset Version</span>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <span className="project-tag">Dataset Version</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 999, background: priority === 'high' ? '#fee2e2' : priority === 'low' ? '#e0f2fe' : '#fef3c7', color: priority === 'high' ? '#b91c1c' : priority === 'low' ? '#0369a1' : '#92400e' }}>
+                            Ưu tiên {priorityLabel}
+                          </span>
+                        </div>
                         <h3 className="project-title">{p.projectName}</h3>
                         <p className="project-dataset-name">{p.datasetName}</p>
 
                         <div className="project-progress-container">
                           <div className="progress-labels">
-                            <span>Tiến độ phân giải</span>
-                            <span>{resolved}/{totalConflicts} ({pct}%)</span>
+                            <span>Tiến độ Supervisor duyệt</span>
+                            <span>{resolved}/{totalReviews} ({pct}%)</span>
                           </div>
                           <div className="sv-task-progress">
                             <span style={{ width: `${pct}%` }}></span>
@@ -419,8 +485,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
 
                         <div className="project-mini-kpis">
                           <div className="mini-kpi purple">
-                            <strong>{p.overlapReviews.length}</strong>
-                            <span>Phan xu</span>
+                            <strong>{p.quickReviews.length}</strong>
+                            <span>Cần duyệt</span>
                           </div>
                           <div className="mini-kpi green">
                             <strong>{resolved}</strong>
@@ -431,7 +497,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                       <div className="project-card-footer">
                         <span>{pendingTotal > 0 ? `Có ${pendingTotal} mục cần xử lý` : "Hoàn thành tác vụ"}</span>
                         <button className="sv-open-btn primary-btn">
-                          Bat dau tham dinh <ChevronRight size={14} />
+                          {pendingTotal > 0 ? 'Bắt đầu duyệt' : 'Xem lịch sử'} <ChevronRight size={14} />
                         </button>
                       </div>
                     </article>
@@ -459,8 +525,8 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                 <span>Cần duyệt</span>
               </div>
               <div className="wkpi blue" style={{ borderLeft: '3px solid #3b82f6' }}>
-                <strong>{rewriteTasks.filter(t => t.status === 'checker_approved').length}</strong>
-                <span>Viết lại</span>
+                <strong>{rewriteTasks.filter(t => t.status === 'submitted').length}</strong>
+                <span>Chờ Checker</span>
               </div>
               <div className="wkpi green">
                 <strong>{selectedProject?.resolvedConflictsCount}</strong>
@@ -483,7 +549,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
                 void fetchRewriteAssignments();
               }}
             >
-              Duyệt Viết lại <span>{rewriteTasks.filter(t => t.status === 'checker_approved').length}</span>
+              Theo dõi viết lại <span>{rewriteTasks.length}</span>
             </button>
             <button
               className={activeTab === 'history' ? 'active' : ''}
@@ -661,45 +727,39 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
 
             {activeTab === 'rewrites' && (
               <section className="sv-queue">
+                <div className="rewrite-monitor-toolbar">
+                  <div className="rewrite-filter-tabs">
+                    {([['all','Tất cả'],['pending','Đang chờ'],['approved','Đã duyệt'],['redo','Làm lại']] as const).map(([value,label]) => (
+                      <button key={value} className={rewriteStatusFilter === value ? 'active' : ''} onClick={() => setRewriteStatusFilter(value)}>{label}</button>
+                    ))}
+                  </div>
+                  <div className="sv-search rewrite-search"><Search size={15}/><input value={rewriteQuery} onChange={event => setRewriteQuery(event.target.value)} placeholder="Tìm sample, Staff, Checker..." /></div>
+                </div>
                 {loadingRewrites ? (
                   <div className="sv-skeletons">
                     {[1, 2].map(i => <div key={i} className="sv-skeleton" />)}
                   </div>
-                ) : rewriteTasks.filter(t => t.status === 'checker_approved').length === 0 ? (
+                ) : visibleRewriteTasks.length === 0 ? (
                   <div className="sv-state empty-state">
                     <CheckCircle2 size={40} className="success-icon" />
                     <h3>Tuyệt vời!</h3>
-                    <p>Không có task rewrite nào đang chờ bạn phê duyệt cuối cùng trong dự án này.</p>
+                    <p>Chưa có task rewrite trong dự án này.</p>
                   </div>
                 ) : (
-                  <div className="sv-list">
-                    {rewriteTasks.filter(t => t.status === 'checker_approved').map((task) => (
-                      <article className="sv-overlap-card modern-overlap" key={task.id}>
-                        <div className="sv-overlap-top">
-                          <div>
-                            <span className="sample-number" style={{ background: '#dbeafe', color: '#1e40af' }}>Rewrite #{String(task.convId).substring(0, 8)}</span>
-                            <span className="sr-status-badge" style={{ background: '#dbeafe', color: '#1e40af', marginLeft: '8px', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>Checker đã duyệt</span>
-                            <h3 style={{ marginTop: '8px' }}>Nhân viên: {task.staffName || task.assigneeName || task.assigneeId?.name || 'Staff'}</h3>
-                            <p className="sample-preview" style={{ color: '#ef4444' }}><strong>Lỗi cần sửa:</strong> {REWRITE_REASON_VI_MAP[task.reason] || task.reason || 'Yêu cầu viết lại'}</p>
-                            {task.checkerReviewNote && (
-                              <p className="sample-preview" style={{ marginTop: '4px', color: '#047857' }}><strong>Nhận xét Checker:</strong> "{task.checkerReviewNote}"</p>
-                            )}
-                            <p className="sample-preview" style={{ marginTop: '8px', color: '#475569' }}>
-                              <strong>Bản viết lại của Staff:</strong> "{String(task.submittedText).substring(0, 100)}{String(task.submittedText).length > 100 ? '...' : ''}"
-                            </p>
-                          </div>
-                          <button
-                            className="sv-open-btn action-btn adjudication-btn"
-                            onClick={() => {
-                              setReviewingRewrite(task);
-                              setRewriteReviewNote('');
-                            }}
-                          >
-                            Phê duyệt cuối cùng
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                  <div className="rewrite-table-wrap">
+                    <table className="rewrite-table">
+                      <thead><tr><th>Sample</th><th>Staff</th><th>Lý do</th><th>Bản viết lại</th><th>Checker</th><th>Trạng thái</th></tr></thead>
+                      <tbody>{visibleRewriteTasks.map(task => (
+                        <tr key={task.id}>
+                          <td><strong>#{String(task.convId).substring(0, 10)}</strong></td>
+                          <td>{task.staffName || task.assigneeName || task.assigneeId?.name || 'Staff'}</td>
+                          <td><span className="rewrite-reason">{REWRITE_REASON_VI_MAP[task.reason] || task.reason || 'Yêu cầu viết lại'}</span></td>
+                          <td><p className="rewrite-preview">{task.submittedText || 'Chưa nộp bản sửa'}</p></td>
+                          <td>{task.checkerName || 'Đã phân công'}{task.checkerReviewNote && <small style={{ display:'block', color:'#64748b', marginTop:4 }}>{task.checkerReviewNote}</small>}</td>
+                          <td><span className={`rewrite-status ${task.status === 'approved' ? 'approved' : ['redo','rejected'].includes(task.status) ? 'redo' : 'pending'}`}>{task.status === 'approved' ? 'Đã duyệt' : task.status === 'submitted' ? 'Chờ Checker' : task.status}</span></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
                   </div>
                 )}
               </section>

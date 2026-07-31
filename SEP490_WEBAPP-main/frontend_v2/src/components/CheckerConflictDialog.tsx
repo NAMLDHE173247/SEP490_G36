@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Check, ChevronLeft, Loader2, MessageSquare, Send, User, X } from 'lucide-react';
-import { api, apiService, type AssignmentConflictItem } from '../services/api';
+import { api, type AssignmentConflictItem } from '../services/api';
 import '../styles/checkerconflict.css';
 import '../styles/checkerconflict-polish.css';
 
@@ -178,6 +178,54 @@ const labelReasonForTarget = (label: any, target: any) => {
   return String(candidates.find((item) => String(item || '').trim()) || '').trim();
 };
 
+const ReviewerTable = ({ target, item, selectedLabels, readOnly, onToggle }: any) => (
+  <div className="sv-review-table-wrap">
+    <table className="sv-review-table">
+      <thead>
+        <tr>
+          <th>Reviewer</th>
+          <th>Vai trò</th>
+          <th>Nhãn đã chọn</th>
+          <th>Lý do</th>
+        </tr>
+      </thead>
+      <tbody>
+        {(target?.annotators || []).map((annotator: any) => {
+          const displayName = annotator.annotator?.name && annotator.annotator.name !== annotator.annotator.email
+            ? `${annotator.annotator.name} (${annotator.annotator.email})`
+            : annotator.annotator?.email || 'Reviewer';
+          const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(annotator.annotator?.id || ''));
+          const reason = labelReasonForTarget(reviewerRow?.label, target);
+          return (
+            <tr key={annotator.annotator?.id || displayName}>
+              <td><strong>{displayName}</strong></td>
+              <td>{annotator.isOwner ? 'Admin' : annotator.annotator?.role === 'checker' ? 'Checker' : 'Staff'}</td>
+              <td>
+                <div className="sv-table-labels">
+                  {(annotator.labels || []).map((label: string, index: number) => (
+                    <button
+                      type="button"
+                      key={`${label}-${index}`}
+                      className={hasLabel(selectedLabels, label) ? 'selected' : ''}
+                      disabled={readOnly}
+                      onClick={() => onToggle(label)}
+                    >
+                      {annotatorLabelText(annotator, label, index)}
+                      {hasLabel(selectedLabels, label) && <Check size={13} />}
+                    </button>
+                  ))}
+                  {!(annotator.labels || []).length && <span className="sv-empty-cell">Chưa gán nhãn</span>}
+                </div>
+              </td>
+              <td>{reason || <span className="sv-empty-cell">—</span>}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
+);
+
 const inferAdviceLabel = (title: string, text: string) => {
   const source = removeAccents(text.toLowerCase());
   const candidates = title.toLowerCase().includes('môn') || title.toLowerCase().includes('mon')
@@ -249,12 +297,21 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
   const [drafts, setDrafts] = useState<Record<string, {labels: string[], note: string}>>({});
   const [aiAdvice, setAiAdvice] = useState<Record<string, string>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
+  const [messageStatus, setMessageStatus] = useState<'conflict' | 'all' | 'agreed' | 'resolved'>('conflict');
+  const [messageRole, setMessageRole] = useState<'all' | 'user' | 'assistant'>('all');
+  const [messageQuery, setMessageQuery] = useState('');
+  const loadSequence = useRef(0);
 
   const load=async()=>{
+    const sequence = ++loadSequence.current;
     setLoading(true);
     setError('');
     try{
-      const result=await apiService.getDatasetVersionAssignmentSampleComparison(item.versionId,item.sampleId);
+      const response=await api.get(`/dataprep/versions/${item.versionId}/assignments/samples/${item.sampleId}/comparison`, {
+        timeout: 60000,
+      });
+      const result=response.data;
+      if (sequence !== loadSequence.current) return;
       setData(result);
 
       const newDrafts: any = {};
@@ -273,13 +330,17 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
       const first=result.targets?.find((t:any)=>t.hasConflict && t.adjudication?.status !== 'published')||result.targets?.[0];
       setActiveKey(first?.targetKey||'');
     }catch(e:any){
+      if (sequence !== loadSequence.current) return;
       setError(e.response?.data?.error||e.message||'Không thể tải dữ liệu so sánh.');
     }finally{
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   };
 
-  useEffect(()=>{load()},[item.sampleId,item.versionId]);
+  useEffect(()=>{
+    void load();
+    return () => { loadSequence.current += 1; };
+  },[item.sampleId,item.versionId]);
 
   const target=useMemo(()=>data?.targets?.find((t:any)=>t.targetKey===activeKey),[data,activeKey]);
 
@@ -396,18 +457,18 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
           payload.messageRole = t.messageRole;
         }
         if (publish) {
-          payload.skipLog = true;
-        }
-        await api.post(`/dataprep/versions/${item.versionId}/assignments/samples/${item.sampleId}/adjudications`, payload);
-        if (publish) {
           await api.post(`/dataprep/versions/${item.versionId}/assignments/samples/${item.sampleId}/adjudications/publish`, payload);
+        } else {
+          await api.post(`/dataprep/versions/${item.versionId}/assignments/samples/${item.sampleId}/adjudications`, payload);
         }
       });
       await Promise.all(promises);
-      await load();
-      onCompleted();
       if (publish) {
         onClose();
+        onCompleted();
+      } else {
+        await load();
+        onCompleted();
       }
     } catch(e:any) {
       setError(e.response?.data?.error||e.message||'Không thể lưu quyết định.');
@@ -478,8 +539,23 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
           <div className="sv-resolution-split">
             {/* LEFT COLUMN: INTERACTIVE CHAT & INLINE LABELS */}
             <div className="sv-col-chat">
-              <div className="sv-section-label"><MessageSquare size={15} /> Hội thoại (Click tin nhắn để chọn mục giải quyết)</div>
-              <div className="sv-chat-container">
+              <div className="sv-section-label"><MessageSquare size={15} /> Bảng đối chiếu từng tin nhắn</div>
+              <div className="sv-message-toolbar">
+                <div className="sv-filter-tabs">
+                  {([
+                    ['conflict', 'Bất đồng'], ['all', 'Tất cả'], ['agreed', 'Đồng thuận'], ['resolved', 'Đã chốt'],
+                  ] as const).map(([value, label]) => (
+                    <button key={value} className={messageStatus === value ? 'active' : ''} onClick={() => setMessageStatus(value)}>{label}</button>
+                  ))}
+                </div>
+                <select value={messageRole} onChange={event => setMessageRole(event.target.value as typeof messageRole)}>
+                  <option value="all">Mọi vai trò</option>
+                  <option value="user">Người dùng</option>
+                  <option value="assistant">Trợ lý AI</option>
+                </select>
+                <input value={messageQuery} onChange={event => setMessageQuery(event.target.value)} placeholder="Tìm nội dung..." />
+              </div>
+              <div className="sv-message-table-wrap">
                 {(() => {
                   let msgs = data?.sample?.messages || data?.sample?.data?.messages || item.sampleData?.messages || item.sampleData?.data?.messages || [];
                   const text = (target && target.targetScope !== 'sample') ? (target.targetTextSnapshot || data?.sample?.preview || '') : (data?.sample?.preview || '');
@@ -497,57 +573,53 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
                   }
                   if (!msgs.length) return <p className="sv-no-content">Không có nội dung</p>;
 
-                  return msgs.map((m: any, i: number) => {
-                    const isUser = String(m.role).toLowerCase() === 'user';
-                    const msgTarget = data?.targets?.find((t: any) => t.targetScope === 'message' && Number(t.messageIndex) === i);
-                    const isActive = activeKey === (msgTarget ? msgTarget.targetKey : `message-${i}`);
-                    const hasConflict = msgTarget?.hasConflict;
-                    const resolved = msgTarget?.adjudication?.status === 'published';
+                  const visibleMessages = msgs.map((message: any, index: number) => ({ message, index })).filter(({ message, index }: any) => {
+                    const role = String(message.role).toLowerCase() === 'user' ? 'user' : 'assistant';
+                    const rowTarget = data?.targets?.find((t: any) => t.targetScope === 'message' && Number(t.messageIndex) === index);
+                    const resolved = rowTarget?.adjudication?.status === 'published';
+                    const status = resolved ? 'resolved' : rowTarget?.hasConflict ? 'conflict' : 'agreed';
+                    const content = String(message.content || message.text || '');
+                    return (messageStatus === 'all' || messageStatus === status)
+                      && (messageRole === 'all' || messageRole === role)
+                      && (!messageQuery.trim() || content.toLowerCase().includes(messageQuery.trim().toLowerCase()));
+                  });
 
-                    return (
-                      <div
+                  if (!visibleMessages.length) return <div className="sv-table-empty">Không có tin nhắn phù hợp bộ lọc.</div>;
+
+                  return <table className="sv-message-table">
+                    <thead><tr><th>#</th><th>Vai trò</th><th>Nội dung</th><th>Staff 1</th><th>Staff 2</th><th>Trạng thái</th></tr></thead>
+                    <tbody>{visibleMessages.map(({ message: m, index: i }: any) => {
+                      const isUser = String(m.role).toLowerCase() === 'user';
+                      const msgTarget = data?.targets?.find((t: any) => t.targetScope === 'message' && Number(t.messageIndex) === i);
+                      const isActive = activeKey === (msgTarget ? msgTarget.targetKey : `message-${i}`);
+                      const hasConflict = msgTarget?.hasConflict;
+                      const resolved = msgTarget?.adjudication?.status === 'published';
+                      return <tr
                         key={i}
                         id={`checker-msg-${i}`}
-                        className={`sv-chat-msg ${isUser ? 'user' : 'assistant'} ${isActive ? 'active' : ''} ${hasConflict ? 'has-conflict' : ''} ${resolved ? 'resolved' : ''} clickable`}
-                        onClick={() => {
-                          setActiveKey(msgTarget ? msgTarget.targetKey : `message-${i}`);
-                        }}
+                        className={isActive ? 'active' : ''}
+                        onClick={() => setActiveKey(msgTarget ? msgTarget.targetKey : `message-${i}`)}
                       >
-                        <div className="sv-chat-role-bar">
-                          <span className="role-name">
-                            {isUser ? `Người dùng (Lượt ${Math.floor(i / 2) + 1})` : `Trợ lý AI (Lượt ${Math.floor(i / 2) + 1})`}
-                          </span>
-                          {hasConflict && <span className="conflict-badge-inline">Bất đồng</span>}
-                          {resolved && <span className="resolved-badge-inline">Đã chốt</span>}
-                        </div>
-                        <div className="sv-chat-bubble">{m.content || m.text || JSON.stringify(m)}</div>
-
-                        {/* Inline Reviewer Labels comparison */}
-                        {msgTarget?.annotators && msgTarget.annotators.length > 0 && (
-                          <div className="sv-bubble-annotator-labels">
-                            {msgTarget.annotators.map((a: any) => {
-                              const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
-                              return (
-                                <div key={a.annotator.id} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', width: '100%', marginTop: '6px', padding: '6px 10px', background: 'rgba(255,255,255,0.7)', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                  <strong style={{ fontSize: '12px', color: '#334155' }}>{displayName}:</strong>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                    {(a.labels || []).map((l: string, idx: number) => {
-                                      const mapped = annotatorLabelText(a, l, idx);
-                                      return (
-                                        <span key={`${l}-${idx}`} style={{ display: 'inline-flex', padding: '3px 8px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '11.5px', color: '#0f172a', fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                                          {mapped}
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  });
+                        <td>{i + 1}</td>
+                        <td><span className={`sv-role-pill ${isUser ? 'user' : 'assistant'}`}>{isUser ? 'Người dùng' : 'Trợ lý AI'}</span></td>
+                        <td className="sv-message-content">{m.content || m.text || JSON.stringify(m)}</td>
+                        {[0, 1].map(reviewerIndex => {
+                          const annotator = msgTarget?.annotators?.[reviewerIndex];
+                          return <td key={reviewerIndex} className="sv-reviewer-cell">
+                            {annotator ? <>
+                              <small>{annotator.annotator?.name || annotator.annotator?.email || `Staff ${reviewerIndex + 1}`}</small>
+                              <strong>{(annotator.labels || []).map((label: string, idx: number) => annotatorLabelText(annotator, label, idx)).join(', ') || 'Chưa gán'}</strong>
+                            </> : <span className="sv-empty-cell">—</span>}
+                          </td>;
+                        })}
+                        <td>{resolved
+                          ? <span className="sv-row-status resolved">Đã chốt</span>
+                          : hasConflict
+                            ? <span className="sv-row-status conflict">Bất đồng</span>
+                            : <span className="sv-row-status agreed">Đồng thuận</span>}</td>
+                      </tr>;
+                    })}</tbody>
+                  </table>;
                 })()}
               </div>
             </div>
@@ -599,38 +671,18 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
                         return (
                           <section className="sv-sample-review-section" key={sampleTarget.targetKey}>
                             <h4>{targetTitle(sampleTarget)} {targetResolved && <span className="sv-final-chip">Đã chốt</span>}</h4>
-                            <div className="sv-reviewers">
-                              {sampleTarget.annotators?.map((a: any) => {
-                                const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
-                                const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
-                                const reviewerReason = labelReasonForTarget(reviewerRow?.label, sampleTarget);
-                                return (
-                                  <article key={a.annotator.id}>
-                                    <header>
-                                      <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
-                                      <div>
-                                        <strong>{displayName}</strong>
-                                        <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetTitle(sampleTarget)}</small>
-                                      </div>
-                                    </header>
-                                    <div className="sv-review-labels">
-                                      {(a.labels || []).map((label: string, idx: number) => (
-                                        <button
-                                          key={`${label}-${idx}`}
-                                          className={hasLabel(targetDraft.labels, label) ? 'selected' : ''}
-                                          disabled={readOnly}
-                                          onClick={() => setTargetLabels(sampleTarget.targetKey, hasLabel(targetDraft.labels, label) ? withoutLabel(targetDraft.labels, label) : [...targetDraft.labels, label])}
-                                        >
-                                          <span>{annotatorLabelText(a, label, idx)}</span>
-                                          {hasLabel(targetDraft.labels, label) && <Check size={14} />}
-                                        </button>
-                                      ))}
-                                      {reviewerReason && <p className="sv-review-reason">Lý do: {reviewerReason}</p>}
-                                    </div>
-                                  </article>
-                                );
-                              })}
-                            </div>
+                            <ReviewerTable
+                              target={sampleTarget}
+                              item={item}
+                              selectedLabels={targetDraft.labels}
+                              readOnly={readOnly}
+                              onToggle={(label: string) => setTargetLabels(
+                                sampleTarget.targetKey,
+                                hasLabel(targetDraft.labels, label)
+                                  ? withoutLabel(targetDraft.labels, label)
+                                  : [...targetDraft.labels, label],
+                              )}
+                            />
                             {!readOnly && (() => {
                               const mIdx = Number(sampleTarget.messageIndex);
                               const overrideChoices = mIdx === 1
@@ -665,41 +717,13 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
                       })}
                     </div>
                   ) : (
-                    <div className="sv-reviewers">
-                    {target?.annotators?.map((a: any) => {
-                      const displayName = a.annotator.name && a.annotator.name !== a.annotator.email ? `${a.annotator.name} (${a.annotator.email})` : a.annotator.email || 'Reviewer';
-                      const reviewerRow = item.reviewerRows?.find((row: any) => String(row.assigneeId || '') === String(a.annotator.id || ''));
-                      const reviewerReason = labelReasonForTarget(reviewerRow?.label, target);
-                      return (
-                        <article key={a.annotator.id}>
-                          <header>
-                            <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
-                            <div>
-                              <strong>{displayName}</strong>
-                              <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetKindText(target)}</small>
-                            </div>
-                          </header>
-                          <div className="sv-review-labels">
-                            {(a.labels || []).map((label: string, idx: number) => {
-                              const translatedLabel = annotatorLabelText(a, label, idx);
-                              return (
-                                <button
-                                  key={label}
-                                  className={hasLabel(currentLabels, label) ? 'selected' : ''}
-                                  disabled={readOnly}
-                                  onClick={() => toggle(label)}
-                                >
-                                  <span>{translatedLabel}</span>
-                                  {hasLabel(currentLabels, label) && <Check size={14} />}
-                                </button>
-                              );
-                            })}
-                            {reviewerReason && <p className="sv-review-reason">Lý do: {reviewerReason}</p>}
-                          </div>
-                        </article>
-                      );
-                    })}
-                    </div>
+                    <ReviewerTable
+                      target={target}
+                      item={item}
+                      selectedLabels={currentLabels}
+                      readOnly={readOnly}
+                      onToggle={toggle}
+                    />
                   )}
 
                   {/* AI helper box */}

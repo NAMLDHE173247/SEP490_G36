@@ -7,6 +7,10 @@ import { OpenAIProvider } from './providers/OpenAIProvider';
 import { DeepseekProvider } from './providers/DeepseekProvider';
 import { GroqProvider } from './providers/GroqProvider';
 import { OpenRouterProvider } from './providers/OpenRouterProvider';
+import { CLIProxyProvider } from './providers/CLIProxyProvider';
+import { CircuitBreakerProvider } from './providers/CircuitBreakerProvider';
+import { FixedModelProvider } from './providers/FixedModelProvider';
+import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
 
 export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'groq';
 
@@ -85,39 +89,52 @@ class ApiKeyService {
     );
   }
 
-  async getAllPersonalKeys(userId: string): Promise<Record<ProviderType, string>> {
+  async getPersonalKeyStatus(userId: string): Promise<Record<ProviderType, boolean>> {
     const user = await User.findById(userId).select('apiKeys').lean();
-    const result: Record<string, string> = {
-      openai: '', gemini: '', deepseek: '', openrouter: '', groq: ''
-    };
-    if (user && user.apiKeys) {
-      for (const provider of Object.keys(result) as ProviderType[]) {
-        if ((user.apiKeys as any)[provider]) {
-          result[provider] = decrypt((user.apiKeys as any)[provider]);
-        }
-      }
-    }
+    const result = { openai: false, gemini: false, deepseek: false, openrouter: false, groq: false };
+    for (const provider of Object.keys(result) as ProviderType[]) result[provider] = Boolean((user?.apiKeys as any)?.[provider]);
     return result;
   }
 
-  async getAllGlobalKeys(): Promise<Record<ProviderType, string>> {
-    const config = await GlobalConfig.findOne({ key: 'global_api_keys' }).lean();
-    const result: Record<string, string> = {
-      openai: '', gemini: '', deepseek: '', openrouter: '', groq: ''
-    };
-    if (config && config.value) {
-      for (const provider of Object.keys(result) as ProviderType[]) {
-        if (config.value[provider]) {
-          result[provider] = decrypt(config.value[provider]);
-        }
-      }
-    }
+  async getGlobalKeyStatus(): Promise<Record<ProviderType, boolean>> {
+    const config = await GlobalConfig.findOne({ key: 'global_api_keys' }).select('value').lean();
+    const result = { openai: false, gemini: false, deepseek: false, openrouter: false, groq: false };
+    for (const provider of Object.keys(result) as ProviderType[]) result[provider] = Boolean(config?.value?.[provider]);
     return result;
   }
 
-  async createProvider(userId: string | undefined | null, providerName: string, isJson: boolean = true): Promise<ILlmProvider> {
+  async createProvider(userId: string | undefined | null, providerName: string, isJson: boolean = true, model?: string): Promise<ILlmProvider> {
     const norm = providerName.toLowerCase();
+
+    if (norm.includes('cliproxy') || norm.includes('oauth_gateway')) {
+      if (!userId) throw Object.assign(new Error('Login is required for personal OAuth Gateway.'), { statusCode: 401 });
+      try {
+        const { oauthUserPrefix } = await import('./providers/oauthIdentity.js');
+        const prefix = oauthUserPrefix(String(userId));
+        const provider = new CircuitBreakerProvider(`oauth-ai-gateway:${prefix}`, new CLIProxyProvider(prefix));
+        if (model) {
+          if (!/^[A-Za-z0-9._:/-]{1,200}$/.test(model)) throw Object.assign(new Error('Invalid model id.'), { statusCode: 400 });
+          const { FixedModelProvider } = await import('./providers/FixedModelProvider.js');
+          return new FixedModelProvider(provider, model);
+        }
+        return provider;
+      } catch (error) {
+        console.warn('[ApiKeyService] Personal OAuth Gateway is unavailable.', error instanceof Error ? error.message : error);
+        throw error;
+      }
+    }
     
+    // Research modes use one OpenRouter account and fixed model IDs so repeated
+    // experiments cannot silently switch provider/model versions.
+    const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
+    if (openRouterKey && (norm.includes('gemini') || norm.includes('deepseek') || norm.includes('openai'))) {
+      const mode = norm.includes('deepseek') ? 'deepseek' : norm.includes('openai') ? 'openai' : 'gemini';
+      return new FixedModelProvider(
+        new OpenRouterProvider(openRouterKey, isJson),
+        model || RESEARCH_MODEL_CATALOG[mode],
+      );
+    }
+
     if (norm.includes('gemini')) {
       const key = await this.getApiKeyForUser(userId, 'gemini');
       if (key && key.startsWith('AIzaSy')) {
@@ -125,10 +142,12 @@ class ApiKeyService {
       }
       
       // Fallback: If the Gemini key is invalid/missing but we have OpenRouter key, use OpenRouter
-      const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
       if (openRouterKey || process.env.OPENROUTER_API_KEY) {
         console.log('[ApiKeyService] Gemini key is invalid. Falling back to OpenRouter.');
-        return new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY);
+        return new FixedModelProvider(
+          new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY, isJson),
+          RESEARCH_MODEL_CATALOG.gemini,
+        );
       }
       
       // Secondary fallback to Groq
@@ -147,7 +166,7 @@ class ApiKeyService {
       return new GroqProvider(key);
     } else if (norm.includes('openrouter')) {
       const key = await this.getApiKeyForUser(userId, 'openrouter');
-      return new OpenRouterProvider(key);
+      return new FixedModelProvider(new OpenRouterProvider(key, isJson), model || RESEARCH_MODEL_CATALOG.gemini);
     } else {
       const key = await this.getApiKeyForUser(userId, 'openai');
       return new OpenAIProvider(key);

@@ -42,7 +42,9 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
   const [taskName, setTaskName] = useState('');
   const [priority, setPriority] = useState('medium');
   const [deadline, setDeadline] = useState('');
+  const [checkerDeadline, setCheckerDeadline] = useState('');
   const [overlapCount, setOverlapCount] = useState(1);
+  const [conflictThreshold, setConflictThreshold] = useState(0.6);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedChecker, setSelectedChecker] = useState('');
@@ -57,7 +59,10 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setTaskName('');
       setPriority('medium');
       setDeadline('');
+      setCheckerDeadline('');
+      setSelectedChecker('');
       setOverlapCount(1);
+      setConflictThreshold(0.6);
       setError('');
       fetchVersions();
       fetchCheckers();
@@ -164,6 +169,15 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
       setError('Tên Task là bắt buộc');
       return;
     }
+    if (!deadline) {
+      setError('Hạn nộp của Staff là bắt buộc');
+      return;
+    }
+    if (overlapCount > 1 && selectedChecker && !checkerDeadline) {
+      setError('Vui lòng chọn hạn review cho Checker');
+      return;
+    }
+    const toEndOfDayIso = (date: string) => new Date(`${date}T23:59:59.999`).toISOString();
     setSubmitting(true);
     setError('');
     try {
@@ -172,9 +186,11 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
         aiAssigneeIds: aiStaff.filter(id => selectedStaff.includes(id)),
         taskName: taskName.trim(),
         priority,
-        deadline: deadline || undefined,
+        staffDeadline: toEndOfDayIso(deadline),
+        checkerDeadline: selectedChecker && checkerDeadline ? toEndOfDayIso(checkerDeadline) : undefined,
         overlapCount,
-        checkerId: selectedChecker || undefined,
+        similarityThreshold: conflictThreshold,
+        checkerId: overlapCount > 1 ? (selectedChecker || undefined) : undefined,
       });
       if (res.data.success) {
         onSuccess();
@@ -333,11 +349,21 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                       </select>
                     </div>
                     {overlapCount > 1 && (
-                      <div className="ta-overlap-preview">
-                        <span className="ta-overlap-badge">
-                          📊 {numberOfGroups} nhóm × {overlapCount} người — mỗi nhóm cùng gán{' '}
-                          {selectedVersion ? Math.floor(selectedVersion.totalSamples / numberOfGroups) : '?'} câu giống nhau
-                        </span>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        <div className="ta-overlap-preview">
+                          <span className="ta-overlap-badge">
+                            📊 {numberOfGroups} nhóm × {overlapCount} người — mỗi nhóm cùng gán{' '}
+                            {selectedVersion ? Math.floor(selectedVersion.totalSamples / numberOfGroups) : '?'} mẫu
+                          </span>
+                        </div>
+                        <div style={{ padding: 10, border: '1px solid #ddd6fe', borderRadius: 8, background: '#faf5ff' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700 }}>
+                            <span>Ngưỡng đồng thuận Jaccard</span>
+                            <span style={{ color: '#7c3aed' }}>{Math.round(conflictThreshold * 100)}%</span>
+                          </div>
+                          <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={e => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#7c3aed' }} />
+                          <small>Đạt từ {Math.round(conflictThreshold * 100)}%: tự chốt nhãn đa số. Thấp hơn: chuyển Checker.</small>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -454,19 +480,40 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
                   </select>
                 </div>
                 <div className="ta-config-group">
-                  <label><Calendar size={14} /> Deadline</label>
-                  <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
+                  <label><Calendar size={14} /> Hạn nộp của Staff</label>
+                  <input type="date" required min={new Date().toISOString().slice(0, 10)} value={deadline} onChange={e => setDeadline(e.target.value)} className="ta-input" />
                 </div>
               </div>
 
-              <div className="ta-config-group ta-checker-field">
-                <label><Users size={14} /> Checker phụ trách</label>
-                <select value={selectedChecker} onChange={e => setSelectedChecker(e.target.value)} className="ta-select">
-                  <option value="">-- Chọn Checker --</option>
-                  {checkers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
-                </select>
-                <small>Nhãn nộp từ Staff hoặc conflict phát sinh sẽ được giao cho Checker được chọn kiểm duyệt.</small>
-              </div>
+              {overlapCount > 1 ? (
+                <div className="ta-config-group ta-checker-field">
+                  <label><Users size={14} /> Checker xử lý ngoại lệ</label>
+                  <select value={selectedChecker} onChange={e => setSelectedChecker(e.target.value)} className="ta-select">
+                    <option value="">-- Admin/Supervisor tự xử lý --</option>
+                    {checkers.map(c => <option key={c.id} value={c.id}>{c.name} — {c.email}</option>)}
+                  </select>
+                  {selectedChecker && (
+                    <>
+                      <label><Calendar size={14} /> Hạn review của Checker</label>
+                      <input
+                        type="date"
+                        required
+                        min={deadline ? new Date(new Date(`${deadline}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)}
+                        value={checkerDeadline}
+                        onChange={e => setCheckerDeadline(e.target.value)}
+                        className="ta-input"
+                      />
+                      <small>Hạn Checker phải sau hạn Staff.</small>
+                    </>
+                  )}
+                  <small>Checker chỉ nhận mẫu có mức đồng thuận thấp hơn {Math.round(conflictThreshold * 100)}%.</small>
+                </div>
+              ) : (
+                <div className="ta-config-group ta-checker-field" style={{ background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                  <strong style={{ color: '#166534' }}>Luồng một Staff</strong>
+                  <small>Staff nộp → Supervisor duyệt → tự tạo Canonical. Không qua Checker.</small>
+                </div>
+              )}
 
               <div className="ta-summary-card">
                 <div className="ta-summary-title">
@@ -543,7 +590,7 @@ export default function TaskAssignmentModal({ isOpen, onClose, onSuccess }: Task
             </button>
           )}
           {step === 3 && (
-            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting || !taskName.trim()}>
+            <button className="ta-btn ta-btn-success" onClick={handleSubmit} disabled={submitting || !taskName.trim() || !deadline || Boolean(selectedChecker && !checkerDeadline)}>
               {submitting ? 'Đang giao việc...' : '🚀 Giao việc'}
             </button>
           )}

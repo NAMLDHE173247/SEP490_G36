@@ -16,15 +16,17 @@ import VersionDataPrepView from './VersionDataPrepView';
 import ManagerAssignLabelingView from './ManagerAssignLabelingView';
 import StaffTasksView from './StaffTasksView';
 import StaffLabelView from './StaffLabelView';
+import StaffRewriteView from './StaffRewriteView';
 import LabelingTaskDetailView from './LabelingTaskDetailView';
 import ReviewQueueView from './ReviewQueueView';
 import StaffStatsView from './StaffStatsView';
 import MyStatsView from './MyStatsView';
 import SupervisorReviewView from './SupervisorReviewView';
 import CheckerReviewView from './CheckerReviewView';
+import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
-import ReviewerDashboardView from './ReviewerDashboardView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
+import RouterBenchmarkView from './RouterBenchmarkView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -53,7 +55,6 @@ function Dashboard() {
       case 'checker': return 'Checker Review';
       case 'supervisor': return 'Dashboard';
       case 'staff': return 'My Tasks';
-      case 'reviewer': return 'Reviewer Dashboard';
       default: return 'Dashboard';
     }
   };
@@ -63,6 +64,7 @@ function Dashboard() {
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
     { key: 'Checker Review', label: 'Checker Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
+    { key: 'Checker Rewrite', label: 'Kiểm duyệt Rewrite', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
     { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
@@ -73,11 +75,11 @@ function Dashboard() {
     { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Router Benchmark', label: 'Router Benchmark', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
-    { key: 'Reviewer Dashboard', label: 'Reviewer Dashboard', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['reviewer'] },
   ];
 
   const [activeTab, setActiveTabState] = useState(() => {
@@ -115,6 +117,10 @@ function Dashboard() {
         setActiveTab('My Tasks');
         return;
       }
+      if (activeTab === 'Staff Rewrite' && !selectedTask) {
+        setActiveTab('My Tasks');
+        return;
+      }
       if (activeTab === 'Task Detail' && !managerSelectedTask) {
         setActiveTab('Assign Labeling');
         return;
@@ -123,7 +129,8 @@ function Dashboard() {
       const isValid =
         (activeTab === 'API Keys') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
-        (activeTab === 'Task Detail' && user.role === 'admin') ||
+        (activeTab === 'Staff Rewrite' && user.role === 'staff') ||
+        (activeTab === 'Task Detail' && ['admin', 'supervisor', 'checker'].includes(user.role)) ||
         allMenuItems.some(item => item.key === activeTab && item.roles.includes(user.role));
 
       if (!isValid) {
@@ -163,7 +170,7 @@ function Dashboard() {
 
   const handleOpenTask = (task: any) => {
     setSelectedTask(task);
-    setActiveTab('Staff Label');
+    setActiveTab(task?.taskType === 'rewrite' ? 'Staff Rewrite' : 'Staff Label');
   };
 
   const renderContent = () => {
@@ -182,6 +189,8 @@ function Dashboard() {
         return <ModelRegistryView />;
       case 'Model Eval':
         return <ModelEvalView />;
+      case 'Router Benchmark':
+        return <RouterBenchmarkView />;
       case 'Version Data Prep':
         return <VersionDataPrepView />;
       case 'Assign Labeling':
@@ -196,21 +205,22 @@ function Dashboard() {
         return <StaffTasksView onOpenTask={handleOpenTask} />;
       case 'Staff Label':
         return <StaffLabelView task={selectedTask} onBack={handleBackFromLabel} />;
+      case 'Staff Rewrite':
+        return <StaffRewriteView task={selectedTask} onBack={handleBackFromLabel} />;
       case 'Staff Stats':
         return <StaffStatsView />;
       case 'Supervisor Review':
         return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
       case 'Checker Review':
         return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
+      case 'Checker Rewrite':
+        return <CheckerRewriteView />;
       case 'My Stats':
         return <MyStatsView />;
-      case 'Reviewer Dashboard':
-        return <ReviewerDashboardView />;
       case 'API Keys':
         return <ApiKeySettingsPage />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
-        if (user.role === 'reviewer') return <ReviewerDashboardView />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;
         if (user.role === 'checker') return <CheckerReviewView onOpenTask={handleViewTaskDetail} />;
         return <HomeView setActiveTab={setActiveTab} />;

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
+import crypto from 'crypto';
 import FormData from 'form-data';
 const fetch = async (url: any, init?: any) => {
   const module = await import('node-fetch');
@@ -152,6 +153,8 @@ async function hfRepoCheckpointProbe(
 // ---------------------------------------------------------------------------
 export const startTraining = async (req: Request, res: Response) => {
   let zipTempDir: string | null = null;
+  let validationDatasetPath: string | undefined;
+  let validationDatasetName: string | undefined;
   try {
     const ownerId = getAuthUserId(req);
     if (!ownerId) {
@@ -199,7 +202,10 @@ export const startTraining = async (req: Request, res: Response) => {
     console.log('[Backend] Received columnMapping:', columnMapping);
     console.log('[Backend] Received column_mapping:', column_mapping);
 
-    const finalColumnMapping = columnMapping || column_mapping || 'text';
+    // Older saved AutoTrain jobs defaulted to `text`.  Conversation datasets
+    // use the ChatML-compatible `messages` field, so recover safely when that
+    // stale default is sent with a messages-only file.
+    let finalColumnMapping = columnMapping || column_mapping || 'text';
     console.log('[Backend] Using finalColumnMapping:', finalColumnMapping);
 
     const datasetFile = req.file; // populated by multer when a file is uploaded
@@ -213,6 +219,8 @@ export const startTraining = async (req: Request, res: Response) => {
         const extracted = extractForTraining(datasetFile.path);
         zipMetadata = extracted.metadata;
         zipTempDir = extracted.tempDir;
+        validationDatasetPath = extracted.validationFilePath;
+        validationDatasetName = extracted.validationFileName;
 
         // Replace multer file properties with the extracted JSON file
         datasetFile.path = extracted.dataFilePath;
@@ -233,30 +241,48 @@ export const startTraining = async (req: Request, res: Response) => {
 
     // ── Local File/Cloud File Column Validation ──────────────────────────────────────────
     const validationFilePath = datasetFile ? datasetFile.path : (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset) ? cloudLoadedDataset : null);
+    let detectedTotalRecords = 0;
+    let detectedTotalTokens = 0;
     if (validationFilePath) {
       try {
         const fileContent = fs.readFileSync(validationFilePath, { encoding: 'utf-8', flag: 'r' });
         const nameToCheck = datasetFile ? datasetFile.originalname : path.basename(validationFilePath);
+        detectedTotalTokens = Math.max(1, Math.round(fileContent.length / 4));
 
         let columns: string[] = [];
         if (nameToCheck.endsWith('.json') || nameToCheck.endsWith('.jsonl')) {
           try {
             const parsed = JSON.parse(fileContent);
             const item = Array.isArray(parsed) ? parsed[0] : parsed;
+            detectedTotalRecords = Array.isArray(parsed) ? parsed.length : 1;
             if (item && typeof item === 'object') {
               columns = Object.keys(item);
             }
           } catch {
             // Try JSONL
-            const firstLine = fileContent.split('\n')[0];
+            const jsonlLines = fileContent.split('\n').filter(line => line.trim());
+            detectedTotalRecords = jsonlLines.length;
+            const firstLine = jsonlLines[0];
             const parsed = JSON.parse(firstLine);
             if (parsed && typeof parsed === 'object') {
               columns = Object.keys(parsed);
             }
           }
         } else if (nameToCheck.endsWith('.csv')) {
-          const firstLine = fileContent.split('\n')[0];
+          const csvLines = fileContent.split('\n').filter(line => line.trim());
+          detectedTotalRecords = Math.max(0, csvLines.length - 1);
+          const firstLine = csvLines[0];
           columns = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        }
+
+        if (
+          columns.length > 0 &&
+          !columns.includes(finalColumnMapping) &&
+          finalColumnMapping === 'text' &&
+          columns.includes('messages')
+        ) {
+          finalColumnMapping = 'messages';
+          console.log('[Backend] Auto-corrected stale text mapping to messages.');
         }
 
         if (columns.length > 0 && !columns.includes(finalColumnMapping)) {
@@ -305,7 +331,18 @@ export const startTraining = async (req: Request, res: Response) => {
 
     // ── Generate job ID ─────────────────────────────────────────────────────
     const job_id = `job_${uuidv4()}`;
+    const effectiveSystemPrompt = String(
+      systemPrompt ||
+      zipMetadata?.systemPrompt ||
+      'Bạn là gia sư Socratic cho học sinh THCS/THPT Việt Nam. Đọc kỹ lượt mới nhất. Nếu học sinh sai, không xác nhận là đúng và không đưa ngay đáp án; chỉ hỏi một câu gợi mở ngắn. Nếu học sinh đúng, xác nhận ngắn rồi hỏi bước tiếp theo. Không lặp phản hồi, không bịa dữ kiện, luôn kiểm tra công thức và đơn vị.'
+    ).trim();
+    const effectiveSystemPromptVersion = String(
+      systemPromptVersion ||
+      zipMetadata?.systemPromptVersion ||
+      ('autotrain-' + crypto.createHash('sha256').update(effectiveSystemPrompt, 'utf8').digest('hex').slice(0, 12))
+    ).trim();
     console.log(`[Backend] Starting job ${job_id} → model=${model_name} epochs=${epochsNum}`);
+    console.log(`[Backend] Train system_prompt chars=${effectiveSystemPrompt.length} preview="${effectiveSystemPrompt.slice(0, 90)}"`);
 
     if (hf_token) {
       console.log(`[Backend] HF Token detected: ${hf_token.substring(0, 4)}****`);
@@ -337,7 +374,8 @@ export const startTraining = async (req: Request, res: Response) => {
       push_to_hub: push_to_hub === 'true' || push_to_hub === true,
       hf_repo_id: hf_repo_id || '',
       hf_token: hf_token || '',
-      system_prompt: systemPrompt || '',
+      system_prompt: effectiveSystemPrompt,
+      system_prompt_version: effectiveSystemPromptVersion,
       // Google Drive for checkpoint saving
       drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
       service_account: parsedGoogleCredentials,
@@ -365,6 +403,15 @@ export const startTraining = async (req: Request, res: Response) => {
         contentType: datasetFile.mimetype || 'application/octet-stream',
         knownLength: datasetFile.size,
       });
+      if (validationDatasetPath) {
+        const validationStats = fs.statSync(validationDatasetPath);
+        form.append('validation_file', fs.createReadStream(validationDatasetPath), {
+          filename: validationDatasetName || 'validation_dataset.json',
+          contentType: 'application/json',
+          knownLength: validationStats.size,
+        });
+        config.validation_dataset_provided = true;
+      }
     } else if (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset)) {
       const stats = fs.statSync(cloudLoadedDataset);
       form.append('file', fs.createReadStream(cloudLoadedDataset), {
@@ -413,9 +460,21 @@ export const startTraining = async (req: Request, res: Response) => {
       // Move the file instead of deleting it
       fs.rename(srcPath, savedDatasetPath, (err) => {
         if (err) {
-          console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
-          savedDatasetPath = undefined;
-          fs.unlink(srcPath, () => { }); // Fallback to delete
+          if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+            fs.copyFile(srcPath, savedDatasetPath!, (copyErr) => {
+              if (copyErr) {
+                console.warn(`[Backend] Could not copy dataset file: ${srcPath}`, copyErr);
+                savedDatasetPath = undefined;
+              } else {
+                console.log(`[Backend] Dataset copied persistently for Resume: ${savedDatasetPath}`);
+              }
+              fs.unlink(srcPath, () => { });
+            });
+          } else {
+            console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
+            savedDatasetPath = undefined;
+            fs.unlink(srcPath, () => { }); // Fallback to delete
+          }
         } else {
           console.log(`[Backend] Dataset saved persistently for Resume: ${savedDatasetPath}`);
         }
@@ -430,8 +489,8 @@ export const startTraining = async (req: Request, res: Response) => {
         projectName: typeof projectName === 'string' ? projectName : 'AutoTrain Job',
         baseModel: model_name,
         // Dataset & Prompt traceability from ZIP metadata
-        systemPrompt: systemPrompt || zipMetadata?.systemPrompt || '',
-        systemPromptVersion: systemPromptVersion || zipMetadata?.systemPromptVersion || '',
+        systemPrompt: effectiveSystemPrompt,
+        systemPromptVersion: effectiveSystemPromptVersion,
         datasetVersionId: zipMetadata?.datasetVersionId || undefined,
         datasetSource: (datasetSource as string) || (datasetFile ? 'local' : cloudLoadedDataset ? 'cloud' : 'hub'),
         datasetName: datasetFile ? datasetFile.originalname : cloudLoadedDataset ? path.basename(cloudLoadedDataset) : dataset,
@@ -469,8 +528,8 @@ export const startTraining = async (req: Request, res: Response) => {
         datasetPath: savedDatasetPath,
         datasetFileId: datasetFile?.filename,
         workerUrl: workerUrl,
-        totalTokens: parseInt(totalTokens as string) || 0,
-        totalRecords: parseInt(totalRecords as string) || 0,
+        totalTokens: parseInt(totalTokens as string) || detectedTotalTokens,
+        totalRecords: parseInt(totalRecords as string) || detectedTotalRecords,
       });
       console.log(`[Backend] Initial TrainingHistory created for job ${job_id}`);
     } catch (dbErr) {
@@ -484,7 +543,13 @@ export const startTraining = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Backend] startTraining error:', err);
     if (zipTempDir) cleanupTempDir(zipTempDir);
-    return res.status(500).json({ error: err.message || 'Failed to start training' });
+    const msg = err?.message || 'Failed to start training';
+    if (msg.includes('fetch') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND')) {
+      return res.status(503).json({
+        error: 'Không thể kết nối tới GPU Service (Colab/Kaggle). Vui lòng kiểm tra lại URL GPU Worker trong phần Cài đặt.'
+      });
+    }
+    return res.status(500).json({ error: msg });
   }
 };
 
@@ -498,6 +563,20 @@ export const getActiveTrainingJobs = async (req: Request, res: Response) => {
     if (!ownerId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    // Auto-expire stale jobs older than 15 minutes that were interrupted or crashed
+    const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+    await TrainingHistory.updateMany(
+      {
+        ownerId,
+        status: { $in: ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'] },
+        startedAt: { $lt: fifteenMinsAgo }
+      },
+      {
+        status: 'ERROR',
+        completedAt: new Date()
+      }
+    ).catch(err => console.warn('[Backend] Cleanup stale jobs error:', err));
 
     const activeJobs = await TrainingHistory.find({
       ownerId,
@@ -661,6 +740,7 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
           {
             status: data.status,
             completedAt: new Date(),
+            trainingDuration: Math.max(0, Date.now() - new Date(history.startedAt).getTime()),
             finalMetrics: finalMetrics,
             ...(data.latest_checkpoint ? { latest_checkpoint_file_id: data.latest_checkpoint } : {})
           }
@@ -787,19 +867,38 @@ export const resumeTraining = async (req: Request, res: Response) => {
       (typeof snapshotConfig.hf_token === 'string' ? snapshotConfig.hf_token : '') ||
       (typeof history.hfToken === 'string' ? history.hfToken : '');
 
-    // Determine checkpoint source:
-    // Priority 1: latest_checkpoint_file_id (e.g. Google Drive file ID)
-    // Priority 2: hfRepoId if pushToHub was enabled (checkpoint saved to HF Hub)
-    const checkpointId = history.latest_checkpoint_file_id || history.hfRepoId || null;
-    const checkpointSource = history.latest_checkpoint_file_id
-      ? 'drive'
-      : history.hfRepoId && history.pushToHub
-        ? 'hf'
-        : null;
+    // Prefer the checkpoint on the worker's persistent volume. This survives a
+    // container/GPU-process restart and avoids downloading a remote checkpoint.
+    let hasWorkerCheckpoint = false;
+    if (history.workerUrl) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const probeResponse = await fetch(`${history.workerUrl}/api/train/checkpoint/${jobId}`, {
+          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          signal: controller.signal as any,
+        });
+        clearTimeout(timeout);
+        const probeData: any = await probeResponse.json();
+        hasWorkerCheckpoint = probeResponse.ok && probeData.available === true;
+      } catch (error) {
+        console.warn(`[Backend] Worker checkpoint probe failed for ${jobId}:`, error);
+      }
+    }
+
+    // Fallback order: Google Drive, then Hugging Face Hub.
+    const checkpointId = hasWorkerCheckpoint ? jobId : history.latest_checkpoint_file_id || history.hfRepoId || null;
+    const checkpointSource = hasWorkerCheckpoint
+      ? 'worker'
+      : history.latest_checkpoint_file_id
+        ? 'drive'
+        : history.hfRepoId && history.pushToHub
+          ? 'hf'
+          : null;
 
     if (!checkpointId) {
       return res.status(400).json({
-        error: 'Cannot resume: No checkpoint found. Train with Push to Hub or wait for a Drive checkpoint.'
+        error: 'Cannot resume: No checkpoint found on the GPU worker, Hugging Face Hub, or Google Drive.'
       });
     }
 
@@ -863,7 +962,9 @@ export const resumeTraining = async (req: Request, res: Response) => {
     }
 
     // 4. Forward to GPU Service
-    const workerUrl = workerManager.getNextWorker();
+    const workerUrl = checkpointSource === 'worker' && history.workerUrl
+      ? history.workerUrl
+      : workerManager.getNextWorker();
     console.log(`[Backend] Forwarding to GPU service: ${workerUrl}/api/train/start`);
     workerManager.incrementJobs(workerUrl);
 

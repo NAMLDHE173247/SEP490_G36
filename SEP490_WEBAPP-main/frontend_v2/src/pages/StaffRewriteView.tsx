@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import '../styles/staffrewrite.css';
 import { stage4Api } from '../services/stage4Api';
+import { getCliProxyModels } from '../services/configApi';
 import * as XLSX from 'xlsx';
 
 const REWRITE_REASON_VI_MAP: Record<string, string> = {
@@ -16,6 +17,9 @@ const REWRITE_REASON_VI_MAP: Record<string, string> = {
   'Tone/language issue': 'Lỗi giọng điệu/ngôn ngữ',
   'Incomplete answer': 'Câu trả lời chưa hoàn thiện',
 };
+
+const canStaffEditRewriteTask = (task: any) =>
+  !task?.status || ['assigned', 'redo', 'rejected'].includes(String(task.status));
 
 interface StaffRewriteViewProps {
   task: any; // Grouped rewrite task project
@@ -42,10 +46,13 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   // Drawer / Workbench state
   const [drawerTask, setDrawerTask] = useState<any | null>(null);
   const [rewriteDraftText, setRewriteDraftText] = useState('');
-  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+2');
+  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+3');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [aiProvider, setAiProvider] = useState<'oauth_gateway' | 'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('oauth_gateway');
+  const [aiModel, setAiModel] = useState('');
+  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
   const [offlineMessage, setOfflineMessage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -54,7 +61,8 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   const rewriteContextOptions = [
-    { value: 'n-2:n+2', label: 'n-2 đến n+2' },
+    { value: 'n-2:n+3', label: 'n-2 đến n+3' },
+    { value: 'n-2:n+2', label: 'n-2 đến n+2 (legacy)' },
     { value: 'n-1:n+1', label: 'n-1 đến n+1' },
     { value: 'n-1:n', label: 'n-1 đến n' },
     { value: 'target-only', label: 'Chỉ mục tiêu' },
@@ -96,6 +104,9 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     } else if (rewriteContextMode === 'n-1:n+1') {
       start = Math.max(0, targetIdx - 1);
       end = Math.min(messages.length - 1, targetIdx + 1);
+    } else if (rewriteContextMode === 'n-2:n+3') {
+      start = Math.max(0, targetIdx - 2);
+      end = Math.min(messages.length - 1, targetIdx + 3);
     } else if (rewriteContextMode === 'n-2:n+2') {
       start = Math.max(0, targetIdx - 2);
       end = Math.min(messages.length - 1, targetIdx + 2);
@@ -103,18 +114,16 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     return messages.slice(start, end + 1);
   };
 
-  // Auto save on back as draft
-  const handleBackWithSave = async () => {
-    if (drawerTask && rewriteDraftText.trim() && drawerTask.status !== 'submitted' && drawerTask.status !== 'approved') {
-      const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
-      try {
-        await stage4Api.submitRewrite(versionId, drawerTask.id, rewriteDraftText.trim(), undefined, 'assigned');
-      } catch (e) {
-        console.error('Failed to auto-save rewrite draft on back', e);
-      }
-    }
-    onBack();
-  };
+  React.useEffect(() => {
+    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels().then((result) => {
+      setGatewayModels(result.models || []);
+      setAiModel(result.defaultModel || '');
+    }).catch(() => { setGatewayModels([]); setAiModel(''); });
+  }, [aiProvider, gatewayModels.length]);
+
+  // Navigation never writes data. Saving is always explicit.
+  const handleBackWithSave = () => onBack();
 
   // Filter & Search logic
   const filteredTasks = useMemo(() => {
@@ -160,10 +169,13 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   const handleOpenDrawer = (item: any) => {
     setDrawerTask(item);
     setRewriteDraftText(item.submittedText || getTargetAiResponse(item));
-    setRewriteContextMode('n-2:n+2');
+    setRewriteContextMode('n-2:n+3');
   };
 
   const handleCloseDrawer = async () => {
+    setDrawerTask(null);
+    setRewriteDraftText('');
+    return;
     if (drawerTask && rewriteDraftText.trim() && drawerTask.status !== 'submitted' && drawerTask.status !== 'approved') {
       const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
       try {
@@ -238,7 +250,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
 
   // Export handlers
   const exportAsExcel = () => {
-    const editable = rewriteTasks.filter((t: any) => !['approved', 'rejected'].includes(t.status));
+    const editable = rewriteTasks.filter(canStaffEditRewriteTask);
     const data = editable.map((t: any) => {
       const ctxStr = t.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
       return {
@@ -264,7 +276,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
   };
 
   const exportAsJson = () => {
-    const editable = rewriteTasks.filter((t: any) => !['approved', 'rejected'].includes(t.status));
+    const editable = rewriteTasks.filter(canStaffEditRewriteTask);
     const data = editable.map((t: any) => {
       const ctxStr = t.conversationMessages?.map((m: any) => `[${m.role.toUpperCase()}] ${m.content}`).join('\n\n') || '';
       return {
@@ -320,7 +332,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
       const validRows = rows.filter(r => {
         const tid = String(r['Mã câu hỏi (Task ID)'] || r['Task ID'] || '');
         const txt = String(r['Nội dung viết lại mới (Điền vào đây)'] || r['Rewritten Text'] || '').trim();
-        return ownTasks.has(tid) && txt;
+        return ownTasks.has(tid) && canStaffEditRewriteTask(ownTasks.get(tid)) && txt;
       });
       
       if (validRows.length === 0) {
@@ -456,8 +468,8 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
         </div>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="sr-table-select">
           <option value="all">Tất cả ({rewriteTasks.length})</option>
-          <option value="pending">Chưa sửa ({rewriteTasks.filter(t => !['submitted', 'approved'].includes(t.status) && !t.submittedText).length})</option>
-          <option value="draft">Bản nháp ({rewriteTasks.filter(t => !['submitted', 'approved'].includes(t.status) && t.submittedText).length})</option>
+          <option value="pending">Chưa sửa ({rewriteTasks.filter(t => !['submitted', 'approved', 'checker_approved', 'rejected', 'redo'].includes(t.status) && !t.submittedText).length})</option>
+          <option value="draft">Bản nháp ({rewriteTasks.filter(t => !['submitted', 'approved', 'checker_approved', 'rejected', 'redo'].includes(t.status) && t.submittedText).length})</option>
           <option value="submitted">Đã nộp ({rewriteTasks.filter(t => t.status === 'submitted').length})</option>
           <option value="approved">Đã duyệt ({rewriteTasks.filter(t => t.status === 'approved').length})</option>
           <option value="rejected">Bị từ chối ({rewriteTasks.filter(t => t.status === 'rejected').length})</option>
@@ -502,7 +514,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                   <td className="sr-table-cell sr-cell-snippet">{aiSnippet}{aiSnippet.length >= 70 ? '...' : ''}</td>
                   <td className="sr-table-cell sr-cell-reason">
                     {item.reason && item.reason !== 'None' ? (
-                      <span className="sr-reason-chip">{REWRITE_REASON_VI_MAP[item.reason] || item.reason}</span>
+                      <span className="sr-reason-chip" title={`Nguồn: ${item.reasonSource || 'Quality Review (system aggregate)'}`}>{REWRITE_REASON_VI_MAP[item.reason] || item.reason}</span>
                     ) : '—'}
                   </td>
                   <td className="sr-table-cell">{renderStatusBadge(status, item.submittedText)}</td>
@@ -552,6 +564,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                 {drawerTask.reason && drawerTask.reason !== 'None' && (
                   <span className="sr-reason-alert-chip"><AlertCircle size={12} /> Lỗi: {REWRITE_REASON_VI_MAP[drawerTask.reason] || drawerTask.reason}</span>
                 )}
+                <span style={{ fontSize: 11, color: '#64748b' }}>Nguồn đánh giá: {drawerTask.reasonSource || 'Quality Review (system aggregate)'}</span>
               </div>
               <div className="sr-drawer-actions">
                 {['submitted', 'approved', 'checker_approved'].includes(drawerTask.status) ? (
@@ -656,6 +669,18 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                   
                   {!['submitted', 'approved', 'checker_approved'].includes(drawerTask.status) && (
                     <div className="sr-ai-suggest-bar">
+                      <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value as any); setAiModel(''); }} className="sr-context-select">
+                        <option value="oauth_gateway">OAuth Gateway</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="openai">ChatGPT / OpenAI</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="groq">Groq</option>
+                        <option value="openrouter">OpenRouter</option>
+                      </select>
+                      {aiProvider === 'oauth_gateway' && <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sr-context-select">
+                        <option value="">Tự động chọn model</option>
+                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>}
                       <span>Sử dụng AI gợi ý làm bản nháp hoặc tự viết lại.</span>
                       <button 
                         className="sr-ai-suggest-btn"
@@ -663,7 +688,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                         onClick={() => {
                           const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
                           setIsSuggesting(true);
-                          stage4Api.suggestRewrite(versionId, drawerTask.id)
+                          stage4Api.suggestRewrite(versionId, drawerTask.id, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined)
                             .then(res => setRewriteDraftText(res.suggestedText || rewriteDraftText))
                             .catch(err => alert(err?.response?.data?.error || 'Không thể lấy gợi ý AI.'))
                             .finally(() => setIsSuggesting(false));

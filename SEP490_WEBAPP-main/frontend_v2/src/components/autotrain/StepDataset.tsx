@@ -216,12 +216,23 @@ const StepDataset: React.FC<StepDatasetProps> = ({
       }
 
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (!['json', 'jsonl', 'csv'].includes(ext ?? '')) {
-        toast('Unsupported file type. Please use .json, .jsonl, or .csv', 'error');
+      if (!['json', 'jsonl', 'csv', 'zip'].includes(ext ?? '')) {
+        toast('Unsupported file type. Please use .json, .jsonl, .csv, or .zip', 'error');
         return;
       }
 
       onConfigChange({ localFile: file, datasetSource: 'local' });
+
+      // ZIP is a packaged AutoTrain dataset. Do not try to parse it in the
+      // browser; the backend extracts train_dataset.json/validation_dataset.json.
+      if (ext === 'zip') {
+        // Our subject ZIPs contain ChatML records under `messages`.
+        // Keep the mapping explicit because the browser cannot inspect ZIP
+        // members before upload and would otherwise leave the default `text`.
+        onConfigChange({ columnMapping: 'messages' });
+        onPreviewDataChange(EMPTY_PREVIEW);
+        return;
+      }
 
       try {
         // Read only first 500 KB
@@ -659,7 +670,7 @@ const StepDataset: React.FC<StepDatasetProps> = ({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json,.jsonl,.csv"
+                    accept=".json,.jsonl,.csv,.zip"
                     style={{ display: 'none' }}
                     onChange={handleFileSelect}
                     aria-hidden="true"
@@ -681,7 +692,7 @@ const StepDataset: React.FC<StepDatasetProps> = ({
                       <span className="at-dropzone-text">
                         {isDragging ? 'Drop file here…' : 'Drag & drop file, or click to browse'}
                       </span>
-                      <span className="at-dropzone-hint">Accepts .json, .jsonl, .csv (max 50 MB)</span>
+                      <span className="at-dropzone-hint">Accepts .json, .jsonl, .csv, .zip (max 50 MB)</span>
                     </>
                   )}
                 </div>
@@ -841,15 +852,15 @@ const StepDataset: React.FC<StepDatasetProps> = ({
         </div>
 
         {/* Column Mapping Panel */}
-        {previewData.headers.length > 0 && (
+        {(previewData.headers.length > 0 || config.localFile?.name.toLowerCase().endsWith('.zip')) && (
           <div className="at-panel">
             <div className="at-panel-body">
               <div className="at-form-group">
                 <label className="at-label">Training Data Column</label>
-                {autoDetected ? (
+                {autoDetected || config.localFile?.name.toLowerCase().endsWith('.zip') ? (
                   <div className="at-auto-detect-success">
                     <CheckCircle2 size={14} style={{ color: 'var(--at-green)' }} />
-                    Auto-detected column: <strong>{autoDetected}</strong>
+                    Training column: <strong>{autoDetected || 'messages'}</strong>
                   </div>
                 ) : (
                   <select

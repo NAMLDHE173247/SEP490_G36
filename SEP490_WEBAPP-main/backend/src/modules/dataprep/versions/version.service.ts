@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { DatasetVersion } from '../../../models/DatasetVersion';
+import { DatasetVersion, ICleanStats } from '../../../models/DatasetVersion';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { Project } from '../../../models/Project';
 import { LabelAssignment } from '../../../models/LabelAssignment';
@@ -33,6 +33,7 @@ type CreateVersionParams = {
   createdFromVersionId?: string;
   operationType: DatasetOperationType;
   operationParams?: Record<string, unknown>;
+  cleanStats?: ICleanStats;   // Thống kê kết quả bước Clean
   prepareResumeStep?: number;
   similarityThreshold: number;
   format?: 'openai' | 'alpaca';
@@ -136,6 +137,7 @@ export class VersionService {
       versionName,
       operationType: params.operationType,
       operationParams: params.operationParams,
+      cleanStats: params.cleanStats,       // persist thống kê clean nếu có
       prepareResumeStep: clampPrepareResumeStep(params.prepareResumeStep),
       similarityThreshold: params.similarityThreshold,
       totalSamples: params.data.length,

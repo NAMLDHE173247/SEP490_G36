@@ -23,8 +23,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_traini
 import { User } from './models/User';
 import bcrypt from 'bcryptjs';
 import { seedDefaultStage4Data } from './seedStage4';
-import { seedModelRegistryData } from './seedModelRegistry';
-import { seedTrainingHistoryData } from './seedTrainingHistory';
+import { startAssignmentDeadlineReminderService } from './services/assignmentDeadlineReminderService';
 
 async function seedDefaultUsers() {
   try {
@@ -36,7 +35,6 @@ async function seedDefaultUsers() {
       { name: 'System Supervisor', email: 'supervisor', passwordHash, role: 'supervisor' as const, status: 'active' as const },
       { name: 'System Checker', email: 'checker', passwordHash, role: 'checker' as const, status: 'active' as const },
       { name: 'System Staff', email: 'staff', passwordHash, role: 'staff' as const, status: 'active' as const },
-      { name: 'System Reviewer', email: 'reviewer', passwordHash, role: 'reviewer' as const, status: 'active' as const },
       { name: 'System Pending', email: 'pending', passwordHash, role: 'staff' as const, status: 'pending' as const },
       { name: 'System Disabled', email: 'disabled', passwordHash, role: 'staff' as const, status: 'inactive' as const },
     ];
@@ -57,10 +55,12 @@ mongoose
   .connect(MONGO_URI, { retryWrites: false } as any)
   .then(async () => {
     console.log('✅ MongoDB connected:', MONGO_URI);
+    // Reviewer was an unfinished fifth role. Existing accounts are migrated to
+    // Checker, which owns the human quality-review responsibilities.
+    await User.collection.updateMany({ role: 'reviewer' }, { $set: { role: 'checker' } });
     await seedDefaultUsers();
     await seedDefaultStage4Data();
-    await seedModelRegistryData();
-    await seedTrainingHistoryData();
+    startAssignmentDeadlineReminderService();
 
     try {
       // Reset any stuck running multi-eval jobs to failed
@@ -133,7 +133,7 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 API docs available at http://localhost:${PORT}/api`);
 });

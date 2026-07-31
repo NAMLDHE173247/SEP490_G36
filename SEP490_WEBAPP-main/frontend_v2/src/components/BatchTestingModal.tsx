@@ -11,9 +11,19 @@ interface BatchTestingModalProps {
   params: any;
   instanceId: number;
   selectedRegistryId?: string;
+  targets?: BatchModelTarget[];
+  requiredTargetCount?: number;
 }
 
-export function BatchTestingModal({ onClose, activeModelId, provider, params, instanceId, selectedRegistryId }: BatchTestingModalProps) {
+export interface BatchModelTarget {
+  modelId: string;
+  provider: string;
+  instanceId: number;
+  registryId?: string;
+  label?: string;
+}
+
+export function BatchTestingModal({ onClose, activeModelId, provider, params, instanceId, selectedRegistryId, targets, requiredTargetCount = 1 }: BatchTestingModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [testCases, setTestCases] = useState<any[]>([]);
   const [inputColumn, setInputColumn] = useState<string>('');
@@ -21,6 +31,7 @@ export function BatchTestingModal({ onClose, activeModelId, provider, params, in
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [isTesting, setIsTesting] = useState(false);
   const [results, setResults] = useState<any[]>([]);
+  const [runMetadata, setRunMetadata] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseCSV = (text: string) => {
@@ -69,8 +80,17 @@ export function BatchTestingModal({ onClose, activeModelId, provider, params, in
   };
 
   const handleStartBatch = async () => {
-    if (!activeModelId && provider !== "openrouter" && provider !== "openrouter") {
+    const fallbackTarget: BatchModelTarget = { modelId: activeModelId, provider, instanceId, registryId: selectedRegistryId, label: "Model 1" };
+    const runTargets = (targets?.length ? targets : [fallbackTarget]).filter((target) => {
+      const isExternal = !["local", "registry", "hybrid"].includes(target.provider);
+      return Boolean(target.modelId) || isExternal || target.provider === "hybrid";
+    });
+    if (runTargets.length === 0) {
       toast.error("Vui lòng Load Model trước khi chạy kiểm thử!");
+      return;
+    }
+    if (runTargets.length < requiredTargetCount) {
+      toast.error(`Vui lòng Load đủ ${requiredTargetCount} model trước khi chạy kiểm thử so sánh!`);
       return;
     }
     if (testCases.length === 0 || !inputColumn) {
@@ -79,53 +99,115 @@ export function BatchTestingModal({ onClose, activeModelId, provider, params, in
     }
 
     setIsTesting(true);
-    setProgress({ current: 0, total: testCases.length });
+    setProgress({ current: 0, total: testCases.length * runTargets.length });
     const newResults = [];
-
-    const options = {
-      instanceId,
-      modelRegistryId: provider === "registry" ? selectedRegistryId : undefined,
-      system_prompt: params.systemPrompt || undefined,
-      max_new_tokens: params.maxNewTokens === "" ? undefined : params.maxNewTokens,
-      temperature: params.temperature === "" ? undefined : params.temperature,
-      top_k: params.topK === "" ? undefined : params.topK,
-      top_p: params.topP === "" ? undefined : params.topP,
-      repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
-      provider: provider === "local" || provider === "registry" ? undefined : provider,
-    };
+    const startedAt = new Date().toISOString();
 
     for (let i = 0; i < testCases.length; i++) {
       const tc = testCases[i];
       const textInput = tc[inputColumn];
-      
-      let aiResponse = "";
-      try {
-        if (!textInput) throw new Error("Input rỗng");
-        const res = await apiService.infer(textInput, activeModelId, provider);
-        aiResponse = typeof res === 'string' ? res : (res.text || res.result || JSON.stringify(res));
-      } catch (err: any) {
-        aiResponse = `[LỖI] ${err.message}`;
-      }
 
-      newResults.push({
-        ...tc,
-        "AI_Response": aiResponse,
-        "Model": activeModelId || provider
-      });
-      setProgress({ current: i + 1, total: testCases.length });
+      const outputs = await Promise.all(runTargets.map(async (target) => {
+        const targetIsHybrid = target.provider === "hybrid";
+        const requestStarted = performance.now();
+        let aiResponse = "";
+        let error: string | null = null;
+        let routing: any = null;
+        let retryCount = 0;
+        const maxRetries = 2;
+        const isTransientGatewayError = (message: string) => /bad gateway|502|503|504|tunnel unavailable|gateway timeout/i.test(message);
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            if (!textInput) throw new Error("Input rỗng");
+            let streamResponse = "";
+            const res = await apiService.inferStream({
+              text_input: textInput,
+              hf_hub_id: targetIsHybrid ? undefined : (target.modelId || undefined),
+              routing_mode: targetIsHybrid ? "hybrid" : undefined,
+              history: Array.isArray(tc.history) ? tc.history : undefined,
+              previous_subject: typeof tc.previous_subject === "string" ? tc.previous_subject : undefined,
+              instanceId: target.instanceId,
+              modelRegistryId: target.provider === "registry" ? target.registryId : undefined,
+              system_prompt: params.systemPrompt || undefined,
+              max_new_tokens: params.maxNewTokens === "" ? undefined : params.maxNewTokens,
+              temperature: params.temperature === "" ? undefined : params.temperature,
+              top_k: params.topK === "" ? undefined : params.topK,
+              top_p: params.topP === "" ? undefined : params.topP,
+              repetition_penalty: params.repetitionPenalty === "" ? undefined : params.repetitionPenalty,
+              provider: target.provider === "local" || target.provider === "registry" || targetIsHybrid ? undefined : target.provider,
+              onFinalInfo: (info: any) => {
+                routing = info?.routing || null;
+              },
+            }, (chunk: string) => {
+              streamResponse += chunk;
+            });
+            aiResponse = streamResponse;
+            error = null;
+            break;
+          } catch (err: any) {
+            error = err.response?.data?.error || err.message || String(err);
+            if (!isTransientGatewayError(error) || attempt === maxRetries) break;
+            retryCount += 1;
+            await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount));
+          }
+        }
+        if (error) aiResponse = `[LỖI] ${error}`;
+        return {
+          ...tc,
+          "AI_Response": aiResponse,
+          "Model": target.modelId || target.provider,
+          "Model_Label": target.label || target.modelId || target.provider,
+          "Provider": target.provider,
+          "Instance_Id": target.instanceId,
+          "Response_Time_Ms": Math.round(performance.now() - requestStarted),
+          "Retry_Count": retryCount,
+          "Inference_Status": error ? "error" : "success",
+          "Inference_Error": error,
+          "Routing": routing,
+        };
+      }));
+      newResults.push(...outputs);
+      setProgress({ current: (i + 1) * runTargets.length, total: testCases.length * runTargets.length });
     }
 
     setResults(newResults);
+    setRunMetadata({
+      schema_version: "batch-test-v2",
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+      source_file: file?.name || null,
+      input_column: inputColumn,
+      test_case_count: testCases.length,
+      models: runTargets.map((target) => ({
+        label: target.label || target.modelId || target.provider,
+        model_id: target.modelId || null,
+        provider: target.provider,
+        registry_id: target.registryId || null,
+        instance_id: target.instanceId,
+      })),
+      inference_parameters: {
+        system_prompt: params.systemPrompt || null,
+        max_new_tokens: params.maxNewTokens === "" ? null : params.maxNewTokens,
+        temperature: params.temperature === "" ? null : params.temperature,
+        top_k: params.topK === "" ? null : params.topK,
+        top_p: params.topP === "" ? null : params.topP,
+        repetition_penalty: params.repetitionPenalty === "" ? null : params.repetitionPenalty,
+      },
+      success_count: newResults.filter((row: any) => row.Inference_Status === "success").length,
+      error_count: newResults.filter((row: any) => row.Inference_Status === "error").length,
+    });
     setIsTesting(false);
     toast.success("Đã hoàn thành kiểm thử hàng loạt!");
   };
 
   const handleDownload = () => {
     if (results.length === 0) return;
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(results, null, 2));
+    const exportPayload = { metadata: runMetadata, results };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
     const downloadAnchorNode = document.createElement('a');
     downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "batch_results.json");
+    const safeModel = runMetadata?.models?.length > 1 ? "comparison" : String(activeModelId || provider || "model").replace(/[^a-zA-Z0-9_-]+/g, "_");
+    downloadAnchorNode.setAttribute("download", `batch_results_${safeModel}_${Date.now()}.json`);
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();

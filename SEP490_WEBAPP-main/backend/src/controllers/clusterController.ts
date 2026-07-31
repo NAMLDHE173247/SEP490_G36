@@ -7,6 +7,35 @@ dotenv.config();
 const getGpuUrl = () => configService.getGpuUrl();
 const getGpuClient = () => new GpuClient(getGpuUrl());
 
+type SafeSplitItem = Record<string, any>;
+
+const normalizeSubject = (value: unknown): string => {
+  const normalized = String(value || 'UNGROUPED').trim().toUpperCase();
+  return normalized || 'UNGROUPED';
+};
+
+const materializeSplit = (payload: any, source: SafeSplitItem[]) => {
+  if (Array.isArray(payload?.trainIndices) && Array.isArray(payload?.testIndices)) {
+    return {
+      train: payload.trainIndices.map((index: number) => source[index]).filter(Boolean),
+      test: payload.testIndices.map((index: number) => source[index]).filter(Boolean),
+    };
+  }
+  if (Array.isArray(payload?.train) && Array.isArray(payload?.test)) {
+    return { train: payload.train, test: payload.test };
+  }
+  throw new Error('GPU safe-split response does not contain valid train/test partitions');
+};
+
+const ensureResolved = (payload: any, subject: string, pair: string) => {
+  const conflicts = Number(payload?.conflictCount ?? payload?.conflicts ?? 0);
+  if (payload?.resolved === false || conflicts > 0) {
+    console.warn(
+      `[Warning] Semantic leakage remains for subject ${subject} (${pair}): ${conflicts} conflict(s)`
+    );
+  }
+};
+
 /**
  * POST /api/cluster
  *
@@ -152,6 +181,8 @@ export const safeSplit = async (req: Request, res: Response) => {
     const {
       data,
       test_percentage = 10,
+      validation_percentage = 10,
+      stratify_by_subject = false,
       threshold = 0.85,
       max_attempts = 20,
       seed = 42,
@@ -161,13 +192,113 @@ export const safeSplit = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Missing or empty data array' });
     }
 
+    const testPct = Number(test_percentage);
+    const validationPct = Number(validation_percentage);
+    if (testPct < 0 || validationPct < 0 || testPct + validationPct >= 100) {
+      return res.status(400).json({ error: 'Train/validation/test percentages are invalid' });
+    }
+
     console.log(
-      `[Backend] Safe split ${data.length} items (test_percentage=${test_percentage}, threshold=${threshold}, max_attempts=${max_attempts}, seed=${seed}) → ${getGpuUrl()}/api/cluster/safe-split`
+      `[Backend] Safe split ${data.length} items (test=${testPct}%, validation=${validationPct}%, stratified=${Boolean(stratify_by_subject)}, threshold=${threshold}, seed=${seed}) → ${getGpuUrl()}/api/cluster/safe-split`
     );
+
+    // V2 research path: split each verified subject independently. The first
+    // split protects development-vs-test; the second protects train-vs-validation.
+    // Together they prevent cross-partition leakage while preserving subject ratios.
+    if (stratify_by_subject) {
+      const groups = new Map<string, SafeSplitItem[]>();
+      data.forEach((item: SafeSplitItem) => {
+        const subject = normalizeSubject(item.subject);
+        groups.set(subject, [...(groups.get(subject) || []), item]);
+      });
+
+      const combined = { train: [] as SafeSplitItem[], val: [] as SafeSplitItem[], test: [] as SafeSplitItem[] };
+      const subjectDistribution: Array<Record<string, any>> = [];
+      const overlapInfo: Array<Record<string, any>> = [];
+      let attempts = 0;
+      let maxSimilarity = 0;
+
+      for (const [subject, subjectData] of groups.entries()) {
+        if (subjectData.length < 3) {
+          return res.status(400).json({
+            error: `Subject ${subject} needs at least 3 samples for train/validation/test split`,
+          });
+        }
+
+        const outer = await getGpuClient().safeSplit({
+          data: subjectData,
+          test_percentage: testPct,
+          threshold,
+          max_attempts,
+          seed,
+        });
+        if (outer.status < 200 || outer.status >= 300) {
+          return res.status(outer.status).json(outer.data);
+        }
+        ensureResolved(outer.data, subject, 'development-test');
+        const developmentTest = materializeSplit(outer.data, subjectData);
+
+        const remainingPct = 100 - testPct;
+        const validationWithinDevelopment = remainingPct > 0
+          ? (validationPct / remainingPct) * 100
+          : 0;
+        const inner = await getGpuClient().safeSplit({
+          data: developmentTest.train,
+          test_percentage: validationWithinDevelopment,
+          threshold,
+          max_attempts,
+          seed: Number(seed) + 1009,
+        });
+        if (inner.status < 200 || inner.status >= 300) {
+          return res.status(inner.status).json(inner.data);
+        }
+        ensureResolved(inner.data, subject, 'train-validation');
+        const trainValidation = materializeSplit(inner.data, developmentTest.train);
+
+        combined.train.push(...trainValidation.train);
+        combined.val.push(...trainValidation.test);
+        combined.test.push(...developmentTest.test);
+        subjectDistribution.push({
+          subject,
+          train: trainValidation.train.length,
+          val: trainValidation.test.length,
+          test: developmentTest.test.length,
+          total: subjectData.length,
+        });
+        attempts += Number(outer.data?.attempts || 0) + Number(inner.data?.attempts || 0);
+        maxSimilarity = Math.max(
+          maxSimilarity,
+          Number(outer.data?.maxCrossSplitSimilarity || 0),
+          Number(inner.data?.maxCrossSplitSimilarity || 0),
+        );
+        overlapInfo.push(
+          ...(outer.data?.conflictsPreview || []).map((row: any) => ({ ...row, subject, partition_pair: 'development-test' })),
+          ...(inner.data?.conflictsPreview || []).map((row: any) => ({ ...row, subject, partition_pair: 'train-validation' })),
+        );
+      }
+
+      return res.json({
+        resolved: true,
+        split_strategy: 'subject-stratified-two-stage-semantic-guard',
+        seed: Number(seed),
+        threshold: Number(threshold),
+        train: combined.train,
+        val: combined.val,
+        test: combined.test,
+        train_count: combined.train.length,
+        val_count: combined.val.length,
+        test_count: combined.test.length,
+        conflicts: 0,
+        max_similarity: Number(maxSimilarity.toFixed(6)),
+        attempts,
+        subject_distribution: subjectDistribution,
+        overlap_info: overlapInfo,
+      });
+    }
 
     const gpuResponse = await getGpuClient().safeSplit({
       data,
-      test_percentage,
+      test_percentage: testPct,
       threshold,
       max_attempts,
       seed,
@@ -183,7 +314,10 @@ export const safeSplit = async (req: Request, res: Response) => {
     if (String(err?.message || '').includes('non-JSON')) {
       return res.status(502).json({ error: err.message });
     }
-    return res.status(500).json({ error: err.message || 'Failed to generate safe split' });
+    return res.status(err?.status || 500).json({
+      error: err.message || 'Failed to generate safe split',
+      details: err?.details,
+    });
   }
 };
 

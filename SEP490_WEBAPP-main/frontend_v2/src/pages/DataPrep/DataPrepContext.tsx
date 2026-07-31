@@ -319,6 +319,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [cleaningPreviewBefore, setCleaningPreviewBefore] = useState<any[]>([]);
   const [cleaningPreviewAfter, setCleaningPreviewAfter] = useState<any[]>([]);
   const [cleaningPreviewRemoved, setCleaningPreviewRemoved] = useState<any[]>([]);
+  const [cleaningDetailConv, setCleaningDetailConv] = useState<any>(null);
   const [previewPage, setPreviewPage] = useState(1);
   const [previewItemsPerPage, setPreviewItemsPerPage] = useState(5);
 
@@ -641,7 +642,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [rewriteTab, setRewriteTab] = useState('original');
 
   /* Stage 5 state */
-  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: false });
+  const [judgeModels, setJudgeModels] = useState({ gemini: true, deepseek: true, openai: true });
   const [evalExpanded, setEvalExpanded] = useState('eval_428051');
   const [sepQualityModal, setSepQualityModal] = useState<any>(null);
   const [sepDistributionTab, setSepDistributionTab] = useState('subject');
@@ -709,11 +710,29 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       setProjectName(version?.projectName || 'Dataset');
       setConversationsList(rows);
       setStage3Convs(rows);
+      const savedCleanStats = version?.cleanStats;
       setConversionStats({
         total: rows.length,
         converted: rows.length,
         datasetVersionId: versionId,
+        stats: savedCleanStats
+          ? {
+              totalConversations: rows.length,
+              cleaning: {
+                originalCount: savedCleanStats.originalCount,
+                finalCount: savedCleanStats.finalCount,
+                removedBoilerplate: savedCleanStats.breakdown?.removedBoilerplate || 0,
+                removedTooShort: savedCleanStats.breakdown?.removedTooShort || 0,
+                removedTooLong: savedCleanStats.breakdown?.removedTooLong || 0,
+                removedUnclosedThink: savedCleanStats.breakdown?.removedUnclosedThink || 0,
+                removedDuplicates: savedCleanStats.breakdown?.removedDuplicates || 0,
+              },
+            }
+          : undefined,
       });
+      if (savedCleanStats) {
+        setCleaningApplied(true);
+      }
 
       const resumeStep = Number(version?.prepareResumeStep || version?.checkpointResumeStep || 1);
       const stage = resolveStageFromResumeStep(resumeStep);
@@ -959,7 +978,9 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const res = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags
+        // Always false for preview: we need to see think tags in conv detail
+        // so users can verify what needs cleaning. Think tags are removed only at export.
+        removeThinkTags: false
       });
 
       const mapped = mapConvertedToConversations(res.data);
@@ -1015,7 +1036,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       const originalRes = await apiService.convertData(file.fileId, {
         format: selectedFormat as any,
         enableCleaning: false,
-        removeThinkTags: removeThinkTags,
+        // Always false for preview: preserve think tags so before/after comparison shows them
+        removeThinkTags: false,
       });
       const originalMapped = mapConvertedToConversations(originalRes.data);
 
@@ -1036,6 +1058,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
         if (cleanedItem) {
           const assistantMsgAfter = cleanedItem.messages[0]?.assistant || '';
           const isFixed = assistantMsgBefore !== assistantMsgAfter;
+          const isContentWiped = isFixed && assistantMsgAfter === '';
           cleanedItem.status = isFixed ? 'fixed' : 'clean';
 
           beforePreview.push({
@@ -1044,14 +1067,20 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: isFixed ? 'Cần làm sạch thẻ <think>/boilerplate' : null,
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
 
           afterPreview.push({
             id: item.id,
-            status: isFixed ? 'fixed' : 'clean',
-            action: isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
+            status: isContentWiped ? 'wiped' : isFixed ? 'fixed' : 'clean',
+            action: isContentWiped
+              ? 'Đã xóa toàn bộ thẻ think (nội dung rỗng)'
+              : isFixed ? 'Đã làm sạch bằng Regex' : 'Không thay đổi',
             user: userMsg,
             assistant: assistantMsgAfter,
+            messagesBefore: item.messages,
+            messagesAfter: cleanedItem.messages,
           });
         } else {
           beforePreview.push({
@@ -1060,6 +1089,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             issue: 'Bị lọc bỏ',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
 
           removedPreview.push({
@@ -1067,6 +1098,8 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
             reason: 'Không đạt tiêu chuẩn độ dài / từ khóa lỗi',
             user: userMsg,
             assistant: assistantMsgBefore,
+            messagesBefore: item.messages,
+            messagesAfter: null,
           });
         }
       });
@@ -1386,6 +1419,7 @@ export const DataPrepProvider: React.FC<{ children: ReactNode }> = ({ children }
       cleaningPreviewBefore, setCleaningPreviewBefore,
       cleaningPreviewAfter, setCleaningPreviewAfter,
       cleaningPreviewRemoved, setCleaningPreviewRemoved,
+      cleaningDetailConv, setCleaningDetailConv,
       previewPage, setPreviewPage,
       previewItemsPerPage, setPreviewItemsPerPage,
       removeErrorKeywords, setRemoveErrorKeywords,

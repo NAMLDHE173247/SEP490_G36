@@ -71,6 +71,15 @@ export class ConversionController {
         return;
       }
 
+      // Đảm bảo mỗi cuộc hội thoại/record đều có một conversation_id ổn định
+      messages.forEach((record, index) => {
+        if (typeof record === 'object' && record !== null) {
+          if (!record.conversation_id) {
+            record.conversation_id = record.id || `conv_${String(index + 1).padStart(3, '0')}`;
+          }
+        }
+      });
+
       const fileId = uuidv4();
 
       let fileType: string = 'chat';
@@ -183,7 +192,7 @@ export class ConversionController {
       } else if (stored.metadata.fileType === 'openai_messages') {
         // If input is already OpenAI messages — apply cleanContent if removeThinkTags
         let cleanedData = stored.data;
-        if (options.removeThinkTags) {
+        if (options.removeThinkTags && !options.enableCleaning) {
           cleanedData = stored.data.map((conv: any) => ({
             ...conv,
             messages: Array.isArray(conv.messages)
@@ -217,11 +226,14 @@ export class ConversionController {
           };
         }
       } else {
+        const convertOptions = options.enableCleaning
+          ? { ...options, removeThinkTags: false }
+          : options;
         if (options.format === 'alpaca') {
-          const forcedOptions = { ...options, format: 'openai' as const };
+          const forcedOptions = { ...convertOptions, format: 'openai' as const };
           result = conversionService.convert(stored.data as MongoDBMessage[], forcedOptions);
         } else {
-        result = conversionService.convert(stored.data as MongoDBMessage[], options);
+          result = conversionService.convert(stored.data as MongoDBMessage[], convertOptions);
         }
       }
 

@@ -14,7 +14,7 @@ import { DatasetAssignmentActivity } from '../models/DatasetAssignmentActivity';
 import { LabelAssignment } from '../models/LabelAssignment';
 import { CheckerActivityLog } from '../models/CheckerActivityLog';
 import { apiKeyService } from '../services/apiKeyService';
-import { getAuthUserId, isManager } from '../utils/auth';
+import { getAuthUserId, isAssignmentReviewer, isManager } from '../utils/auth';
 import { getHardRejectedSampleIds } from '../utils/labelFilters';
 import { EvalFormat, inferFormatFromRow } from '../utils/evalUtils';
 import { versionService, type DatasetOperationType } from '../modules/dataprep/versions/version.service';
@@ -359,7 +359,7 @@ async function logCheckerActivity(params: {
       userEmail: user.email || 'unknown@test.com',
       action: params.action,
       targetScope: params.targetScope || null,
-      messageIndex: params.messageIndex || null,
+      messageIndex: params.messageIndex ?? null,
       messageRole: params.messageRole || null,
       details: params.details || '',
     });
@@ -475,7 +475,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const { projectName, similarityThreshold, format, data, promptId, promptContentSnapshot } = req.body as {
+      const { projectName, similarityThreshold, format, data, promptId, promptContentSnapshot, cleanStats } = req.body as {
         projectId?: string;
         parentVersionId?: string;
         operationType?: DatasetOperationType;
@@ -486,6 +486,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         format?: string;
         promptId?: string;
         promptContentSnapshot?: string;
+        cleanStats?: Record<string, unknown>;
         data: Array<{ sourceKey?: string; data?: Record<string, any> } | Record<string, any>>;
       };
 
@@ -524,6 +525,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         parentVersionId: requestedParentVersionId,
         operationType: requestedOperationType,
         operationParams: req.body?.operationParams,
+        cleanStats: cleanStats && typeof cleanStats === 'object' ? (cleanStats as any) : undefined,
         prepareResumeStep,
         similarityThreshold: threshold,
         format: normalizedFormat,
@@ -1142,6 +1144,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           sharedWithUsers: await buildSharedUserDtos(version),
           operationType: version.operationType || 'legacy',
           operationParams: version.operationParams || {},
+          cleanStats: (version as any).cleanStats || null,
           prepareResumeStep: Number((version as any).prepareResumeStep || 5),
           checkpointResumeStep: resolveCheckpointResumeStep(version.operationType, (version as any).prepareResumeStep),
           similarityThreshold: version.similarityThreshold,
@@ -1677,7 +1680,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1720,7 +1723,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1772,7 +1775,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1855,7 +1858,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1877,6 +1880,22 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           return;
         }
         messageRole = parsedMessageRole;
+      }
+
+      // Publish may carry the final decision so the client does not need to call
+      // resolve + publish as two separate HTTP requests for every target.
+      const finalLabels = Array.isArray(req.body?.finalLabels) ? req.body.finalLabels : [];
+      if (finalLabels.length > 0) {
+        await resolveAssignmentAdjudication({
+          datasetVersionId: id,
+          sampleId,
+          targetScope,
+          messageIndex,
+          messageRole,
+          finalLabels,
+          note: String(req.body?.note || ''),
+          resolvedBy: ownerId,
+        });
       }
 
       const adjudication = await publishAssignmentAdjudication({
@@ -1935,7 +1954,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         return;
       }
 
-      const version = await DatasetVersion.findOne(isManager(req) ? { _id: id } : { _id: id, ownerId }).lean();
+      const version = await DatasetVersion.findOne(isAssignmentReviewer(req) ? { _id: id } : { _id: id, ownerId }).lean();
       if (!version) {
         res.status(404).json({ error: 'Không tìm thấy dataset version.' });
         return;
@@ -1960,6 +1979,9 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           messageIndex: log.messageIndex,
           messageRole: log.messageRole,
           details: log.details,
+          reason: log.reason || '',
+          before: log.before || null,
+          after: log.after || null,
           createdAt: log.createdAt,
         })),
       });

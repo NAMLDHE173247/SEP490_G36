@@ -1,0 +1,24 @@
+{
+  "schema_version": "specialist_sft_v1",
+  "provenance": "synthetic_template_v1",
+  "warning": "These are synthetic Socratic SFT drafts. Subject teachers should review content and add independently authored examples before final training or research claims.",
+  "files": {
+    "MATH": {
+      "file": "specialist_math_train_v1.json",
+      "case_count": 200
+    },
+    "PHYSICS": {
+      "file": "specialist_physics_train_v1.json",
+      "case_count": 200
+    },
+    "CHEMISTRY": {
+      "file": "specialist_chemistry_train_v1.json",
+      "case_count": 200
+    },
+    "GENERAL": {
+      "file": "general_tutor_train_v1.json",
+      "case_count": 600,
+      "description": "Balanced pooled baseline: 200 MATH + 200 PHYSICS + 200 CHEMISTRY samples."
+    }
+  }
+}

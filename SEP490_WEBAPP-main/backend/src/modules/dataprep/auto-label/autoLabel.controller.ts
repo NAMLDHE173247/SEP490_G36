@@ -3,9 +3,9 @@ import { AutoLabelingService } from './autoLabel.service';
 import { getAuthUserId } from '../../../utils/auth';
 import { apiKeyService } from '../../../services/apiKeyService';
 
-async function getService(userId: string | null | undefined, provider?: string) {
+async function getService(userId: string | null | undefined, provider?: string, model?: string) {
   const normalized = String(provider || 'gemini').toLowerCase();
-  const llmProvider = await apiKeyService.createProvider(userId, normalized, true);
+  const llmProvider = await apiKeyService.createProvider(userId, normalized, true, model);
   return new AutoLabelingService(llmProvider);
 }
 
@@ -19,8 +19,8 @@ export class AutoLabelingController {
       }
 
       const { versionId } = req.params;
-      const { provider } = req.body as { provider?: 'gemini' | 'openai' | 'deepseek' };
-      const service = await getService(ownerId, provider);
+      const { provider, model } = req.body as { provider?: 'gemini' | 'openai' | 'deepseek' | 'oauth_gateway'; model?: string };
+      const service = await getService(ownerId, provider, model);
       const suggestions = await service.preview(versionId, ownerId);
 
       res.json({ suggestions });

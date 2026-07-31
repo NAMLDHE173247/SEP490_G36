@@ -67,8 +67,10 @@ const StepConfig: React.FC<StepConfigProps> = ({
   onBack,
   toast,
 }) => {
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showHfPush, setShowHfPush] = useState(false);
+  // Keep the full training configuration visible for reproducible research
+  // runs (Version 1 exposed these fields by default).
+  const [showAdvanced, setShowAdvanced] = useState(true);
+  const [showHfPush, setShowHfPush] = useState(true);
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [savePresetName, setSavePresetName] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -85,10 +87,8 @@ const StepConfig: React.FC<StepConfigProps> = ({
   }, [config.baseModel]);
 
   const isCustomActive = config.baseModel === 'custom' || !isPredefinedModel;
-  const isOnlineModel = useMemo(() => {
-    const onlineModelIds = ['qwen-3.7-plus', 'zai-org/GLM-4.7', 'stepfun-ai/Step-3.5-Flash'];
-    return onlineModelIds.includes(config.baseModel);
-  }, [config.baseModel]);
+  const isOnlineModel = false;
+  const isOfficialVistral = config.baseModel === 'Viet-Mistral/Vistral-7B-Chat';
 
   const [customModelInput, setCustomModelInput] = useState(isPredefinedModel ? '' : config.baseModel);
   const [isValidatingModel, setIsValidatingModel] = useState(false);
@@ -114,20 +114,29 @@ const StepConfig: React.FC<StepConfigProps> = ({
     setIsValidatingModel(true);
     setModelValidationStatus('none');
     try {
-      const response = await axios.get(`https://huggingface.co/api/models/${encodeURIComponent(trimmed)}`);
-      if (response.status === 200) {
+      const headers: Record<string, string> = {};
+      if (config.hfToken?.trim()) {
+        headers['Authorization'] = `Bearer ${config.hfToken.trim()}`;
+      }
+      await axios.get(`https://huggingface.co/api/models/${encodeURIComponent(trimmed)}`, { headers });
+      onConfigChange({ baseModel: trimmed });
+      setModelValidationStatus('success');
+      toast('HuggingFace model validated successfully!', 'success');
+    } catch (err: any) {
+      console.warn('Validate model check:', err);
+      // Fallback: If it's a valid repo format username/model-name, accept it (could be gated model or CORS issue in browser)
+      if (/^[a-zA-Z0-9_\-\.]+\/[a-zA-Z0-9_\-\.]+$/.test(trimmed)) {
         onConfigChange({ baseModel: trimmed });
         setModelValidationStatus('success');
-        toast('HuggingFace model validated successfully!', 'success');
+        toast('Custom model ID accepted. Note: Ensures HF Token is set if this is a gated model.', 'info');
+      } else {
+        setModelValidationStatus('error');
+        toast('Invalid HuggingFace Model ID format (expected: organization/model-name).', 'error');
       }
-    } catch (err) {
-      console.error('Validate model error:', err);
-      setModelValidationStatus('error');
-      toast('Model not found on HuggingFace Hub. Ensure it is public and correct.', 'error');
     } finally {
       setIsValidatingModel(false);
     }
-  }, [customModelInput, onConfigChange, toast]);
+  }, [customModelInput, config.hfToken, onConfigChange, toast]);
 
   const defaultPresetNames = useMemo(() => Object.keys(DEFAULT_PRESETS), []);
   const customPresetNames = useMemo(() => Object.keys(customPresets), [customPresets]);
@@ -282,6 +291,28 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
                   <span>
                     <strong>Warning:</strong> This model runs through an online API. Local AutoTrain <strong>only supports LoRA fine-tuning</strong> for open-source models. Training this model will fail. Please choose an offline model (e.g. Qwen 3 (0.6B)) to proceed.
+                  </span>
+                </div>
+              )}
+
+              {isOfficialVistral && (
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    padding: 12,
+                    background: 'var(--at-amber-bg)',
+                    border: '1px solid var(--at-amber-border)',
+                    borderRadius: 'var(--at-radius)',
+                    color: '#B45309',
+                    fontSize: 12,
+                    marginTop: 10,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <AlertTriangle size={15} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span>
+                    <strong>Model bị giới hạn truy cập:</strong> hãy xin quyền trên Hugging Face và nhập HF token ở mục “Export to HuggingFace Hub”. Nếu chưa được duyệt, chọn bản mirror công khai.
                   </span>
                 </div>
               )}
@@ -688,6 +719,10 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
           {showHfPush && (
             <div className="at-panel-body" style={{ animation: 'atSlideIn 0.2s ease-out' }}>
+              <div style={{ display: 'flex', gap: 10, padding: 12, marginBottom: 12, borderRadius: 10, background: '#fff7ed', color: '#9a3412', fontSize: 13, lineHeight: 1.5 }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span><strong>Khuyến nghị bật để chống mất tiến độ:</strong> hệ thống lưu checkpoint mỗi 10 bước trên GPU. Repo Hugging Face giúp Resume ngay cả khi máy GPU/Colab bị mất hoàn toàn; nếu chỉ restart container trên cùng máy, checkpoint volume cục bộ vẫn được dùng.</span>
+              </div>
               <div className="at-form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="at-form-group">
                   <label className="at-label">Repo ID</label>

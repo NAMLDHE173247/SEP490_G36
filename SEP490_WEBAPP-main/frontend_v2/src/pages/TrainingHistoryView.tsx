@@ -379,13 +379,10 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
     try {
       const res = await api.get('/train/history/models');
       const dbModels = Array.isArray(res.data) ? res.data : [];
-      const mockModels = Array.from(new Set(MOCK_HISTORIES.map(h => h.baseModel)));
-      const combinedModels = Array.from(new Set([...dbModels, ...mockModels]));
-      setBaseModels(combinedModels);
+      setBaseModels(dbModels);
     } catch (err) {
       console.error('Failed to fetch base models:', err);
-      const mockModels = Array.from(new Set(MOCK_HISTORIES.map(h => h.baseModel)));
-      setBaseModels(mockModels);
+      setBaseModels([]);
     }
   }, []);
 
@@ -409,20 +406,10 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
         : '/train/history';
       const res = await api.get(url);
       const data = Array.isArray(res.data) ? res.data : [];
-      if (data.length === 0) {
-        const filteredMock = modelFilter
-          ? MOCK_HISTORIES.filter(h => h.baseModel === modelFilter)
-          : MOCK_HISTORIES;
-        setHistories(filteredMock);
-      } else {
-        setHistories(data);
-      }
+      setHistories(data);
     } catch (err) {
       console.error('Failed to fetch training history:', err);
-      const filteredMock = modelFilter
-        ? MOCK_HISTORIES.filter(h => h.baseModel === modelFilter)
-        : MOCK_HISTORIES;
-      setHistories(filteredMock);
+      setHistories([]);
     } finally {
       setLoading(false);
     }
@@ -748,7 +735,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                 <th>Tên dự án (Project)</th>
                 <th>Base Model</th>
                 <th>Loss</th>
-                <th>Accuracy</th>
+                <th title="SFT ngôn ngữ không tính classification accuracy">Accuracy</th>
                 <th>Thời gian chạy</th>
                 <th>Số records</th>
                 <th>Số tokens</th>
@@ -785,7 +772,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                       <td className="font-bold">{item.projectName}</td>
                       <td className="text-muted text-sm">{item.baseModel}</td>
                       <td className="font-bold text-primary">{item.finalMetrics?.loss?.toFixed(4) || '-'}</td>
-                      <td>{item.finalMetrics?.accuracy ? `${item.finalMetrics.accuracy}%` : '-'}</td>
+                      <td>{item.finalMetrics?.accuracy ? `${item.finalMetrics.accuracy}%` : 'Không đo'}</td>
                       <td>{formatDuration(item.trainingDuration)}</td>
                       <td className="font-bold text-success text-center">{item.totalRecords || '-'}</td>
                       <td className="font-bold text-info">{item.totalTokens ? item.totalTokens.toLocaleString('vi-VN') : '-'}</td>
@@ -900,7 +887,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                 <button
                                   className="btn-blue-outline"
                                   onClick={(e) => handleResume(e, item)}
-                                  disabled={!(item.latest_checkpoint_file_id || (item.pushToHub && item.hfRepoId)) || resumeLoading === item.jobId}
+                                  disabled={!(item.workerUrl || item.latest_checkpoint_file_id || (item.pushToHub && item.hfRepoId)) || resumeLoading === item.jobId}
                                 >
                                   {resumeLoading === item.jobId ? 'Đang khôi phục...' : 'Resume (Tiếp tục)'}
                                 </button>

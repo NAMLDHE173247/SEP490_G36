@@ -49,15 +49,46 @@ function ManagerAssignLabelingView({ onViewDetail }) {
     setUpdatingChecker(task.id);
     try {
       const versionId = String(task.id || '').split('_')[0];
+      const baseDeadline = new Date(task.staffDeadline || task.dueDate || Date.now()).getTime();
+      const defaultCheckerDate = new Date(Math.max(Date.now(), Number.isNaN(baseDeadline) ? Date.now() : baseDeadline) + 86400000);
+      const checkerDeadline = selectedCheckerId
+        ? (task.checkerDeadline || new Date(`${defaultCheckerDate.toISOString().slice(0, 10)}T23:59:59.999`).toISOString())
+        : undefined;
       await api.patch(`/dataprep/versions/${versionId}/assignments/checker`, {
         batchName: task.name,
-        checkerId: selectedCheckerId || undefined
+        checkerId: selectedCheckerId || undefined,
+        checkerDeadline,
       });
       task.checkerId = selectedCheckerId;
+      task.checkerDeadline = checkerDeadline || null;
+      setTasks((current) => [...current]);
       setShowToast('Đã cập nhật Checker phụ trách!');
     } catch (err: any) {
       console.error('Failed to update checker', err);
       alert(err.response?.data?.error || 'Không thể cập nhật Checker');
+    } finally {
+      setUpdatingChecker(null);
+      setTimeout(() => setShowToast(null), 3000);
+    }
+  };
+
+  const handleCheckerDeadlineChange = async (date: string, task: any) => {
+    if (!date || !task.checkerId) return;
+    setUpdatingChecker(task.id);
+    try {
+      const checkerDeadline = new Date(`${date}T23:59:59.999`).toISOString();
+      const versionId = String(task.id || '').split('_')[0];
+      await api.patch(`/dataprep/versions/${versionId}/assignments/checker`, {
+        batchName: task.name,
+        checkerId: task.checkerId,
+        checkerDeadline,
+      });
+      task.checkerDeadline = checkerDeadline;
+      task.isCheckerOverdue = false;
+      setTasks((current) => [...current]);
+      setShowToast('Đã cập nhật hạn review của Checker!');
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Không thể cập nhật hạn Checker');
     } finally {
       setUpdatingChecker(null);
       setTimeout(() => setShowToast(null), 3000);
@@ -337,6 +368,24 @@ function ManagerAssignLabelingView({ onViewDetail }) {
     return a.projectName.localeCompare(b.projectName);
   });
 
+  const renderDeadlineSummary = (task: any) => {
+    const format = (value: any) => value ? new Date(value).toLocaleDateString('vi-VN') : 'Chưa đặt';
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 7, fontSize: 11 }}>
+        <span style={{ padding: '3px 7px', borderRadius: 6, background: task.isStaffOverdue ? '#fee2e2' : '#f1f5f9', color: task.isStaffOverdue ? '#b91c1c' : '#475569', fontWeight: 600 }}>
+          Hạn Staff: {format(task.staffDeadline || task.dueDate)}{task.isStaffOverdue ? ' · QUÁ HẠN' : ''}
+        </span>
+        {task.checkerId && (
+          <span style={{ padding: '3px 7px', borderRadius: 6, background: task.isCheckerOverdue ? '#fee2e2' : '#eef2ff', color: task.isCheckerOverdue ? '#b91c1c' : '#4338ca', fontWeight: 600 }}>
+            Hạn Checker: {format(task.checkerDeadline)}{task.isCheckerOverdue ? ' · QUÁ HẠN' : ''}
+          </span>
+        )}
+        {task.submittedLateCount > 0 && <span style={{ color: '#b91c1c', fontWeight: 700 }}>{task.submittedLateCount} lượt nộp trễ</span>}
+        {task.reviewedLateCount > 0 && <span style={{ color: '#b91c1c', fontWeight: 700 }}>{task.reviewedLateCount} lượt review trễ</span>}
+      </div>
+    );
+  };
+
   /* ── Render 1 task card ── */
   const renderTaskCard = (task: any) => {
     const statusInfo = STATUS_CONFIG[task.status] || STATUS_CONFIG['pending'];
@@ -369,6 +418,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
             <span className="al-task-desc">
               {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
             </span>
+            {renderDeadlineSummary(task)}
             <div onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
               <UserCheck size={14} />
               <select
@@ -385,6 +435,17 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                   </option>
                 ))}
               </select>
+              {task.checkerId && (
+                <input
+                  type="date"
+                  aria-label={`Hạn Checker của ${task.name}`}
+                  value={task.checkerDeadline ? String(task.checkerDeadline).split('T')[0] : ''}
+                  min={task.staffDeadline || task.dueDate ? new Date(new Date(task.staffDeadline || task.dueDate).getTime() + 86400000).toISOString().slice(0, 10) : undefined}
+                  onChange={(e) => handleCheckerDeadlineChange(e.target.value, task)}
+                  disabled={updatingChecker === task.id}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px' }}
+                />
+              )}
             </div>
           </div>
 
@@ -744,6 +805,7 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                   <span className="al-task-desc">
                     {task.totalSamples} samples · {totalBatches} Batch · {uniqueAssignees.size} người
                   </span>
+                  {renderDeadlineSummary(task)}
                   <label onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 7, color: '#64748b', fontSize: 12 }}>
                     <UserCheck size={14} />
                     <select
@@ -760,6 +822,17 @@ function ManagerAssignLabelingView({ onViewDetail }) {
                         </option>
                       ))}
                     </select>
+                    {task.checkerId && (
+                      <input
+                        type="date"
+                        aria-label={`Hạn Checker của ${task.name}`}
+                        value={task.checkerDeadline ? String(task.checkerDeadline).split('T')[0] : ''}
+                        min={task.staffDeadline || task.dueDate ? new Date(new Date(task.staffDeadline || task.dueDate).getTime() + 86400000).toISOString().slice(0, 10) : undefined}
+                        onChange={(e) => handleCheckerDeadlineChange(e.target.value, task)}
+                        disabled={updatingChecker === task.id}
+                        style={{ border: '1px solid #cbd5e1', borderRadius: 7, padding: '4px 7px' }}
+                      />
+                    )}
                   </label>
                 </div>
 

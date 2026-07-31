@@ -38,9 +38,56 @@ export const Stage3Labeling = (dataPrep: any) => {
 
   // Local states
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
+
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -352,6 +399,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                   <option value="BIOLOGY">BIOLOGY</option>
                   <option value="HISTORY">HISTORY</option>
                   <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                   <option value="GEOGRAPHY">GEOGRAPHY</option>
                   <option value="OTHER">OTHER</option>
                   <option value="NOISE">NOISE</option>
@@ -635,6 +683,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                             <option value="BIOLOGY">BIOLOGY</option>
                             <option value="HISTORY">HISTORY</option>
                             <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="OTHER">OTHER</option>
                             <option value="NOISE">NOISE</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
@@ -697,6 +746,9 @@ export const Stage3Labeling = (dataPrep: any) => {
                         onChange={e => setAiProvider(e.target.value as any)}
                         disabled={isLabelingWithAI}
                       >
+                        <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="openai">ChatGPT / OpenAI</option>
                         <option value="deepseek">Deepseek</option>
                         <option value="groq">Groq</option>
                         <option value="openrouter">OpenRouter</option>
@@ -762,7 +814,7 @@ export const Stage3Labeling = (dataPrep: any) => {
 
                             // BE trß║ú vß╗ü clusterId (0-indexed) ΓåÆ map sang groupId cß╗ºa GROUP_DATA
                             const labelMap: Record<number, string> = {};
-                            const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                            const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'ENGLISH', 'OTHER', 'NOISE'];
                             const newLabels = new Set<string>();
 
                             suggestions.forEach((s: any) => {
@@ -940,6 +992,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                               <option value="BIOLOGY">BIOLOGY</option>
                               <option value="HISTORY">HISTORY</option>
                               <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                               <option value="OTHER">OTHER</option>
                               <option value="NOISE">NOISE</option>
                               {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
@@ -1069,11 +1122,11 @@ export const Stage3Labeling = (dataPrep: any) => {
                     <div className="conv-detail-label">#{idx + 1}</div>
                     <div className="conv-detail-msg conv-detail-user">
                       <div className="conv-detail-role">≡ƒæñ User</div>
-                      <div className="conv-detail-text">{msg.user}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                     </div>
                     <div className="conv-detail-msg conv-detail-assistant">
                       <div className="conv-detail-role">≡ƒñû Assistant</div>
-                      <div className="conv-detail-text">{msg.assistant}</div>
+                      <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                     </div>
                   </div>
                 ))}

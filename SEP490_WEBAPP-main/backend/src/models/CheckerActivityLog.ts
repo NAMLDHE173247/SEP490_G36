@@ -6,11 +6,14 @@ export interface ICheckerActivityLog extends Document {
   userId: Types.ObjectId;
   userName: string;
   userEmail: string;
-  action: 'view' | 'save_draft' | 'publish';
+  action: 'view' | 'save_draft' | 'publish' | 'rewrite_approved' | 'rewrite_rejected' | 'rewrite_redo';
   targetScope?: 'sample' | 'message' | null;
   messageIndex?: number | null;
   messageRole?: 'user' | 'assistant' | null;
   details?: string;
+  reason?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,7 +42,7 @@ const CheckerActivityLogSchema = new Schema<ICheckerActivityLog>(
     userEmail: { type: String, required: true },
     action: {
       type: String,
-      enum: ['view', 'save_draft', 'publish'] as const,
+      enum: ['view', 'save_draft', 'publish', 'rewrite_approved', 'rewrite_rejected', 'rewrite_redo'] as const,
       required: true,
       index: true,
     },
@@ -55,6 +58,9 @@ const CheckerActivityLogSchema = new Schema<ICheckerActivityLog>(
       default: null,
     },
     details: { type: String, default: '' },
+    reason: { type: String, default: '' },
+    before: { type: Schema.Types.Mixed, default: null },
+    after: { type: Schema.Types.Mixed, default: null },
   },
   {
     timestamps: true,

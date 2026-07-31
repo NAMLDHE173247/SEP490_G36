@@ -6,11 +6,13 @@ import {
 } from 'lucide-react';
 import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { apiService } from '../../../services/api';
+import { getAuthToken } from '../../../services/authSession';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 import './Stage3Labeling.css';
 import { useToast } from '../../../hooks/useToast';
 import ToastContainer from '../../../components/ToastContainer';
 import { Stage3AiReview } from '../../../components/dataprep/Stage3AiReview';
+import { getCliProxyModels } from '../../../services/configApi';
 
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
@@ -225,6 +227,53 @@ export const Stage3Labeling: React.FC = () => {
   });
   const [isSavingCanonical, setIsSavingCanonical] = React.useState(false);
 
+  // Renders message content, highlighting <think>...</think> tags visually
+  // instead of letting the browser parse them as unknown HTML elements
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    const parts: React.ReactNode[] = [];
+    const str = content;
+    const localRegex = /<think>([\s\S]*?)<\/think>|<think>([\s\S]*)$/gi;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    let idx = 0;
+    while ((match = localRegex.exec(str)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(<span key={`text-${idx}`}>{str.slice(lastIndex, match.index)}</span>);
+        idx++;
+      }
+      const isUnclosed = match[2] !== undefined;
+      const thinkContent = isUnclosed ? match[2] : match[1];
+      parts.push(
+        <span
+          key={`think-${idx}`}
+          style={{
+            display: 'inline-block',
+            background: isUnclosed ? '#fff3cd' : '#fef9c3',
+            border: `1px solid ${isUnclosed ? '#f59e0b' : '#eab308'}`,
+            borderRadius: '4px',
+            padding: '2px 6px',
+            margin: '0 2px',
+            fontSize: '0.85em',
+            color: '#92400e',
+            fontFamily: 'monospace',
+          }}
+          title={isUnclosed ? 'Thẻ <think> chưa đóng — cần làm sạch' : 'Thẻ <think>...</think> hoàn chỉnh — cần làm sạch'}
+        >
+          <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{isUnclosed ? '⚠ <think>' : '🧠 <think>'}</span>
+          {' '}{thinkContent}
+          {!isUnclosed && <span style={{ opacity: 0.6, fontSize: '0.8em' }}>{' </think>'}</span>}
+        </span>
+      );
+      idx++;
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < str.length) {
+      parts.push(<span key={`text-end-${idx}`}>{str.slice(lastIndex)}</span>);
+    }
+    return parts.length > 0 ? <>{parts}</> : <>{content}</>;
+  };
+
   const toggleConversationLabel = (group: string, label: string) => {
     setConversationLabels(prev => ({
       ...prev,
@@ -277,7 +326,16 @@ export const Stage3Labeling: React.FC = () => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
+  const [aiModel, setAiModel] = React.useState('');
+  const [gatewayModels, setGatewayModels] = React.useState<string[]>([]);
+  React.useEffect(() => {
+    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
+    getCliProxyModels().then((result) => {
+      setGatewayModels(result.models || []);
+      setAiModel(result.defaultModel || '');
+    }).catch(() => { setGatewayModels([]); setAiModel(''); });
+  }, [aiProvider, gatewayModels.length]);
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -319,6 +377,7 @@ export const Stage3Labeling: React.FC = () => {
   const [taskNameInput, setTaskNameInput] = React.useState('');
   const [taskPriority, setTaskPriority] = React.useState('medium');
   const [taskDeadline, setTaskDeadline] = React.useState('');
+  const [taskCheckerDeadline, setTaskCheckerDeadline] = React.useState('');
   const [assignedSupervisorId, setAssignedSupervisorId] = React.useState('');
   const [workloadFilter, setWorkloadFilter] = React.useState<'all' | 'free' | 'busy' | 'overloaded'>('all');
   const [overlapCount, setOverlapCount] = React.useState(1);
@@ -347,7 +406,7 @@ export const Stage3Labeling: React.FC = () => {
   /** Số batch count cho auto-label (controlled input) */
   const [batchCount, setBatchCount] = React.useState(1);
   /** Provider cho auto-label batch */
-  const [batchProvider, setBatchProvider] = React.useState<'openrouter' | 'groq' | 'deepseek'>('openrouter');
+  const [batchProvider, setBatchProvider] = React.useState<'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('openrouter');
   /** Trạng thái đang export dữ liệu */
   const [isExporting, setIsExporting] = React.useState(false);
   /** Trạng thái đang đẩy sang Stage 4 */
@@ -388,12 +447,37 @@ export const Stage3Labeling: React.FC = () => {
       throw new Error('No Stage 3 conversations available to create dataset version.');
     }
 
+    const cleaning = dataPrep.conversionStats?.stats?.cleaning;
+    const cleanStats = cleaning
+      ? {
+          originalCount: cleaning.originalCount ?? stage3Convs.length,
+          finalCount: cleaning.finalCount ?? stage3Convs.length,
+          // removedTotal/removedInsufficientTurns nay đã được backend tính sẵn
+          // (xem DataCleaningStats) — dùng trực tiếp thay vì cộng tay để không
+          // bỏ sót lý do removedInsufficientTurns.
+          removedTotal:
+            cleaning.removedTotal ??
+            (cleaning.originalCount ?? 0) - (cleaning.finalCount ?? 0),
+          breakdown: {
+            removedBoilerplate: cleaning.removedBoilerplate || 0,
+            removedTooShort: cleaning.removedTooShort || 0,
+            removedTooLong: cleaning.removedTooLong || 0,
+            removedUnclosedThink: cleaning.removedUnclosedThink || 0,
+            removedDuplicates: cleaning.removedDuplicates || 0,
+            removedInsufficientTurns: cleaning.removedInsufficientTurns || 0,
+          },
+          cleanParams: {},
+          cleanedAt: new Date().toISOString(),
+        }
+      : undefined;
+
     const payload = {
       projectName: 'Auto-Label Dataset',
       projectId: (localStorage.getItem('current_project_id') || undefined) as any,
       operationType: 'labeling_base' as const,
       similarityThreshold: 0.85,
       format: 'openai' as const,
+      ...(cleanStats ? { cleanStats } : {}),
       data: stage3Convs.map((conv, idx) => {
         const messages = conv.messages.flatMap((m: any) => [
           { role: 'user', content: m.user },
@@ -466,7 +550,8 @@ export const Stage3Labeling: React.FC = () => {
 
       // Listen for Real-Time Updates using SSE
       const apiBase = import.meta.env.VITE_API_URL || '/api';
-      const sseUrl = `${apiBase}/dataprep/labeling/assignments/stream`;
+      const token = getAuthToken();
+      const sseUrl = `${apiBase}/dataprep/labeling/assignments/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
       eventSource = new EventSource(sseUrl);
       eventSource.onmessage = (event) => {
         try {
@@ -841,6 +926,24 @@ export const Stage3Labeling: React.FC = () => {
     const fetchStaffForModal = async () => {
       setIsFetchingDashboard(true);
       try {
+        // Load samples independently from the user directory. A permission or
+        // network error while loading Staff must never make the dataset appear empty.
+        let versionId = '';
+        try {
+          versionId = await ensureDatasetVersionId();
+        } catch (e) {
+          console.warn('Could not resolve the active dataset version:', e);
+        }
+        if (versionId && assignmentSamples.length === 0) {
+          try {
+            const assign = await apiService.getDatasetVersionAssignments(versionId);
+            setAssignmentSamples(assign.samples || []);
+            setAssignmentTotals(assign.totals);
+          } catch (e) {
+            console.warn('Could not load assignment samples:', e);
+          }
+        }
+
         const usersRes = await apiService.listUsers();
         const activeStaff = usersRes.users.filter((u: any) => u.role === 'staff' && u.status === 'active');
         const users = activeStaff.map((u: any) => ({ _id: u.id, name: u.name, email: u.email }));
@@ -860,17 +963,6 @@ export const Stage3Labeling: React.FC = () => {
           setAssignedCheckerId(chks[0]._id);
         }
 
-        // Also try to load samples if versionId exists
-        const versionId = localStorage.getItem('current_version_id');
-        if (versionId && assignmentSamples.length === 0) {
-          try {
-            const assign = await apiService.getDatasetVersionAssignments(versionId);
-            setAssignmentSamples(assign.samples || []);
-            setAssignmentTotals(assign.totals);
-          } catch (e) {
-            console.warn('Could not load assignment samples:', e);
-          }
-        }
       } catch (err) {
         console.error('Failed to fetch staff for modal:', err);
       } finally {
@@ -1328,11 +1420,13 @@ export const Stage3Labeling: React.FC = () => {
                           <option value="">-- Select --</option>
                           <option value="MATH">MATH</option>
                           <option value="CODING">CODING</option>
+                          <option value="ENGLISH">ENGLISH</option>
                           <option value="PHYSICS">PHYSICS</option>
                           <option value="CHEMISTRY">CHEMISTRY</option>
                           <option value="BIOLOGY">BIOLOGY</option>
                           <option value="HISTORY">HISTORY</option>
                           <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                           <option value="OTHER">OTHER</option>
                           <option value="NOISE">NOISE</option>
                           {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
@@ -1392,13 +1486,22 @@ export const Stage3Labeling: React.FC = () => {
                       className="label-model-select"
                       style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                       value={aiProvider}
-                      onChange={e => setAiProvider(e.target.value as any)}
+                      onChange={e => { setAiProvider(e.target.value as any); setAiModel(''); }}
                       disabled={isLabelingWithAI}
                     >
+                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>
                       <option value="groq">Groq</option>
                       <option value="openrouter">OpenRouter</option>
                     </select>
+                    {aiProvider === 'oauth_gateway' && (
+                      <select className="label-model-select" value={aiModel} onChange={(e) => setAiModel(e.target.value)} disabled={isLabelingWithAI} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                        <option value="">Tự động chọn model</option>
+                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                    )}
                     <button
                       className="label-ai-btn"
                       style={{ flex: 1, padding: '8px', borderRadius: '6px', background: '#6366f1', color: 'white', border: 'none', cursor: 'pointer', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
@@ -1418,50 +1521,18 @@ export const Stage3Labeling: React.FC = () => {
 
                         setIsLabelingWithAI(true);
                         try {
-                          // Lấy versionId từ metadata của dữ liệu (nếu có) hoặc từ localStorage
-                          let versionId: string =
-                            (stage3Convs[0] as any)?.datasetVersionId ||
-                            (stage3Convs[0] as any)?.versionId ||
-                            localStorage.getItem('current_version_id') ||
-                            '';
-
-                          // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
-                          if (!versionId) {
-                            const payload = {
-                              projectName: 'Auto-Label Dataset',
-      projectId: (localStorage.getItem('current_project_id') || undefined) as any,
-                              operationType: 'labeling_base' as const,
-                              similarityThreshold: 0.85,
-                              format: 'openai' as const,
-                              data: stage3Convs.map((conv, idx) => {
-                                const messages = conv.messages.flatMap((m: any) => [
-                                  { role: 'user', content: m.user },
-                                  { role: 'assistant', content: m.assistant }
-                                ]).filter((m: any) => m.content && String(m.content).trim() !== '');
-
-                                return {
-                                  sourceKey: `conv-${idx}`,
-                                  data: {
-                                    messages,
-                                    cluster: conv.groupId,
-                                    conversation_id: `conv-${idx}`
-                                  }
-                                };
-                              })
-                            };
-                            const created = await apiService.createDatasetVersion(payload);
-                            versionId = created.datasetVersion._id;
-                            localStorage.setItem('current_version_id', versionId);
-                          }
+                          // Lấy versionId hiện có, hoặc tự động tạo Dataset Version mới để lưu vào DB
+                          // (dùng chung ensureDatasetVersionId để cleanStats luôn được đính kèm khi tạo version)
+                          const versionId = await ensureDatasetVersionId();
 
                           // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
-                          const res = await apiService.previewAutoLabels(versionId, aiProvider);
+                          const res = await apiService.previewAutoLabels(versionId, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined);
                           const suggestions = res.suggestions || [];
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA
                           const labelMap: Record<number, string> = {};
                           const metaMap: Record<number, { source: 'ai'; topic: string; reason: string }> = {};
-                          const predefinedLabels = ['MATH', 'CODING', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
+                          const predefinedLabels = ['MATH', 'CODING', 'ENGLISH', 'PHYSICS', 'PHYSICAL', 'CHEMISTRY', 'BIOLOGY', 'HISTORY', 'LITERATURE', 'OTHER', 'NOISE'];
                           const newLabels = new Set<string>();
 
                           suggestions.forEach((s: any) => {
@@ -1639,12 +1710,14 @@ export const Stage3Labeling: React.FC = () => {
                             <option value="">-- Select --</option>
                             <option value="MATH">MATH</option>
                             <option value="CODING">CODING</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="PHYSICS">PHYSICS</option>
                             <option value="PHYSICAL">PHYSICAL</option>
                             <option value="CHEMISTRY">CHEMISTRY</option>
                             <option value="BIOLOGY">BIOLOGY</option>
                             <option value="HISTORY">HISTORY</option>
                             <option value="LITERATURE">LITERATURE</option>
+                            <option value="ENGLISH">ENGLISH</option>
                             <option value="OTHER">OTHER</option>
                             <option value="NOISE">NOISE</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
@@ -1784,11 +1857,11 @@ export const Stage3Labeling: React.FC = () => {
                   <div className="conv-detail-label">#{idx + 1}</div>
                   <div className="conv-detail-msg conv-detail-user">
                     <div className="conv-detail-role">👤 User</div>
-                    <div className="conv-detail-text">{msg.user}</div>
+                    <div className="conv-detail-text">{renderMessageContent(String(msg.user || ''))}</div>
                   </div>
                   <div className="conv-detail-msg conv-detail-assistant">
                     <div className="conv-detail-role">🤖 Assistant</div>
-                    <div className="conv-detail-text">{msg.assistant}</div>
+                    <div className="conv-detail-text">{renderMessageContent(String(msg.assistant || ''))}</div>
                   </div>
                 </div>
               ))}
@@ -2304,11 +2377,13 @@ export const Stage3Labeling: React.FC = () => {
                     <select
                       className="ia-autolabel-input"
                       value={batchProvider}
-                      onChange={(e) => setBatchProvider(e.target.value as 'openrouter' | 'groq' | 'deepseek')}
+                      onChange={(e) => setBatchProvider(e.target.value as any)}
                     >
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="groq">Groq</option>
+                      <option value="gemini">Gemini</option>
+                      <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>
+                      <option value="groq">Groq</option>
+                      <option value="openrouter">OpenRouter</option>
                     </select>
                   </label>
                 </div>
@@ -3124,7 +3199,7 @@ export const Stage3Labeling: React.FC = () => {
                           </select>
                         </div>
                         <div className="ct-form-group">
-                          <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn chót</label>
+                          <label><Calendar size={14} style={{ marginRight: '4px' }} /> Hạn nộp của Staff</label>
                           <input type="date" className="ct-input" required min={new Date().toISOString().slice(0, 10)} value={taskDeadline} onChange={(e) => setTaskDeadline(e.target.value)} style={!taskDeadline ? { borderColor: '#ef4444' } : undefined} />
                           {!taskDeadline && <span style={{ color: '#ef4444', fontSize: 12, marginTop: 4, display: 'inline-block' }}>Bắt buộc chọn hạn chót.</span>}
                         </div>
@@ -3143,6 +3218,21 @@ export const Stage3Labeling: React.FC = () => {
                                 <option key={checker._id} value={checker._id}>{checker.name || checker.email} (Checker)</option>
                               ))}
                             </select>
+                            {assignedCheckerId && (
+                              <div style={{ marginTop: 10 }}>
+                                <label><Calendar size={14} style={{ marginRight: 4 }} /> Hạn review của Checker</label>
+                                <input
+                                  type="date"
+                                  className="ct-input"
+                                  required
+                                  min={taskDeadline ? new Date(new Date(`${taskDeadline}T00:00:00Z`).getTime() + 86400000).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10)}
+                                  value={taskCheckerDeadline}
+                                  onChange={(e) => setTaskCheckerDeadline(e.target.value)}
+                                  style={!taskCheckerDeadline ? { borderColor: '#ef4444' } : undefined}
+                                />
+                                <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Hạn Checker phải sau hạn Staff.</div>
+                              </div>
+                            )}
                           </div>
                           <div className="ct-form-group" style={{ marginBottom: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3151,6 +3241,14 @@ export const Stage3Labeling: React.FC = () => {
                             </div>
                             <input type="range" min="0" max="1" step="0.05" value={conflictThreshold} onChange={(e) => setConflictThreshold(Number(e.target.value))} style={{ width: '100%', accentColor: '#6366f1' }} />
                             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Nếu mức đồng thuận giữa hai Staff thấp hơn {Math.round(conflictThreshold * 100)}%, sample sẽ được chuyển cho người xử lý Conflict đã chọn.</div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, fontSize: 11 }}>
+                              <div style={{ padding: 8, borderRadius: 8, background: '#f0fdf4', color: '#166534' }}>
+                                ≥ {Math.round(conflictThreshold * 100)}%: tự chốt nhãn đa số
+                              </div>
+                              <div style={{ padding: 8, borderRadius: 8, background: '#fff7ed', color: '#9a3412' }}>
+                                &lt; {Math.round(conflictThreshold * 100)}%: chuyển Checker
+                              </div>
+                            </div>
                           </div>
                         </>
                       ) : (
@@ -3362,7 +3460,7 @@ export const Stage3Labeling: React.FC = () => {
                   <button
                     className="ct-btn-create"
                     style={{ padding: '10px 24px', background: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
-                    disabled={isAssigning || !taskNameInput.trim() || !taskDeadline}
+                    disabled={isAssigning || !taskNameInput.trim() || !taskDeadline || Boolean(overlapCount >= 2 && assignedCheckerId && !taskCheckerDeadline)}
                     onClick={async () => {
                       const selectedIds = staffAssignments['__selected__'] || [];
                       if (selectedIds.length === 0) return;
@@ -3370,6 +3468,9 @@ export const Stage3Labeling: React.FC = () => {
                       if (!taskDeadline) { toast.warning('Vui lòng chọn hạn chót cho Task.'); return; }
                       const deadlineDate = new Date(`${taskDeadline}T23:59:59`);
                       if (deadlineDate.getTime() < Date.now()) { toast.warning('Hạn chót không được nằm trong quá khứ.'); return; }
+                      if (overlapCount >= 2 && assignedCheckerId && !taskCheckerDeadline) { toast.warning('Vui lòng chọn hạn review của Checker.'); return; }
+                      const checkerDeadlineDate = taskCheckerDeadline ? new Date(`${taskCheckerDeadline}T23:59:59`) : null;
+                      if (checkerDeadlineDate && checkerDeadlineDate.getTime() <= deadlineDate.getTime()) { toast.warning('Hạn Checker phải sau hạn Staff.'); return; }
                       let versionId: string;
                       try { versionId = await ensureDatasetVersionId(); } catch (e: any) { alert('Missing dataset version: ' + (e.message || '')); return; }
 
@@ -3380,9 +3481,11 @@ export const Stage3Labeling: React.FC = () => {
                           aiAssigneeIds: aiSelected.filter(id => selectedIds.includes(id)),
                           taskName: taskNameInput.trim(),
                           priority: taskPriority,
-                          deadline: deadlineDate.toISOString(),
-                          overlapCount,
-                          checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined
+                           staffDeadline: deadlineDate.toISOString(),
+                           checkerDeadline: checkerDeadlineDate?.toISOString(),
+                           overlapCount,
+                           similarityThreshold: conflictThreshold,
+                           checkerId: overlapCount >= 2 ? (assignedCheckerId || undefined) : undefined
                         });
 
                         // Refresh dashboard

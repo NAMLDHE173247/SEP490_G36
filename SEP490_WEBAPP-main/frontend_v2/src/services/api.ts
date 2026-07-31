@@ -164,12 +164,17 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'supervisor' | 'staff' | 'reviewer' | 'checker';
+  role: 'admin' | 'supervisor' | 'staff' | 'checker';
   status?: 'active' | 'pending' | 'banned' | 'inactive';
 }
 
 export const apiService = {
-  getTrainingExportData: async (versionId: string): Promise<{ total: number; labeledSamples: number; data: any[] }> => {
+  getTrainingExportData: async (versionId: string): Promise<{
+    total: number;
+    labeledSamples: number;
+    systemPrompt?: { id?: string | null; name?: string | null; content?: string | null };
+    data: any[];
+  }> => {
     const response = await api.get(`/dataprep/export/${versionId}/training-data`);
     return response.data;
   },
@@ -307,11 +312,12 @@ export const apiService = {
    */
   previewAutoLabels: async (
     versionId: string,
-    provider: 'openrouter' | 'groq' | 'deepseek'
+    provider: 'openrouter' | 'groq' | 'deepseek' | 'oauth_gateway' | 'openai' | 'gemini',
+    model?: string
   ): Promise<{
     suggestions: Array<{ clusterId: number; label: string; source: 'ai'; topic: string; reason: string; sampleCount: number }>;
   }> => {
-    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider });
+    const response = await api.post(`/dataprep/versions/${versionId}/auto-label/preview`, { provider, model });
     return response.data;
   },
 
@@ -342,6 +348,7 @@ export const apiService = {
     similarityThreshold: number;
     format: 'openai' | 'alpaca';
     data: Array<Record<string, any>>;
+    cleanStats?: Record<string, any>;
   }): Promise<{
     message: string;
     datasetVersion: { _id: string; projectName: string; versionName: string };
@@ -453,9 +460,9 @@ export const apiService = {
   getChatSessions: async (...args: any[]) => { const response = await api.get('/chat/sessions'); return response.data; },
   getChatSessionById: async (...args: any[]) => { const response = await api.get(`/chat/sessions/${args[0]}`); return response.data; },
   createChatSession: async (...args: any[]) => { const response = await api.post('/chat/sessions', args[0]); return response.data; },
-  updateChatSessionTitle: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, { title: args[1] }); return response.data; },
+  updateChatSessionTitle: async (...args: any[]) => { const response = await api.patch(`/chat/sessions/${args[0]}/title`, { title: args[1] }); return response.data; },
   deleteChatSession: async (...args: any[]) => { const response = await api.delete(`/chat/sessions/${args[0]}`); return response.data; },
-  appendMessageToSession: async (...args: any[]) => { const response = await api.post(`/chat/sessions/${args[0]}/messages`, args[1]); return response.data; },
+  appendMessageToSession: async (...args: any[]) => { const response = await api.put(`/chat/sessions/${args[0]}`, args[1]); return response.data; },
 
   infer: async (...args: any[]) => {
     const response = await api.post('/infer', args[0]);
@@ -479,25 +486,37 @@ export const apiService = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        'Authorization': `Bearer ${getAuthToken() || ''}`
       },
-      body: JSON.stringify(data)
+      body: JSON.stringify(data),
+      signal: data?.signal,
     });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `Inference failed (${response.status})`);
+    }
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
     while (reader) {
       const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = done ? '' : (lines.pop() || '');
       for (const line of lines) {
         if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          let parsed: any;
           try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.response && onChunkCallback) onChunkCallback(parsed.response);
-          } catch (e) { }
+            parsed = JSON.parse(line.slice(6));
+          } catch { continue; }
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.stage && typeof data?.onProgressInfo === 'function') data.onProgressInfo(parsed);
+          if (parsed.is_final && typeof data?.onFinalInfo === 'function') data.onFinalInfo(parsed);
+          const text = parsed.response ?? parsed.text;
+          if (typeof text === 'string' && text && onChunkCallback) onChunkCallback(text);
         }
       }
+      if (done) break;
     }
   },
 
@@ -505,7 +524,7 @@ export const apiService = {
   stopInference: async (...args: any[]) => { const response = await api.post(`/infer/stop/${args[0]}`); return response.data; },
   loadModel: async (...args: any[]) => { const response = await api.post('/model/load', { hf_model_id: args[0], ...args[1] }); return response.data; },
   unloadModel: async (...args: any[]) => { const response = await api.post(`/model/unload/${args[0]}`); return response.data; },
-  validateModel: async (...args: any[]) => { const response = await api.post('/chat/validate-model', args[0]); return response.data; },
+  validateModel: async (model: string, provider: string) => { const response = await api.post('/chat/validate-model', { model, provider }); return response.data; },
   listModelRegistries: async (...args: any[]) => { const response = await api.get('/model-registry'); return response.data; },
   getActiveRegistryModel: async (...args: any[]) => { const response = await api.get('/model-registry/active'); return response.data; },
   getEvaluationsByJob: async (...args: any[]) => { const response = await api.get(`/model-versions/evaluations/${args[0]}`); return response.data; },
@@ -531,7 +550,7 @@ export const apiService = {
       remainingSamples: number;
     }>;
   }> => {
-    const response = await api.get('/dataprep/labeling/assignments/available-staff');
+    const response = await api.get('/dataprep/assignments/available-staff');
     return response.data;
   },
 
@@ -543,6 +562,8 @@ export const apiService = {
   safeSplit: async (payload: {
     data: any[];
     test_percentage?: number;
+    validation_percentage?: number;
+    stratify_by_subject?: boolean;
     threshold?: number;
     max_attempts?: number;
     seed?: number;
@@ -700,7 +721,7 @@ export const apiService = {
    * Chạy AI gán nhãn hàng loạt cho nhiều sample cùng lúc (preview + save trong một lần).
    */
   previewAndSaveMessageAutoLabelsBatch: async (payload: {
-    provider?: 'openrouter' | 'groq' | 'deepseek';
+    provider?: 'openrouter' | 'groq' | 'deepseek' | 'oauth_gateway' | 'openai' | 'gemini';
     samples: Array<{
       sampleId: string;
       messages: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
@@ -736,6 +757,27 @@ export const apiService = {
     const response = await api.get(`/model-eval/${evalId}`);
     return response.data;
   },
+  exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
+    const response = await api.get(`/model-eval/${evalId}/export`, { responseType: 'blob' });
+    return response.data;
+  },
+  getLargeLlmReferenceModels: async (): Promise<any> => {
+    const response = await api.get('/model-eval/large-llm/models');
+    return response.data;
+  },
+  runLargeLlmReference: async (evalId: string, model: string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('model', model);
+    formData.append('eval_file', file);
+    const response = await api.post(`/model-eval/${evalId}/large-llm/run`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  getLargeLlmReferenceStatus: async (referenceJobId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/large-llm/status/${referenceJobId}`);
+    return response.data;
+  },
   runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
     const formData = new FormData();
     formData.append('eval_file', file);
@@ -748,12 +790,20 @@ export const apiService = {
     });
     return response.data;
   },
+  resumeEvaluation: async (evalJobId: string): Promise<any> => {
+    const response = await api.post(`/model-eval/resume/${encodeURIComponent(evalJobId)}`);
+    return response.data;
+  },
   getEvalHistory: async (jobId: string): Promise<any> => {
     const response = await api.get(`/model-eval/history/${jobId}`);
     return response.data;
   },
   pinEvaluation: async (evalId: string): Promise<any> => {
     const response = await api.post(`/model-eval/pin/${evalId}`);
+    return response.data;
+  },
+  unpinEvaluation: async (evalId: string): Promise<any> => {
+    const response = await api.delete(`/model-eval/pin/${evalId}`);
     return response.data;
   },
   deleteEvaluation: async (evalId: string): Promise<any> => {
@@ -771,4 +821,3 @@ export const apiService = {
     return response.data;
   },
 };
-

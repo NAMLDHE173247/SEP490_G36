@@ -6,9 +6,9 @@ import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSu
 
 import { apiKeyService } from '../../../services/apiKeyService';
 
-async function createProvider(userId: string | null | undefined, providerName?: string): Promise<ILlmProvider> {
+async function createProvider(userId: string | null | undefined, providerName?: string, model?: string): Promise<ILlmProvider> {
   const normalized = String(providerName || 'gemini').toLowerCase();
-  return apiKeyService.createProvider(userId, normalized, true);
+  return apiKeyService.createProvider(userId, normalized, true, model);
 }
 
 export class AutoLabelV2Controller {
@@ -23,7 +23,7 @@ export class AutoLabelV2Controller {
       // Chỉ cho dùng AI key của hệ thống nếu task này được cấp quyền AI
       const submissionId = (req.params as any).submissionId;
       if (submissionId) {
-        const submission = await DatasetAssignmentSubmission.findById(submissionId).select('aiAssistEnabled active').lean();
+        const submission = await DatasetAssignmentSubmission.findById(submissionId).select('assigneeId aiAssistEnabled active status').lean();
         if (!submission) {
           res.status(404).json({ success: false, error: 'Không tìm thấy task.' });
           return;
@@ -32,15 +32,24 @@ export class AutoLabelV2Controller {
           res.status(403).json({ success: false, error: 'Task đã bị thu hồi/thay thế.' });
           return;
         }
+        if (String((submission as any).assigneeId || '') !== String(ownerId)) {
+          res.status(403).json({ success: false, error: 'You can only use AI assistance for your own task.' });
+          return;
+        }
+        if (['submitted', 'approved'].includes(String((submission as any).status || ''))) {
+          res.status(409).json({ success: false, error: 'Submitted or approved tasks are read-only.' });
+          return;
+        }
         if (!(submission as any).aiAssistEnabled) {
           res.status(403).json({ success: false, error: 'Bạn không được cấp quyền dùng AI cho task này.' });
           return;
         }
       }
 
-      const { messages, provider: providerName } = req.body as {
+      const { messages, provider: providerName, model } = req.body as {
         messages?: Array<{ messageIndex: number; role: 'user' | 'assistant'; content: string }>;
         provider?: string;
+        model?: string;
       };
 
       const normalizedMessages = (messages || [])
@@ -51,7 +60,7 @@ export class AutoLabelV2Controller {
           content: String(message.content || (message as any).text || ''),
         }));
 
-      const selectedProvider = await createProvider(ownerId, providerName);
+      const selectedProvider = await createProvider(ownerId, providerName, model);
       const service = new AutoLabelV2Service(selectedProvider);
       let suggestions;
       let usedFallback = false;
@@ -63,7 +72,7 @@ export class AutoLabelV2Controller {
         usedFallback = true;
       }
 
-      res.json({ success: true, data: suggestions, providerStatus: usedFallback ? 'fallback' : 'live', provider: providerName || 'gemini' });
+      res.json({ success: true, data: suggestions, providerStatus: usedFallback ? 'fallback' : 'live', provider: providerName || 'gemini', model: model || 'auto' });
     } catch (error: any) {
       console.error('AutoLabel V2 preview error:', error);
       res.status(error.statusCode || 500).json({

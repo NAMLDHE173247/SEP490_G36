@@ -37,7 +37,7 @@ export interface TrainingConfig {
 
 export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   projectName: 'my-first-lm-project',
-  baseModel: 'Qwen/Qwen3-0.6B',
+  baseModel: 'Qwen/Qwen2.5-7B-Instruct',
   datasetSource: 'local',
   localFile: null,
   selectedHfDataset: '',
@@ -47,12 +47,12 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   apiKey: '',
 
   epochs: '3',
-  batchSize: '2',
-  learningRate: '0.00003',
-  blockSize: '512',
+  batchSize: '1',
+  learningRate: '0.00005',
+  blockSize: '1024',
   modelMaxLength: '1024',
-  r: '8',
-  loraAlpha: '8',
+  r: '16',
+  loraAlpha: '32',
   loraDropout: '0.05',
   gradAccum: '4',
   warmupSteps: '5',
@@ -106,29 +106,31 @@ export interface ModelGroup {
 
 export const BASE_MODEL_GROUPS: ModelGroup[] = [
   {
-    category: "Lightweight (Quick experiments)",
+    category: "Môn Lịch sử & KHXH",
     models: [
-      { id: "Qwen/Qwen3-0.6B", name: "Qwen 3 (0.6B) — Runs on any machine" },
-      { id: "sshleifer/tiny-gpt2", name: "Tiny GPT-2 — Ultra fast" },
-      { id: "lightonai/LightOnOCR-2-1B", name: "LightOn OCR (1B)" }
+      { id: "Viet-Mistral/Vistral-7B-Chat", name: "Vistral 7B Chat (7B) — Bản chính thức (cần được cấp quyền + HF token)" },
+      { id: "minhtt/vistral-7b-chat", name: "Vistral 7B Chat (7B) — Bản mirror công khai (dùng ngay)" },
+      { id: "unsloth/phi-4-bnb-4bit", name: "Phi-4 (14B) — Argument Mining / Socratic Chatbot" },
+      { id: "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit", name: "Llama 3.1 (8B) — Critical Thinking (SocratiQ)" },
+      { id: "unsloth/Qwen2.5-14B-Instruct-bnb-4bit", name: "Qwen 2.5 (14B) — 128K Context Window" },
+      { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Cân bằng Tốc độ & Chuẩn Socratic" }
     ]
   },
   {
-    category: "Standard (Recommended)",
+    category: "Môn Tiếng Anh",
     models: [
-      { id: "meta-llama/Llama-3.1-8B-Instruct", name: "Llama 3.1 (8B) — Great reasoning" },
-      { id: "Qwen/Qwen3-Coder-Next", name: "Qwen 3 Coder — Programming specialist" },
-      { id: "unsloth/gpt-oss-20b-unsloth-bnb-4bit", name: "GPT OSS 20B (4-bit) — VRAM optimized" },
-      { id: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4", name: "Nemotron 3 Nano (30B)" },
-      { id: "MiniMaxAI/MiniMax-M2.1", name: "MiniMax M2.1" }
+      { id: "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit", name: "Llama 3.1 / 3.2 (8B) — English Socratic Tutor & Grammar Analysis" },
+      { id: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", name: "Llama 3.2 (3B) — Lightweight English Socratic Tutor" },
+      { id: "unsloth/Llama-3.2-1B-Instruct-bnb-4bit", name: "Llama 3.2 (1B) — Fast Edge English Tutor" },
+      { id: "google/gemma-3-4b-it", name: "Gemma 3 (4B/12B) — SocraticBench Top Performer" },
+      { id: "unsloth/Mistral-Small-24B-Instruct-2501-bnb-4bit", name: "Mistral-Small 3.1 (24B) — Quản lý hội thoại tinh tế" },
+      { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Chẩn đoán ngữ pháp tiếng Anh" }
     ]
   },
   {
-    category: "Premium / Online",
+    category: "Môn Toán học",
     models: [
-      { id: "qwen-3.7-plus", name: "Qwen 3.7 Plus (Requires API Key)" },
-      { id: "zai-org/GLM-4.7", name: "GLM 4.7" },
-      { id: "stepfun-ai/Step-3.5-Flash", name: "Step 3.5 Flash" }
+      { id: "unsloth/Qwen2.5-Math-7B-Instruct-bnb-4bit", name: "Qwen 2.5 Math (7B) — Chuyên giải Toán" }
     ]
   }
 ];
@@ -142,7 +144,8 @@ export interface PromptTemplate {
 export const SYSTEM_PROMPT_TEMPLATES: PromptTemplate[] = [
   { label: "Friendly Math Tutor", text: "You are a friendly Math tutor who always explains step by step clearly for elementary students." },
   { label: "Strict Literature Teacher", text: "You are a strict Literature teacher grading assignments. Point out grammar and writing style errors in detail." },
-  { label: "Socratic Method", text: "You are a Socratic method teacher. Never give answers directly — ask guiding questions so students discover answers themselves." }
+  { label: "Socratic Method (Vietnamese)", text: "Bạn là một giáo viên theo phương pháp Socratic. Không bao giờ đưa ra câu trả lời trực tiếp — hãy đặt các câu hỏi gợi mở để học sinh tự tìm ra đáp án." },
+  { label: "English Socratic Tutor (Llama 3.2 8B)", text: "You are a professional English language tutor. Guide the student through Socratic questioning to correct their English grammar, vocabulary, and writing without providing direct answers immediately." }
 ];
 
 // ── Parameter Presets ──
@@ -164,18 +167,18 @@ export interface ParamPreset {
 
 export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
   "Quick Training (~5 min)": {
-    epochs: 1, batchSize: 2, learningRate: 0.00002, blockSize: 256, modelMaxLength: 512,
+    epochs: 1, batchSize: 2, learningRate: 0.0002, blockSize: 512, modelMaxLength: 512,
     r: 4, lora_alpha: 8, lora_dropout: 0.0, gradient_accumulation_steps: 8,
     warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
   },
   "Standard (Recommended ~15 min)": {
-    epochs: 3, batchSize: 2, learningRate: 0.00003, blockSize: 512, modelMaxLength: 1024,
-    r: 8, lora_alpha: 8, lora_dropout: 0.05, gradient_accumulation_steps: 4,
+    epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 1024, modelMaxLength: 1024,
+    r: 16, lora_alpha: 32, lora_dropout: 0.05, gradient_accumulation_steps: 4,
     warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
   },
   "High Quality (~45 min)": {
-    epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 512, modelMaxLength: 1024,
-    r: 32, lora_alpha: 64, lora_dropout: 0.1, gradient_accumulation_steps: 4,
+    epochs: 5, batchSize: 1, learningRate: 0.0001, blockSize: 1024, modelMaxLength: 1024,
+    r: 32, lora_alpha: 64, lora_dropout: 0.0, gradient_accumulation_steps: 4,
     warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine"
   }
 };
@@ -202,6 +205,8 @@ export interface TrainingJob {
   eval_loss?: number;
   vram_used?: string | number;
   gpu_util?: string | number;
+  error?: string;
+  technical_error?: string;
   metrics?: {
     loss?: number;
     eval_loss?: number;

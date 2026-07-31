@@ -1242,6 +1242,8 @@ export class QualityService {
     const messageCounts = { Gold: 0, Rewrite: 0, Bad: 0, Incomplete: 0 };
     let conflictCount = 0;
 
+    const subjectStats: Record<string, { subject: string; total: number; gold: number; rewrite: number; reject: number; incomplete: number }> = {};
+
     const ruleClassification = await this.classify(versionId, String(version.ownerId));
     const ruleClassificationMap = new Map<string, string>();
     for (const ri of ruleClassification.items) {
@@ -1272,6 +1274,38 @@ export class QualityService {
         const msgCount = Array.isArray(item.data?.messages) ? item.data.messages.length : 2;
         messageCounts[finalClass] += msgCount;
       }
+
+      const itemData = (item.data || {}) as any;
+      const subClass = (itemData.subject_classification || {}) as any;
+      const subject = subClass.subject_final ||
+                      itemData.subject ||
+                      itemData.subjectLabel ||
+                      itemData.subject_label ||
+                      itemData.groupLabel ||
+                      itemData.group_label ||
+                      (itemData.meta?.subject) ||
+                      'Ungrouped';
+
+      if (!subjectStats[subject]) {
+        subjectStats[subject] = {
+          subject,
+          total: 0,
+          gold: 0,
+          rewrite: 0,
+          reject: 0,
+          incomplete: 0
+        };
+      }
+      subjectStats[subject].total += 1;
+      if (finalClass === 'Gold') {
+        subjectStats[subject].gold += 1;
+      } else if (finalClass === 'Rewrite') {
+        subjectStats[subject].rewrite += 1;
+      } else if (finalClass === 'Bad') {
+        subjectStats[subject].reject += 1;
+      } else {
+        subjectStats[subject].incomplete += 1;
+      }
     }
 
     const reviewerCountsMap = new Map<string, { name: string; count: number }>();
@@ -1300,6 +1334,7 @@ export class QualityService {
         { group: 'Incomplete', count: counts.Incomplete, messageCount: messageCounts.Incomplete, percentage: items.length ? Math.round((counts.Incomplete / items.length) * 100) : 0 },
       ],
       reviewerStats: Array.from(reviewerCountsMap.values()),
+      bySubject: Object.values(subjectStats),
     };
   }
 }

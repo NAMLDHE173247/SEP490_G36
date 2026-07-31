@@ -1,7 +1,6 @@
 import AdmZip from 'adm-zip';
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 
 export interface DatasetMetadata {
   projectName?: string;
@@ -10,8 +9,14 @@ export interface DatasetMetadata {
   systemPrompt?: string;
   systemPromptVersion?: string;
   totalTrain?: number;
+  totalValidation?: number;
   totalTest?: number;
   exportedAt?: string;
+  datasetHashes?: {
+    train_sha256?: string;
+    validation_sha256?: string;
+    test_sha256?: string;
+  };
 }
 
 export interface ZipExtractionResult {
@@ -19,6 +24,9 @@ export interface ZipExtractionResult {
   dataFilePath: string;
   /** Original filename of the data file inside the ZIP */
   dataFileName: string;
+  /** Optional validation dataset bundled with a training ZIP. */
+  validationFilePath?: string;
+  validationFileName?: string;
   /** Parsed metadata from _metadata.json, or null if not found */
   metadata: DatasetMetadata | null;
   /** Temporary directory created for extraction (caller should clean up) */
@@ -58,8 +66,20 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
   const zip = new AdmZip(zipFilePath);
   const entries = zip.getEntries();
 
-  // Create a temp directory for extraction
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dataset-zip-'));
+  const hasDatasetExtension = (name: string) => /\.jsonl?$/.test(name);
+  const matchesSplitSuffix = (entryName: string, aliases: string[]) => {
+    const basename = path.basename(entryName).toLowerCase();
+    if (!hasDatasetExtension(basename)) return false;
+    const stem = basename.replace(/\.jsonl?$/, '');
+    return aliases.some((alias) => stem === alias || stem.endsWith(`_${alias}`));
+  };
+
+  // Create a temp directory for extraction inside local uploads folder on Drive D to avoid C: ENOSPC errors
+  const uploadBaseDir = path.join(__dirname, '../../uploads');
+  if (!fs.existsSync(uploadBaseDir)) {
+    fs.mkdirSync(uploadBaseDir, { recursive: true });
+  }
+  const tempDir = fs.mkdtempSync(path.join(uploadBaseDir, 'dataset-zip-'));
 
   // 1. Look for _metadata.json
   let metadata: DatasetMetadata | null = null;
@@ -76,11 +96,22 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
   }
 
   // 2. Look for data file
-  const preferredName = mode === 'train' ? 'train_dataset.json' : 'test_dataset.json';
+  const preferredNames = mode === 'train'
+    ? ['train_dataset.json', 'train.json', 'train_dataset.jsonl', 'train.jsonl']
+    : ['test_dataset.json', 'test.json', 'test_dataset.jsonl', 'test.jsonl'];
+  const preferredName = preferredNames[0];
 
-  let dataEntry = entries.find(
-    (e) => !e.isDirectory && path.basename(e.entryName) === preferredName
+  let dataEntry = entries.find((e) =>
+    !e.isDirectory && preferredNames.includes(path.basename(e.entryName).toLowerCase())
   );
+
+  // Data Prep exports preserve descriptive version prefixes, for example
+  // `socratic_math_v4_train.json`. Recognize those files before the generic
+  // fallback so train/test/validation cannot be confused by ZIP entry order.
+  if (!dataEntry) {
+    const aliases = mode === 'train' ? ['train_dataset', 'train'] : ['test_dataset', 'test'];
+    dataEntry = entries.find((e) => !e.isDirectory && matchesSplitSuffix(e.entryName, aliases));
+  }
 
   // Fallback: find any .json or .jsonl file that isn't _metadata.json
   if (!dataEntry) {
@@ -106,9 +137,35 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
   const dataFilePath = path.join(tempDir, dataFileName);
   fs.writeFileSync(dataFilePath, dataEntry.getData());
 
+  // A V2 training archive may contain a locked validation partition. Extract it
+  // separately so AutoTrain does not silently re-split the training partition.
+  let validationFilePath: string | undefined;
+  let validationFileName: string | undefined;
+  if (mode === 'train') {
+    const validationNames = [
+      'validation_dataset.json', 'validation.json', 'val_dataset.json', 'val.json',
+      'validation_dataset.jsonl', 'validation.jsonl', 'val_dataset.jsonl', 'val.jsonl',
+    ];
+    let validationEntry = entries.find((e) =>
+      !e.isDirectory && validationNames.includes(path.basename(e.entryName).toLowerCase())
+    );
+    if (!validationEntry) {
+      validationEntry = entries.find((e) =>
+        !e.isDirectory && matchesSplitSuffix(e.entryName, ['validation_dataset', 'validation', 'val_dataset', 'val'])
+      );
+    }
+    if (validationEntry) {
+      validationFileName = path.basename(validationEntry.entryName);
+      validationFilePath = path.join(tempDir, validationFileName);
+      fs.writeFileSync(validationFilePath, validationEntry.getData());
+    }
+  }
+
   return {
     dataFilePath,
     dataFileName,
+    validationFilePath,
+    validationFileName,
     metadata,
     tempDir,
   };

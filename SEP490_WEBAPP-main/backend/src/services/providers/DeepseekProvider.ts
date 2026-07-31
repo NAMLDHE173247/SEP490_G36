@@ -22,7 +22,7 @@ export class DeepseekProvider implements ILlmProvider {
     const response = await axios.post(
       `${this.baseUrl}/chat/completions`,
       {
-        model: modelOverride || 'deepseek-chat',
+        model: modelOverride || 'deepseek-v4-flash',
         messages: [
           {
             role: 'system',

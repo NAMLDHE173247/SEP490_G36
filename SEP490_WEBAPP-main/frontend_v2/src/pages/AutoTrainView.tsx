@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { getAuthToken } from '../services/authSession';
+import { apiService } from '../services/api';
 import '../styles/autotrain.css';
 
 // ── Component Imports ──
@@ -31,6 +32,7 @@ import {
   EMPTY_PREVIEW,
   DEFAULT_PRESETS,
   estimateTrainingTime,
+  formatRowPreview,
   TrainingJob,
   LossPoint,
 } from '../components/autotrain/types';
@@ -59,6 +61,35 @@ const getAuthHeaders = (): Record<string, string> => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+const AUTOTRAIN_CONFIG_STORAGE_KEY = 'autotrain_last_config_v1';
+const AUTOTRAIN_PRESET_STORAGE_KEY = 'autotrain_selected_preset_v1';
+
+const loadPersistedTrainingConfig = (): TrainingConfig => {
+  if (typeof window === 'undefined') return DEFAULT_TRAINING_CONFIG;
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUTOTRAIN_CONFIG_STORAGE_KEY) || '{}');
+    return {
+      ...DEFAULT_TRAINING_CONFIG,
+      ...saved,
+      // Browser File objects and secrets must never be persisted.
+      localFile: null,
+      apiKey: '',
+      hfToken: '',
+    };
+  } catch {
+    return DEFAULT_TRAINING_CONFIG;
+  }
+};
+
+const persistTrainingConfig = (config: TrainingConfig): void => {
+  if (typeof window === 'undefined') return;
+  const { localFile, apiKey, hfToken, ...safeConfig } = config;
+  void localFile;
+  void apiKey;
+  void hfToken;
+  localStorage.setItem(AUTOTRAIN_CONFIG_STORAGE_KEY, JSON.stringify(safeConfig));
+};
+
 interface AutoTrainViewProps {
   setActiveTab: (tab: string) => void;
 }
@@ -80,9 +111,12 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   const [isStarting, setIsStarting] = useState(false);
 
   // ── Config & Preset States ──
-  const [config, setConfig] = useState<TrainingConfig>(DEFAULT_TRAINING_CONFIG);
+  const [config, setConfig] = useState<TrainingConfig>(loadPersistedTrainingConfig);
   const [previewData, setPreviewData] = useState<PreviewData>(EMPTY_PREVIEW);
-  const [selectedPresetName, setSelectedPresetName] = useState('Standard (Recommended ~15 min)');
+  const [selectedPresetName, setSelectedPresetName] = useState(() => {
+    if (typeof window === 'undefined') return 'Standard (Recommended ~15 min)';
+    return localStorage.getItem(AUTOTRAIN_PRESET_STORAGE_KEY) || 'Standard (Recommended ~15 min)';
+  });
   const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
 
   // ── Worker Resources ──
@@ -121,6 +155,37 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       }
     }
   }, []);
+
+  // Auto-fetch system prompt from DataPrep Step 12 if available.
+  // We want to keep it synced with the latest prompt from Data Prep.
+  useEffect(() => {
+    const fetchLatestPrompt = async () => {
+      try {
+        const data = await apiService.getDatasetPrompts();
+        if (data?.prompts?.length > 0) {
+          const latest = data.prompts[0]; // newest first
+          // Sync if different from current
+          if (config.systemPrompt !== latest.content) {
+            handleConfigChange({ systemPrompt: latest.content });
+            triggerToast(`System prompt đã được đồng bộ từ Data Prep: "${latest.name}"`, 'info');
+          }
+        }
+      } catch (err) {
+        console.warn('[AutoTrain] Could not auto-load system prompt from Data Prep:', err);
+      }
+    };
+    fetchLatestPrompt();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist the selected training configuration for reproducible experiments.
+  // The actual submitted configuration is also stored in TrainingHistory by the backend.
+  useEffect(() => {
+    persistTrainingConfig(config);
+  }, [config]);
+
+  useEffect(() => {
+    localStorage.setItem(AUTOTRAIN_PRESET_STORAGE_KEY, selectedPresetName);
+  }, [selectedPresetName]);
 
   // Fetch worker resource status on interval
   useEffect(() => {
@@ -228,13 +293,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       setConfig((prev) => ({
         ...prev,
         epochs: String(preset.epochs || '3'),
-        batchSize: String(preset.batchSize || '2'),
-        learningRate: String(preset.learningRate || '0.00003'),
-        blockSize: String(preset.blockSize || '512'),
+        batchSize: String(preset.batchSize || '1'),
+        learningRate: String(preset.learningRate || '0.00005'),
+        blockSize: String(preset.blockSize || '1024'),
         modelMaxLength: String(preset.modelMaxLength || '1024'),
-        r: String(preset.r || '8'),
-        loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '8'),
-        loraDropout: String(preset.lora_dropout || preset.loraDropout || '0.05'),
+        r: String(preset.r || '16'),
+        loraAlpha: String(preset.lora_alpha || preset.loraAlpha || '32'),
+        loraDropout: String(preset.lora_dropout ?? preset.loraDropout ?? '0.05'),
         gradAccum: String(preset.gradient_accumulation_steps || preset.gradAccum || '4'),
         warmupSteps: String(preset.warmup_steps || preset.warmupSteps || '5'),
         weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),
@@ -249,13 +314,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     (name: string) => {
       const newPreset = {
         epochs: parseInt(config.epochs) || 3,
-        batchSize: parseInt(config.batchSize) || 2,
-        learningRate: parseFloat(config.learningRate) || 3e-5,
-        blockSize: parseInt(config.blockSize) || 512,
+        batchSize: parseInt(config.batchSize) || 1,
+        learningRate: parseFloat(config.learningRate) || 2e-4,
+        blockSize: parseInt(config.blockSize) || 1024,
         modelMaxLength: parseInt(config.modelMaxLength) || 1024,
-        r: parseInt(config.r) || 8,
-        lora_alpha: parseInt(config.loraAlpha) || 8,
-        lora_dropout: parseFloat(config.loraDropout) || 0.05,
+        r: parseInt(config.r) || 16,
+        lora_alpha: parseInt(config.loraAlpha) || 32,
+        lora_dropout: Number.isFinite(parseFloat(config.loraDropout)) ? parseFloat(config.loraDropout) : 0,
         gradient_accumulation_steps: parseInt(config.gradAccum) || 4,
         warmup_steps: parseInt(config.warmupSteps) || 5,
         weight_decay: parseFloat(config.weightDecay) || 0.01,
@@ -363,6 +428,16 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        const previousLogs = globalTrainingState.activeJobs[jobId]?.logs || [];
+        const receivedLogs = Array.isArray(data.logs) ? data.logs : [];
+        const fallbackErrorLogs = receivedLogs.length === 0 && data.error
+          ? [
+              `[ERROR] ${data.error}`,
+              ...(data.technical_error && data.technical_error !== data.error
+                ? [data.technical_error]
+                : []),
+            ]
+          : [];
 
         // Update Job metrics and status immutably
         globalTrainingState.activeJobs = {
@@ -379,7 +454,9 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
             eval_loss: data.metrics?.eval_loss,
             vram_used: data.metrics?.vram,
             gpu_util: data.metrics?.gpu_util ? `${data.metrics.gpu_util}%` : undefined,
-            logs: data.logs || (globalTrainingState.activeJobs[jobId] ? globalTrainingState.activeJobs[jobId].logs : []) || [],
+            error: data.error,
+            technical_error: data.technical_error,
+            logs: receivedLogs.length > 0 ? receivedLogs : (fallbackErrorLogs.length > 0 ? fallbackErrorLogs : previousLogs),
           }
         };
 
@@ -420,7 +497,20 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     };
 
     es.onerror = () => {
-      closeTracking(jobId, 'ERROR');
+      // Instead of instantly failing on transient SSE disconnects (e.g. LocalTunnel hiccups),
+      // verify actual job status from backend API before declaring job ERROR.
+      axios.get(`/api/train/status/${jobId}`, { headers: getAuthHeaders() })
+        .then((res) => {
+          const status = res.data?.status;
+          if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(status)) {
+            closeTracking(jobId, status);
+          } else {
+            console.warn(`[SSE Stream] Transient stream disconnect on job ${jobId}. Browser will auto-reconnect.`);
+          }
+        })
+        .catch(() => {
+          closeTracking(jobId, 'ERROR');
+        });
     };
 
     globalTrainingState.notify();
@@ -504,8 +594,8 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       if (config.hfRepoId) {
         formData.append('push_to_hub', 'true');
         formData.append('hf_repo_id', config.hfRepoId);
-        formData.append('hf_token', config.hfToken);
       }
+      if (config.hfToken) formData.append('hf_token', config.hfToken);
 
       if (config.datasetSource === 'local' && config.localFile) {
         formData.append('dataset_file', config.localFile);

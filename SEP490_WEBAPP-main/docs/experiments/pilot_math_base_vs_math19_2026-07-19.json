@@ -1,0 +1,98 @@
+{
+  "experiment_id": "PILOT-MATH-BASE-VS-MATH19-20260719",
+  "status": "pilot_manual_capture",
+  "captured_at": "2026-07-19T00:00:00+07:00",
+  "source": "Manual transcript supplied by the researcher in the project conversation",
+  "purpose": "Early diagnostic comparison before the official RP5 batch evaluation",
+  "test_case": {
+    "id": "MATH-COMB-001",
+    "subject": "MATH",
+    "intent": "solve_problem",
+    "question": "Có bao nhiêu cách chọn 2 vật từ 14 vật?",
+    "gold_answer": "91",
+    "gold_method": "Combination without order: C(14,2) = 14*13/2 = 91"
+  },
+  "confirmed_inference_parameters": {
+    "max_new_tokens": 512,
+    "temperature": 0.2
+  },
+  "unconfirmed_inference_parameters": {
+    "top_p": null,
+    "top_k": null,
+    "repetition_penalty": null
+  },
+  "systems": [
+    {
+      "system_id": "BASE_QWEN",
+      "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+      "model_id_note": "Inferred from the active experiment configuration; verify against the exported UI run before treating this pilot as an official result.",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "Có bao nhiêu cách chọn 2 vật từ 14 vật?",
+          "assistant": "Để trả lời câu hỏi này, ta có thể sử dụng công thức tổ hợp C(n,k) = n!/[k!(n-k)!]. Trong trường hợp này n=14, k=2. Do đó C(14,2) = (14*13)/(2*1) = 182/2 = 91. Vì vậy, số cách chọn 2 vật từ 14 vật là 91 cách.",
+          "latency_seconds": 13.66,
+          "inference_status": "success"
+        }
+      ],
+      "manual_pilot_assessment": {
+        "factuality": "pass",
+        "final_answer_correct": true,
+        "method_correct": true,
+        "socratic_compliance": "low_direct_solution",
+        "coherence": "pass"
+      }
+    },
+    {
+      "system_id": "MATH19",
+      "model_id": "anhdai312/Math19",
+      "turns": [
+        {
+          "turn": 1,
+          "user": "Có bao nhiêu cách chọn 2 vật từ 14 vật?",
+          "assistant": null,
+          "latency_seconds": null,
+          "inference_status": "infrastructure_error",
+          "error": "Lỗi từ Python backend: Bad Gateway"
+        },
+        {
+          "turn": 2,
+          "user": "Có bao nhiêu cách chọn 2 vật từ 14 vật?",
+          "assistant": "Bước 1: Xem trực tiếp bảng số lượng hoặc dùng quy tắc nhân thứ tự. Ví dụ: nếu chọn thứ tự thứ nhất, có 14 lựa chọn. Em sẽ viết điều kiện nào cho mình?",
+          "latency_seconds": 3.31,
+          "inference_status": "success"
+        },
+        {
+          "turn": 3,
+          "user": "tiếp đi",
+          "assistant": "Em xin tưởng viết điều kiện dưới dạng công thức: n choose 2. Hãy thay giá trị n vào công thức nhé.",
+          "latency_seconds": 2.65,
+          "inference_status": "success"
+        },
+        {
+          "turn": 4,
+          "user": "công thức nào ?",
+          "assistant": "Mình chỉ cần chia kết quả cho số so sánh được trong công thức. Hãy thay số n vào công thức nhé.",
+          "latency_seconds": 1.83,
+          "inference_status": "success"
+        }
+      ],
+      "manual_pilot_assessment": {
+        "factuality": "fail",
+        "final_answer_correct": false,
+        "method_correct": false,
+        "follow_up_grounding": "fail",
+        "socratic_compliance": "surface_style_only",
+        "coherence": "fail",
+        "successful_turn_mean_latency_seconds": 2.5967,
+        "observed_infrastructure_failures": 1
+      }
+    }
+  ],
+  "pilot_conclusion": "For MATH-COMB-001, the base Qwen response is factually correct while Math19 is faster but fails to provide a correct formula or answer and loses coherence across follow-up turns. This is diagnostic evidence only and must not be generalized until the same fixed test set is run in batch with identical parameters.",
+  "report_routing": {
+    "RP4": "Describe the fixed batch protocol, model conditions, inference parameters and scoring method.",
+    "RP5": "Report the official Base-vs-Math19-vs-Math20 results; this record may be labelled as a pilot example only.",
+    "RP6": "Discuss the observed latency-quality trade-off, fine-tuning degradation risk and infrastructure failures."
+  }
+}

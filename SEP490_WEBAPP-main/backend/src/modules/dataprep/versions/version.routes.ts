@@ -7,6 +7,7 @@ const controller = new DataPrepVersionController();
 router.get('/', (req, res) => controller.listVersions(req, res));
 router.post('/', (req, res) => controller.createVersion(req, res));
 router.get('/:id', (req, res) => controller.getVersion(req, res));
+router.get('/:id/clean-log', (req, res) => controller.getCleanLog(req, res));
 router.delete('/:id', (req, res) => controller.deleteVersion(req, res));
 router.get('/:id/export-original', (req, res) => controller.exportOriginal(req, res));
 router.get('/:id/export-labeled', (req, res) => controller.exportLabeled(req, res));

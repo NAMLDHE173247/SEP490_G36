@@ -8,12 +8,41 @@ import { ModelVersion, ModelVersionStatus } from '../models/ModelVersion';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
+import { routeVerifiedSubject, SubjectModelMap } from '../services/subjectModelRouter';
+import { decideHybridRoute } from '../services/routing/routingOrchestrator';
+import { HybridRoutingDecision, RoutingMode } from '../services/routing/routingTypes';
 
 const getGpuUrl = (instanceId?: number) => configService.getGpuUrl(instanceId);
+
+const fetchWithTransientTunnelRetry = async (
+  url: string,
+  init?: any,
+  attempts = 3,
+): Promise<any> => {
+  let response: any;
+  let lastError: any;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      response = await fetch(url, init);
+      if (![502, 503, 504].includes(response.status) || attempt === attempts) {
+        return response;
+      }
+      // Consume the transient response before retrying so its socket can close.
+      await response.text().catch(() => undefined);
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+  }
+  if (response) return response;
+  throw lastError || new Error(`GPU tunnel request failed: ${url}`);
+};
 
 type GpuHistoryMessage = {
   role: 'user' | 'assistant';
   content: string;
+  subject?: string;
 };
 
 const normalizeHistory = (history: unknown): GpuHistoryMessage[] => {
@@ -21,7 +50,7 @@ const normalizeHistory = (history: unknown): GpuHistoryMessage[] => {
     return [];
   }
 
-  return history
+  const normalized = history
     .map((item: any) => {
       const role = item?.role === 'user' || item?.role === 'assistant' ? item.role : null;
       const content = typeof item?.content === 'string' ? item.content.trim() : '';
@@ -30,10 +59,137 @@ const normalizeHistory = (history: unknown): GpuHistoryMessage[] => {
         return null;
       }
 
-      return { role, content };
+      const subject = typeof item?.subject === 'string' ? item.subject.trim().toUpperCase() : '';
+      return { role, content, ...(subject ? { subject } : {}) };
     })
-    .filter((item): item is GpuHistoryMessage => item !== null)
-    .slice(-5);
+    .filter((item): item is GpuHistoryMessage => item !== null);
+
+  // The GPU chat template requires completed turns in the exact order
+  // user -> assistant -> user -> assistant. Taking an odd number of messages
+  // (the old slice(-5)) could cut the first user message off and make history
+  // start with assistant. Rebuild complete pairs and retain the latest 5 turns.
+  const pairs: GpuHistoryMessage[][] = [];
+  let pendingUser: GpuHistoryMessage | null = null;
+  for (const message of normalized) {
+    if (message.role === 'user') {
+      // If malformed input contains consecutive users, keep the latest one.
+      pendingUser = message;
+      continue;
+    }
+    if (pendingUser) {
+      pairs.push([pendingUser, message]);
+      pendingUser = null;
+    }
+    // Orphan/consecutive assistant messages are ignored.
+  }
+
+  return pairs.slice(-5).flat();
+};
+
+const selectRelevantHistory = (
+  history: GpuHistoryMessage[],
+  subject?: string,
+  maxTurns = 2,
+  maxCharacters = 2_400,
+): GpuHistoryMessage[] => {
+  const pairs: GpuHistoryMessage[][] = [];
+  for (let index = 0; index < history.length - 1; index += 1) {
+    if (history[index].role === 'user' && history[index + 1].role === 'assistant') {
+      pairs.push([history[index], history[index + 1]]);
+      index += 1;
+    }
+  }
+  const normalizedSubject = String(subject || '').trim().toUpperCase();
+  const candidates = normalizedSubject
+    ? pairs.filter(pair => pair.some(message => message.subject === normalizedSubject))
+    : pairs;
+  const selected: GpuHistoryMessage[][] = [];
+  let usedCharacters = 0;
+  for (const pair of candidates.slice().reverse()) {
+    const pairCharacters = pair.reduce((sum, message) => sum + message.content.length, 0);
+    if (selected.length >= maxTurns || (selected.length > 0 && usedCharacters + pairCharacters > maxCharacters)) break;
+    selected.unshift(pair);
+    usedCharacters += pairCharacters;
+  }
+  return selected.flat().map(({ role, content }) => ({ role, content }));
+};
+
+type ManualHybridModelAcquisition = {
+  slotId: number;
+  previousModel: string | null;
+  selectedModel: string;
+  cacheHit: boolean;
+  loadAction: 'cache_hit' | 'cold_load' | 'switch_load';
+  modelSwitchLatencyMs: number;
+  evicted: boolean;
+};
+
+/**
+ * The normal Chat screen uses one explicit GPU slot. Hybrid inference must
+ * therefore make the selected model resident before calling /api/infer/stream.
+ * Returning the acquisition metadata lets the UI measure real switching cost
+ * instead of folding it invisibly into the wall-clock response time.
+ */
+const acquireManualHybridModel = async (
+  targetUrl: string,
+  selectedModel: string,
+  slotId: number,
+  pinned = false,
+): Promise<ManualHybridModelAcquisition> => {
+  const tunnelHeaders = {
+    'ngrok-skip-browser-warning': 'true',
+    'Bypass-Tunnel-Reminder': 'true',
+  };
+  let previousModel: string | null = null;
+  try {
+    const statusResponse = await fetchWithTransientTunnelRetry(`${targetUrl}/api/model/status`, {
+      headers: tunnelHeaders,
+    });
+    if (statusResponse.ok) {
+      const status: any = await statusResponse.json();
+      previousModel = status?.slots?.[String(slotId)]?.model_id || null;
+    }
+  } catch {
+    // A failed status probe is not fatal; /api/model/load remains authoritative.
+  }
+
+  if (previousModel === selectedModel) {
+    return {
+      slotId,
+      previousModel,
+      selectedModel,
+      cacheHit: true,
+      loadAction: 'cache_hit',
+      modelSwitchLatencyMs: 0,
+      evicted: false,
+    };
+  }
+
+  const loadStartedAt = Date.now();
+  const loadResponse = await fetchWithTransientTunnelRetry(`${targetUrl}/api/model/load`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tunnelHeaders },
+    body: JSON.stringify({ hf_model_id: selectedModel, instanceId: slotId, pinned }),
+  });
+  const raw = await loadResponse.text();
+  let payload: any = {};
+  try { payload = JSON.parse(raw); } catch { payload = { message: raw }; }
+  if (!loadResponse.ok) {
+    throw new Error(payload.error || payload.message || `Không thể load ${selectedModel} vào GPU slot ${slotId}`);
+  }
+
+  const message = String(payload.message || '');
+  const cacheHit = /bỏ qua|bo qua|already|skip/i.test(message);
+  const effectivePrevious = previousModel || (cacheHit ? selectedModel : null);
+  return {
+    slotId,
+    previousModel: effectivePrevious,
+    selectedModel,
+    cacheHit,
+    loadAction: cacheHit ? 'cache_hit' : effectivePrevious ? 'switch_load' : 'cold_load',
+    modelSwitchLatencyMs: cacheHit ? 0 : Date.now() - loadStartedAt,
+    evicted: Boolean(effectivePrevious && effectivePrevious !== selectedModel && !cacheHit),
+  };
 };
 
 
@@ -179,6 +335,7 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     const {
       text_input,
       hf_model_id,
+      hf_hub_id, // Compatibility with ChatView's local-model payload
       modelRegistryId, // New: support registry for single inference
       system_prompt,
       max_new_tokens,
@@ -187,7 +344,12 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       top_p,
       repetition_penalty,
       provider, // New: support external providers
-      history
+      history,
+      subject,
+      subject_model_map,
+      routing_mode,
+      previous_subject,
+      session_id,
     } = req.body;
 
     if (!text_input) {
@@ -195,7 +357,34 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    let actualModelId = hf_model_id;
+    let actualModelId = hf_model_id || hf_hub_id;
+    let routingDecision: ReturnType<typeof routeVerifiedSubject> | HybridRoutingDecision | null = null;
+
+    if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
+      routingDecision = await decideHybridRoute({
+        ownerId,
+        question: text_input,
+        history: normalizeHistory(history),
+        previousSubject: typeof previous_subject === 'string' ? previous_subject : undefined,
+        mode: routing_mode as RoutingMode,
+        sessionId: session_id,
+        modelMap: subject_model_map,
+      });
+      if (routingDecision.needClarification || !routingDecision.selectedModel) {
+        res.status(422).json({
+          error: 'need_clarification',
+          message: 'Câu hỏi chưa đủ rõ để chọn mô hình. Vui lòng cho biết môn học hoặc bài đang làm.',
+          routing: routingDecision,
+        });
+        return;
+      }
+      actualModelId = routingDecision.selectedModel;
+    }
+
+    if (!actualModelId && subject && subject_model_map && typeof subject_model_map === 'object') {
+      routingDecision = routeVerifiedSubject(subject, subject_model_map as SubjectModelMap);
+      actualModelId = routingDecision.selectedModel;
+    }
 
     // If modelRegistryId is provided, fetch the Active version's HF ID
     if (modelRegistryId && !actualModelId) {
@@ -256,7 +445,15 @@ export const inferWithAI = async (req: Request, res: Response): Promise<void> =>
     }
 
     const data: any = await inferResponse.json();
-    res.json(data); // Phản hồi gồm { "result": "..." }
+    res.json({
+      ...data,
+      routing: routingDecision || {
+        subject: subject || null,
+        selectedModel: actualModelId,
+        fallbackUsed: false,
+        strategy: 'direct-model',
+      },
+    });
 
   } catch (error: any) {
     console.error('Inference AI Proxy Error:', error);
@@ -371,10 +568,12 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
     }
 
     // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+    }
 
     // Manually handle the stream from Python server to Express response
     if (inferResponse.body) {
@@ -403,7 +602,7 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
         };
         const finalChunk = JSON.stringify({
           is_final: true,
-          input_parameters
+          input_parameters,
         });
         res.write(`data: ${finalChunk}\n\n`);
         res.end();
@@ -432,6 +631,12 @@ export const chatWithAIStream = async (req: Request, res: Response): Promise<voi
 };
 
 export const inferWithAIStream = async (req: Request, res: Response): Promise<void> => {
+  const requestStartedAt = Date.now();
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  const stopHeartbeat = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  };
   try {
     const ownerId = getAuthUserId(req);
     if (!ownerId) {
@@ -442,6 +647,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     const {
       text_input,
       hf_model_id,
+      hf_hub_id, // Compatibility with ChatView's streaming payload
       modelRegistryId, // New: support registry for single inference stream
       system_prompt,
       max_new_tokens,
@@ -450,7 +656,11 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       top_p,
       repetition_penalty,
       provider,
-      history
+      history,
+      routing_mode,
+      previous_subject,
+      subject_model_map,
+      session_id,
     } = req.body;
 
     if (!text_input) {
@@ -458,7 +668,31 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    let actualModelId = hf_model_id;
+    let actualModelId = hf_model_id || hf_hub_id;
+    let routingDecision: HybridRoutingDecision | null = null;
+    let routerLatencyMs = 0;
+    if (!actualModelId && ['rule', 'llm', 'hybrid'].includes(String(routing_mode || ''))) {
+      const routingStartedAt = Date.now();
+      routingDecision = await decideHybridRoute({
+        ownerId,
+        question: text_input,
+        history: normalizeHistory(history),
+        previousSubject: typeof previous_subject === 'string' ? previous_subject : undefined,
+        mode: routing_mode as RoutingMode,
+        sessionId: session_id,
+        modelMap: subject_model_map,
+      });
+      routerLatencyMs = Number(routingDecision.latencyMs) || (Date.now() - routingStartedAt);
+      if (routingDecision.needClarification || !routingDecision.selectedModel) {
+        res.status(422).json({
+          error: 'need_clarification',
+          message: 'Câu hỏi chưa đủ rõ để chọn mô hình. Vui lòng cho biết môn học hoặc bài đang làm.',
+          routing: routingDecision,
+        });
+        return;
+      }
+      actualModelId = routingDecision.selectedModel;
+    }
 
     // If modelRegistryId is provided, fetch the Active (Use) version's HF ID
     if (modelRegistryId && !actualModelId) {
@@ -475,6 +709,12 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       }
     }
 
+    const effectiveSystemPrompt = system_prompt || (
+      routingDecision?.subject === 'ENGLISH'
+        ? 'You are a concise Socratic English tutor. Reply in natural English when the latest student message is in English. Guide the learner with a short explanation or one useful follow-up question. Do not switch to Vietnamese unless the student writes in Vietnamese or explicitly requests it.'
+        : undefined
+    );
+
     // --- CASE 1: External Provider (Non-streaming fallback) ---
     if (provider) {
       const normalizedProvider = String(provider).toLowerCase();
@@ -486,7 +726,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
         res.setHeader('Connection', 'keep-alive');
         res.flushHeaders();
 
-        const result = await llmProvider.generateContent(text_input, actualModelId, system_prompt);
+        const result = await llmProvider.generateContent(text_input, actualModelId, effectiveSystemPrompt);
         res.write(`data: ${JSON.stringify({ text: result })}\n\n`);
         res.write(`data: ${JSON.stringify({ is_final: true })}\n\n`);
         res.end();
@@ -501,11 +741,48 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     }
 
     const { instanceId } = req.body;
-    const targetUrl = getGpuUrl(instanceId);
-    const normalizedHistory = normalizeHistory(history);
+    const requestedSlotId = Number(instanceId ?? 1);
+    const fallbackRoute = Boolean(routingDecision && ['OTHER', 'GENERAL'].includes(routingDecision.subject));
+    const slotId = routingDecision ? (fallbackRoute ? 1 : 2) : requestedSlotId;
+    const targetUrl = getGpuUrl(slotId);
+    const normalizedHistory = selectRelevantHistory(normalizeHistory(history), routingDecision?.subject);
     console.log(`[inferWithAIStream] req.body.instanceId=${JSON.stringify(req.body.instanceId)}, slot=${instanceId ?? 1}`);
 
-    const inferResponse = await fetch(`${targetUrl}/api/infer/stream`, {
+    // Keep the browser/tunnel connection alive while a Hybrid-selected model
+    // is downloaded or swapped into the requested GPU slot.
+    if (routingDecision) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+      res.write(`data: ${JSON.stringify({
+        stage: 'model_acquisition',
+        selected_model: actualModelId,
+        slot_id: slotId,
+        routing: routingDecision,
+        router_latency_ms: routerLatencyMs,
+      })}\n\n`);
+      heartbeatTimer = setInterval(() => {
+        if (!res.writableEnded) res.write(`: hybrid-model-load-heartbeat ${Date.now()}\n\n`);
+      }, 10000);
+      res.on('close', stopHeartbeat);
+    }
+
+    let acquisition: ManualHybridModelAcquisition = {
+      slotId,
+      previousModel: actualModelId,
+      selectedModel: actualModelId,
+      cacheHit: true,
+      loadAction: 'cache_hit',
+      modelSwitchLatencyMs: 0,
+      evicted: false,
+    };
+    if (routingDecision) {
+      acquisition = await acquireManualHybridModel(targetUrl, actualModelId, slotId, fallbackRoute);
+    }
+
+    const generationStartedAt = Date.now();
+    const inferResponse = await fetchWithTransientTunnelRetry(`${targetUrl}/api/infer/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -515,10 +792,10 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
         hf_model_id: actualModelId,
         text_input: text_input,
         history: normalizedHistory,
-        instanceId: instanceId ?? 1,
-        system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty
+        instanceId: slotId,
+        system_prompt: effectiveSystemPrompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty
       })
-    });
+    }, routingDecision ? 2 : 1);
 
     if (!inferResponse.ok) {
       let errorMessage = `Lỗi từ Python backend: ${inferResponse.statusText}`;
@@ -528,23 +805,57 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       } catch (e) {
         // Ignore JSON parse error on non-ok response
       }
-      res.status(inferResponse.status).json({ error: errorMessage });
+      stopHeartbeat();
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ error: errorMessage })}\n\n`);
+        res.end();
+      } else {
+        res.status(inferResponse.status).json({ error: errorMessage });
+      }
       return;
     }
 
     // Set headers for SSE
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+    }
 
     // Manually handle the stream
     if (inferResponse.body) {
       let streamFinished = false;
       const reader = (inferResponse.body as any);
+      let firstTokenAt: number | null = null;
+      let upstreamBuffer = '';
+      let inferenceId: string | null = null;
+      let tokenUsage: any = null;
+      let upstreamDoneReceived = false;
 
       reader.on('data', (chunk: Buffer) => {
         if (!streamFinished) {
+          upstreamBuffer += chunk.toString('utf8');
+          const lines = upstreamBuffer.split('\n');
+          upstreamBuffer = lines.pop() || '';
+          for (const line of lines) {
+            if (line === 'data: [DONE]') {
+              upstreamDoneReceived = true;
+              continue;
+            }
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const parsed = JSON.parse(line.slice(6));
+              const text = parsed.response ?? parsed.text;
+              if (firstTokenAt === null && typeof text === 'string' && text.length > 0) {
+                firstTokenAt = Date.now();
+              }
+              if (parsed.inference_id) inferenceId = String(parsed.inference_id);
+              if (parsed.usage) tokenUsage = parsed.usage;
+            } catch {
+              // Keep proxying malformed/non-JSON diagnostic events unchanged.
+            }
+          }
           res.write(chunk);
         }
       });
@@ -552,20 +863,51 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       const finishStream = () => {
         if (streamFinished || res.writableEnded) return;
         streamFinished = true;
+        stopHeartbeat();
+
+        const completedAt = Date.now();
+        const generationLatencyMs = completedAt - generationStartedAt;
+        const ttftMs = firstTokenAt === null ? null : firstTokenAt - generationStartedAt;
+        const decodeLatencyMs = ttftMs === null ? null : Math.max(0, generationLatencyMs - ttftMs);
+        const endToEndLatencyMs = completedAt - requestStartedAt;
 
         const input_parameters = {
           do_sample: true,
           max_new_tokens,
           repetition_penalty,
-          system_prompt,
+          system_prompt: effectiveSystemPrompt,
           temperature,
           text_input,
           top_k,
           top_p
         };
+        const manualHybridMetrics = {
+          measured_at: new Date(completedAt).toISOString(),
+          routing_mode: routing_mode || (routingDecision ? 'hybrid' : 'direct'),
+          subject: routingDecision?.subject || null,
+          route_strategy: routingDecision?.strategy || 'direct-model',
+          router_latency_ms: routerLatencyMs,
+          model_switch_latency_ms: acquisition.modelSwitchLatencyMs,
+          generation_latency_ms: generationLatencyMs,
+          ttft_ms: ttftMs,
+          decode_latency_ms: decodeLatencyMs,
+          end_to_end_latency_ms: endToEndLatencyMs,
+          previous_model: acquisition.previousModel,
+          selected_model: actualModelId,
+          gpu_slot_id: acquisition.slotId,
+          model_cache_hit: acquisition.cacheHit,
+          model_load_action: acquisition.loadAction,
+          model_evicted: acquisition.evicted,
+          history_messages_sent: normalizedHistory.length,
+          history_characters_sent: normalizedHistory.reduce((sum, message) => sum + message.content.length, 0),
+          inference_id: inferenceId,
+          token_usage: tokenUsage,
+        };
         const finalChunk = JSON.stringify({
           is_final: true,
-          input_parameters
+          input_parameters,
+          routing: routingDecision,
+          manual_hybrid_metrics: manualHybridMetrics,
         });
         res.write(`data: ${finalChunk}\n\n`);
         res.end();
@@ -575,7 +917,16 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
       reader.on('close', finishStream);
       reader.on('error', (err: Error) => {
         console.error('Stream error:', err);
+        // Some tunnels reset the upstream socket immediately after forwarding
+        // [DONE]. The answer is complete in that case, so still emit the final
+        // telemetry event instead of silently losing the selected model/logs.
+        if (upstreamDoneReceived) {
+          finishStream();
+          return;
+        }
+        stopHeartbeat();
         if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: `GPU stream interrupted: ${err.message}` })}\n\n`);
           res.end();
         }
       });
@@ -584,6 +935,7 @@ export const inferWithAIStream = async (req: Request, res: Response): Promise<vo
     }
 
   } catch (error: any) {
+    stopHeartbeat();
     console.error('Inference AI Stream Proxy Error:', error);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message || 'Có lỗi xảy ra khi gọi Python inference stream', details: error.message });
@@ -648,7 +1000,7 @@ export const getChatHistory = async (req: Request, res: Response): Promise<void>
 
 export const loadModel = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { hf_model_id, system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty } = req.body;
+    const { hf_model_id, system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, pinned, force_reload } = req.body;
 
     if (!hf_model_id) {
       res.status(400).json({ error: 'hf_model_id là bắt buộc' });
@@ -665,7 +1017,7 @@ export const loadModel = async (req: Request, res: Response): Promise<void> => {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
       },
-      body: JSON.stringify({ hf_model_id, instance_id: instanceId ?? 1, system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty })
+      body: JSON.stringify({ hf_model_id, instance_id: instanceId ?? 1, system_prompt, max_new_tokens, temperature, top_k, top_p, repetition_penalty, pinned, force_reload })
     });
 
     if (!loadResponse.ok) {

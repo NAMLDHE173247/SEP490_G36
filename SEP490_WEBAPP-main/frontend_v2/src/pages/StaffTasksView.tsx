@@ -37,7 +37,10 @@ function useStaffTasks() {
             priority: t.priority,
             taskType: t.taskType,
             createdAt: t.createdAt?.split('T')[0] || '',
-            deadline: t.deadline?.split('T')[0] || '',
+            deadline: (t.staffDeadline || t.deadline)?.split('T')[0] || '',
+            deadlineAt: t.staffDeadline || t.deadline || '',
+            isStaffOverdue: !!t.isStaffOverdue,
+            submittedLate: !!t.submittedLate,
             totalSamples: t.totalSamples || t.batchCount,
             labeledCount: t.labeledCount || 0,
             reviewedCount: 0,
@@ -128,14 +131,16 @@ function StaffTasksView({ onOpenTask }) {
   const rewriteTaskCards = React.useMemo(() => {
     const groups: Record<string, any[]> = {};
     rewriteTasks.forEach((t: any) => {
-      const versionId = t.datasetVersionId || 'default';
-      if (!groups[versionId]) groups[versionId] = [];
-      groups[versionId].push(t);
+      const versionId = t.datasetVersionId || 'default';
+      const groupKey = `${versionId}::${t.sourceTaskName || t.taskName || 'rewrite'}`;
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(t);
     });
 
-    return Object.keys(groups).map((versionId) => {
-      const groupTasks = groups[versionId];
-      const sampleTask = groupTasks[0];
+    return Object.keys(groups).map((groupKey) => {
+      const groupTasks = groups[groupKey];
+      const sampleTask = groupTasks[0];
+      const versionId = sampleTask.datasetVersionId || groupKey.split('::')[0];
       const completed = groupTasks.filter((t: any) => ['submitted', 'approved'].includes(t.status)).length;
       const total = groupTasks.length;
       
@@ -153,15 +158,16 @@ function StaffTasksView({ onOpenTask }) {
       else if (priorities.includes('medium')) highestPriority = 'medium';
       else if (priorities.includes('low')) highestPriority = 'low';
 
-      const prjName = sampleTask.projectName || 'Stage 4 Rewrite';
+      const prjName = sampleTask.projectName || 'Stage 4 Rewrite';
+      const sourceTaskName = sampleTask.sourceTaskName || sampleTask.taskName || prjName;
 
       return {
-        id: versionId,
-        name: `Viết lại câu trả lời AI - ${prjName}`,
-        dataset: sampleTask.dataset || prjName,
-        version: sampleTask.versionName || sampleTask.version || 'v1',
-        batchStart: 1,
-        batchCount: total,
+        id: `rewrite-${versionId}-${sourceTaskName}`,
+        name: sourceTaskName,
+        dataset: sampleTask.sourceDataset || sampleTask.dataset || prjName,
+        version: sampleTask.sourceVersion || sampleTask.versionName || sampleTask.version || 'v1',
+        batchStart: Number(sampleTask.batchStart || 1),
+        batchCount: Number(sampleTask.batchCount || total),
         status: groupStatus,
         priority: highestPriority,
         taskType: 'rewrite',
@@ -169,7 +175,8 @@ function StaffTasksView({ onOpenTask }) {
         createdAt: sampleTask.updatedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
         totalSamples: total,
         labeledCount: completed,
-        supervisor: 'Admin',
+        supervisor: sampleTask.supervisor || 'Chưa xác định',
+        deadline: sampleTask.deadline || null,
         rewriteTasks: groupTasks,
       };
     });
@@ -190,7 +197,7 @@ function StaffTasksView({ onOpenTask }) {
 
   filtered.sort((a, b) => {
     switch (sortBy) {
-      case 'deadline': return getDateTime(a.deadline) - getDateTime(b.deadline);
+      case 'deadline': return getDateTime(a.deadlineAt || a.deadline) - getDateTime(b.deadlineAt || b.deadline);
       case 'priority': {
         const order = { urgent: 0, high: 1, medium: 2, low: 3 };
         return order[a.priority] - order[b.priority];
@@ -232,7 +239,7 @@ function StaffTasksView({ onOpenTask }) {
   };
 
   const getVisibleRewriteMessages = (task: any) => {
-    const rewriteContextMode = task?.rewriteTask?.contextMode || 'n-2:n+2';
+    const rewriteContextMode = task?.rewriteTask?.contextMode || 'n-2:n+3';
     const messages = Array.isArray(task?.rewriteTask?.conversationMessages) && task.rewriteTask.conversationMessages.length > 0
       ? task.rewriteTask.conversationMessages
       : [{ role: 'assistant', content: task?.rewriteTask?.originalText || '', isTarget: true }];
@@ -246,7 +253,10 @@ function StaffTasksView({ onOpenTask }) {
     } else if (rewriteContextMode === 'n-1:n+1') {
       start = Math.max(0, targetIdx - 1);
       end = Math.min(messages.length - 1, targetIdx + 1);
-    } else if (rewriteContextMode === 'n-2:n+2') {
+    } else if (rewriteContextMode === 'n-2:n+3') {
+      start = Math.max(0, targetIdx - 2);
+      end = Math.min(messages.length - 1, targetIdx + 3);
+    } else if (rewriteContextMode === 'n-2:n+2') {
       start = Math.max(0, targetIdx - 2);
       end = Math.min(messages.length - 1, targetIdx + 2);
     }
@@ -351,8 +361,8 @@ function StaffTasksView({ onOpenTask }) {
           const progress = Math.round((task.labeledCount / task.totalSamples) * 100);
           const statusInfo = STATUS_CONFIG[task.status];
           const priInfo = PRIORITY_CONFIG[task.priority];
-          const overdue = isOverdue(task.deadline) && task.status !== 'submitted';
-          const nearDl = isNearDeadline(task.deadline) && task.status !== 'submitted';
+          const overdue = (task.isStaffOverdue || isOverdue(task.deadlineAt || task.deadline)) && !['submitted', 'approved', 'completed'].includes(task.status);
+          const nearDl = isNearDeadline(task.deadlineAt || task.deadline) && !['submitted', 'approved', 'completed'].includes(task.status);
 
           return (
             <div key={task.id} className={`st-task-card ${overdue ? 'overdue' : ''}`}>
@@ -381,7 +391,7 @@ function StaffTasksView({ onOpenTask }) {
                   <div className="st-meta-row">
                     <BarChart2 size={13} />
                     <span>
-                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+2'}</strong>
+                      Context: <strong>{task.rewriteTask?.contextMode || 'n-2:n+3'}</strong>
                       {task.rewriteTask?.targetMessageIndex != null && <> · Turn <strong>#{Number(task.rewriteTask.targetMessageIndex) + 1}</strong></>}
                     </span>
                   </div>
@@ -392,7 +402,9 @@ function StaffTasksView({ onOpenTask }) {
                 </div>
                 <div className={`st-meta-row ${overdue ? 'deadline-overdue' : nearDl ? 'deadline-near' : ''}`}>
                   <Calendar size={13} />
-                  <span>Hạn chót: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  <span>Hạn nộp Staff: <strong>{task.deadline || 'Không có hạn chót'}</strong></span>
+                  {overdue && <strong style={{ color: '#dc2626' }}>Quá hạn — bài nộp sẽ bị ghi nhận trễ</strong>}
+                  {task.submittedLate && <strong style={{ color: '#dc2626' }}>Đã nộp trễ</strong>}
                   {overdue && <span className="st-overdue-tag">Quá hạn!</span>}
                   {nearDl && <span className="st-near-tag">Sắp hết hạn</span>}
                 </div>

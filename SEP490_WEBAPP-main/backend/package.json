@@ -7,7 +7,10 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "analyze:rp5": "tsx src/scripts/analyze_rp5.ts",
+    "test:rp5": "tsx src/scripts/analyze_rp5.ts --self-test",
+    "test:rbac": "tsx src/scripts/testRbacWorkflow.ts"
   },
   "keywords": [
     "chatbot",
