@@ -812,7 +812,7 @@ export const getSystemResources = async (_req: Request, res: Response) => {
     const urls = workerManager.getUrls();
     const resourcePromises = urls.map(async (url) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout (increased for Render)
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout (increased for slow localtunnel/ngrok)
 
       try {
         const response = await fetch(`${url}/api/system/resources`, {

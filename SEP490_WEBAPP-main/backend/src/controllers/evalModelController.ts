@@ -186,7 +186,7 @@ async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
     try {
       const resp = await fetch(`${configService.getGpuUrl()}${endpoint}`, {
         headers,
-        signal: AbortSignal.timeout(15000), // Increased from 7000 for slow network on Render
+        signal: AbortSignal.timeout(30000), // Increased from 15000 for slow network on localtunnel
       });
       if (!resp.ok) continue;
       const data = await resp.json() as any;
