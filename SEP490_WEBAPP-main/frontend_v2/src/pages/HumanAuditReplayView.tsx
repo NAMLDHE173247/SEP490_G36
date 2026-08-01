@@ -7,7 +7,6 @@ import {
   ClipboardCheck,
   Clock,
   Columns2,
-  Download,
   PanelRightOpen,
   RefreshCw,
   Search,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import {
   HUMAN_AUDIT_RUBRIC,
   SCORE_ANCHORS,
@@ -37,6 +37,7 @@ const reviewStatus = (item: any) => {
 const firstQuestion = (item: any) => item?.replay_turns?.[0]?.user || 'Không có câu hỏi được lưu';
 
 export default function HumanAuditReplayView() {
+  const { user } = useAuth();
   const [evaluationId, setEvaluationId] = useState(() => localStorage.getItem('human_audit_eval_id') || '');
   const [evaluation, setEvaluation] = useState<any>(null);
   const [recentEvaluations, setRecentEvaluations] = useState<any[]>([]);
@@ -48,7 +49,6 @@ export default function HumanAuditReplayView() {
   const [scores, setScores] = useState<Record<string, number | null>>(emptyAuditScores);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [reviewNote, setReviewNote] = useState('');
-  const [reviewerName, setReviewerName] = useState(() => localStorage.getItem('user_name') || 'Supervisor');
   const [saving, setSaving] = useState(false);
   const [scorePanelOpen, setScorePanelOpen] = useState(false);
 
@@ -61,7 +61,7 @@ export default function HumanAuditReplayView() {
     setLoading(true);
     setLoadError('');
     try {
-      const detail = await apiService.getEvaluationDetail(id);
+      const detail = await apiService.getMyHumanAuditWork(id);
       if (!Array.isArray(detail?.results) || detail.results.length === 0) {
         throw new Error('Evaluation này không có replay để thẩm định');
       }
@@ -86,8 +86,8 @@ export default function HumanAuditReplayView() {
   }, [evaluationId]);
 
   useEffect(() => {
-    apiService.getEvaluatedModels()
-      .then((items) => setRecentEvaluations((Array.isArray(items) ? items : []).filter((item: any) => item.modelEvalId)))
+    apiService.getMyHumanAuditAssignments()
+      .then((items) => setRecentEvaluations(Array.isArray(items) ? items : []))
       .catch(() => setRecentEvaluations([]));
   }, []);
 
@@ -170,10 +170,6 @@ export default function HumanAuditReplayView() {
 
   const saveReview = async (skip = false) => {
     if (!evaluation || !currentItem) return;
-    if (!reviewerName.trim()) {
-      toast.error('Vui lòng nhập tên người thẩm định');
-      return;
-    }
     if (!skip) {
       const missing = HUMAN_AUDIT_RUBRIC.filter(({ key }) => scores[key] === null || scores[key] === undefined);
       if (missing.length) {
@@ -192,7 +188,8 @@ export default function HumanAuditReplayView() {
 
     setSaving(true);
     try {
-      const response = await apiService.reviewConversation(
+      const previousVerdict = currentItem.human_review?.verdict || 'pending';
+      const response = await apiService.saveMyHumanAuditReview(
         evaluation.modelEvalId,
         currentItem.conv_index,
         {
@@ -201,17 +198,44 @@ export default function HumanAuditReplayView() {
             human_reasons: reasons,
           }),
           note: reviewNote,
-          reviewer: reviewerName.trim(),
         },
       );
-      localStorage.setItem('user_name', reviewerName.trim());
-      setEvaluation((previous: any) => ({
-        ...previous,
-        results: previous.results.map((item: any) => item.conv_index === currentItem.conv_index
-          ? { ...item, human_review: response.review }
-          : item),
-        humanAudit: response.humanAudit,
-      }));
+      setEvaluation((previous: any) => {
+        const nextVerdict = response.review?.verdict === 'skip' ? 'skip' : 'reviewed';
+        let reviewedItems = Number(previous.humanAudit?.reviewed_items || 0);
+        let skippedItems = Number(previous.humanAudit?.skipped_items || 0);
+        if (previousVerdict === 'pending') {
+          if (nextVerdict === 'skip') skippedItems += 1;
+          else reviewedItems += 1;
+        } else if (previousVerdict === 'skip' && nextVerdict === 'reviewed') {
+          skippedItems = Math.max(0, skippedItems - 1);
+          reviewedItems += 1;
+        } else if (previousVerdict !== 'skip' && nextVerdict === 'skip') {
+          reviewedItems = Math.max(0, reviewedItems - 1);
+          skippedItems += 1;
+        }
+        const completedItems = reviewedItems + skippedItems;
+        const totalItems = Math.max(1, Number(previous.humanAudit?.total_items || previous.results.length));
+        return {
+          ...previous,
+          results: previous.results.map((item: any) => item.conv_index === currentItem.conv_index
+            ? {
+                ...item,
+                human_review: response.review,
+                criteria_scores: response.criteria_scores,
+                criteria_reasons: response.criteria_reasons,
+                effective_judge_model: response.effective_judge_model,
+              }
+            : item),
+          humanAudit: {
+            ...previous.humanAudit,
+            reviewed_items: reviewedItems,
+            skipped_items: skippedItems,
+            pending_items: Math.max(0, totalItems - completedItems),
+            completion_rate: completedItems / totalItems,
+          },
+        };
+      });
       toast.success(skip ? 'Đã bỏ qua replay này' : 'Đã lưu Human Audit');
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Không thể lưu Human Audit');
@@ -220,28 +244,13 @@ export default function HumanAuditReplayView() {
     }
   };
 
-  const downloadArtifact = async () => {
-    if (!evaluation?.modelEvalId) return;
-    try {
-      const blob = await apiService.exportEvaluationArtifact(evaluation.modelEvalId);
-      const href = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = href;
-      anchor.download = `${evaluation.modelEvalId}_human_audit.json`;
-      anchor.click();
-      URL.revokeObjectURL(href);
-    } catch {
-      toast.error('Không thể tải artifact Human Audit');
-    }
-  };
-
   return (
     <div className="ha-page">
       <header className="ha-hero">
         <div className="ha-hero-copy">
-          <span className="ha-eyebrow"><ClipboardCheck size={15} /> CÔNG CỤ PHÁT LẠI & THẨM ĐỊNH</span>
-          <h1>Trình Phát Lại Hội Thoại</h1>
-          <p>Mỗi Evaluation ID mở đúng bộ phản hồi đã sinh trong Model Eval. Trang này không gọi model chạy lại.</p>
+          <span className="ha-eyebrow"><ClipboardCheck size={15} /> STAFF · HUMAN AUDIT ĐỘC LẬP</span>
+          <h1>Chấm Phát Lại Hội Thoại</h1>
+          <p>Bạn chỉ nhìn thấy Evaluation đã được Supervisor giao. Mỗi điểm được lưu theo tài khoản {user?.name || 'Staff'} và không ghi đè bản chấm của Staff khác.</p>
         </div>
         {evaluation && (
           <div className="ha-hero-actions">
@@ -258,7 +267,7 @@ export default function HumanAuditReplayView() {
 
       <section className="ha-session-card">
         <div className="ha-session-input">
-          <label>Evaluation ID chứa bộ replay</label>
+            <label>Evaluation ID đã được giao</label>
           <div>
             <input value={evaluationId} onChange={(event) => setEvaluationId(event.target.value)} placeholder="eval_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
             <button type="button" onClick={() => void loadEvaluation()} disabled={loading}>
@@ -268,12 +277,12 @@ export default function HumanAuditReplayView() {
         </div>
         {recentEvaluations.length > 0 && (
           <div className="ha-recent-select">
-            <label>Hoặc chọn lần Model Eval gần đây</label>
+            <label>Assignment Human Audit của tôi</label>
             <select value={evaluationId} onChange={(event) => { setEvaluationId(event.target.value); void loadEvaluation(event.target.value); }}>
               <option value="">Chọn Evaluation ID...</option>
               {recentEvaluations.map((item: any) => (
                 <option key={item.modelEvalId} value={item.modelEvalId}>
-                  {item.projectName || item.jobId} · {item.modelEvalId}
+                  {item.projectName || item.jobId} · {item.reviewedItems}/{item.assignedItems} đã chấm
                 </option>
               ))}
             </select>
@@ -288,7 +297,7 @@ export default function HumanAuditReplayView() {
               <div><span>Fine-tuned Model</span><strong>{evaluation.ftModelRepo || evaluation.jobId}</strong></div>
               <div><span>AI Judge</span><strong>{evaluation.judgeModel}</strong></div>
               <div><span>Tiến độ</span><strong>{evaluation.humanAudit?.reviewed_items || 0}/{evaluation.results.length}</strong></div>
-              <button type="button" onClick={downloadArtifact}><Download size={15} /> Xuất artifact</button>
+              <div><span>Staff đang chấm</span><strong>{user?.name || user?.email || 'Tài khoản hiện tại'}</strong></div>
             </div>
             {(!Array.isArray(evaluation.baseResults) || evaluation.baseResults.length === 0) && (
               <div className="ha-load-error"><AlertTriangle size={16} /> Evaluation này là single run hoặc thiếu baseResults. Hãy chọn lần Model Eval paired để xem Base và Fine-tuned cạnh nhau.</div>
@@ -444,6 +453,10 @@ export default function HumanAuditReplayView() {
                   </div>
                 </div>
                 <div className="ha-scoring-target"><span>Đang chấm câu trả lời Fine-tuned</span><strong>{currentItem?.item_id || `Conversation ${selectedConvIndex}`}</strong></div>
+                <div className="ha-blind-notice">
+                  <ShieldCheck size={16} />
+                  <span><strong>Công thức Socratic: S = mean(A1, A2, A3).</strong> A2 chấm nhận biết học sinh hiểu/chưa hiểu, dẫn dắt và khơi gợi tư duy phản biện; A3 chấm cá nhân hóa/khả năng thích nghi. Nếu A1 ≤ 1 thì S tối đa 1.0.</span>
+                </div>
                 {Number(scores.A1) <= 1 && scores.A1 !== null && (
                   <div className="ha-a1-warning"><ShieldCheck size={17} /> A1 ≤ 1 nên điểm Gợi mở Socratic bị giới hạn tối đa 1.0.</div>
                 )}
@@ -502,7 +515,7 @@ export default function HumanAuditReplayView() {
                 )}
                 <div className="ha-save-box">
                   <label>Nhận xét tổng quát<textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Lỗi nổi bật hoặc đề xuất xử lý conflict..." /></label>
-                  <label>Người thẩm định<input value={reviewerName} onChange={(event) => setReviewerName(event.target.value)} /></label>
+                  <div className="ha-blind-notice"><ShieldCheck size={16} /> Bản chấm được ký tự động bằng tài khoản Staff: <strong>{user?.name || user?.email}</strong></div>
                   <div><button type="button" className="skip" onClick={() => void saveReview(true)} disabled={saving}><SkipForward size={15} /> Bỏ qua</button><button type="button" className="save" onClick={() => void saveReview(false)} disabled={saving}>{saving ? <RefreshCw className="spin" size={15} /> : <ClipboardCheck size={15} />} Lưu Human Audit</button></div>
                 </div>
               </aside>

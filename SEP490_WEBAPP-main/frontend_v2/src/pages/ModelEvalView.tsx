@@ -30,7 +30,8 @@ import {
   CheckCircle2,
   Gauge,
   BarChart3,
-  ClipboardCheck
+  ClipboardCheck,
+  Layers3
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -45,7 +46,7 @@ import {
 } from 'recharts';
 import { api, apiService } from '../services/api';
 import { getAuthToken } from '../services/authSession';
-import { cappedSocraticScore } from '../constants/humanAuditRubric';
+import { HUMAN_AUDIT_RUBRIC, cappedSocraticScore } from '../constants/humanAuditRubric';
 import '../styles/modeleval.css';
 
 interface LeaderboardItem {
@@ -101,6 +102,7 @@ interface DatasetVersionItem {
 }
 
 interface LargeLlmReference {
+  comparisonRole: 'large_llm' | 'version1_shared_ft';
   model: string;
   judgeModel: string;
   total: number;
@@ -136,11 +138,13 @@ export default function ModelEvalView() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'breakdown' | 'paired' | 'large-llm' | 'samples'>('paired');
+  const [selectedAiConvIndex, setSelectedAiConvIndex] = useState<number | null>(null);
   const [detailEvalHistory, setDetailEvalHistory] = useState<any[]>([]);
   const [largeLlmReferences, setLargeLlmReferences] = useState<LargeLlmReference[]>([]);
   const [largeLlmCatalog, setLargeLlmCatalog] = useState<any[]>([]);
   const [largeLlmSearch, setLargeLlmSearch] = useState('');
-  const [selectedLargeLlmModels, setSelectedLargeLlmModels] = useState<string[]>([]);
+  const [selectedLargeLlmModel, setSelectedLargeLlmModel] = useState('');
+  const [selectedVersion1JobId, setSelectedVersion1JobId] = useState('');
   const [largeLlmTestFile, setLargeLlmTestFile] = useState<File | null>(null);
   const [largeLlmRuns, setLargeLlmRuns] = useState<Record<string, any>>({});
   const [startingLargeLlmRun, setStartingLargeLlmRun] = useState(false);
@@ -172,6 +176,10 @@ export default function ModelEvalView() {
   const evaluableJobs = useMemo(
     () => completedJobs.filter(job => Boolean(job.hfRepoId)),
     [completedJobs],
+  );
+  const version1CandidateJobs = useMemo(
+    () => evaluableJobs.filter(job => job.jobId !== evaluationDetail?.jobId),
+    [evaluableJobs, evaluationDetail?.jobId],
   );
 
   const getDatasetVersionId = (job?: TrainingJobItem) => {
@@ -517,6 +525,7 @@ export default function ModelEvalView() {
     setEvaluationDetail(null);
     setDetailEvalHistory([]);
     setDetailLoadError(null);
+    setSelectedAiConvIndex(null);
 
     let fileToUpload: File | null = uploadedFile;
 
@@ -588,6 +597,7 @@ export default function ModelEvalView() {
     setLoadingDetail(true);
     setViewMode('detail');
     setSelectedEvalId(evalId);
+    setSelectedAiConvIndex(null);
     setEvaluationDetail(null);
     setDetailEvalHistory([]);
     setDetailLoadError(null);
@@ -763,13 +773,18 @@ export default function ModelEvalView() {
     if (!evalId) return;
     localStorage.setItem('human_audit_eval_id', evalId);
     if (typeof convIndex === 'number') localStorage.setItem('human_audit_conv_index', String(convIndex));
-    window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'Human Audit' }));
+    window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'Human Audit Manager' }));
+  };
+
+  const openAiJudgeDetail = (convIndex: number) => {
+    setSelectedAiConvIndex(convIndex);
   };
 
   // Export Leaderboard CSV
   const handleExportCSV = () => {
     if (leaderboard.length === 0) return;
-    const headers = ['RANK', 'PROJECT', 'MODEL', 'BASE MODEL', 'KNOWLEDGE K', 'SOCRATIC S', 'LEGACY OVERALL (EXPLORATORY)', 'PEDAGOGY C (DIAGNOSTIC)', 'AVG LATENCY', 'JUDGE MODEL', 'TOTAL SAMPLES', 'FLAGS'];
+    const criteriaKeys = ['A1', 'A2', 'A3', 'B1', 'B2', 'C1', 'C2', 'C3', 'D1', 'D2'];
+    const headers = ['RANK', 'PROJECT', 'MODEL', 'BASE MODEL', 'KNOWLEDGE K', 'SOCRATIC S', ...criteriaKeys, 'AVG LATENCY', 'JUDGE MODEL', 'TOTAL SAMPLES', 'FLAGS'];
     const rows = leaderboard.map((row, index) => [
       index + 1,
       row.projectName,
@@ -777,8 +792,7 @@ export default function ModelEvalView() {
       row.scores?.group_b ? 'Paired Eval' : 'Single',
       row.scores.knowledge ?? '-',
       row.scores.socratic ?? '-',
-      row.scores.exploratory_overall ?? row.scores.overall ?? '-',
-      row.scores.group_c || '-',
+      ...criteriaKeys.map(key => row.scores.criteria?.[key] ?? '-'),
       row.scores.avg_latency_ms || '-',
       row.judgeModel || '-',
       row.totalConversations || '-',
@@ -853,8 +867,10 @@ export default function ModelEvalView() {
   const primaryResearchRows = React.useMemo(() => {
     if (!evaluationDetail) return [];
     const perSubject = evaluationDetail.researchStatistics?.per_subject || {};
-    const subject = Object.keys(perSubject)[0];
-    const subjectStats = subject ? perSubject[subject] : {};
+    const subjects = Object.keys(perSubject);
+    const subjectStats = subjects.length > 1
+      ? evaluationDetail.researchStatistics?.macro_equal_weight || {}
+      : subjects[0] ? perSubject[subjects[0]] : {};
     const makeRow = (metric: 'K' | 'S', label: string) => {
       const stats = subjectStats?.[metric] || {};
       const ci = Array.isArray(stats.ci95) ? stats.ci95 : [];
@@ -924,6 +940,72 @@ export default function ModelEvalView() {
     }));
   }, [evaluationDetail]);
 
+  const fullCriteriaResearchRows = React.useMemo(() => {
+    if (!evaluationDetail?.summary?.criteria || !evaluationDetail?.baseSummary?.criteria) return [];
+    const perSubject = evaluationDetail.researchStatistics?.per_subject || {};
+    const subjects = Object.keys(perSubject);
+    const subjectStats = subjects.length > 1
+      ? evaluationDetail.researchStatistics?.macro_equal_weight || {}
+      : subjects[0] ? perSubject[subjects[0]] : {};
+    const definitions: Record<string, string> = {
+      A1: 'Không tiết lộ đáp án',
+      A2: 'Dẫn dắt và tư duy phản biện',
+      A3: 'Thích nghi và cá nhân hóa',
+      B1: 'Độ chính xác kiến thức',
+      B2: 'Phù hợp trình độ',
+      C1: 'Xử lý đầu vào khó/mơ hồ',
+      C2: 'Mạch lạc và giữ ngữ cảnh',
+      C3: 'Tông giọng sư phạm',
+      D1: 'Không ảo giác/bịa đặt',
+      D2: 'Hiệu năng latency quy đổi',
+    };
+    return Object.entries(definitions).map(([key, label]) => {
+      const base = Number(evaluationDetail.baseSummary.criteria?.[key]);
+      const ft = Number(evaluationDetail.summary.criteria?.[key]);
+      const stats = subjectStats?.[key] || {};
+      return {
+        key,
+        label,
+        base,
+        ft,
+        delta: ft - base,
+        ci: Array.isArray(stats.ci95) ? stats.ci95 : [],
+        effectSize: Number.isFinite(Number(stats.effect_size_dz)) ? Number(stats.effect_size_dz) : null,
+        pAdjusted: Number.isFinite(Number(stats.holm_p_adjusted)) ? Number(stats.holm_p_adjusted) : null,
+        status: stats.status || 'not_testable',
+      };
+    });
+  }, [evaluationDetail]);
+
+  const adaptiveDiagnosticRows = React.useMemo(() => {
+    const diagnostic = evaluationDetail?.adaptiveDiagnostic;
+    if (diagnostic?.status !== 'completed') return [];
+    const ftCriteria = diagnostic.summary?.criteria || {};
+    const baseCriteria = diagnostic.base_summary?.criteria || {};
+    const statistics = diagnostic.research_statistics?.criteria || {};
+    const labels: Record<string, string> = {
+      AS: 'Điểm Adaptive tổng = trung bình P1/O1/E1',
+      P1: 'Nhận diện trạng thái hiểu bài',
+      O1: 'Thích nghi/cá nhân hóa theo cặp đối chứng',
+      E1: 'Khơi gợi tư duy phản biện',
+    };
+    return Object.entries(labels).map(([key, label]) => {
+      const base = Number(key === 'AS' ? diagnostic.base_summary?.adaptive_score : baseCriteria[key]);
+      const ft = Number(key === 'AS' ? diagnostic.summary?.adaptive_score : ftCriteria[key]);
+      const row = statistics[key] || {};
+      return {
+        key,
+        label,
+        base,
+        ft,
+        delta: Number.isFinite(base) && Number.isFinite(ft) ? ft - base : null,
+        ci: Array.isArray(row.ci95) ? row.ci95 : [],
+        effectSize: Number.isFinite(Number(row.effect_size_dz)) ? Number(row.effect_size_dz) : null,
+        pAdjusted: Number.isFinite(Number(row.holm_p_adjusted)) ? Number(row.holm_p_adjusted) : null,
+      };
+    });
+  }, [evaluationDetail]);
+
   useEffect(() => {
     if (!selectedEvalId) {
       setLargeLlmReferences([]);
@@ -931,7 +1013,15 @@ export default function ModelEvalView() {
     }
     try {
       const saved = localStorage.getItem(`large_llm_references_${selectedEvalId}`);
-      setLargeLlmReferences(saved ? JSON.parse(saved) : []);
+      const parsed = saved ? JSON.parse(saved) : [];
+      const rows = Array.isArray(parsed) ? parsed : [];
+      const explicitlyTyped = rows.filter((item: any) => ['large_llm', 'version1_shared_ft'].includes(item?.comparisonRole));
+      // Migration: older UI stored two anonymous Large-LLM columns. Keep only
+      // the first as the contextual LLM; the second placeholder is retired.
+      const migrated = explicitlyTyped.length
+        ? explicitlyTyped
+        : rows.slice(0, 1).map((item: any) => ({ ...item, comparisonRole: 'large_llm' }));
+      setLargeLlmReferences(migrated);
     } catch {
       setLargeLlmReferences([]);
     }
@@ -952,9 +1042,11 @@ export default function ModelEvalView() {
       ?? evaluationDetail.protocolManifest?.dataset_hash
       ?? evaluationDetail.protocolManifest?.locked_dataset_hash;
     const currentPromptVersion = evaluationDetail.protocolManifest?.prompt_version;
+    const currentPromptHash = evaluationDetail.systemPromptHash;
     const imported: LargeLlmReference[] = [];
 
-    for (const file of Array.from(files).slice(0, 2)) {
+    const selectedFiles = Array.from(files).slice(0, 1);
+    for (const file of selectedFiles) {
       try {
         const artifact = JSON.parse(await file.text());
         if (artifact?.comparisonRole !== 'contextual_large_llm_reference') {
@@ -968,13 +1060,16 @@ export default function ModelEvalView() {
         const scored = results.filter((row: any) => row.criteria_scores?.A1 !== undefined);
         const artifactHash = artifact.datasetValidation?.dataset_hash ?? artifact.protocolManifest?.dataset_hash;
         const artifactPromptVersion = artifact.protocolManifest?.prompt_version;
+        const artifactPromptHash = artifact.protocolManifest?.system_prompt_hash;
         const notes: string[] = [];
         if (currentHash && artifactHash !== currentHash) notes.push('Khác locked-test hash');
         if (currentPromptVersion && artifactPromptVersion !== currentPromptVersion) notes.push('Khác prompt version');
+        if (currentPromptHash && artifactPromptHash !== currentPromptHash) notes.push('Khác system prompt hash');
         if (Number(artifact.protocolManifest?.max_new_tokens) !== 512) notes.push('max_new_tokens không phải 512');
         if (artifact.runValidity !== 'valid') notes.push('Run không hợp lệ hoàn toàn');
 
         imported.push({
+          comparisonRole: 'large_llm',
           model: String(artifact.requestedModel || file.name),
           judgeModel: String(artifact.judgeModel || '—'),
           total: Number(artifact.totalConversations || results.length),
@@ -1000,13 +1095,19 @@ export default function ModelEvalView() {
     }
 
     if (imported.length) {
-      setLargeLlmReferences(imported);
-      localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(imported));
+      setLargeLlmReferences(previous => {
+        const next = [...previous.filter(item => item.comparisonRole !== 'large_llm'), ...imported];
+        localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(next));
+        return next;
+      });
       toast.success(`Đã nhập ${imported.length} kết quả LLM lớn`);
     }
   };
 
-  const normalizeServerLargeLlmResult = (artifact: any): LargeLlmReference => {
+  const normalizeServerLargeLlmResult = (
+    artifact: any,
+    comparisonRole: LargeLlmReference['comparisonRole'],
+  ): LargeLlmReference => {
     const results = Array.isArray(artifact?.results) ? artifact.results : [];
     const median = (values: number[]) => {
       if (!values.length) return null;
@@ -1022,8 +1123,10 @@ export default function ModelEvalView() {
     const scored = results.filter((row: any) => row.criteria_scores?.A1 !== undefined);
     const notes: string[] = [];
     if (Number(artifact?.protocolManifest?.max_new_tokens) !== 512) notes.push('Giới hạn đầu ra khác 512 token');
+    if (evaluationDetail?.systemPromptHash && artifact?.protocolManifest?.system_prompt_hash !== evaluationDetail.systemPromptHash) notes.push('System prompt không trùng Base–FT');
     if (artifact?.runValidity !== 'valid') notes.push('Run chưa hợp lệ hoàn toàn');
     return {
+      comparisonRole,
       model: String(artifact?.requestedModel || 'Large LLM'),
       judgeModel: String(artifact?.judgeModel || '—'),
       total: Number(artifact?.totalConversations || results.length),
@@ -1045,21 +1148,83 @@ export default function ModelEvalView() {
     };
   };
 
+  const normalizeVersion1SharedResult = (artifact: any): LargeLlmReference => {
+    const results = Array.isArray(artifact?.perConvResults) ? artifact.perConvResults : [];
+    const median = (values: number[]) => {
+      if (!values.length) return null;
+      const sorted = [...values].sort((a, b) => a - b);
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+    };
+    const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+    const e2e = results
+      .map((row: any) => numeric(row.telemetry?.e2e_ms ?? row.avg_latency_ms))
+      .filter((value: number | null): value is number => value !== null);
+    const throughput = results
+      .map((row: any) => numeric(row.telemetry?.tokens_per_second))
+      .filter((value: number | null): value is number => value !== null);
+    const inputTokens = results
+      .map((row: any) => numeric(row.telemetry?.input_tokens ?? row.input_tokens))
+      .filter((value: number | null): value is number => value !== null);
+    const outputTokens = results
+      .map((row: any) => numeric(row.telemetry?.output_tokens ?? row.output_tokens))
+      .filter((value: number | null): value is number => value !== null);
+    const scored = results.filter((row: any) => row.criteria_scores?.A1 !== undefined);
+    const notes: string[] = [];
+    if (Number(artifact?.protocolManifest?.max_new_tokens) !== 512) notes.push('Giới hạn đầu ra khác 512 token');
+    if (evaluationDetail?.systemPromptHash && artifact?.protocolManifest?.system_prompt_hash !== evaluationDetail.systemPromptHash) {
+      notes.push('System prompt không trùng specialist');
+    }
+    const currentDatasetHash = evaluationDetail?.datasetValidation?.dataset_hash
+      ?? evaluationDetail?.protocolManifest?.dataset_hash;
+    const referenceDatasetHash = artifact?.datasetValidation?.dataset_hash
+      ?? artifact?.protocolManifest?.dataset_hash;
+    if (currentDatasetHash && referenceDatasetHash !== currentDatasetHash) notes.push('Locked-test hash không trùng specialist');
+    const summary = artifact?.summary || {};
+    const outputLimitRate = numeric(summary?.operational?.output_limit_rate ?? summary?.output_limit_rate);
+    return {
+      comparisonRole: 'version1_shared_ft',
+      model: String(artifact?.requestedModel || artifact?.ftModelRepo || 'Version 1 shared FT'),
+      judgeModel: String(artifact?.judgeModel || '—'),
+      total: Number(artifact?.totalConversations || results.length),
+      valid: Number(artifact?.validConversations || scored.length),
+      knowledge: numeric(summary?.knowledge ?? summary?.criteria?.B1),
+      socratic: numeric(summary?.socratic ?? summary?.group_a),
+      a1ViolationRate: scored.length ? scored.filter((row: any) => Number(row.criteria_scores.A1) <= 1).length / scored.length : null,
+      e2eMedianMs: median(e2e),
+      throughputMean: mean(throughput),
+      outputLimitRate,
+      costPer100Usd: 0,
+      outputTokensMean: mean(outputTokens),
+      totalInputTokens: inputTokens.reduce((sum, value) => sum + value, 0),
+      totalOutputTokens: outputTokens.reduce((sum, value) => sum + value, 0),
+      totalTokens: inputTokens.reduce((sum, value) => sum + value, 0) + outputTokens.reduce((sum, value) => sum + value, 0),
+      runValidity: String(artifact?.status || 'unknown').toLowerCase(),
+      protocolMatch: notes.length === 0,
+      protocolNotes: notes,
+    };
+  };
+
   const saveLargeLlmReference = (reference: LargeLlmReference) => {
     if (!selectedEvalId) return;
     setLargeLlmReferences(previous => {
-      const next = [...previous.filter(item => item.model !== reference.model), reference].slice(-2);
+      const next = [...previous.filter(item => item.comparisonRole !== reference.comparisonRole), reference];
       localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(next));
       return next;
     });
   };
 
-  const pollLargeLlmReference = async (referenceJobId: string, model: string) => {
+  const pollLargeLlmReference = async (
+    referenceJobId: string,
+    model: string,
+    comparisonRole: LargeLlmReference['comparisonRole'],
+  ) => {
     try {
       const status = await apiService.getLargeLlmReferenceStatus(referenceJobId);
       setLargeLlmRuns(previous => ({ ...previous, [model]: status }));
       if (status.status === 'COMPLETED' && status.result) {
-        saveLargeLlmReference(normalizeServerLargeLlmResult(status.result));
+        saveLargeLlmReference(normalizeServerLargeLlmResult(status.result, comparisonRole));
         toast.success(`Đã so sánh xong ${model}`);
         return;
       }
@@ -1067,9 +1232,28 @@ export default function ModelEvalView() {
         toast.error(`${model}: ${status.error || 'Chạy thất bại'}`);
         return;
       }
-      window.setTimeout(() => pollLargeLlmReference(referenceJobId, model), 2500);
+      window.setTimeout(() => pollLargeLlmReference(referenceJobId, model, comparisonRole), 2500);
     } catch (error: any) {
       toast.error(`${model}: không đọc được tiến trình`);
+    }
+  };
+
+  const pollVersion1SharedReference = async (referenceJobId: string, runKey: string) => {
+    try {
+      const status = await apiService.getVersion1SharedReferenceStatus(referenceJobId);
+      setLargeLlmRuns(previous => ({ ...previous, [runKey]: status }));
+      if (status.status === 'COMPLETED' && status.result) {
+        saveLargeLlmReference(normalizeVersion1SharedResult(status.result));
+        toast.success('Đã so sánh xong Version 1 fine-tune chung ba môn');
+        return;
+      }
+      if (status.status === 'FAILED') {
+        toast.error(`Version 1: ${status.error || 'Chạy thất bại'}`);
+        return;
+      }
+      window.setTimeout(() => pollVersion1SharedReference(referenceJobId, runKey), 2500);
+    } catch {
+      toast.error('Version 1: không đọc được tiến trình');
     }
   };
 
@@ -1080,33 +1264,73 @@ export default function ModelEvalView() {
       .catch(() => toast.error('Không tải được danh sách model từ OpenRouter'));
   }, [detailTab, largeLlmCatalog.length]);
 
+  useEffect(() => {
+    if (detailTab !== 'large-llm' || completedJobs.length) return;
+    api.get('/train/history')
+      .then((response) => {
+        const jobs = Array.isArray(response.data) ? response.data : [];
+        setCompletedJobs(jobs.filter((job: any) =>
+          ['COMPLETED', 'EVALUATING'].includes(job.status)
+          && Boolean(job.hfRepoId)
+          && !String(job.jobId || '').startsWith('job-mock-'),
+        ));
+      })
+      .catch(() => toast.error('Không tải được danh sách training job để chọn Version 1'));
+  }, [detailTab, completedJobs.length]);
+
   const handleRunLargeLlmFromUi = async () => {
-    const models = [...new Set(selectedLargeLlmModels.filter(Boolean))].slice(0, 2);
     if (!selectedEvalId || !largeLlmTestFile) {
       toast.error('Hãy chọn lại file locked-test ZIP/JSON đã dùng cho Base–FT.');
       return;
     }
-    if (!models.length) {
-      toast.error('Hãy chọn ít nhất một LLM lớn.');
+    if (!selectedLargeLlmModel && !selectedVersion1JobId) {
+      toast.error('Hãy chọn LLM lớn hoặc training job Version 1 fine-tune chung ba môn.');
       return;
     }
     const catalogIds = new Set(largeLlmCatalog.map(item => item.id));
-    if (models.some(model => !catalogIds.has(model))) {
+    if (selectedLargeLlmModel && !catalogIds.has(selectedLargeLlmModel)) {
       toast.error('Model đã chọn không còn hợp lệ. Hãy bỏ lựa chọn cũ và nhấn vào một thẻ model trong danh sách.');
+      return;
+    }
+    const selectedVersion1Job = version1CandidateJobs.find(job => job.jobId === selectedVersion1JobId);
+    if (selectedVersion1JobId && !selectedVersion1Job) {
+      toast.error('Training job Version 1 không còn hợp lệ hoặc chính là specialist đang xem.');
       return;
     }
     setStartingLargeLlmRun(true);
     try {
-      for (const model of models) {
-        const started = await apiService.runLargeLlmReference(selectedEvalId, model, largeLlmTestFile);
+      if (selectedLargeLlmModel) {
+        const started = await apiService.runLargeLlmReference(selectedEvalId, selectedLargeLlmModel, largeLlmTestFile);
         setLargeLlmRuns(previous => ({
           ...previous,
-          [model]: { status: started.status || 'PENDING', progress: 0, detail: 'Đã đưa vào hàng đợi' },
+          [selectedLargeLlmModel]: {
+            status: started.status || 'PENDING',
+            progress: 0,
+            detail: 'Đã đưa LLM lớn vào hàng đợi',
+          },
         }));
-        void pollLargeLlmReference(started.referenceJobId, model);
+        void pollLargeLlmReference(started.referenceJobId, selectedLargeLlmModel, 'large_llm');
+      }
+      if (selectedVersion1Job) {
+        const runKey = `Version 1 · ${selectedVersion1Job.projectName}`;
+        const started = await apiService.runVersion1SharedReference(selectedEvalId, selectedVersion1Job.jobId, largeLlmTestFile);
+        setLargeLlmRuns(previous => ({
+          ...previous,
+          [runKey]: {
+            status: started.status || 'PENDING',
+            progress: 0,
+            detail: 'Đã đưa V1 shared fine-tuned vào hàng đợi',
+          },
+        }));
+        void pollVersion1SharedReference(started.referenceJobId, runKey);
       }
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Không thể bắt đầu so sánh LLM lớn');
+      const existingReferenceId = error.response?.data?.referenceJobId;
+      if (existingReferenceId && selectedVersion1Job) {
+        void pollVersion1SharedReference(existingReferenceId, `Version 1 · ${selectedVersion1Job.projectName}`);
+      } else {
+        toast.error(error.response?.data?.error || 'Không thể bắt đầu đối chứng mở rộng');
+      }
     } finally {
       setStartingLargeLlmRun(false);
     }
@@ -1231,6 +1455,11 @@ export default function ModelEvalView() {
       },
     ];
   }, [evaluationDetail, evalOverview]);
+
+  const extendedReferenceColumns = React.useMemo(() => [
+    largeLlmReferences.find(item => item.comparisonRole === 'large_llm') || null,
+    largeLlmReferences.find(item => item.comparisonRole === 'version1_shared_ft') || null,
+  ], [largeLlmReferences]);
 
   const activeStageKey = (() => {
     const raw = `${activeEvalStage} ${activeEvalDetail}`.toLowerCase();
@@ -1484,8 +1713,8 @@ export default function ModelEvalView() {
                 <strong>Đọc điểm:</strong>
                 <span><b>K</b> = chính xác kiến thức</span>
                 <span><b>S</b> = hành vi Socratic (A1–A3)</span>
-                <span><b>C</b> = chỉ số phụ về xử lý, mạch lạc, tông giọng</span>
-                <span>Không xếp hạng bằng Legacy Overall</span>
+                <span><b>A1–D1</b> = hồ sơ chất lượng đầy đủ</span>
+                <span><b>D2</b> và latency = vận hành, báo cáo riêng</span>
               </div>
               <table className="eval-table">
                 <thead>
@@ -1497,7 +1726,7 @@ export default function ModelEvalView() {
                     <th>Mô hình gốc (Base)</th>
                     <th className="text-center" title="B1: độ chính xác kiến thức, thang 0–5">Đúng kiến thức (K)</th>
                     <th className="text-center" title="Trung bình A1, A2, A3; thang 0–5">Gợi mở Socratic (S)</th>
-                    <th className="text-center" title="Chỉ số phụ C1, C2, C3; không phải khả năng gợi mở Socratic">Sư phạm phụ (C*)</th>
+                    <th className="text-center" title="Mở chi tiết để xem Base, Fine-tuned, delta và CI cho A1–D2">A1–D2</th>
                     <th className="text-center">Trễ trung bình</th>
                     <th>Judge Model</th>
                     <th>Thời điểm</th>
@@ -1555,7 +1784,7 @@ export default function ModelEvalView() {
                         <td className="text-muted text-sm">{row.baseModel}</td>
                         <td className="text-center font-bold text-primary">{row.scores.knowledge?.toFixed(2) ?? '—'}</td>
                         <td className="text-center font-bold text-main">{row.scores.socratic?.toFixed(2) ?? '—'}</td>
-                        <td className="text-center font-medium" title="Diagnostic only: 0.4×C1 + 0.4×C2 + 0.2×C3">{row.scores.group_c?.toFixed(2) ?? '—'}</td>
+                        <td className="text-center font-medium" title="Không gộp bằng trọng số; xem từng tiêu chí trong chi tiết">Xem chi tiết</td>
                         <td className="text-center font-medium text-muted">
                           {row.scores.avg_latency_ms ? `${(row.scores.avg_latency_ms / 1000).toFixed(1)}s` : '-'}
                         </td>
@@ -1665,7 +1894,7 @@ export default function ModelEvalView() {
                     <span className="score-big" title="Độ chính xác kiến thức">Kiến thức: {detailsStats?.knowledge?.toFixed(2)}</span>
                     <span className="score-limit" title="Khả năng giữ đáp án, gợi mở và thích ứng">Gợi mở: {detailsStats?.socratic?.toFixed(2)} / 5</span>
                   </div>
-                  <small>Legacy Overall (exploratory): {detailsStats?.exploratoryOverall?.toFixed(2)}</small>
+                  <small>Xem bảng A1–D2 để đọc đầy đủ các mặt chất lượng và vận hành.</small>
                 </div>
               </div>
 
@@ -1702,7 +1931,7 @@ export default function ModelEvalView() {
                               {isCurrent && <span className="current-badge">Đang xem</span>}
                             </div>
                             <div className="history-chip-meta">
-                              <span>Kiến thức {ev.summary?.knowledge?.toFixed?.(2) ?? '-'} · Gợi mở {ev.summary?.socratic?.toFixed?.(2) ?? '-'} · Legacy {ev.summary?.exploratory_overall?.toFixed?.(2) ?? ev.summary?.overall?.toFixed?.(2) ?? '-'} / 5</span>
+                              <span>Kiến thức {ev.summary?.knowledge?.toFixed?.(2) ?? '-'} · Gợi mở {ev.summary?.socratic?.toFixed?.(2) ?? '-'} · A1–D2 có trong chi tiết</span>
                               <span>{ev.totalConversations ?? 0} convs</span>
                               <span>{ev.datasetVersionName || 'dataset file'}</span>
                               <span>{ev.completedAt ? new Date(ev.completedAt).toLocaleDateString('vi-VN') : '-'}</span>
@@ -1747,7 +1976,7 @@ export default function ModelEvalView() {
                     <div>
                       <span className="research-eyebrow">KẾT QUẢ CHÍNH · PAIRED BASE–FT</span>
                       <h3>Fine-tuning đã thay đổi điều gì?</h3>
-                      <p>Hai kết quả dùng để kết luận là độ chính xác kiến thức và khả năng gợi mở Socratic. Các nhóm A–D cũ nằm ở phần tham khảo.</p>
+                      <p>K và S là kết quả chính; A1–D1 là kết quả phụ bắt buộc và D2/latency là kết quả vận hành. Tất cả đều được so sánh theo cặp Base–Fine-tuned.</p>
                     </div>
                     <span className={`research-validity-badge ${evaluationDetail.confirmatoryEligible ? 'valid' : 'invalid'}`}>
                       {evaluationDetail.confirmatoryEligible ? 'Đủ điều kiện phân tích' : 'Không đủ điều kiện'}
@@ -1797,8 +2026,8 @@ export default function ModelEvalView() {
                   <div className="score-definition-grid" aria-label="Chú giải các loại điểm">
                     <div><b>Độ chính xác kiến thức (K)</b><span>Bằng tiêu chí B1: câu trả lời đúng kiến thức đến đâu.</span></div>
                     <div><b>Khả năng gợi mở Socratic (S)</b><span>Trung bình A1–A3: có giữ đáp án, gợi mở và thích ứng hay không.</span></div>
-                    <div><b>Pedagogy C*</b><span>Chỉ số phụ về xử lý tình huống, mạch lạc và tông giọng. C=5 không có nghĩa S=5.</span></div>
-                    <div><b>Legacy Overall</b><span>Công thức dashboard cũ. Không phải outcome chính và không dùng kết luận model thắng.</span></div>
+                    <div><b>Kết quả phụ A1–D1</b><span>Báo cáo từng tiêu chí, Δ, CI95, effect size và Holm-adjusted p; không gộp bằng trọng số tùy ý.</span></div>
+                    <div><b>Kết quả vận hành</b><span>D2, TTFT, E2E, TPOT, throughput và failure rate được báo cáo riêng, không trộn với chất lượng nội dung.</span></div>
                   </div>
 
                   <div className="research-chart-grid">
@@ -1841,6 +2070,83 @@ export default function ModelEvalView() {
                     </div>
                   </div>
 
+                  <div className="comparison-table-wrapper">
+                    <div className="comparison-overall-intro">
+                      <div>
+                        <h4>So sánh đầy đủ Base–Fine-tuned theo A1–D2</h4>
+                        <p>K/S là kết quả chính đã đăng ký trước; mọi tiêu chí còn lại vẫn được báo cáo như kết quả phụ. Không sử dụng trọng số 0.5/0.3/0.2 và không tạo Legacy Overall cho run mới.</p>
+                      </div>
+                    </div>
+                    <table className="comparison-table">
+                      <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th><th className="text-right">Effect size dz</th><th className="text-right">Holm p</th></tr></thead>
+                      <tbody>{fullCriteriaResearchRows.map(row => (
+                        <tr key={row.key}>
+                          <td><b>{row.key}</b> · {row.label}{row.key === 'D2' && <small> · chỉ số vận hành, xem thêm latency thô</small>}</td>
+                          <td className="text-center">{Number.isFinite(row.base) ? row.base.toFixed(2) : '—'}</td>
+                          <td className="text-center font-semibold">{Number.isFinite(row.ft) ? row.ft.toFixed(2) : '—'}</td>
+                          <td className={`text-right font-bold ${row.delta >= 0 ? 'text-success' : 'text-danger'}`}>{Number.isFinite(row.delta) ? `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}` : '—'}</td>
+                          <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
+                          <td className="text-right">{row.effectSize === null ? '—' : row.effectSize.toFixed(3)}</td>
+                          <td className="text-right">{row.key === 'D2' ? 'Tách riêng' : row.pAdjusted === null ? '—' : row.pAdjusted < 0.001 ? '<0.001' : row.pAdjusted.toFixed(3)}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+
+                  <div className="comparison-table-wrapper">
+                    <div className="comparison-overall-intro">
+                      <div>
+                        <h4>Adaptive Socratic Diagnostic · P1/O1/E1</h4>
+                        <p>
+                          Vẫn là năng lực Socratic, nhưng dùng protocol chẩn đoán riêng. P1 đo nhận diện
+                          trạng thái hiểu bài; O1 đo thay đổi chiến lược trên một cặp học sinh đối chứng;
+                          E1 đo mức khơi gợi giải thích, kiểm chứng và phản biện. Điểm Adaptive tổng
+                          AS = (P1 + O1 + E1) / 3; không dùng trọng số ẩn.
+                        </p>
+                      </div>
+                      <span className={`research-validity-badge ${evaluationDetail.adaptiveDiagnostic?.status === 'completed' ? 'valid' : 'invalid'}`}>
+                        {evaluationDetail.adaptiveDiagnostic?.status === 'completed'
+                          ? `${evaluationDetail.adaptiveDiagnostic?.summary?.pair_count || 0} cặp đã chấm`
+                          : evaluationDetail.adaptiveDiagnostic?.status === 'invalid'
+                            ? 'Metadata chưa hợp lệ'
+                            : evaluationDetail.adaptiveDiagnostic?.status === 'failed'
+                              ? 'Diagnostic bị lỗi'
+                              : 'Dataset chưa khai báo'}
+                      </span>
+                    </div>
+
+                    {adaptiveDiagnosticRows.length > 0 ? (
+                      <table className="comparison-table">
+                        <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th><th className="text-right">Effect size dz</th><th className="text-right">Holm p</th></tr></thead>
+                        <tbody>{adaptiveDiagnosticRows.map(row => (
+                          <tr key={row.key}>
+                            <td><b>{row.key}</b> · {row.label}</td>
+                            <td className="text-center">{Number.isFinite(row.base) ? row.base.toFixed(2) : '—'}</td>
+                            <td className="text-center font-semibold">{Number.isFinite(row.ft) ? row.ft.toFixed(2) : '—'}</td>
+                            <td className={`text-right font-bold ${(row.delta ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                              {row.delta === null ? '—' : `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}`}
+                            </td>
+                            <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
+                            <td className="text-right">{row.effectSize === null ? '—' : row.effectSize.toFixed(3)}</td>
+                            <td className="text-right">{row.key === 'AS' ? 'Điểm tổng' : row.pAdjusted === null ? '—' : row.pAdjusted < 0.001 ? '<0.001' : row.pAdjusted.toFixed(3)}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    ) : (
+                      <div className="research-reading-note">
+                        <BrainCircuit size={18} />
+                        <div>
+                          <strong>Chưa có điểm P1/O1/E1.</strong>{' '}
+                          {evaluationDetail.adaptiveDiagnostic?.status === 'invalid'
+                            ? (evaluationDetail.adaptiveDiagnostic?.dataset_validation?.errors || []).join(' · ')
+                            : evaluationDetail.adaptiveDiagnostic?.status === 'failed'
+                              ? evaluationDetail.adaptiveDiagnostic?.error || 'AI Judge không hoàn tất diagnostic.'
+                              : 'Run này dùng dataset A1–D2 thông thường. Muốn đo cá nhân hóa phải thêm các cặp contrastive_pair_id cùng nhãn learner_state, misconception_key và expected_strategy.'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="research-diagnostic-grid">
                     <div className="research-diagnostic-card danger">
                       <span>A1 hard-constraint violation</span>
@@ -1861,7 +2167,7 @@ export default function ModelEvalView() {
 
                   <div className="research-reading-note">
                     <ShieldCheck size={18} />
-                    <div><strong>Cách đọc:</strong> Kiến thức chỉ được coi là tăng khi khoảng tin cậy không chứa 0. Khả năng gợi mở là trung bình A1–A3. Legacy Overall không quyết định mô hình thắng.</div>
+                    <div><strong>Cách đọc:</strong> Chỉ coi một tiêu chí tăng rõ khi CI95 của Δ không chứa 0. K/S trả lời giả thuyết chính; bảng A1–D2 cho biết model cải thiện hoặc suy giảm ở đâu.</div>
                   </div>
                 </section>
               )}
@@ -1886,7 +2192,7 @@ export default function ModelEvalView() {
                   className={`detail-tab-btn ${detailTab === 'large-llm' ? 'active' : ''}`}
                   onClick={() => setDetailTab('large-llm')}
                 >
-                  So sánh với LLM lớn
+                  Đối chứng mở rộng
                 </button>
                 <button 
                   className={`detail-tab-btn ${detailTab === 'samples' ? 'active' : ''}`}
@@ -1903,14 +2209,14 @@ export default function ModelEvalView() {
                 <div className="tab-content-breakdown">
                   <div className="legacy-metrics-note">
                     <AlertCircle size={18} />
-                    <div><strong>Chỉ số tham khảo, không dùng chọn mô hình thắng.</strong> Group A–D và Legacy Overall thuộc công thức dashboard cũ; “Độ chính xác kiến thức” và “Khả năng gợi mở Socratic” ở bảng trên mới là kết quả nghiên cứu chính.</div>
+                    <div><strong>Rubric đa chiều.</strong> Mỗi tiêu chí được báo cáo độc lập để tránh phải bảo vệ trọng số chủ quan và tránh việc điểm cao ở một mặt che lấp điểm thấp ở mặt khác.</div>
                   </div>
                   <div className="rubric-groups-grid">
                     {/* Group A */}
                     <div className="rubric-group-card card">
                       <div className="group-card-header bg-emerald">
-                        <h4>LEGACY A: SOCRATIC WEIGHTED & CAPPED</h4>
-                        <span className="group-score-badge">{evaluationDetail.summary?.group_a?.toFixed(2)} / 5</span>
+                        <h4>A: HÀNH VI SOCRATIC</h4>
+                        <span className="group-score-badge">Báo cáo A1–A3 riêng</span>
                       </div>
                       <div className="group-card-body">
                         <div className="criteria-item-row">
@@ -1943,8 +2249,8 @@ export default function ModelEvalView() {
                     {/* Group B */}
                     <div className="rubric-group-card card">
                       <div className="group-card-header bg-blue">
-                        <h4>LEGACY B: ĐỘ CHÍNH XÁC CÓ TRỌNG SỐ</h4>
-                        <span className="group-score-badge">{evaluationDetail.summary?.group_b?.toFixed(2)} / 5</span>
+                        <h4>B: KIẾN THỨC VÀ PHÙ HỢP TRÌNH ĐỘ</h4>
+                        <span className="group-score-badge">Báo cáo B1–B2 riêng</span>
                       </div>
                       <div className="group-card-body">
                         <div className="criteria-item-row">
@@ -1969,8 +2275,8 @@ export default function ModelEvalView() {
                     {/* Group C */}
                     <div className="rubric-group-card card">
                       <div className="group-card-header bg-purple">
-                        <h4>LEGACY C: CHẤT LƯỢNG SƯ PHẠM</h4>
-                        <span className="group-score-badge">{evaluationDetail.summary?.group_c?.toFixed(2)} / 5</span>
+                        <h4>C: CHẤT LƯỢNG HỘI THOẠI</h4>
+                        <span className="group-score-badge">Báo cáo C1–C3 riêng</span>
                       </div>
                       <div className="group-card-body">
                         <div className="criteria-item-row">
@@ -2003,8 +2309,8 @@ export default function ModelEvalView() {
                     {/* Group D */}
                     <div className="rubric-group-card card">
                       <div className="group-card-header bg-amber">
-                        <h4>LEGACY D: FACTUALITY + LATENCY</h4>
-                        <span className="group-score-badge">{evaluationDetail.summary?.group_d?.toFixed(2)} / 5</span>
+                        <h4>D: AN TOÀN NỘI DUNG VÀ VẬN HÀNH</h4>
+                        <span className="group-score-badge">Không gộp D1 với D2</span>
                       </div>
                       <div className="group-card-body">
                         <div className="criteria-item-row">
@@ -2097,43 +2403,47 @@ export default function ModelEvalView() {
                   <div className="contextual-reference-banner">
                     <ShieldCheck size={20} />
                     <div>
-                      <strong>So sánh bối cảnh — không phải đối chứng nhân quả</strong>
-                      <p>LLM lớn giúp đặt kết quả của mô hình local vào mặt bằng chung. Không dùng chênh lệch này để kết luận fine-tuning có hiệu quả; kết luận đó chỉ đến từ cặp Base–FT phía trên.</p>
+                      <strong>Đối chứng mở rộng trên cùng locked dataset</strong>
+                      <p>So sánh specialist fine-tuned với một LLM lớn và mô hình Version 1 đã fine-tune chung dữ liệu ba môn. Cả ba dùng đúng tập test, system prompt, giới hạn đầu ra và Gemini Judge của lần đánh giá đang xem.</p>
                     </div>
                   </div>
 
                   <div className="large-llm-run-card card">
                     <div className="large-llm-run-heading">
                       <div>
-                        <strong>So sánh với LLM lớn</strong>
-                        <p>Chọn model và tập test đã dùng cho Base–Fine-tuned. Hệ thống tự chạy, chấm và điền kết quả vào bảng.</p>
+                        <strong>Specialist FT vs LLM lớn vs Version 1 shared FT</strong>
+                        <p>Chọn LLM lớn tham chiếu và đúng training job của Version 1. Backend khóa hash dữ liệu và prompt trước khi chạy.</p>
                       </div>
                       <span>Không cần dùng dòng lệnh</span>
                     </div>
 
                     <div className="large-llm-picker">
                       <div className="large-llm-picker-title">
-                        <div className="step-title-icon"><Search size={17} /><div><b>1. Chọn tối đa hai mô hình</b><small>Nhấn trực tiếp vào thẻ. Không cần biết model ID.</small></div></div>
-                        <span>{selectedLargeLlmModels.filter(Boolean).length}/2 đã chọn</span>
+                        <div className="step-title-icon"><Search size={17} /><div><b>1. Chọn LLM lớn tham chiếu</b><small>Khuyến nghị qwen/qwen-2.5-72b-instruct để giữ đối chứng đã khóa trong RP4.</small></div></div>
+                        <span>{selectedLargeLlmModel ? 'Đã chọn' : 'Không bắt buộc'}</span>
                       </div>
-                      <input className="large-llm-search" value={largeLlmSearch} onChange={(event) => setLargeLlmSearch(event.target.value)} placeholder="Tìm theo tên, ví dụ: GPT, Gemini, Claude..." />
+                      <input className="large-llm-search" value={largeLlmSearch} onChange={(event) => setLargeLlmSearch(event.target.value)} placeholder="Tìm theo tên, ví dụ: Qwen, GPT, Gemini, Claude..." />
                       <div className="large-llm-model-grid">
                         {visibleLargeLlmModels.map(model => {
-                          const selected = selectedLargeLlmModels.includes(model.id);
+                          const selectedAsLarge = selectedLargeLlmModel === model.id;
                           return (
-                            <button
-                              type="button"
+                            <article
                               key={model.id}
-                              className={`large-llm-model-card ${selected ? 'selected' : ''}`}
-                              onClick={() => setSelectedLargeLlmModels(previous => selected
-                                ? previous.filter(id => id !== model.id)
-                                : previous.filter(Boolean).length < 2 ? [...previous.filter(Boolean), model.id] : previous)}
+                              className={`large-llm-model-card ${selectedAsLarge ? 'selected' : ''}`}
                             >
                               <span className="model-provider">{String(model.id).split('/')[0]}</span>
                               <strong>{model.name}</strong>
                               <small>{Number(model.contextLength || 0).toLocaleString()} token context</small>
-                              <i>{selected ? <><CheckCircle2 size={12} /> Đã chọn</> : 'Chọn model'}</i>
-                            </button>
+                              <div className="model-role-actions">
+                                <button
+                                  type="button"
+                                  className={selectedAsLarge ? 'active large' : ''}
+                                  onClick={() => setSelectedLargeLlmModel(selectedAsLarge ? '' : model.id)}
+                                >
+                                  {selectedAsLarge && <CheckCircle2 size={11} />} Chọn làm LLM lớn
+                                </button>
+                              </div>
+                            </article>
                           );
                         })}
                         {!largeLlmCatalog.length && <div className="large-llm-catalog-empty"><RefreshCw size={17} className="animate-spin" /> Đang tải danh sách model...</div>}
@@ -2142,16 +2452,35 @@ export default function ModelEvalView() {
                     </div>
 
                     <div className="large-llm-dataset-step">
-                      <div className="step-title-icon"><Database size={17} /><div><b>2. Xác nhận tập test</b><small>Phải là đúng file đã dùng khi so sánh Base và Fine-tuned.</small></div></div>
+                      <div className="step-title-icon"><Layers3 size={17} /><div><b>2. Chọn Version 1 shared fine-tuned</b><small>Đây phải là model đã fine-tune chung dữ liệu Tiếng Anh, Toán và Lịch sử của hệ thống V1—not base gốc.</small></div></div>
+                      <select
+                        className="large-llm-search"
+                        value={selectedVersion1JobId}
+                        onChange={(event) => setSelectedVersion1JobId(event.target.value)}
+                      >
+                        <option value="">Không chạy Version 1 trong lần này</option>
+                        {version1CandidateJobs.map(job => (
+                          <option key={job.jobId} value={job.jobId}>
+                            {job.projectName} · {job.hfRepoId}
+                          </option>
+                        ))}
+                      </select>
+                      {!version1CandidateJobs.length && (
+                        <small>Chưa tìm thấy training job khác có Hugging Face repo. Hãy bảo đảm model V1 shared đã train xong và được lưu trong Training History.</small>
+                      )}
+                    </div>
+
+                    <div className="large-llm-dataset-step">
+                      <div className="step-title-icon"><Database size={17} /><div><b>3. Xác nhận tập test</b><small>Phải là đúng file đã dùng khi so sánh Base và specialist Fine-tuned.</small></div></div>
                       <label className="large-llm-test-picker">
                         <div><Upload size={15} /> {largeLlmTestFile?.name || 'Chọn file locked-test ZIP/JSON'}</div>
                         <input type="file" accept=".zip,.json,.jsonl,application/zip,application/json" onChange={(event) => setLargeLlmTestFile(event.target.files?.[0] || null)} />
                       </label>
                     </div>
 
-                    <button className="btn-run-large-llm" type="button" onClick={handleRunLargeLlmFromUi} disabled={startingLargeLlmRun || !largeLlmTestFile || !selectedLargeLlmModels.some(Boolean)}>
+                    <button className="btn-run-large-llm" type="button" onClick={handleRunLargeLlmFromUi} disabled={startingLargeLlmRun || !largeLlmTestFile || (!selectedLargeLlmModel && !selectedVersion1JobId)}>
                       {startingLargeLlmRun ? <RefreshCw size={16} className="animate-spin" /> : <Play size={16} />}
-                      {startingLargeLlmRun ? 'Đang khởi tạo...' : '3. Bắt đầu chạy và chấm điểm'}
+                      {startingLargeLlmRun ? 'Đang khởi tạo...' : '4. Bắt đầu chạy và chấm điểm'}
                     </button>
 
                     {Object.entries(largeLlmRuns).length > 0 && (
@@ -2171,7 +2500,7 @@ export default function ModelEvalView() {
                     <div className="large-llm-validity-grid">
                       {largeLlmReferences.map((item) => (
                         <div key={item.model} className={`large-llm-validity ${item.protocolMatch ? 'valid' : 'warning'}`}>
-                          <div><strong>{item.model}</strong><small>Judge: {item.judgeModel} · {item.valid}/{item.total} mẫu hợp lệ</small></div>
+                          <div><strong>{item.comparisonRole === 'version1_shared_ft' ? 'Version 1 shared FT' : 'LLM lớn'} · {item.model}</strong><small>Judge: {item.judgeModel} · {item.valid}/{item.total} mẫu hợp lệ</small></div>
                           <span>{item.protocolMatch ? 'Cùng protocol' : item.protocolNotes.join(' · ')}</span>
                         </div>
                       ))}
@@ -2183,9 +2512,10 @@ export default function ModelEvalView() {
                       <thead>
                         <tr>
                           <th>Chỉ số cùng protocol</th>
-                          <th>Base local</th>
-                          <th>Fine-tuned local</th>
-                          {[0, 1].map((index) => <th key={index}>{largeLlmReferences[index]?.model || `Large LLM ${index + 1}`}</th>)}
+                          <th>Base gốc của specialist</th>
+                          <th>Specialist fine-tuned</th>
+                          <th>{extendedReferenceColumns[0]?.model || 'LLM lớn đối chiếu'}</th>
+                          <th>{extendedReferenceColumns[1]?.model || 'Version 1 shared FT'}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2194,8 +2524,7 @@ export default function ModelEvalView() {
                             <td><strong>{row.label}</strong><small className="metric-help">{row.help}</small></td>
                             <td>{row.base}</td>
                             <td><strong>{row.ft}</strong></td>
-                            {[0, 1].map((index) => {
-                              const reference = largeLlmReferences[index];
+                            {extendedReferenceColumns.map((reference, index) => {
                               return reference
                                 ? <td key={index}>{row.ref(reference)}</td>
                                 : <td key={index} className="empty-reference-cell">Chưa chạy</td>;
@@ -2231,7 +2560,7 @@ export default function ModelEvalView() {
                       </span>
                       <span>{evaluationDetail.humanAudit?.pending_items ?? evaluationDetail.results?.length ?? 0} đang chờ</span>
                       <button type="button" className="btn-primary" onClick={() => openHumanAuditTab()}>
-                        <ClipboardCheck size={16} /> Mở Human Audit Replay
+                        <ClipboardCheck size={16} /> Giao Staff & quản lý Human Audit
                       </button>
                     </div>
                   </div>
@@ -2256,7 +2585,7 @@ export default function ModelEvalView() {
                             <tr 
                               key={row.conv_index || idx} 
                               className={`sample-row-item ${isReviewed ? 'reviewed' : ''}`}
-                              onClick={() => openHumanAuditTab(row.conv_index)}
+                              onClick={() => openAiJudgeDetail(row.conv_index)}
                             >
                               <td className="font-mono text-xs font-semibold text-primary">{row.item_id || `Conv #${row.conv_index}`}</td>
                               <td className="sample-instruction-preview">
@@ -2268,7 +2597,7 @@ export default function ModelEvalView() {
                               <td className="text-center font-bold text-main">{cappedSocraticScore(row.criteria_scores)?.toFixed(1) ?? '-'}</td>
                               <td className="text-center">{getAuditVerdictBadge(row.human_review)}</td>
                               <td className="text-right text-primary font-semibold text-xs">
-                                Mở Human Audit &rarr;
+                                Xem AI Judge &rarr;
                               </td>
                             </tr>
                           );
@@ -2356,60 +2685,18 @@ export default function ModelEvalView() {
                       </td>
                       <td className="text-center">{compareData.scoreSummary?.socratic?.winner || '—'}</td>
                     </tr>
-                    {/* Historical composite: display only, never select a winner. */}
-                    <tr className="overall-comp-row">
-                      <td>Legacy Overall <small>(tham khảo; không phải điểm tổng kết)</small></td>
-                      <td className="text-center font-bold">{compareData.scoreSummary?.overall?.a?.toFixed(3) ?? '—'}</td>
-                      <td className="text-center font-bold text-primary">{compareData.scoreSummary?.overall?.b?.toFixed(3) ?? '—'}</td>
-                      <td className={`text-right font-bold ${compareData.scoreSummary?.overall?.b - compareData.scoreSummary?.overall?.a >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {(compareData.scoreSummary?.overall?.b - compareData.scoreSummary?.overall?.a) >= 0 ? '+' : ''}{(compareData.scoreSummary?.overall?.b - compareData.scoreSummary?.overall?.a)?.toFixed(3)}
-                      </td>
-                      <td className="text-center">
-                        <span className="result-chip neutral">Không dùng chọn model</span>
-                      </td>
-                    </tr>
-                    {/* Group A */}
-                    <tr>
-                      <td className="pl-4">Nhóm A: Socratic Compliance</td>
-                      <td className="text-center">{compareData.scoreSummary?.group_a?.a?.toFixed(2)}</td>
-                      <td className="text-center font-semibold">{compareData.scoreSummary?.group_a?.b?.toFixed(2)}</td>
-                      <td className={`text-right ${compareData.scoreSummary?.group_a?.b - compareData.scoreSummary?.group_a?.a >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {(compareData.scoreSummary?.group_a?.b - compareData.scoreSummary?.group_a?.a) >= 0 ? '+' : ''}{(compareData.scoreSummary?.group_a?.b - compareData.scoreSummary?.group_a?.a)?.toFixed(2)}
-                      </td>
-                      <td className="text-center">
-                        <span className={`badge-comparison ${compareData.scoreSummary?.group_a?.winner === 'b' ? 'win' : compareData.scoreSummary?.group_a?.winner === 'a' ? 'lose' : 'tie'}`}>
-                          {compareData.scoreSummary?.group_a?.winner === 'b' ? 'Run B' : compareData.scoreSummary?.group_a?.winner === 'a' ? 'Run A' : 'Hòa'}
-                        </span>
-                      </td>
-                    </tr>
-                    {/* Group B */}
-                    <tr>
-                      <td className="pl-4">Nhóm B: Độ chính xác</td>
-                      <td className="text-center">{compareData.scoreSummary?.group_b?.a?.toFixed(2)}</td>
-                      <td className="text-center font-semibold">{compareData.scoreSummary?.group_b?.b?.toFixed(2)}</td>
-                      <td className={`text-right ${compareData.scoreSummary?.group_b?.b - compareData.scoreSummary?.group_b?.a >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {(compareData.scoreSummary?.group_b?.b - compareData.scoreSummary?.group_b?.a) >= 0 ? '+' : ''}{(compareData.scoreSummary?.group_b?.b - compareData.scoreSummary?.group_b?.a)?.toFixed(2)}
-                      </td>
-                      <td className="text-center">
-                        <span className={`badge-comparison ${compareData.scoreSummary?.group_b?.winner === 'b' ? 'win' : compareData.scoreSummary?.group_b?.winner === 'a' ? 'lose' : 'tie'}`}>
-                          {compareData.scoreSummary?.group_b?.winner === 'b' ? 'Run B' : compareData.scoreSummary?.group_b?.winner === 'a' ? 'Run A' : 'Hòa'}
-                        </span>
-                      </td>
-                    </tr>
-                    {/* Group C */}
-                    <tr>
-                      <td className="pl-4">Nhóm C: Chất lượng sư phạm</td>
-                      <td className="text-center">{compareData.scoreSummary?.group_c?.a?.toFixed(2)}</td>
-                      <td className="text-center font-semibold">{compareData.scoreSummary?.group_c?.b?.toFixed(2)}</td>
-                      <td className={`text-right ${compareData.scoreSummary?.group_c?.b - compareData.scoreSummary?.group_c?.a >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {(compareData.scoreSummary?.group_c?.b - compareData.scoreSummary?.group_c?.a) >= 0 ? '+' : ''}{(compareData.scoreSummary?.group_c?.b - compareData.scoreSummary?.group_c?.a)?.toFixed(2)}
-                      </td>
-                      <td className="text-center">
-                        <span className={`badge-comparison ${compareData.scoreSummary?.group_c?.winner === 'b' ? 'win' : compareData.scoreSummary?.group_c?.winner === 'a' ? 'lose' : 'tie'}`}>
-                          {compareData.scoreSummary?.group_c?.winner === 'b' ? 'Run B' : compareData.scoreSummary?.group_c?.winner === 'a' ? 'Run A' : 'Hòa'}
-                        </span>
-                      </td>
-                    </tr>
+                    {Object.entries(compareData.scoreSummary?.criteria || {}).map(([key, raw]: [string, any]) => {
+                      const a = Number(raw?.a);
+                      const b = Number(raw?.b);
+                      const delta = b - a;
+                      return <tr key={key}>
+                        <td className="pl-4">{key}{key === 'D2' ? ' · vận hành' : ''}</td>
+                        <td className="text-center">{Number.isFinite(a) ? a.toFixed(2) : '—'}</td>
+                        <td className="text-center font-semibold">{Number.isFinite(b) ? b.toFixed(2) : '—'}</td>
+                        <td className={`text-right ${delta >= 0 ? 'text-success' : 'text-danger'}`}>{Number.isFinite(delta) ? `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}` : '—'}</td>
+                        <td className="text-center"><span className={`badge-comparison ${raw?.winner === 'b' ? 'win' : raw?.winner === 'a' ? 'lose' : 'tie'}`}>{raw?.winner === 'b' ? 'Run B' : raw?.winner === 'a' ? 'Run A' : 'Hòa'}</span></td>
+                      </tr>;
+                    })}
                     {/* BLEU */}
                     <tr>
                       <td className="pl-4">Chỉ số BLEU (N-gram)</td>
@@ -2479,6 +2766,77 @@ export default function ModelEvalView() {
           )}
         </div>
       )}
+
+      {/* AI JUDGE DETAIL — stays inside Model Eval; Human Audit is a separate tab. */}
+      {selectedAiConvIndex !== null && evaluationDetail && (() => {
+        const item = evaluationDetail.results?.find((row: any) => row.conv_index === selectedAiConvIndex);
+        if (!item) return null;
+        const position = evaluationDetail.results.findIndex((row: any) => row.conv_index === selectedAiConvIndex);
+        const knowledge = Number(item.criteria_scores?.B1);
+        const socratic = cappedSocraticScore(item.criteria_scores);
+        return (
+          <div className="audit-slide-overlay ai-judge-detail-overlay" onClick={() => setSelectedAiConvIndex(null)}>
+            <section className="audit-slide-panel ai-judge-detail-panel card" onClick={(event) => event.stopPropagation()}>
+              <header className="audit-panel-header">
+                <div>
+                  <span className="ai-detail-eyebrow"><BrainCircuit size={14} /> CHI TIẾT AI JUDGE</span>
+                  <h3>{item.item_id || `Conversation #${selectedAiConvIndex}`}</h3>
+                  <p className="text-xs text-muted">Câu {position + 1}/{evaluationDetail.results.length} · Judge {item.effective_judge_model || evaluationDetail.judgeModel}</p>
+                </div>
+                <div className="audit-header-actions">
+                  <button type="button" disabled={position <= 0} onClick={() => setSelectedAiConvIndex(evaluationDetail.results[position - 1]?.conv_index)}>← Trước</button>
+                  <button type="button" disabled={position >= evaluationDetail.results.length - 1} onClick={() => setSelectedAiConvIndex(evaluationDetail.results[position + 1]?.conv_index)}>Sau →</button>
+                  <button type="button" className="btn-close-audit" onClick={() => setSelectedAiConvIndex(null)} title="Đóng"><X size={20} /></button>
+                </div>
+              </header>
+
+              <div className="audit-panel-body">
+                <div className="ai-detail-summary">
+                  <div><span>Đúng kiến thức</span><strong>{Number.isFinite(knowledge) ? knowledge.toFixed(2) : '—'} / 5</strong><small>Tiêu chí B1</small></div>
+                  <div><span>Gợi mở Socratic</span><strong>{socratic == null ? '—' : socratic.toFixed(2)} / 5</strong><small>Trung bình A1–A3, có áp dụng guardrail A1</small></div>
+                  <div><span>Độ trễ trung bình</span><strong>{(Number(item.avg_latency_ms || 0) / 1000).toFixed(2)} giây</strong><small>{item.total_tokens ?? 0} tokens</small></div>
+                </div>
+
+                <div className="chat-replay-container">
+                  <h4>Hội thoại mà AI Judge đã chấm</h4>
+                  <div className="chat-bubbles-list">
+                    {(item.replay_turns || []).map((turn: any, turnIndex: number) => (
+                      <div key={turnIndex} className="chat-turn-group">
+                        <div className="bubble student shadow-sm"><span className="bubble-role">Học sinh</span><p>{turn.user}</p></div>
+                        <div className="bubble assistant font-normal shadow-sm">
+                          <span className="bubble-role text-primary">Gia sư Fine-tuned</span><p>{turn.model}</p>
+                          <span className="bubble-latency"><Clock size={10} /> {(Number(turn.latency_ms || 0) / 1000).toFixed(2)}s · {turn.total_tokens ?? turn.output_tokens ?? 0} tokens</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <details className="audit-reference-box" open>
+                  <summary>Bằng chứng tham chiếu dùng khi kiểm tra</summary>
+                  <p><strong>Đáp án tham chiếu:</strong> {item.reference_answer || 'Không có văn bản tham chiếu.'}</p>
+                  {Array.isArray(item.gold_key_points) && item.gold_key_points.length > 0 && <ul>{item.gold_key_points.map((point: string, index: number) => <li key={index}>{point}</li>)}</ul>}
+                </details>
+
+                <div className="judge-scoring-details">
+                  <h4>Điểm và lý giải của AI Judge</h4>
+                  <div className="criteria-reasons-list ai-detail-criteria-grid">
+                    {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => {
+                      const score = Number(item.criteria_scores?.[key]);
+                      return (
+                        <article key={key} className="criteria-reason-item card">
+                          <div className="crit-reason-header"><span><span className="crit-badge">{key}</span> {title}</span><span className="crit-score-val">{Number.isFinite(score) ? score.toFixed(1) : '—'} / 5</span></div>
+                          <p className="crit-reason-text">{item.criteria_reasons?.[key] || 'AI Judge không trả về lý giải.'}</p>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
 
       {/* 4. DIALOG: RUN EVALUATION MODAL */}
       {isModalOpen && (

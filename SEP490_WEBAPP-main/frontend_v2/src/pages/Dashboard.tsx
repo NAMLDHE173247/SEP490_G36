@@ -28,6 +28,7 @@ import TrainingHistoryView from './TrainingHistoryView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
 import RouterBenchmarkView from './RouterBenchmarkView';
 import HumanAuditReplayView from './HumanAuditReplayView';
+import HumanAuditManagerView from './HumanAuditManagerView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -76,11 +77,12 @@ function Dashboard() {
     { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Human Audit', label: 'Human Audit Replay', icon: <ListChecks size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+    { key: 'Human Audit Manager', label: 'Human Audit Control', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor', 'checker'] },
     { key: 'Router Benchmark', label: 'Router Benchmark', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
     { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+    { key: 'Human Audit', label: 'Human Audit của tôi', icon: <ListChecks size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
     { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
   ];
 
@@ -193,6 +195,8 @@ function Dashboard() {
         return <ModelEvalView />;
       case 'Human Audit':
         return <HumanAuditReplayView />;
+      case 'Human Audit Manager':
+        return <HumanAuditManagerView />;
       case 'Router Benchmark':
         return <RouterBenchmarkView />;
       case 'Version Data Prep':

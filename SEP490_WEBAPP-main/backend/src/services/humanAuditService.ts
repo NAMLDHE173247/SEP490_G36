@@ -117,7 +117,7 @@ type ReviewBearingResult = {
   } | null;
 };
 
-function quadraticWeightedKappa(aiValues: number[], humanValues: number[]): number | null {
+export function quadraticWeightedKappa(aiValues: number[], humanValues: number[]): number | null {
   if (aiValues.length !== humanValues.length || aiValues.length < 2) return null;
   const categories = 6;
   const observed = Array.from({ length: categories }, () => Array(categories).fill(0));

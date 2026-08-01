@@ -16,7 +16,22 @@ Không gộp hai loại so sánh vào cùng một cột “model thắng”.
 - Chế độ `locked_single_turn`: chỉ user message duy nhất được đưa vào model; assistant reference không đi vào input.
 - P0/P1, prompt version, system-prompt hash và rendered-input hash.
 - Greedy decoding (`temperature=0`, `do_sample=false`) và `max_new_tokens` giống nhau.
-- K = B1 và S = mean(A1, A2, A3); Overall A–B–C–D cũ chỉ còn exploratory.
+- K = B1 và S = mean(A1, A2, A3). Công thức weighted Overall A–B–C–D cũ đã ngừng dùng vì các hệ số không có nguồn hoặc validation độc lập đủ để bảo vệ.
+- Diễn giải các năng lực sư phạm trong S:
+  - A1: không tiết lộ đáp án thay cho học sinh;
+  - A2: nhận ra học sinh đang hiểu/chưa hiểu hoặc mắc ngộ nhận, dẫn dắt từng bước và khơi gợi tư duy phản biện;
+  - A3: cá nhân hóa và thích nghi lượng gợi ý, độ khó, cách giải thích theo phản hồi cụ thể của học sinh.
+- Không cộng thêm bốn năng lực trên thành một công thức mới vì sẽ đếm trùng A2/A3 và phá khả năng so sánh với locked run. Khi cần phân tích sâu, báo cáo A2 và A3 riêng bên cạnh S.
+- “Học sinh không hiểu bài” không phải nhãn phán xét học sinh. Rubric chỉ chấm xem tutor có suy ra đúng trạng thái hiểu bài từ bằng chứng trong lượt trả lời và điều chỉnh bước dẫn dắt tương ứng hay không; không có bằng chứng thì tutor phải hỏi kiểm tra thay vì tự kết luận.
+- Human Audit được giao thành gói riêng theo từng project/evaluation. Một Staff đủ để tạo bản audit; tối thiểu hai Staff chỉ cần khi báo cáo inter-rater agreement (IAA), không phải điều kiện khóa. Mỗi gói phải có Checker được chỉ định và chỉ Checker đó được adjudicate conflict.
+
+### Cách viết kết quả Base–Fine-tuned trong báo cáo
+
+Không viết chung chung rằng “Fine-tuned tốt hơn Base”. Báo cáo K và S là hai outcome chính đã đăng ký trước; đồng thời trình bày A1–D1 là outcome phụ bắt buộc và D2/latency là outcome vận hành. Với từng chỉ số, ghi mean Base, mean Fine-tuned, chênh lệch paired `Delta = FT - Base`, CI95, effect size `dz` và Holm-adjusted p cho family A1–D1. Không diễn giải D2 như chất lượng sư phạm và không tạo một Overall mới sau khi nhìn kết quả.
+
+Mẫu diễn giải:
+
+> Trên cùng tập held-out và cùng cấu hình Judge, Fine-tuned đạt K = [FT_K] so với [BASE_K] của Base (Delta = [DELTA_K], CI95 [L, U]). Điểm Socratic S đạt [FT_S] so với [BASE_S] (Delta = [DELTA_S], CI95 [L, U]). Phân tích theo rubric cho thấy cải thiện rõ ở [các tiêu chí có CI95 không chứa 0], trong khi [các tiêu chí còn lại] chưa có khác biệt đủ rõ hoặc suy giảm. Các chỉ số vận hành được báo cáo riêng: E2E [FT] so với [BASE], TPOT [FT] so với [BASE], và failure rate [FT] so với [BASE]. Vì vậy, kết luận chỉ giới hạn ở các dimension có bằng chứng paired tương ứng, không dựa trên một weighted Overall.
 - TTFT, E2E, TPOT, token/s, token/phút, words/phút, input/output tokens, output-limit và peak allocated VRAM.
 - First-attempt failure không bị retry xóa khỏi log.
 - Judge request ID, requested/effective judge model và judge-prompt hash.
@@ -64,6 +79,61 @@ Kiểm tra file trước khi upload:
 ```powershell
 python scripts\validate_locked_dataset.py data\math_test.json
 ```
+
+### 3.1 Adaptive Socratic Diagnostic (tùy chọn)
+
+P1/O1/E1 vẫn đánh giá năng lực dạy học Socratic nhưng dùng protocol riêng, không
+thay thế A1–D2. Mỗi đơn vị phân tích là một cặp đối chứng gồm đúng hai item cùng
+bài học nhưng có hai trạng thái học sinh khác nhau. Metadata đặt tại
+`metadata.adaptive_socratic`:
+
+```json
+[
+  {
+    "item_id": "MATH-ADAPT-001-A",
+    "subject": "MATH",
+    "messages": [{"role": "user", "content": "Em nghĩ 1/3 lớn hơn 1/2 vì 3 lớn hơn 2."}],
+    "metadata": {"adaptive_socratic": {
+      "contrastive_pair_id": "MATH-ADAPT-001",
+      "learner_state": "misconception",
+      "misconception_key": "fraction-denominator-order",
+      "expected_strategy": "Dùng biểu diễn trực quan để kiểm tra ngộ nhận về mẫu số."
+    }}
+  },
+  {
+    "item_id": "MATH-ADAPT-001-B",
+    "subject": "MATH",
+    "messages": [{"role": "user", "content": "Em nghĩ 1/2 lớn hơn 1/3 vì chia cùng một vật thành ít phần hơn."}],
+    "metadata": {"adaptive_socratic": {
+      "contrastive_pair_id": "MATH-ADAPT-001",
+      "learner_state": "correct",
+      "misconception_key": "fraction-denominator-order",
+      "expected_strategy": "Xác nhận ngắn rồi yêu cầu áp dụng vào một cặp phân số mới."
+    }}
+  }
+]
+```
+
+`learner_state` chỉ nhận `correct`, `partial`, `misconception`, hoặc `confused`.
+Hai item trong cặp phải khác trạng thái, cùng subject và đều có
+`misconception_key`, `expected_strategy`. P1 và E1 được chấm ở từng item rồi lấy
+trung bình trong cặp; O1 chỉ chấm một lần trên cả cặp. Base–FT được bootstrap theo
+cặp và hiệu chỉnh Holm riêng cho family P1/O1/E1. Module tính một composite minh
+bạch `AS = (P1 + O1 + E1) / 3`. Đây là điểm tổng của riêng Adaptive Diagnostic,
+không phải Overall toàn model và không được trộn tự động với K, S hoặc A1–D2.
+
+Nếu dataset không khai báo metadata trên, Model Eval hiển thị “Dataset chưa khai
+báo” và không tự suy diễn điểm cá nhân hóa từ A3. Nếu đã khai báo nhưng cặp không
+hợp lệ, script validation và giao diện trả lỗi cụ thể.
+File chạy thử: `docs/examples/adaptive_socratic_example.json`.
+
+Mẫu viết báo cáo:
+
+> Adaptive Socratic Diagnostic được phân tích riêng trên [N] cặp tình huống đối
+> chứng. Fine-tuned đạt AS=[...] với P1=[...], O1=[...], E1=[...] so với Base lần lượt là
+> [...]. Chênh lệch paired, CI95, effect size và Holm-adjusted p được báo cáo cho
+> từng tiêu chí. AS là trung bình bằng nhau đã định nghĩa trước, không phải weighted
+> Overall của toàn model.
 
 ## 4. Chạy smoke test trước
 
@@ -117,7 +187,7 @@ Script tạo cả JSON và CSV cho RP5.
 
 - **H1:** supported khi lower CI95 của `Delta K_macro` > 0.
 - **H2:** supported khi lower CI95 của `Delta S_macro` > 0 và không dimension A1/A2/A3 nào có upper CI95 < 0.
-- **H3:** chỉ test khi Version 1 được khóa đủ repository/revision/tokenizer/prompt/config; nếu không ghi `not testable`.
+- **H3:** so sánh specialist FT với đúng mô hình Version 1 đã fine-tune chung dữ liệu ba môn. Với từng môn, V1 phải chạy lại trên đúng 50 held-out item, cùng system prompt, output cap và Judge của specialist. Chỉ test khi V1 được khóa đủ repository/revision/tokenizer; nếu không ghi `not testable`.
 - **H4 theo từng môn:** tất cả gate phải qua:
   - lower CI95 của Delta K, Delta S, Delta A1/A2/A3 >= -0.25/5;
   - upper CI95 của Delta violation-rate(A1<=1) <= 0.05;
@@ -164,19 +234,18 @@ Trước khi dùng external subset: deduplicate với train/validation/internal 
 - BLEU/ROUGE không đủ để kết luận chất lượng trả lời mở; chỉ giữ diagnostic.
 - Một leaderboard công khai không thay thế chạy cùng prompt và cùng subset của đề tài.
 
-## 8. Chọn LLM lớn như thế nào?
+## 8. Chọn đối chứng mở rộng như thế nào?
 
-Chọn tối đa hai model để tránh mở rộng scope:
+Panel mở rộng gồm đúng hai vai trò để tránh mở rộng scope:
 
-1. một frontier proprietary model;
-2. một strong open-weight model lớn làm cost/ownership reference.
+1. một LLM lớn chạy qua OpenRouter;
+2. mô hình Version 1 shared fine-tuned đã học chung dữ liệu Tiếng Anh, Toán và Lịch sử.
 
-Panel tối thiểu đề xuất tại ngày 28/07/2026:
+Model LLM lớn đã khóa cho các run RP5 hiện tại:
 
-- `openai/gpt-5.6-sol`: frontier proprietary reference;
-- `qwen/qwen3.6-27b`: open-weight 27B reference, Apache-2.0 theo [official model card](https://huggingface.co/Qwen/Qwen3.6-27B).
+- `qwen/qwen-2.5-72b-instruct`.
 
-Panel này tránh dùng chính `google/gemini-2.5-flash` vừa làm candidate vừa làm judge. Nếu đổi target/judge, phải khóa lại trước held-out và giữ judge độc lập với candidate khi có thể.
+Không dùng `google/gemini-2.5-flash` làm candidate vì model này đang là Judge. Nếu đổi target/judge, phải khóa lại trước held-out và giữ Judge độc lập với candidate khi có thể.
 
 Không dùng alias kiểu `auto`, `latest` hoặc free router trong locked run. Tra cứu model hiện có và canonical slug ngay trước ngày chạy:
 
@@ -188,7 +257,18 @@ Invoke-RestMethod https://openrouter.ai/api/v1/models | `
 
 Khóa canonical model ID, provider policy, output cap, seed/temperature/reasoning mode khi endpoint hỗ trợ và ngày chạy. Script tự đọc `supported_parameters`; không gửi tham số model không hỗ trợ và lưu rõ giá trị `null` thay vì giả vờ hai API có cùng cơ chế decoding. Nếu OpenRouter trả effective model khác requested model, đánh dấu run invalid hoặc exploratory. Models API và `usage` cung cấp model metadata, token count và pricing cần lưu: [OpenRouter Models API](https://openrouter.ai/docs/guides/overview/models).
 
-## 9. Chạy larger-LLM contextual reference
+## 9. Chạy LLM lớn và Version 1 shared reference
+
+Trên giao diện Model Eval, mở **Đối chứng mở rộng**:
+
+1. chọn LLM lớn nếu cần;
+2. chọn Training Job của Version 1 shared fine-tuned — không chọn base gốc và không chọn lại specialist đang xem;
+3. tải đúng locked-test ZIP/JSON đã dùng cho lần specialist Base–FT;
+4. chạy và đọc bảng năm cột: Base gốc, Specialist FT, LLM lớn, Version 1 shared FT.
+
+Backend từ chối file có hash khác. Version 1 được chạy local/GPU bằng Hugging Face repo trong Training History và dùng system prompt/Judge của evaluation specialist hiện tại. Vì vậy phải lặp quy trình này cho English, Math và History để trả lời câu hỏi “specialist có hơn V1 ở từng môn hay không”.
+
+Nếu cần chạy LLM lớn bằng script thay vì giao diện:
 
 Thiết lập key trong process hiện tại, không ghi key vào source/log:
 

@@ -138,6 +138,7 @@ export interface IEvaluation extends Document {
   environmentManifest?: Record<string, any>;
   loadMetrics?: Record<string, any>;
   researchStatistics?: Record<string, any>;
+  adaptiveDiagnostic?: Record<string, any>;
   hypothesisDecisions?: Record<string, any>;
   pairIntegrity?: Record<string, any>;
   confirmatoryEligible?: boolean;
@@ -219,6 +220,7 @@ const EvaluationSchema = new Schema<IEvaluation>(
     environmentManifest:{ type: Schema.Types.Mixed, default: null },
     loadMetrics:        { type: Schema.Types.Mixed, default: null },
     researchStatistics:{ type: Schema.Types.Mixed, default: null },
+    adaptiveDiagnostic:{ type: Schema.Types.Mixed, default: null },
     hypothesisDecisions:{ type: Schema.Types.Mixed, default: null },
     pairIntegrity:      { type: Schema.Types.Mixed, default: null },
     confirmatoryEligible:{ type: Boolean, default: false },

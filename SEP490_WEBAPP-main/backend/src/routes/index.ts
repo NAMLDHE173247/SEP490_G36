@@ -54,6 +54,8 @@ import {
   getLargeLlmReferenceModels,
   runLargeLlmReference,
   getLargeLlmReferenceStatus,
+  runVersion1SharedReference,
+  getVersion1SharedReferenceStatus,
 } from '../controllers/evalModelController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
@@ -62,6 +64,17 @@ import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKey
 import { autoLabelGroups } from '../controllers/autoLabelController';
 import { decideRoute, evaluateRouter, getRouterMetrics, runEndToEndRouterEval } from '../controllers/routerController';
 import { isManager } from '../utils/auth';
+import {
+  adjudicateHumanAudit,
+  assignHumanAudit,
+  getManagedHumanAuditDetail,
+  getMyHumanAuditWork,
+  listHumanAuditCheckers,
+  listHumanAuditStaff,
+  listManagedHumanAudits,
+  listMyHumanAuditAssignments,
+  saveMyHumanAuditReview,
+} from '../controllers/humanAuditController';
 
 
 const router = express.Router();
@@ -91,6 +104,14 @@ const requireAdjudicator: express.RequestHandler = (req, res, next) => {
 const requireAdmin: express.RequestHandler = (req, res, next) => {
   if (String((req as any).user?.role || '') !== 'admin') {
     res.status(403).json({ error: 'Admin role required.' });
+    return;
+  }
+  next();
+};
+
+const requireStaff: express.RequestHandler = (req, res, next) => {
+  if (String((req as any).user?.role || '') !== 'staff') {
+    res.status(403).json({ error: 'Staff role required.' });
     return;
   }
   next();
@@ -245,6 +266,18 @@ router.get('/train/history/:jobId', authMiddleware, getTrainingHistoryDetail);
 router.delete('/train/history/:jobId', authMiddleware, requireManager, deleteTrainingHistory);
 
 // Model Eval Routes
+// Human Audit has its own RBAC boundary: Staff score assigned replays while
+// Supervisor/Admin assign work, inspect inter-rater conflicts and adjudicate.
+router.get('/human-audit/my-assignments', authMiddleware, requireStaff, listMyHumanAuditAssignments);
+router.get('/human-audit/work/:evalId', authMiddleware, requireStaff, getMyHumanAuditWork);
+router.put('/human-audit/work/:evalId/review/:convIndex', authMiddleware, requireStaff, saveMyHumanAuditReview);
+router.get('/human-audit/manage/staff', authMiddleware, requireManager, listHumanAuditStaff);
+router.get('/human-audit/manage/checkers', authMiddleware, requireManager, listHumanAuditCheckers);
+router.get('/human-audit/manage/evaluations', authMiddleware, requireAdjudicator, listManagedHumanAudits);
+router.post('/human-audit/manage/assign', authMiddleware, requireManager, assignHumanAudit);
+router.get('/human-audit/manage/:evalId', authMiddleware, requireAdjudicator, getManagedHumanAuditDetail);
+router.post('/human-audit/manage/:evalId/adjudicate/:convIndex', authMiddleware, requireAdjudicator, adjudicateHumanAudit);
+
 router.use('/model-eval', authMiddleware, requireManager);
 router.patch('/model-eval/:evalId/review/:convIndex', authMiddleware, requireManager, reviewConversation);
 router.get('/model-eval/gpu-status', getGpuStatusEndpoint);  // ⚠️ trước wildcard
@@ -261,6 +294,8 @@ router.get('/model-eval/compare', compareEvaluations);         // ⚠️ trướ
 router.get('/model-eval/large-llm/models', authMiddleware, requireManager, getLargeLlmReferenceModels);
 router.get('/model-eval/large-llm/status/:referenceJobId', authMiddleware, requireManager, getLargeLlmReferenceStatus);
 router.post('/model-eval/:evalId/large-llm/run', authMiddleware, requireManager, upload.single('eval_file'), runLargeLlmReference);
+router.get('/model-eval/version1-shared/status/:referenceJobId', authMiddleware, requireManager, getVersion1SharedReferenceStatus);
+router.post('/model-eval/:evalId/version1-shared/run', authMiddleware, requireManager, upload.single('eval_file'), runVersion1SharedReference);
 router.get('/model-eval/:evalId/export', exportEvaluationArtifact);
 router.delete('/model-eval/:evalId', deleteEvaluation);        // ⚠️ trước GET /:evalId
 router.get('/model-eval/:evalId', getEvaluation);              // ⚠️ wildcard — đứng cuối cùng

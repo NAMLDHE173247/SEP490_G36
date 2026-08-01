@@ -6,13 +6,13 @@ export const HUMAN_AUDIT_RUBRIC = [
   },
   {
     key: 'A2',
-    title: 'Dẫn dắt, phát hiện lỗi và chỉ dẫn hành động',
-    description: 'Gợi ý từng bước, nhận ra điểm sai hoặc mơ hồ và chỉ rõ học sinh cần làm gì tiếp theo.',
+    title: 'Dẫn dắt và khơi gợi tư duy phản biện',
+    description: 'Nhận ra học sinh đang hiểu, chưa hiểu hay mắc ngộ nhận; đặt câu hỏi từng bước để học sinh giải thích, so sánh, kiểm chứng và tự làm bước tiếp theo.',
   },
   {
     key: 'A3',
     title: 'Thích nghi và cá nhân hóa',
-    description: 'Điều chỉnh độ khó, cách giải thích hoặc ví dụ theo phản hồi và trình độ cụ thể của học sinh.',
+    description: 'Cá nhân hóa độ khó, lượng gợi ý, cách giải thích hoặc ví dụ theo phản hồi, lỗi sai và trình độ cụ thể của học sinh.',
   },
   {
     key: 'B1',

@@ -9,8 +9,10 @@ from pathlib import Path
 from locked_eval_protocol import (
     decide_hypotheses,
     extract_item_metadata,
+    paired_adaptive_statistics,
     paired_integrity,
     paired_research_statistics,
+    validate_adaptive_dataset,
     validate_locked_dataset,
 )
 
@@ -56,6 +58,55 @@ class LockedProtocolTests(unittest.TestCase):
         report = validate_locked_dataset(rows[:-1])
         self.assertTrue(report["valid"])
         self.assertFalse(report["confirmatory_sample_size"])
+
+    def test_adaptive_dataset_requires_complete_contrastive_pairs(self):
+        def adaptive_item(item_id, state, strategy):
+            return {
+                "item_id": item_id,
+                "subject": "MATH",
+                "messages": [{"role": "user", "content": f"Student state: {state}"}],
+                "metadata": {"adaptive_socratic": {
+                    "contrastive_pair_id": "PAIR-001",
+                    "learner_state": state,
+                    "misconception_key": "fraction-denominator",
+                    "expected_strategy": strategy,
+                }},
+            }
+
+        rows = [
+            adaptive_item("MATH-A", "misconception", "Probe the denominator misconception"),
+            adaptive_item("MATH-B", "correct", "Confirm and ask for transfer"),
+        ]
+        report = validate_adaptive_dataset(rows)
+        self.assertTrue(report["eligible"])
+        self.assertEqual(report["complete_pair_count"], 1)
+
+        invalid = validate_adaptive_dataset(rows[:1])
+        self.assertFalse(invalid["eligible"])
+        self.assertTrue(invalid["errors"])
+
+    def test_adaptive_statistics_use_pair_as_unit(self):
+        base = []
+        ft = []
+        for index in range(8):
+            pair_id = f"PAIR-{index:03d}"
+            base.append({
+                "item_id": pair_id,
+                "subject": "MATH",
+                "adaptive_scores": {"P1": 2, "O1": 2, "E1": 2},
+            })
+            ft.append({
+                "item_id": pair_id,
+                "subject": "MATH",
+                "adaptive_scores": {"P1": 4, "O1": 4, "E1": 4},
+            })
+        stats = paired_adaptive_statistics(ft, base, resamples=200, seed=7)
+        self.assertEqual(stats["unit_of_analysis"], "contrastive_pair")
+        self.assertEqual(stats["criteria"]["AS"]["n"], 8)
+        self.assertGreater(stats["criteria"]["AS"]["ci95"][0], 0)
+        self.assertEqual(stats["criteria"]["O1"]["n"], 8)
+        self.assertGreater(stats["criteria"]["O1"]["ci95"][0], 0)
+        self.assertIn("holm_p_adjusted", stats["criteria"]["P1"])
 
     def test_bootstrap_and_hypotheses(self):
         base = []
@@ -141,6 +192,8 @@ class LockedProtocolTests(unittest.TestCase):
             subprocess.run(command, check=True, capture_output=True, text=True)
             analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
             self.assertEqual(analysis["researchStatistics"]["macro_equal_weight"]["K"]["status"], "ok")
+            self.assertEqual(analysis["researchStatistics"]["macro_equal_weight"]["B2"]["status"], "ok")
+            self.assertIn("holm_p_adjusted", analysis["researchStatistics"]["macro_equal_weight"]["D1"])
             self.assertEqual(analysis["hypothesisDecisions"]["H1"], "supported")
 
             audit_csv = temp / "blind.csv"

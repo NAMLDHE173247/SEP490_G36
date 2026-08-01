@@ -420,6 +420,7 @@ def main() -> int:
             "dataset_hash": validation["dataset_hash"],
             "prompt_variant": args.prompt_variant,
             "prompt_version": args.prompt_version,
+            "system_prompt_hash": sha256_text(override) if override else None,
             "max_new_tokens": args.max_new_tokens,
             "seed_requested": args.seed if "seed" in supported_parameters else None,
             "temperature_requested": 0 if "temperature" in supported_parameters else None,

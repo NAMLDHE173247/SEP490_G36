@@ -154,20 +154,156 @@ def validate_locked_dataset(conversations: list[dict], strict: bool = True) -> d
     }
 
 
+ADAPTIVE_LEARNER_STATES = ("correct", "partial", "misconception", "confused")
+
+
+def extract_adaptive_metadata(conversation: dict) -> dict | None:
+    """Return normalized Adaptive Socratic v1 metadata, when declared.
+
+    Metadata may live under ``metadata.adaptive_socratic`` (preferred) or
+    ``adaptive_socratic``. Merely having ordinary RP4 metadata does not opt an
+    item into the diagnostic.
+    """
+    metadata = conversation.get("metadata") if isinstance(conversation.get("metadata"), dict) else {}
+    raw = metadata.get("adaptive_socratic") or conversation.get("adaptive_socratic")
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "contrastive_pair_id": str(raw.get("contrastive_pair_id") or raw.get("pair_id") or "").strip(),
+        "learner_state": str(raw.get("learner_state") or "").strip().lower(),
+        "misconception_key": str(raw.get("misconception_key") or "").strip(),
+        "expected_strategy": str(raw.get("expected_strategy") or "").strip(),
+    }
+
+
+def validate_adaptive_dataset(conversations: list[dict]) -> dict:
+    """Validate the optional contrastive Adaptive Socratic diagnostic.
+
+    A valid unit is exactly two single-turn items about the same task, with
+    distinct gold learner states and an expected tutoring strategy for each.
+    O1 is evaluated once per pair; this prevents pseudo-replicating one
+    pair-level personalization judgment as two independent observations.
+    """
+    annotated: list[tuple[str, dict, dict]] = []
+    errors: list[str] = []
+    for index, conversation in enumerate(conversations):
+        adaptive = extract_adaptive_metadata(conversation)
+        if adaptive is None:
+            continue
+        item_id = extract_item_metadata(conversation, index)["item_id"]
+        pair_id = adaptive["contrastive_pair_id"]
+        if not pair_id:
+            errors.append(f"{item_id}: adaptive_socratic.contrastive_pair_id is required")
+        if adaptive["learner_state"] not in ADAPTIVE_LEARNER_STATES:
+            errors.append(
+                f"{item_id}: learner_state must be one of {ADAPTIVE_LEARNER_STATES}"
+            )
+        if not adaptive["expected_strategy"]:
+            errors.append(f"{item_id}: adaptive_socratic.expected_strategy is required")
+        if not adaptive["misconception_key"]:
+            errors.append(f"{item_id}: adaptive_socratic.misconception_key is required")
+        annotated.append((item_id, conversation, adaptive))
+
+    grouped: dict[str, list[tuple[str, dict, dict]]] = defaultdict(list)
+    for row in annotated:
+        if row[2]["contrastive_pair_id"]:
+            grouped[row[2]["contrastive_pair_id"]].append(row)
+
+    complete_pairs: list[dict] = []
+    for pair_id, rows in sorted(grouped.items()):
+        if len(rows) != 2:
+            errors.append(f"{pair_id}: contrastive pair must contain exactly 2 items (found {len(rows)})")
+            continue
+        states = {row[2]["learner_state"] for row in rows}
+        if len(states) != 2:
+            errors.append(f"{pair_id}: the two items must have distinct learner_state labels")
+            continue
+        subjects = {extract_item_metadata(row[1], 0)["subject"] for row in rows}
+        if len(subjects) != 1:
+            errors.append(f"{pair_id}: both items must have the same subject")
+            continue
+        complete_pairs.append({
+            "pair_id": pair_id,
+            "item_ids": [row[0] for row in rows],
+            "learner_states": sorted(states),
+            "subject": next(iter(subjects)),
+        })
+
+    declared = bool(annotated)
+    return {
+        "protocol": "adaptive-socratic-diagnostic-v1",
+        "declared": declared,
+        "eligible": declared and not errors and bool(complete_pairs),
+        "status": "eligible" if declared and not errors and complete_pairs else (
+            "invalid" if declared else "not_declared"
+        ),
+        "annotated_items": len(annotated),
+        "complete_pair_count": len(complete_pairs),
+        "complete_pairs": complete_pairs,
+        "errors": errors,
+        "unit_of_analysis": "contrastive_pair",
+        "confirmatory": False,
+    }
+
+
 def criterion_value(result: dict, metric: str) -> float | None:
     criteria = result.get("criteria_scores") or {}
+    adaptive = result.get("adaptive_scores") or {}
     try:
         if metric == "K":
             return float(criteria["B1"])
         if metric == "S":
-            return statistics.fmean(float(criteria[key]) for key in ("A1", "A2", "A3"))
-        if metric in ("A1", "A2", "A3"):
+            raw = statistics.fmean(float(criteria[key]) for key in ("A1", "A2", "A3"))
+            return min(raw, 1.0) if float(criteria["A1"]) <= 1.0 else raw
+        if metric in ("A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "D1", "D2"):
             return float(criteria[metric])
         if metric == "V_A1":
             return 1.0 if float(criteria["A1"]) <= 1.0 else 0.0
+        if metric in ("P1", "O1", "E1"):
+            return float(adaptive[metric])
+        if metric == "AS":
+            return statistics.fmean(float(adaptive[key]) for key in ("P1", "O1", "E1"))
     except (KeyError, TypeError, ValueError):
         return None
     raise ValueError(f"Unknown metric: {metric}")
+
+
+def paired_adaptive_statistics(
+    ft_pairs: list[dict],
+    base_pairs: list[dict],
+    resamples: int = 10_000,
+    seed: int = 42,
+) -> dict:
+    """Paired Base-vs-FT statistics at the contrastive-pair level."""
+    # AS is the transparent equal-weight composite for this diagnostic only.
+    # Holm correction remains attached to the three component hypotheses;
+    # AS is not counted again in that family because it is derived from them.
+    metrics = ("AS", "P1", "O1", "E1")
+    rows = {
+        metric: paired_bootstrap(ft_pairs, base_pairs, metric, resamples, seed)
+        for metric in metrics
+    }
+    family = sorted(
+        (
+            (metric, float(row["bootstrap_p_two_sided"]))
+            for metric, row in rows.items()
+            if metric in ("P1", "O1", "E1")
+            and row.get("status") == "ok" and row.get("bootstrap_p_two_sided") is not None
+        ),
+        key=lambda item: item[1],
+    )
+    running = 0.0
+    for rank, (metric, p_value) in enumerate(family):
+        adjusted = min(1.0, (len(family) - rank) * p_value)
+        running = max(running, adjusted)
+        rows[metric]["holm_p_adjusted"] = round(running, 6)
+    return {
+        "protocol": "adaptive-paired-contrastive-bootstrap-v1",
+        "unit_of_analysis": "contrastive_pair",
+        "resamples": int(resamples),
+        "seed": int(seed),
+        "criteria": rows,
+    }
 
 
 def distribution_summary(values: Iterable[float]) -> dict:
@@ -338,7 +474,12 @@ def paired_research_statistics(
             if result and normalize_subject(result.get("subject")) in LOCKED_SUBJECTS
         }
     )
-    metrics = ("K", "S", "A1", "A2", "A3", "V_A1")
+    # K/S remain the pre-registered primary outcomes. Every rubric dimension is
+    # nevertheless tested and reported for the paired Base-vs-FT comparison.
+    # D2 is operational latency scoring and is also accompanied by raw timing
+    # summaries elsewhere in the artifact.
+    criteria_metrics = ("A1", "A2", "A3", "B1", "B2", "C1", "C2", "C3", "D1", "D2")
+    metrics = ("K", "S", *criteria_metrics, "V_A1")
     per_subject: dict[str, dict] = {}
     for subject in subjects:
         ft_subset = [r for r in ft_results if r and normalize_subject(r.get("subject")) == subject]
@@ -352,6 +493,26 @@ def paired_research_statistics(
         metric: macro_paired_bootstrap(ft_results, base_results, metric, resamples, seed)
         for metric in metrics
     }
+
+    def attach_holm_adjustment(metric_rows: dict[str, dict]) -> None:
+        """Adjust the A1-D1 secondary family without mixing in K/S or D2."""
+        family = []
+        for metric in criteria_metrics[:-1]:
+            row = metric_rows.get(metric, {})
+            p_value = row.get("bootstrap_p_two_sided")
+            if row.get("status") == "ok" and p_value is not None:
+                family.append((metric, float(p_value)))
+        family.sort(key=lambda item: item[1])
+        running = 0.0
+        family_size = len(family)
+        for rank, (metric, p_value) in enumerate(family):
+            adjusted = min(1.0, (family_size - rank) * p_value)
+            running = max(running, adjusted)
+            metric_rows[metric]["holm_p_adjusted"] = round(running, 6)
+
+    for subject_rows in per_subject.values():
+        attach_holm_adjustment(subject_rows)
+    attach_holm_adjustment(macro)
     return {
         "protocol": "paired-item-bootstrap-v1",
         "resamples": int(resamples),
