@@ -215,9 +215,12 @@ export const apiService = {
   },
   checkGpuStatus: async (): Promise<{ isOk: boolean; data?: any }> => {
     try {
-      const response = await api.get('/model-eval/gpu-status', { timeout: 6000 });
+      // Backend probes GPU tunnel (localtunnel) with 30s timeout,
+      // so frontend must wait longer than that before giving up.
+      const response = await api.get('/model-eval/gpu-status', { timeout: 35000 });
       return { isOk: response.status === 200, data: response.data };
-    } catch {
+    } catch (err: any) {
+      console.warn('[checkGpuStatus] failed:', err?.message || err);
       return { isOk: false };
     }
   },
