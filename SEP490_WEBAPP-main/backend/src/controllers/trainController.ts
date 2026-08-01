@@ -812,7 +812,7 @@ export const getSystemResources = async (_req: Request, res: Response) => {
     const urls = workerManager.getUrls();
     const resourcePromises = urls.map(async (url) => {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout (increased for Render)
 
       try {
         const response = await fetch(`${url}/api/system/resources`, {
