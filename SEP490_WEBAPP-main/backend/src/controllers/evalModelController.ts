@@ -18,6 +18,13 @@ import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import {
+  HUMAN_AUDIT_RUBRIC_VERSION,
+  buildHumanAuditSummary,
+  computeHumanOutcomes,
+  deriveHumanAiConflict,
+  validateHumanAuditScores,
+} from '../services/humanAuditService';
 dotenv.config();
 
 type LargeLlmReferenceJob = {
@@ -34,6 +41,22 @@ type LargeLlmReferenceJob = {
 };
 
 const largeLlmReferenceJobs = new Map<string, LargeLlmReferenceJob>();
+
+type Version1SharedReferenceJob = {
+  jobId: string;
+  ownerId: string;
+  evalId: string;
+  trainingJobId: string;
+  model: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  progress: number;
+  detail: string;
+  result?: Record<string, any>;
+  error?: string;
+  createdAt: string;
+};
+
+const version1SharedReferenceJobs = new Map<string, Version1SharedReferenceJob>();
 
 type PromptTrace = {
   content: string;
@@ -373,6 +396,7 @@ function normalizeEvalResult(result: any) {
     delta:              result.delta ?? null,
     flags:              Array.isArray(result.flags) ? result.flags : [],
     researchStatistics: result.researchStatistics ?? null,
+    adaptiveDiagnostic: result.adaptiveDiagnostic ?? null,
     hypothesisDecisions: result.hypothesisDecisions ?? null,
     pairIntegrity:      result.pairIntegrity ?? null,
     confirmatoryEligible: Boolean(result.confirmatoryEligible),
@@ -628,9 +652,9 @@ export const runEvaluation = async (req: Request, res: Response) => {
       summary: {
         knowledge: 0,
         socratic: 0,
-        exploratory_overall: 0,
-        overall: 0,
-        group_a: 0, group_b: 0, group_c: 0, group_d: 0,
+        exploratory_overall: null,
+        overall: null,
+        group_a: null, group_b: null, group_c: null, group_d: null,
         criteria: {},
         non_scoring: {},
         max_possible: 5,
@@ -1221,6 +1245,7 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
         completedAt:        result.completedAt ? new Date(result.completedAt) : new Date(),
         flags:              normalized.flags,
         researchStatistics: normalized.researchStatistics,
+        adaptiveDiagnostic: normalized.adaptiveDiagnostic,
         hypothesisDecisions: normalized.hypothesisDecisions,
         pairIntegrity:      normalized.pairIntegrity,
         confirmatoryEligible: normalized.confirmatoryEligible,
@@ -1307,6 +1332,7 @@ export const saveEvalResult = async (req: Request, res: Response) => {
         delta:              normalized.delta,
         gpuResult:          normalized.gpuResult,
         researchStatistics: normalized.researchStatistics,
+        adaptiveDiagnostic: normalized.adaptiveDiagnostic,
         hypothesisDecisions: normalized.hypothesisDecisions,
         pairIntegrity:      normalized.pairIntegrity,
         confirmatoryEligible: normalized.confirmatoryEligible,
@@ -1347,6 +1373,7 @@ export const exportEvaluationArtifact = async (req: Request, res: Response) => {
     if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
 
     const artifact: Record<string, any> = { ...evaluation };
+    artifact.humanAudit = buildHumanAuditSummary((evaluation.results || []) as any[]);
     delete artifact.ownerId;
     delete artifact.__v;
     const safeId = String(evaluation.modelEvalId).replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1375,6 +1402,7 @@ export const getEvaluation = async (req: Request, res: Response) => {
       ...doc,
       isPinned: history?.pinnedEvalId === evalId,
       projectName: history?.projectName ?? '',
+      humanAudit: buildHumanAuditSummary((doc.results || []) as any[]),
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to get evaluation' });
@@ -1481,6 +1509,9 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
 
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sep490-large-llm-'));
     const outputPath = path.join(tempDir, 'result.json');
+    const promptPath = path.join(tempDir, 'system_prompt.txt');
+    const evaluationPrompt = String(evaluation.systemPrompt || '').trim();
+    if (evaluationPrompt) fs.writeFileSync(promptPath, evaluationPrompt, 'utf8');
     const referenceJobId = `large-llm-${uuidv4()}`;
     const job: LargeLlmReferenceJob = {
       jobId: referenceJobId,
@@ -1506,6 +1537,7 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
       '--max-new-tokens', '512',
       '--seed', '42',
     ];
+    if (evaluationPrompt) args.push('--prompt-file', promptPath);
     const python = process.env.RP5_PYTHON || 'python';
     const child = spawn(python, args, {
       cwd: path.dirname(scriptPath),
@@ -1567,6 +1599,231 @@ export const getLargeLlmReferenceStatus = async (req: Request, res: Response) =>
   if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
   const job = largeLlmReferenceJobs.get(String(req.params.referenceJobId || ''));
   if (!job || job.ownerId !== ownerId) return res.status(404).json({ error: 'Reference job not found' });
+  return res.json(job);
+};
+
+async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: string, failures = 0): Promise<void> {
+  const job = version1SharedReferenceJobs.get(referenceJobId);
+  if (!job || ['COMPLETED', 'FAILED'].includes(job.status)) return;
+
+  try {
+    const response = await fetch(
+      `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(gpuEvalId)}`,
+      {
+        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    const text = await response.text();
+    if (!response.ok) throw new Error(`GPU status HTTP ${response.status}: ${text.slice(0, 240)}`);
+    const payload: any = JSON.parse(text);
+    const status = String(payload?.status || '').toUpperCase();
+
+    job.progress = Number(payload?.progress || job.progress || 0);
+    job.detail = String(payload?.stage_detail || payload?.stage_label || `GPU: ${status}`);
+
+    if (status === 'COMPLETED') {
+      const resultResponse = await fetch(
+        `${configService.getGpuUrl()}/api/eval/result/${encodeURIComponent(gpuEvalId)}`,
+        {
+          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          signal: AbortSignal.timeout(30000),
+        },
+      );
+      const resultText = await resultResponse.text();
+      if (!resultResponse.ok) throw new Error(`GPU result HTTP ${resultResponse.status}: ${resultText.slice(0, 500)}`);
+      const result: any = JSON.parse(resultText);
+      if (String(result?.status || '').toUpperCase() !== 'COMPLETED') {
+        throw new Error(result?.error || 'GPU did not return a completed Version 1 result');
+      }
+      job.result = {
+        ...result,
+        comparisonRole: 'version1_shared_ft',
+        requestedModel: job.model,
+      };
+      job.status = 'COMPLETED';
+      job.progress = 100;
+      job.detail = 'Đã chấm xong mô hình Version 1 fine-tune chung ba môn';
+      return;
+    }
+
+    if (['FAILED', 'INTERRUPTED', 'LOST'].includes(status)) {
+      job.status = 'FAILED';
+      job.error = String(payload?.error || payload?.stage_detail || `GPU ${status}`);
+      job.detail = 'Đánh giá Version 1 thất bại';
+      return;
+    }
+
+    job.status = 'RUNNING';
+    setTimeout(() => void pollVersion1SharedReference(referenceJobId, gpuEvalId, 0), 2500);
+  } catch (error: any) {
+    const nextFailures = failures + 1;
+    if (nextFailures >= 10) {
+      job.status = 'FAILED';
+      job.error = error.message || 'Không đọc được trạng thái GPU';
+      job.detail = 'Mất kết nối với GPU khi chấm Version 1';
+      return;
+    }
+    job.detail = `Kết nối GPU tạm thời lỗi (${nextFailures}/10), đang thử lại`;
+    setTimeout(() => void pollVersion1SharedReference(referenceJobId, gpuEvalId, nextFailures), 3000);
+  }
+}
+
+// Run the Version 1 shared three-subject fine-tuned model as a local reference.
+// It uses the exact locked test, prompt and Judge from the specialist evaluation
+// currently being viewed. This isolates model weights instead of introducing a
+// second OpenRouter model or an unrelated base model.
+export const runVersion1SharedReference = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const evalId = String(req.params.evalId || '');
+  const trainingJobId = String(req.body?.training_job_id || '').trim();
+  const uploaded = req.file;
+  if (!uploaded) return res.status(400).json({ error: 'locked_test_file_required' });
+  if (!trainingJobId) {
+    fs.unlink(uploaded.path, () => {});
+    return res.status(400).json({ error: 'version1_training_job_required' });
+  }
+
+  let extractedTempDir = '';
+  let datasetPath = uploaded.path;
+  let datasetName = uploaded.originalname;
+  const cleanup = () => {
+    if (extractedTempDir) cleanupTempDir(extractedTempDir);
+    fs.unlink(uploaded.path, () => {});
+  };
+
+  try {
+    const [evaluation, version1History] = await Promise.all([
+      ModelEvaluation.findOne({ ownerId, modelEvalId: evalId, status: 'COMPLETED' }).lean(),
+      TrainingHistory.findOne({ ownerId, jobId: trainingJobId }).lean(),
+    ]);
+    if (!evaluation) throw Object.assign(new Error('Evaluation not found or not completed'), { statusCode: 404 });
+    if (!version1History) throw Object.assign(new Error('Không tìm thấy training job Version 1'), { statusCode: 404 });
+    if (!['COMPLETED', 'EVALUATING'].includes(String(version1History.status))) {
+      throw Object.assign(new Error('Training job Version 1 chưa hoàn thành'), { statusCode: 422 });
+    }
+    if (!version1History.hfRepoId) {
+      throw Object.assign(new Error('Training job Version 1 chưa có Hugging Face repo'), { statusCode: 422 });
+    }
+    if (trainingJobId === evaluation.jobId) {
+      throw Object.assign(new Error('Hãy chọn job V1 fine-tune chung ba môn, không chọn lại specialist đang xem'), { statusCode: 422 });
+    }
+
+    const duplicate = [...version1SharedReferenceJobs.values()].find(item =>
+      item.ownerId === ownerId
+      && item.evalId === evalId
+      && item.trainingJobId === trainingJobId
+      && ['PENDING', 'RUNNING'].includes(item.status),
+    );
+    if (duplicate) {
+      cleanup();
+      return res.status(409).json({
+        error: 'version1_reference_already_running',
+        referenceJobId: duplicate.jobId,
+        status: duplicate.status,
+      });
+    }
+
+    if (isZipFile(uploaded.originalname)) {
+      const extracted = extractForEvaluation(uploaded.path);
+      datasetPath = extracted.dataFilePath;
+      datasetName = extracted.dataFileName;
+      extractedTempDir = extracted.tempDir;
+    }
+    const validation = validateLockedTestFile(datasetPath);
+    const expectedHash = String((evaluation.datasetValidation as any)?.contentSha256 || '');
+    if (expectedHash && validation.contentSha256 !== expectedHash) {
+      throw Object.assign(new Error('Tập test không trùng với lần specialist Base–FT đang xem'), { statusCode: 422 });
+    }
+
+    const judgeApiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    if (!judgeApiKey) throw Object.assign(new Error('OpenRouter API key is not configured'), { statusCode: 422 });
+
+    const gpuStatus = await getGpuStatus();
+    if (!gpuStatus) throw Object.assign(new Error('GPU service không phản hồi'), { statusCode: 503 });
+    if (!gpuStatus.can_create_eval) {
+      throw Object.assign(new Error(`GPU đang bận (${gpuStatus.active_evals}/${gpuStatus.max_evals} slots)`), { statusCode: 503 });
+    }
+
+    const gpuEvalId = `eval_v1_${uuidv4()}`;
+    const modelRepo = String(version1History.hfRepoId);
+    const config = {
+      eval_job_id: gpuEvalId,
+      job_id: trainingJobId,
+      hf_repo_id: modelRepo,
+      hf_token: version1History.hfToken || '',
+      model_max_length: version1History.parameters?.modelMaxLength || 2048,
+      judge_model: evaluation.judgeModel || RESEARCH_MODEL_CATALOG.judge,
+      judge_provider: 'openrouter',
+      judge_api_key: judgeApiKey,
+      base_model_hf_repo: '',
+      system_prompt: String(evaluation.systemPrompt || ''),
+      system_prompt_source: 'specialist_evaluation_reference',
+      system_prompt_version: evaluation.systemPromptVersion || evaluation.protocolManifest?.prompt_version || 'RP4-locked-v1',
+      system_prompt_hash: evaluation.systemPromptHash || '',
+      protocol_mode: 'locked_single_turn',
+      reference_run_kind: 'version1_shared_ft',
+      prompt_variant: 'P1',
+      subject_override: '',
+      max_new_tokens: 512,
+      warmup_runs: 1,
+      bootstrap_resamples: 10000,
+      bootstrap_seed: 42,
+      temperature: 0,
+      top_p: 1,
+      repetition_penalty: 1,
+      eval_file_name: datasetName,
+      dataset_file_sha256: validation.fileSha256,
+      subject_counts: validation.subjectCounts,
+    };
+
+    const form = new FormData();
+    form.append('config', JSON.stringify(config));
+    form.append('eval_file', fs.createReadStream(datasetPath), {
+      filename: datasetName,
+      contentType: 'application/json',
+      knownLength: fs.statSync(datasetPath).size,
+    });
+    const gpuResponse = await fetchWithForm(`${configService.getGpuUrl()}/api/eval/start`, form);
+    const responseText = await gpuResponse.text();
+    let gpuPayload: any = null;
+    try { gpuPayload = JSON.parse(responseText); } catch { gpuPayload = null; }
+    if (!gpuResponse.ok) {
+      throw Object.assign(
+        new Error(gpuPayload?.message || gpuPayload?.error || `GPU HTTP ${gpuResponse.status}: ${responseText.slice(0, 300)}`),
+        { statusCode: gpuResponse.status },
+      );
+    }
+
+    const referenceJobId = `version1-shared-${uuidv4()}`;
+    const job: Version1SharedReferenceJob = {
+      jobId: referenceJobId,
+      ownerId,
+      evalId,
+      trainingJobId,
+      model: modelRepo,
+      status: 'RUNNING',
+      progress: 0,
+      detail: `Đã khóa ${validation.itemCount} câu; đang nạp Version 1`,
+      createdAt: new Date().toISOString(),
+    };
+    version1SharedReferenceJobs.set(referenceJobId, job);
+    cleanup();
+    void pollVersion1SharedReference(referenceJobId, gpuEvalId);
+    return res.status(202).json({ referenceJobId, status: job.status, model: modelRepo });
+  } catch (err: any) {
+    cleanup();
+    return res.status(Number(err.statusCode || 500)).json({ error: err.message || 'Could not start Version 1 shared reference' });
+  }
+};
+
+export const getVersion1SharedReferenceStatus = async (req: Request, res: Response) => {
+  const ownerId = getAuthUserId(req);
+  if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+  const job = version1SharedReferenceJobs.get(String(req.params.referenceJobId || ''));
+  if (!job || job.ownerId !== ownerId) return res.status(404).json({ error: 'Version 1 reference job not found' });
   return res.json(job);
 };
 
@@ -1902,6 +2159,7 @@ export const compareEvaluations = async (req: Request, res: Response) => {
 
     const sA = evalA.summary;
     const sB = evalB.summary;
+    const criteriaKeys = ['A1', 'A2', 'A3', 'B1', 'B2', 'C1', 'C2', 'C3', 'D1', 'D2'];
 
     const scoreSummary = {
       knowledge: {
@@ -1914,6 +2172,11 @@ export const compareEvaluations = async (req: Request, res: Response) => {
         b: sB?.socratic ?? sB?.group_a ?? null,
         winner: scoreWinner(sA?.socratic ?? sA?.group_a, sB?.socratic ?? sB?.group_a),
       },
+      criteria: Object.fromEntries(criteriaKeys.map(key => {
+        const a = sA?.criteria?.[key] ?? null;
+        const b = sB?.criteria?.[key] ?? null;
+        return [key, { a, b, winner: scoreWinner(a, b) }];
+      })),
       overall: {
         a: sA?.exploratory_overall ?? sA?.overall ?? null,
         b: sB?.exploratory_overall ?? sB?.overall ?? null,
@@ -1987,7 +2250,7 @@ export const compareEvaluations = async (req: Request, res: Response) => {
 
 // ---------------------------------------------------------------------------
 // PATCH /api/model-eval/:evalId/review/:convIndex
-// Body: { verdict: 'agree'|'disagree'|'skip', note?: string, reviewer?: string }
+// Body: { verdict?: 'skip', human_scores?: A1..D1, human_reasons?: {}, note?, reviewer }
 // ---------------------------------------------------------------------------
 export const reviewConversation = async (req: Request, res: Response) => {
   try {
@@ -1997,9 +2260,9 @@ export const reviewConversation = async (req: Request, res: Response) => {
     }
 
     const { evalId, convIndex } = req.params;
-    const { verdict, note, reviewer } = req.body;
+    const { verdict, note, reviewer, human_scores, human_reasons } = req.body;
 
-    if (!['agree', 'disagree', 'skip'].includes(verdict)) {
+    if (verdict && !['agree', 'disagree', 'skip'].includes(verdict)) {
       return res.status(400).json({ error: 'verdict phải là agree | disagree | skip' });
     }
 
@@ -2015,31 +2278,55 @@ export const reviewConversation = async (req: Request, res: Response) => {
     const convResult = evalDoc.results.find((r: any) => r.conv_index === idx);
     if (!convResult) return res.status(404).json({ error: `Conversation ${idx} not found` });
 
-    // Update human_review
-    convResult.human_review = {
-      verdict,
-      note: note?.trim() || undefined,
-      reviewer: reviewer?.trim() || 'anonymous',
-      reviewed_at: new Date(),
-    };
+    const reviewerName = String(reviewer || '').trim();
+    if (!reviewerName) return res.status(400).json({ error: 'Cần tên người thẩm định' });
+
+    let review: Record<string, any>;
+    if (verdict === 'skip') {
+      review = {
+        verdict: 'skip',
+        note: String(note || '').trim() || undefined,
+        reviewer: reviewerName,
+        reviewed_at: new Date(),
+        rubric_version: HUMAN_AUDIT_RUBRIC_VERSION,
+      };
+    } else {
+      let validated;
+      try {
+        validated = validateHumanAuditScores(human_scores, human_reasons);
+      } catch (validationError: any) {
+        return res.status(400).json({ error: validationError.message || 'Điểm Human Audit không hợp lệ' });
+      }
+      const humanOutcomes = computeHumanOutcomes(validated.scores);
+      const conflict = deriveHumanAiConflict(
+        convResult.criteria_scores as unknown as Record<string, unknown>,
+        validated.scores,
+      );
+      review = {
+        verdict: conflict.has_conflict ? 'disagree' : 'agree',
+        note: String(note || '').trim() || undefined,
+        reviewer: reviewerName,
+        reviewed_at: new Date(),
+        rubric_version: HUMAN_AUDIT_RUBRIC_VERSION,
+        human_scores: validated.scores,
+        human_reasons: validated.reasons,
+        human_outcomes: humanOutcomes,
+        ai_scores_snapshot: { ...(convResult.criteria_scores as unknown as Record<string, number>) },
+        conflict,
+      };
+    }
+
+    convResult.human_review = review as any;
 
     await evalDoc.save();
 
-    // Tính lại review stats
-    const reviewed = evalDoc.results.filter((r: any) => r.human_review?.verdict !== 'skip' && r.human_review);
-    const agreed   = reviewed.filter((r: any) => r.human_review?.verdict === 'agree').length;
-    const total    = evalDoc.results.filter((r: any) => r.human_review).length;
+    const stats = buildHumanAuditSummary(evalDoc.results as any[]);
 
     return res.json({
       message: 'Review saved',
       conv_index: idx,
-      verdict,
-      stats: {
-        total_reviewed: total,
-        agreed,
-        disagreed: reviewed.length - agreed,
-        agreement_rate: reviewed.length > 0 ? Math.round((agreed / reviewed.length) * 100) : null,
-      },
+      review,
+      humanAudit: stats,
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });

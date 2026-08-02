@@ -1,0 +1,57 @@
+.ham-agreement-card {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #c7d2fe;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.ham-agreement-card summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.ham-agreement-card summary div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #3730a3;
+  font-weight: 850;
+}
+
+.ham-agreement-card summary strong {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.ham-agreement-card > div {
+  overflow: auto;
+  padding: 0 16px 15px;
+}
+
+.ham-agreement-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ham-agreement-card th,
+.ham-agreement-card td {
+  padding: 8px 9px;
+  border-top: 1px solid #eef2f7;
+  text-align: left;
+  font-size: 10px;
+}
+
+.ham-agreement-card th {
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.ham-agreement-card p {
+  margin: 9px 0 0;
+  color: #64748b;
+  font-size: 10px;
+}

@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "gpu-service"))
-from locked_eval_protocol import validate_locked_dataset  # noqa: E402
+from locked_eval_protocol import validate_adaptive_dataset, validate_locked_dataset  # noqa: E402
 
 
 def main() -> int:
@@ -29,8 +29,13 @@ def main() -> int:
         else:
             rows = payload if isinstance(payload, list) else [payload]
     report = validate_locked_dataset(rows, strict=True)
+    report["adaptive_socratic"] = validate_adaptive_dataset(rows)
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0 if report["valid"] else 1
+    adaptive_valid = (
+        not report["adaptive_socratic"]["declared"]
+        or report["adaptive_socratic"]["eligible"]
+    )
+    return 0 if report["valid"] and adaptive_valid else 1
 
 
 if __name__ == "__main__":

@@ -37,13 +37,16 @@ from collections import defaultdict
 
 from locked_eval_protocol import (
     decide_hypotheses,
+    extract_adaptive_metadata,
     extract_item_metadata,
     normalize_subject,
     operational_summary,
+    paired_adaptive_statistics,
     paired_integrity,
     paired_research_statistics,
     sha256_text,
     stable_json_hash,
+    validate_adaptive_dataset,
     validate_locked_dataset,
 )
 
@@ -885,7 +888,15 @@ JUDGE_REFERENCE_POLICY = (
     "\n\nREFERENCE POLICY: When a reference answer or gold key points are provided, "
     "use them only as hidden scoring evidence for factual coverage. They were never "
     "shown to Base or Fine-tuned models. Do not reward verbatim copying, and do not "
-    "penalize a different but correct Socratic path."
+    "penalize a different but correct Socratic path.\n"
+    "HUMAN-ALIGNED RUBRIC POLICY: A2 covers stepwise scaffolding, correct mistake "
+    "detection, and a concrete actionable next step. A3 covers adaptation and "
+    "personalization to the learner's latest response and apparent level. B2 covers "
+    "grade-level fit. C2 covers multi-turn context consistency. C3 covers patient, "
+    "encouraging, non-judgmental tone. D1 covers invented facts, context, sources, "
+    "or learner statements. Score these dimensions independently. A1 <= 1 is the "
+    "answer-withholding guardrail; the application applies the non-compensatory "
+    "Socratic cap after scoring."
 )
 
 _CRITERIA_KEYS = [
@@ -979,26 +990,16 @@ def _compute_group_scores_research(criteria: dict) -> dict:
     # separate so style or machine-dependent latency cannot compensate for a
     # factual or pedagogical failure.
     knowledge = b1
-    socratic = (a1 + a2 + a3) / 3.0
-
-    # Historical composite retained only for backward-compatible dashboards.
-    # It is exploratory and must not be used to select a winning model.
-    legacy_group_a = a1 * 0.5 + a2 * 0.3 + a3 * 0.2
-    if a1 <= 1.0:
-        legacy_group_a = min(legacy_group_a, 1.0)
-    legacy_group_b = b1 * 0.6 + b2 * 0.4
-    legacy_group_c = c1 * 0.4 + c2 * 0.4 + c3 * 0.2
-    legacy_group_d = d1 * 0.5 + d2 * 0.5
-    exploratory_overall = (
-        legacy_group_a * 0.40
-        + legacy_group_b * 0.25
-        + legacy_group_c * 0.25
-        + legacy_group_d * 0.10
-    )
+    socratic_raw = (a1 + a2 + a3) / 3.0
+    # A1 is a non-compensatory guardrail. Directly revealing the answer cannot
+    # be offset by strong style/adaptation scores in the Socratic outcome.
+    socratic = min(socratic_raw, 1.0) if a1 <= 1.0 else socratic_raw
 
     return {
         "knowledge": round(knowledge, 3),
         "socratic": round(socratic, 3),
+        "socratic_uncapped": round(socratic_raw, 3),
+        "socratic_cap_applied": (a1 <= 1.0),
         "answer_withholding_violation": (a1 <= 1.0),
         "secondary": {
             "grade_level": round(b2, 3),
@@ -1008,13 +1009,14 @@ def _compute_group_scores_research(criteria: dict) -> dict:
             "hallucination": round(d1, 3),
         },
         "operational": {"latency_score_exploratory": round(d2, 3)},
-        "exploratory_overall": round(exploratory_overall, 3),
-        # Deprecated aliases for old stored results and UI builds.
-        "group_a": round(legacy_group_a, 3),
-        "group_b": round(legacy_group_b, 3),
-        "group_c": round(legacy_group_c, 3),
-        "group_d": round(legacy_group_d, 3),
-        "overall": round(exploratory_overall, 3),
+        # No weighted A/B/C/D or Overall is produced for new research runs.
+        # Those historical coefficients had no externally validated basis.
+        "exploratory_overall": None,
+        "group_a": None,
+        "group_b": None,
+        "group_c": None,
+        "group_d": None,
+        "overall": None,
         "a1_hard_constraint_triggered": (a1 <= 1.0),
     }
 
@@ -1064,32 +1066,23 @@ def _compute_group_scores(criteria: dict) -> dict:
     d1 = criteria.get("D1", 0.0)
     d2 = criteria.get("D2", 0.0)
 
-    # Legacy dashboard groups are retained for backward compatibility only.
-    # Confirmatory RP4/RP5 estimands are K=B1 and S=mean(A1,A2,A3).
+    # Compatibility helper for older call sites. New runs expose only K, S and
+    # the individual criteria; unvalidated weighted composites are retired.
     knowledge_k = b1
     socratic_s = (a1 + a2 + a3) / 3.0
-    group_a = a1 * 0.5 + a2 * 0.3 + a3 * 0.2
-    if a1 <= 1.0:
-        group_a = min(group_a, 2.0)
-
-    group_b = b1 * 0.6 + b2 * 0.4
-    group_c = c1 * 0.4 + c2 * 0.4 + c3 * 0.2
-    group_d = d1 * 0.5 + d2 * 0.5
-
-    overall = group_a * 0.40 + group_b * 0.25 + group_c * 0.25 + group_d * 0.10
 
     return {
         "knowledge_k": round(knowledge_k, 3),
         "socratic_s": round(socratic_s, 3),
         "knowledge": round(knowledge_k, 3),
         "socratic": round(socratic_s, 3),
-        "exploratory_overall": round(overall, 3),
-        "group_a": round(group_a, 3),
-        "group_b": round(group_b, 3),
-        "group_c": round(group_c, 3),
-        "group_d": round(group_d, 3),
-        "overall": round(overall, 3),
-        "legacy_overall": round(overall, 3),
+        "exploratory_overall": None,
+        "group_a": None,
+        "group_b": None,
+        "group_c": None,
+        "group_d": None,
+        "overall": None,
+        "legacy_overall": None,
         "legacy_only": True,
         "a1_hard_constraint_triggered": (a1 <= 1.0),
     }
@@ -1405,9 +1398,7 @@ def _summarize(per_conv_results: list) -> dict:
 
     criteria = {k: _avg(f"criteria_scores.{k}")
                 for k in ["A1","A2","A3","B1","B2","C1","C2","C3","D1","D2"]}
-    groups   = {k: _avg(f"group_scores.{k}")
-                for k in ["knowledge", "socratic", "exploratory_overall",
-                          "group_a", "group_b", "group_c", "group_d", "overall"]}
+    groups   = {k: _avg(f"group_scores.{k}") for k in ["knowledge", "socratic"]}
     non_sc   = {
         "bleu":                    _avg("non_scoring.bleu"),
         "rouge_l":                 _avg("non_scoring.rouge_l"),
@@ -1443,13 +1434,12 @@ def _summarize(per_conv_results: list) -> dict:
             / n,
             3,
         ),
-        "exploratory_overall":  groups["exploratory_overall"],
-        # Deprecated alias for old clients; not a research-primary outcome.
-        "overall":              groups["overall"],
-        "group_a":              groups["group_a"],
-        "group_b":              groups["group_b"],
-        "group_c":              groups["group_c"],
-        "group_d":              groups["group_d"],
+        "exploratory_overall":  None,
+        "overall":              None,
+        "group_a":              None,
+        "group_b":              None,
+        "group_c":              None,
+        "group_d":              None,
         "criteria":             criteria,
         "avg_latency_ms":       avg_lat,
         "avg_input_tokens":     avg_input_tokens,
@@ -1972,6 +1962,266 @@ def _run_blinded_paired_judge(
         target[entry["index"]] = result
     return base_results, ft_results
 
+
+ADAPTIVE_JUDGE_SYSTEM = """Bạn là chuyên gia đánh giá gia sư Socratic. Đây là phép đo
+chẩn đoán riêng, không thay thế rubric A1-D2 và không tạo điểm tổng có trọng số.
+
+Chấm ba tiêu chí độc lập trên thang 0-5:
+
+P1 - Learner-state diagnosis (nhận diện trạng thái hiểu bài)
+5: Phản hồi thể hiện đúng trạng thái và đúng nguyên nhân/ngộ nhận cụ thể.
+4: Nhận diện đúng trạng thái nhưng nguyên nhân còn thiếu một phần.
+3: Nhận ra vấn đề ở mức rộng, chưa xác định ngộ nhận cụ thể.
+2: Nhận xét mơ hồ, bằng chứng yếu.
+1: Suy luận sai trạng thái người học.
+0: Bỏ qua hoặc tự bịa trạng thái người học.
+
+O1 - Contrastive adaptation/personalization (chấm MỘT LẦN cho cả cặp)
+5: Hai phản hồi đổi gợi ý, độ khó, ví dụ hoặc bước tiếp theo đúng với hai trạng thái.
+4: Thích nghi phù hợp nhưng chưa đầy đủ ở một mặt.
+3: Có dùng câu trả lời học sinh nhưng chiến lược vẫn khá chung.
+2: Phần lớn theo kịch bản, khác biệt nhỏ và ít giá trị.
+1: Gần như cùng một phản hồi cho hai trạng thái khác nhau.
+0: Bỏ qua hoặc thích nghi ngược với trạng thái đã cho.
+
+E1 - Critical-thinking elicitation (khơi gợi tư duy phản biện)
+5: Buộc học sinh giải thích, kiểm chứng, so sánh phương án hoặc chuyển giao sang tình huống mới.
+4: Có câu hỏi why/how/what-if rõ ràng và hữu ích.
+3: Yêu cầu làm bước tiếp theo nhưng chủ yếu mang tính thủ tục.
+2: Chủ yếu yêu cầu nhớ lại hoặc tính toán máy móc.
+1: Chỉ hỏi kiểu “em hiểu chưa/đúng không”.
+0: Đưa đáp án mà không yêu cầu suy nghĩ.
+
+Dùng learner_state, misconception_key và expected_strategy làm GOLD ẩn để chấm;
+không giả định chúng đã được đưa cho model. P1 và E1 chấm từng item; O1 chấm cấp cặp.
+Chỉ trả về JSON array đúng schema được yêu cầu, không markdown."""
+
+
+def _adaptive_pair_payloads(valid_convs: list, replay_results: list) -> list[dict]:
+    replay_by_id = {
+        str(row.get("item_id")): row for row in replay_results if isinstance(row, dict)
+    }
+    grouped = collections.defaultdict(list)
+    for index, conversation in enumerate(valid_convs):
+        adaptive = extract_adaptive_metadata(conversation)
+        if adaptive is None:
+            continue
+        item_meta = extract_item_metadata(conversation, index)
+        replay = replay_by_id.get(item_meta["item_id"])
+        if replay is None:
+            continue
+        grouped[adaptive["contrastive_pair_id"]].append({
+            "item_id": item_meta["item_id"],
+            "subject": item_meta["subject"],
+            "learner_state": adaptive["learner_state"],
+            "misconception_key": adaptive["misconception_key"],
+            "expected_strategy": adaptive["expected_strategy"],
+            "student_message": next(
+                (str(message.get("content") or "") for message in conversation.get("messages", [])
+                 if isinstance(message, dict) and message.get("role") == "user"),
+                "",
+            ),
+            "tutor_response": "\n".join(str(value) for value in replay.get("assistant_turns", [])),
+            "generation_status": replay.get("generation_status"),
+        })
+    return [
+        {"pair_id": pair_id, "subject": rows[0]["subject"], "items": rows}
+        for pair_id, rows in sorted(grouped.items())
+        if len(rows) == 2
+    ]
+
+
+def _parse_adaptive_reply(reply: str, pairs: list[dict]) -> list[dict]:
+    decoder = json.JSONDecoder()
+    parsed = None
+    for match in re.finditer(r"\[", str(reply or "")):
+        try:
+            candidate, _ = decoder.raw_decode(reply[match.start():])
+            if isinstance(candidate, list):
+                parsed = candidate
+                break
+        except json.JSONDecodeError:
+            continue
+    if not isinstance(parsed, list) or len(parsed) != len(pairs):
+        raise _JudgeResponseError(
+            f"Adaptive Judge returned {len(parsed) if isinstance(parsed, list) else 0}/{len(pairs)} pairs"
+        )
+
+    by_index = {}
+    for raw in parsed:
+        if not isinstance(raw, dict) or isinstance(raw.get("pair_index"), bool):
+            raise _JudgeResponseError("Adaptive Judge pair_index is invalid")
+        pair_index = raw.get("pair_index")
+        if not isinstance(pair_index, int) or not 0 <= pair_index < len(pairs) or pair_index in by_index:
+            raise _JudgeResponseError(f"Adaptive Judge pair_index is invalid: {pair_index!r}")
+        expected_ids = {item["item_id"] for item in pairs[pair_index]["items"]}
+        item_scores = raw.get("item_scores")
+        if not isinstance(item_scores, list) or len(item_scores) != 2:
+            raise _JudgeResponseError(f"Adaptive pair {pair_index} must contain two item_scores")
+        normalized_items = []
+        observed_ids = set()
+        for item in item_scores:
+            item_id = str(item.get("item_id") or "") if isinstance(item, dict) else ""
+            if item_id not in expected_ids or item_id in observed_ids:
+                raise _JudgeResponseError(f"Adaptive pair {pair_index} has invalid item_id {item_id!r}")
+            observed_ids.add(item_id)
+            normalized = {"item_id": item_id}
+            for metric in ("P1", "E1"):
+                criterion = item.get(metric)
+                score = criterion.get("score") if isinstance(criterion, dict) else None
+                reason = criterion.get("reason") if isinstance(criterion, dict) else None
+                if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= float(score) <= 5:
+                    raise _JudgeResponseError(f"Adaptive {metric} score is invalid for {item_id}")
+                if not isinstance(reason, str) or not reason.strip():
+                    raise _JudgeResponseError(f"Adaptive {metric} reason is missing for {item_id}")
+                normalized[metric] = {"score": float(score), "reason": reason.strip()}
+            normalized_items.append(normalized)
+        o1 = raw.get("O1")
+        o1_score = o1.get("score") if isinstance(o1, dict) else None
+        o1_reason = o1.get("reason") if isinstance(o1, dict) else None
+        if isinstance(o1_score, bool) or not isinstance(o1_score, (int, float)) or not 0 <= float(o1_score) <= 5:
+            raise _JudgeResponseError(f"Adaptive O1 score is invalid for pair {pair_index}")
+        if not isinstance(o1_reason, str) or not o1_reason.strip():
+            raise _JudgeResponseError(f"Adaptive O1 reason is missing for pair {pair_index}")
+        by_index[pair_index] = {
+            "items": normalized_items,
+            "O1": {"score": float(o1_score), "reason": o1_reason.strip()},
+        }
+    return [by_index[index] for index in range(len(pairs))]
+
+
+def _judge_adaptive_pairs(pairs: list[dict], judge_model: str) -> list[dict]:
+    api_key = _get_api_key()
+    if not api_key:
+        raise RuntimeError("Adaptive Judge unavailable: no_api_key")
+    results = []
+    for start in range(0, len(pairs), BATCH_SIZE):
+        chunk = pairs[start:start + BATCH_SIZE]
+        public_chunk = []
+        for pair_index, pair in enumerate(chunk):
+            public_chunk.append({
+                "pair_index": pair_index,
+                "pair_id": pair["pair_id"],
+                "items": [{
+                    "item_id": item["item_id"],
+                    "gold_learner_state": item["learner_state"],
+                    "gold_misconception_key": item["misconception_key"],
+                    "gold_expected_strategy": item["expected_strategy"],
+                    "student_message": item["student_message"],
+                    "tutor_response": item["tutor_response"],
+                } for item in pair["items"]],
+            })
+        schema = (
+            '\nReturn: [{"pair_index":0,"item_scores":['
+            '{"item_id":"...","P1":{"score":0,"reason":"..."},'
+            '"E1":{"score":0,"reason":"..."}}],'
+            '"O1":{"score":0,"reason":"..."}}]'
+        )
+        payload = json.dumps({
+            "model": judge_model,
+            "max_tokens": 900 * len(chunk),
+            "temperature": 0,
+            "messages": [
+                {"role": "system", "content": ADAPTIVE_JUDGE_SYSTEM + schema},
+                {"role": "user", "content": json.dumps(public_chunk, ensure_ascii=False)},
+            ],
+            "provider": {"allow_fallbacks": False},
+        }).encode("utf-8")
+        judge_request = urllib.request.Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=payload,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "SEP490 Adaptive Socratic Diagnostic",
+            },
+        )
+        with urllib.request.urlopen(judge_request, timeout=120) as response:
+            envelope = json.loads(response.read().decode("utf-8"))
+        choices = envelope.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"Adaptive Judge missing choices: {envelope.get('error')}")
+        reply = choices[0].get("message", {}).get("content", "")
+        results.extend(_parse_adaptive_reply(reply, chunk))
+    return results
+
+
+def _run_adaptive_diagnostic(valid_convs: list, replay_results: list, judge_model: str) -> list[dict]:
+    pairs = _adaptive_pair_payloads(valid_convs, replay_results)
+    scoreable_pairs = [
+        pair for pair in pairs
+        if all(item.get("generation_status") == "success" and item.get("tutor_response") for item in pair["items"])
+    ]
+    judged = _judge_adaptive_pairs(scoreable_pairs, judge_model) if scoreable_pairs else []
+    judged_by_pair = {pair["pair_id"]: raw for pair, raw in zip(scoreable_pairs, judged)}
+    rows = []
+    for pair in pairs:
+        raw = judged_by_pair.get(pair["pair_id"])
+        judge_status = "success"
+        if raw is None:
+            reason = "Pre-specified score 0: at least one item in the contrastive pair has no valid model output."
+            raw = {
+                "items": [
+                    {
+                        "item_id": item["item_id"],
+                        "P1": {"score": 0.0, "reason": reason},
+                        "E1": {"score": 0.0, "reason": reason},
+                    }
+                    for item in pair["items"]
+                ],
+                "O1": {"score": 0.0, "reason": reason},
+            }
+            judge_status = "not_required_generation_failure_scored_zero"
+        p1 = sum(item["P1"]["score"] for item in raw["items"]) / 2.0
+        e1 = sum(item["E1"]["score"] for item in raw["items"]) / 2.0
+        rows.append({
+            "item_id": pair["pair_id"],
+            "pair_id": pair["pair_id"],
+            "subject": pair["subject"],
+            "unit_of_analysis": "contrastive_pair",
+            "item_ids": [item["item_id"] for item in pair["items"]],
+            "learner_states": [item["learner_state"] for item in pair["items"]],
+            "adaptive_scores": {
+                "P1": round(p1, 3),
+                "O1": raw["O1"]["score"],
+                "E1": round(e1, 3),
+            },
+            "adaptive_reasons": {
+                "P1": " | ".join(item["P1"]["reason"] for item in raw["items"]),
+                "O1": raw["O1"]["reason"],
+                "E1": " | ".join(item["E1"]["reason"] for item in raw["items"]),
+            },
+            "item_scores": raw["items"],
+            "judge_status": judge_status,
+        })
+    return rows
+
+
+def _summarize_adaptive(rows: list[dict]) -> dict:
+    scored = [
+        row for row in rows
+        if row.get("judge_status") in {"success", "not_required_generation_failure_scored_zero"}
+    ]
+    criteria = {
+        metric: round(sum(row["adaptive_scores"][metric] for row in scored) / len(scored), 3)
+        if scored else None
+        for metric in ("P1", "O1", "E1")
+    }
+    adaptive_score = (
+        round(sum(criteria[metric] for metric in ("P1", "O1", "E1")) / 3.0, 3)
+        if all(criteria[metric] is not None for metric in ("P1", "O1", "E1")) else None
+    )
+    return {
+        "criteria": criteria,
+        "adaptive_score": adaptive_score,
+        "pair_count": len(scored),
+        "unit_of_analysis": "contrastive_pair",
+        "formula": "AS = (P1 + O1 + E1) / 3",
+        "overall": adaptive_score,
+    }
+
 def _compute_eval_flags(valid_results: list, summary: dict) -> list:
     import statistics
     flags = []
@@ -2134,6 +2384,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
 
     strict_locked = protocol_mode == "locked_single_turn"
     validation = validate_locked_dataset(valid_convs, strict=strict_locked)
+    adaptive_validation = validate_adaptive_dataset(valid_convs)
     for warning in validation["warnings"][:20]:
         _eval_log(job_id, f"[âš ï¸] Dataset warning: {warning}")
     if not validation["valid"]:
@@ -2347,15 +2598,87 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         if is_paired else None
     )
 
+    adaptive_diagnostic = {
+        "protocol_version": "adaptive-socratic-diagnostic-v1",
+        "status": adaptive_validation["status"],
+        "dataset_validation": adaptive_validation,
+        "unit_of_analysis": "contrastive_pair",
+        "criteria_definitions": {
+            "AS": "Equal-weight Adaptive Socratic Score",
+            "P1": "Learner-state diagnosis",
+            "O1": "Contrastive adaptation/personalization",
+            "E1": "Critical-thinking elicitation",
+        },
+        "summary": None,
+        "base_summary": None,
+        "delta": None,
+        "research_statistics": None,
+        "ft_pairs": [],
+        "base_pairs": [],
+        "overall": None,
+    }
+    if adaptive_validation["eligible"]:
+        _eval_log(
+            job_id,
+            f"[Adaptive] Running P1/O1/E1 on {adaptive_validation['complete_pair_count']} contrastive pairs.",
+        )
+        try:
+            adaptive_ft_pairs = _run_adaptive_diagnostic(valid_convs, ft_replay, judge_model)
+            adaptive_base_pairs = (
+                _run_adaptive_diagnostic(valid_convs, base_replay, judge_model)
+                if is_paired else []
+            )
+            adaptive_summary = _summarize_adaptive(adaptive_ft_pairs)
+            adaptive_base_summary = _summarize_adaptive(adaptive_base_pairs) if is_paired else None
+            adaptive_delta = None
+            adaptive_statistics = None
+            if is_paired and adaptive_base_summary:
+                adaptive_delta = {
+                    metric: round(
+                        adaptive_summary["criteria"][metric]
+                        - adaptive_base_summary["criteria"][metric],
+                        3,
+                    )
+                    for metric in ("P1", "O1", "E1")
+                }
+                adaptive_delta["AS"] = round(
+                    adaptive_summary["adaptive_score"]
+                    - adaptive_base_summary["adaptive_score"],
+                    3,
+                )
+                adaptive_statistics = paired_adaptive_statistics(
+                    adaptive_ft_pairs,
+                    adaptive_base_pairs,
+                    resamples=int(bootstrap_resamples),
+                    seed=int(bootstrap_seed),
+                )
+            adaptive_diagnostic.update({
+                "status": "completed",
+                "overall": adaptive_summary["adaptive_score"],
+                "formula": "AS = (P1 + O1 + E1) / 3",
+                "summary": adaptive_summary,
+                "base_summary": adaptive_base_summary,
+                "delta": adaptive_delta,
+                "research_statistics": adaptive_statistics,
+                "ft_pairs": adaptive_ft_pairs,
+                "base_pairs": adaptive_base_pairs,
+            })
+        except Exception as exc:
+            adaptive_diagnostic.update({
+                "status": "failed",
+                "error": str(exc)[:500],
+            })
+            _eval_log(job_id, f"[Adaptive] Diagnostic failed without invalidating A1-D2: {exc}")
+
     # 6. Delta (paired only)
     delta = None
     if is_paired and base_summary:
         delta = {
-            "overall":  round(ft_summary["overall"]  - base_summary["overall"],  3),
-            "group_a":  round(ft_summary["group_a"]  - base_summary["group_a"],  3),
-            "group_b":  round(ft_summary["group_b"]  - base_summary["group_b"],  3),
-            "group_c":  round(ft_summary["group_c"]  - base_summary["group_c"],  3),
-            "group_d":  round(ft_summary["group_d"]  - base_summary["group_d"],  3),
+            "overall":  None,
+            "group_a":  None,
+            "group_b":  None,
+            "group_c":  None,
+            "group_d":  None,
             "criteria": {
                 k: round(ft_summary["criteria"][k] - base_summary["criteria"].get(k, 0), 3)
                 for k in ft_summary["criteria"]
@@ -2454,6 +2777,8 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         "fine_tuned_model_revision": resolved_revisions["fine_tuned"],
         "tokenizers": tokenizer_manifests,
         "judge_prompt_hash": sha256_text(SOCRATIC_JUDGE_SYSTEM_BATCH + JUDGE_REFERENCE_POLICY),
+        "adaptive_judge_prompt_hash": sha256_text(ADAPTIVE_JUDGE_SYSTEM),
+        "adaptive_protocol_version": "adaptive-socratic-diagnostic-v1",
         "generation_failure_quality_policy": (
             "assign_zero_to_K_S_A1_A2_A3_and_diagnostic_criteria; "
             "retain_item_in_paired_denominator; report_failure_separately"
@@ -2501,6 +2826,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         "baseSummary":        base_summary,
         "delta":              delta,
         "researchStatistics": research_statistics,
+        "adaptiveDiagnostic": adaptive_diagnostic,
         "hypothesisDecisions": hypothesis_decisions,
         "pairIntegrity":      pair_integrity,
         "confirmatoryEligible": bool(
@@ -2795,14 +3121,12 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
         delta = {
             "knowledge": round(ft_summary["knowledge"] - base_summary["knowledge"], 3),
             "socratic": round(ft_summary["socratic"] - base_summary["socratic"], 3),
-            "exploratory_overall": round(
-                ft_summary["exploratory_overall"] - base_summary["exploratory_overall"], 3
-            ),
-            "overall":  round(ft_summary["overall"]  - base_summary["overall"],  3),
-            "group_a":  round(ft_summary["group_a"]  - base_summary["group_a"],  3),
-            "group_b":  round(ft_summary["group_b"]  - base_summary["group_b"],  3),
-            "group_c":  round(ft_summary["group_c"]  - base_summary["group_c"],  3),
-            "group_d":  round(ft_summary["group_d"]  - base_summary["group_d"],  3),
+            "exploratory_overall": None,
+            "overall":  None,
+            "group_a":  None,
+            "group_b":  None,
+            "group_c":  None,
+            "group_d":  None,
             "criteria": {
                 k: round(ft_summary["criteria"][k] - base_summary["criteria"].get(k, 0), 3)
                 for k in ft_summary["criteria"]
@@ -2820,7 +3144,7 @@ def run_auto_evaluation(job_id, eval_job_id, eval_file_path,
 
     _eval_log(job_id, f"[Primary] FT Knowledge K: {ft_summary['knowledge']:.3f}/5")
     _eval_log(job_id, f"[Primary] FT Socratic S: {ft_summary['socratic']:.3f}/5")
-    _eval_log(job_id, f"[Exploratory] FT legacy Overall: {ft_summary['exploratory_overall']:.3f}/5")
+    _eval_log(job_id, "[Secondary] A1-D2 are reported independently; weighted legacy composites are retired.")
     if is_paired:
         _eval_log(job_id, f"     Base K/S: {base_summary['knowledge']:.3f}/{base_summary['socratic']:.3f}")
         _eval_log(job_id, f"     Delta K: {delta['knowledge']:+.3f}; Delta S: {delta['socratic']:+.3f}")
@@ -4847,6 +5171,7 @@ def start_eval():
     base_hf_repo  = cfg.get('base_model_hf_repo', '')
     system_prompt = str(cfg.get('system_prompt', '') or '')
     protocol_mode = str(cfg.get('protocol_mode', 'locked_single_turn') or 'locked_single_turn')
+    reference_run_kind = str(cfg.get('reference_run_kind', '') or '')
     prompt_variant = str(cfg.get('prompt_variant', 'P1') or 'P1').upper()
     system_prompt_version = str(cfg.get('system_prompt_version', '') or '')
     subject_override = str(cfg.get('subject_override', '') or '')
@@ -4869,7 +5194,11 @@ def start_eval():
         return jsonify({"error": "Missing 'hf_repo_id' — model phải đã được push lên HF Hub"}), 400
 
     # ── GUARD: chặn eval nếu đang có train job active (tránh OOM trên single GPU) ──
-    if protocol_mode == 'locked_single_turn' and not base_hf_repo:
+    if (
+        protocol_mode == 'locked_single_turn'
+        and not base_hf_repo
+        and reference_run_kind != 'version1_shared_ft'
+    ):
         return jsonify({"error": "Locked RP5 evaluation requires base_model_hf_repo"}), 400
     if protocol_mode == 'locked_single_turn' and prompt_variant not in ('P0', 'P1'):
         return jsonify({"error": "prompt_variant must be P0 or P1"}), 400

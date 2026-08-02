@@ -79,6 +79,24 @@ export interface IEvalResult {
     note?: string;
     reviewer?: string;
     reviewed_at: Date;
+    rubric_version?: string;
+    human_scores?: Record<string, number>;
+    human_reasons?: Record<string, string>;
+    human_outcomes?: {
+      knowledge_k: number;
+      socratic_s_raw: number;
+      socratic_s: number;
+      a1_cap_applied: boolean;
+    };
+    ai_scores_snapshot?: Record<string, number>;
+    conflict?: {
+      has_conflict: boolean;
+      severity: 'none' | 'minor' | 'major' | 'critical';
+      criteria: string[];
+      max_delta: number;
+      summary: string;
+      deltas: Record<string, number>;
+    };
   };
 }
 
@@ -120,6 +138,7 @@ export interface IEvaluation extends Document {
   environmentManifest?: Record<string, any>;
   loadMetrics?: Record<string, any>;
   researchStatistics?: Record<string, any>;
+  adaptiveDiagnostic?: Record<string, any>;
   hypothesisDecisions?: Record<string, any>;
   pairIntegrity?: Record<string, any>;
   confirmatoryEligible?: boolean;
@@ -201,6 +220,7 @@ const EvaluationSchema = new Schema<IEvaluation>(
     environmentManifest:{ type: Schema.Types.Mixed, default: null },
     loadMetrics:        { type: Schema.Types.Mixed, default: null },
     researchStatistics:{ type: Schema.Types.Mixed, default: null },
+    adaptiveDiagnostic:{ type: Schema.Types.Mixed, default: null },
     hypothesisDecisions:{ type: Schema.Types.Mixed, default: null },
     pairIntegrity:      { type: Schema.Types.Mixed, default: null },
     confirmatoryEligible:{ type: Boolean, default: false },

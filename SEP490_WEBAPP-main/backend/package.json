@@ -10,6 +10,8 @@
     "lint": "eslint src/**/*.ts",
     "analyze:rp5": "tsx src/scripts/analyze_rp5.ts",
     "test:rp5": "tsx src/scripts/analyze_rp5.ts --self-test",
+    "test:human-audit": "tsx src/scripts/testHumanAudit.ts",
+    "test:human-audit-workflow": "tsx src/scripts/testHumanAuditWorkflow.ts",
     "test:rbac": "tsx src/scripts/testRbacWorkflow.ts"
   },
   "keywords": [

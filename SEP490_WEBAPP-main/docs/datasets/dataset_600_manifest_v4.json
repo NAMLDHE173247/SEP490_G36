@@ -1,15 +1,27 @@
 {
-  "version": "v4",
+  "version": "v4-set36-faq-extended",
   "source": "dataset_600_quality_v4.json",
   "subjects": [
     "ENGLISH",
     "MATH",
-    "HISTORY"
+    "HISTORY",
+    "GENERAL"
   ],
   "counts": {
-    "total": 600,
-    "per_subject": 200
+    "total": 700,
+    "per_subject": {
+      "ENGLISH": 200,
+      "MATH": 200,
+      "HISTORY": 200,
+      "GENERAL": 100
+    }
   },
-  "purpose": "Raw source for Data Prep; create train/validation/test splits downstream.",
-  "warning": "Synthetic curriculum data; human-review a sample before research claims."
+  "purpose": "Raw source for Data Prep; includes 600 subject-specific curriculum samples plus 100 Vietnamese GENERAL FAQ samples about SET36 - Learning Hub.",
+  "warning": "Synthetic curriculum data; human-review a sample before research claims.",
+  "general_dataset": {
+    "count": 100,
+    "scope": "SET36 - Learning Hub project identity, purpose, capabilities, and workflow",
+    "creator": "Nhóm 36",
+    "provenance": "synthetic_set36_project_faq_v4_general"
+  }
 }

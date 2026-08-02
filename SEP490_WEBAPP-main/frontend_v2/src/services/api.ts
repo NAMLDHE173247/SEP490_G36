@@ -757,7 +757,7 @@ export const apiService = {
     return response.data;
   },
   getEvaluationDetail: async (evalId: string): Promise<any> => {
-    const response = await api.get(`/model-eval/${evalId}`);
+    const response = await api.get(`/model-eval/${evalId}`, { timeout: 30000 });
     return response.data;
   },
   exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
@@ -779,6 +779,19 @@ export const apiService = {
   },
   getLargeLlmReferenceStatus: async (referenceJobId: string): Promise<any> => {
     const response = await api.get(`/model-eval/large-llm/status/${referenceJobId}`);
+    return response.data;
+  },
+  runVersion1SharedReference: async (evalId: string, trainingJobId: string, file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('training_job_id', trainingJobId);
+    formData.append('eval_file', file);
+    const response = await api.post(`/model-eval/${evalId}/version1-shared/run`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  getVersion1SharedReferenceStatus: async (referenceJobId: string): Promise<any> => {
+    const response = await api.get(`/model-eval/version1-shared/status/${referenceJobId}`);
     return response.data;
   },
   runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
@@ -819,8 +832,61 @@ export const apiService = {
     });
     return response.data;
   },
-  reviewConversation: async (evalId: string, convIndex: number, review: { verdict: 'agree' | 'disagree' | 'skip'; note?: string; reviewer?: string }): Promise<any> => {
+  reviewConversation: async (evalId: string, convIndex: number, review: {
+    verdict?: 'agree' | 'disagree' | 'skip';
+    note?: string;
+    reviewer?: string;
+    human_scores?: Record<string, number>;
+    human_reasons?: Record<string, string>;
+  }): Promise<any> => {
     const response = await api.patch(`/model-eval/${evalId}/review/${convIndex}`, review);
+    return response.data;
+  },
+  getMyHumanAuditAssignments: async (): Promise<any[]> => {
+    const response = await api.get('/human-audit/my-assignments');
+    return response.data;
+  },
+  getMyHumanAuditWork: async (evalId: string): Promise<any> => {
+    const response = await api.get(`/human-audit/work/${evalId}`);
+    return response.data;
+  },
+  saveMyHumanAuditReview: async (evalId: string, convIndex: number, review: {
+    verdict?: 'skip';
+    note?: string;
+    human_scores?: Record<string, number>;
+    human_reasons?: Record<string, string>;
+  }): Promise<any> => {
+    const response = await api.put(`/human-audit/work/${evalId}/review/${convIndex}`, review);
+    return response.data;
+  },
+  getHumanAuditStaff: async (): Promise<any[]> => {
+    const response = await api.get('/human-audit/manage/staff');
+    return response.data;
+  },
+  getHumanAuditCheckers: async (): Promise<any[]> => {
+    const response = await api.get('/human-audit/manage/checkers');
+    return response.data;
+  },
+  getManagedHumanAudits: async (): Promise<any[]> => {
+    const response = await api.get('/human-audit/manage/evaluations');
+    return response.data;
+  },
+  assignHumanAudit: async (payload: { model_eval_id: string; staff_ids: string[]; checker_id: string; conv_indexes?: number[] }): Promise<any> => {
+    const response = await api.post('/human-audit/manage/assign', payload);
+    return response.data;
+  },
+  getManagedHumanAuditDetail: async (evalId: string): Promise<any> => {
+    const response = await api.get(`/human-audit/manage/${evalId}`);
+    return response.data;
+  },
+  adjudicateHumanAudit: async (evalId: string, convIndex: number, payload: {
+    resolution: 'accept_ai' | 'accept_staff' | 'manual';
+    selected_review_id?: string;
+    final_scores?: Record<string, number>;
+    final_reasons?: Record<string, string>;
+    note: string;
+  }): Promise<any> => {
+    const response = await api.post(`/human-audit/manage/${evalId}/adjudicate/${convIndex}`, payload);
     return response.data;
   },
 };

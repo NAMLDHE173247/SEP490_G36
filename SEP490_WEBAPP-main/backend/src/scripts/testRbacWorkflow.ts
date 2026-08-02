@@ -69,4 +69,16 @@ assert.match(qualityRoutes, /:taskId\/review', requireCheckerOrAdmin/);
 const multiEvalRoutes = readFileSync(resolve(process.cwd(), 'src/modules/dataprep/quality/multiEval.routes.ts'), 'utf8');
 assert.match(multiEvalRoutes, /\/run', requireManager/);
 
+const rootRoutes = readFileSync(resolve(process.cwd(), 'src/routes/index.ts'), 'utf8');
+assert.match(rootRoutes, /human-audit\/my-assignments', authMiddleware, requireStaff/);
+assert.match(rootRoutes, /human-audit\/work\/:evalId', authMiddleware, requireStaff/);
+assert.match(rootRoutes, /human-audit\/manage\/evaluations', authMiddleware, requireAdjudicator/);
+assert.match(rootRoutes, /human-audit\/manage\/checkers', authMiddleware, requireManager/);
+assert.match(rootRoutes, /human-audit\/manage\/:evalId', authMiddleware, requireAdjudicator/);
+assert.match(rootRoutes, /human-audit\/manage\/assign', authMiddleware, requireManager/);
+assert.ok(
+  rootRoutes.indexOf("router.get('/human-audit/my-assignments'") < rootRoutes.indexOf("router.use('/model-eval'"),
+  'Staff Human Audit routes must be registered outside the manager-only /model-eval boundary',
+);
+
 console.log('RBAC and rewrite workflow policy checks passed.');
