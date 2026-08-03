@@ -425,6 +425,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log(`[AutoTrain] stream msg for ${jobId}:`, data);
         const previousLogs = globalTrainingState.activeJobs[jobId]?.logs || [];
         const receivedLogs = Array.isArray(data.logs) ? data.logs : [];
         const fallbackErrorLogs = receivedLogs.length === 0 && data.error
