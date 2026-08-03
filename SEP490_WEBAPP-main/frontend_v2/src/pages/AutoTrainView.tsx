@@ -496,7 +496,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     es.onerror = () => {
       // Instead of instantly failing on transient SSE disconnects (e.g. LocalTunnel hiccups),
       // verify actual job status from backend API before declaring job ERROR.
-      axios.get(`/api/train/status/${jobId}`, { headers: getAuthHeaders() })
+      api.get(`/train/status/${jobId}`)
         .then((res) => {
           const status = res.data?.status;
           if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(status)) {
@@ -533,7 +533,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
   const handleStopJob = useCallback(async (jobId: string) => {
     try {
-      await axios.post(`/api/train/stop/${jobId}`, {}, { headers: getAuthHeaders() });
+      await api.post(`/train/stop/${jobId}`);
       closeTracking(jobId, 'STOPPED');
       triggerToast('Training job stopped.', 'info');
     } catch (err: any) {
@@ -605,10 +605,9 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         formData.append('datasetSource', 'cloud');
       }
 
-      const response = await axios.post('/api/train/start', formData, {
+      const response = await api.post('/train/start', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          ...getAuthHeaders(),
         },
       });
 
