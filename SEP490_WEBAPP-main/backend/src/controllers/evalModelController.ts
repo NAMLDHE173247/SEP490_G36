@@ -70,9 +70,9 @@ function readEvaluationRecords(filePath: string): any[] {
   const parsedRecords: any[] = filePath.toLowerCase().endsWith('.jsonl')
     ? raw.split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
     : (() => {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [parsed];
-      })();
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    })();
   return parsedRecords.flatMap(record => {
     if (Array.isArray(record?.conversations)) return record.conversations;
     if (Array.isArray(record?.items)) return record.items;
@@ -213,20 +213,20 @@ async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
       });
       if (!resp.ok) continue;
       const data = await resp.json() as any;
-    // console.log('[Backend] GPU status response:', data);
+      // console.log('[Backend] GPU status response:', data);
 
-    // Ensure all required fields are present, calculate missing ones
-    const result = {
-      can_create_eval: data.can_create_eval ?? true,
-      active_evals: data.active_evals ?? 0,
-      active_training: data.active_training ?? false,
-      max_evals: data.max_evals ?? 3,
-      vram_free_mb: data.vram_free_mb ?? (data.vram_total_mb - data.vram_used_mb),
-      vram_total_mb: data.vram_total_mb,
-      vram_used_mb: data.vram_used_mb,
-      gpu_util: data.gpu_util ?? 0,
-      eval_checkpoint_protocol: Number(data.eval_checkpoint_protocol ?? 0),
-    };
+      // Ensure all required fields are present, calculate missing ones
+      const result = {
+        can_create_eval: data.can_create_eval ?? true,
+        active_evals: data.active_evals ?? 0,
+        active_training: data.active_training ?? false,
+        max_evals: data.max_evals ?? 3,
+        vram_free_mb: data.vram_free_mb ?? (data.vram_total_mb - data.vram_used_mb),
+        vram_total_mb: data.vram_total_mb,
+        vram_used_mb: data.vram_used_mb,
+        gpu_util: data.gpu_util ?? 0,
+        eval_checkpoint_protocol: Number(data.eval_checkpoint_protocol ?? 0),
+      };
 
       return result;
     } catch (err) {
@@ -334,38 +334,38 @@ function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
   return perConvResults
     .filter((r: any) => r !== null && r !== undefined)
     .map((r: any) => ({
-      item_id:         r.item_id ? String(r.item_id) : undefined,
-      conv_index:      Number(r.conv_index ?? 0),
-      num_turns:       Number(r.num_turns ?? 0),
-      avg_latency_ms:  Number(r.avg_latency_ms ?? 0),
-      subject:         String(r.subject ?? 'UNGROUPED'),
-      selected_model:  r.selected_model ? String(r.selected_model) : undefined,
-      route_strategy:  r.route_strategy ? String(r.route_strategy) : undefined,
-      input_tokens:    Number(r.input_tokens ?? 0),
-      output_tokens:   Number(r.output_tokens ?? 0),
-      total_tokens:    Number(r.total_tokens ?? 0),
+      item_id: r.item_id ? String(r.item_id) : undefined,
+      conv_index: Number(r.conv_index ?? 0),
+      num_turns: Number(r.num_turns ?? 0),
+      avg_latency_ms: Number(r.avg_latency_ms ?? 0),
+      subject: String(r.subject ?? 'UNGROUPED'),
+      selected_model: r.selected_model ? String(r.selected_model) : undefined,
+      route_strategy: r.route_strategy ? String(r.route_strategy) : undefined,
+      input_tokens: Number(r.input_tokens ?? 0),
+      output_tokens: Number(r.output_tokens ?? 0),
+      total_tokens: Number(r.total_tokens ?? 0),
       generation_status: r.generation_status ? String(r.generation_status) : undefined,
-      failure_type:    r.failure_type == null ? null : String(r.failure_type),
+      failure_type: r.failure_type == null ? null : String(r.failure_type),
       first_attempt_failed: Boolean(r.first_attempt_failed),
       output_limit_reached: Boolean(r.output_limit_reached),
-      telemetry:       r.telemetry && typeof r.telemetry === 'object' ? r.telemetry : {},
-      prompt_trace:    r.prompt_trace && typeof r.prompt_trace === 'object' ? r.prompt_trace : {},
+      telemetry: r.telemetry && typeof r.telemetry === 'object' ? r.telemetry : {},
+      prompt_trace: r.prompt_trace && typeof r.prompt_trace === 'object' ? r.prompt_trace : {},
       reference_trace: r.reference_trace && typeof r.reference_trace === 'object' ? r.reference_trace : {},
       reference_answer: r.reference_answer ? String(r.reference_answer) : '',
       gold_key_points: Array.isArray(r.gold_key_points) ? r.gold_key_points.map(String) : [],
-      judge_status:    r.judge_status ? String(r.judge_status) : undefined,
+      judge_status: r.judge_status ? String(r.judge_status) : undefined,
       judge_response_id: r.judge_response_id ? String(r.judge_response_id) : undefined,
       effective_judge_model: r.effective_judge_model ? String(r.effective_judge_model) : undefined,
-      judge_error:     r.judge_error ? String(r.judge_error) : undefined,
+      judge_error: r.judge_error ? String(r.judge_error) : undefined,
       judge_router_metadata: r.judge_router_metadata ?? null,
-      judge_blinded:   Boolean(r.judge_blinded),
+      judge_blinded: Boolean(r.judge_blinded),
       judge_randomization_seed: r.judge_randomization_seed == null
         ? undefined : Number(r.judge_randomization_seed),
-      replay_turns:     Array.isArray(r.replay_turns) ? r.replay_turns : [],
+      replay_turns: Array.isArray(r.replay_turns) ? r.replay_turns : [],
       criteria_scores: r.criteria_scores ?? {},
       criteria_reasons: r.criteria_reasons ?? {},
-      group_scores:    r.group_scores ?? {},
-      non_scoring:     r.non_scoring ?? {},
+      group_scores: r.group_scores ?? {},
+      non_scoring: r.non_scoring ?? {},
       confidence: r.confidence ?? null,
     }));
 }
@@ -386,25 +386,25 @@ function normalizeEvalResult(result: any) {
   return {
     totalConversations: Number(result.totalConversations ?? result.totalSamples ?? normalizedResults.length),
     validConversations: Number(result.validConversations ?? normalizedResults.length),
-    evalMode:           (result.evalMode === 'paired') ? 'paired' : 'single',
-    ftModelRepo:        result.ftModelRepo ?? undefined,
-    baseModelRepo:      result.baseModelRepo ?? undefined,
-    results:            normalizedResults,
-    baseResults:        normalizePerConvResults(result.basePerConvResults ?? []),
+    evalMode: (result.evalMode === 'paired') ? 'paired' : 'single',
+    ftModelRepo: result.ftModelRepo ?? undefined,
+    baseModelRepo: result.baseModelRepo ?? undefined,
+    results: normalizedResults,
+    baseResults: normalizePerConvResults(result.basePerConvResults ?? []),
     summary,
     baseSummary,
-    delta:              result.delta ?? null,
-    flags:              Array.isArray(result.flags) ? result.flags : [],
+    delta: result.delta ?? null,
+    flags: Array.isArray(result.flags) ? result.flags : [],
     researchStatistics: result.researchStatistics ?? null,
     adaptiveDiagnostic: result.adaptiveDiagnostic ?? null,
     hypothesisDecisions: result.hypothesisDecisions ?? null,
-    pairIntegrity:      result.pairIntegrity ?? null,
+    pairIntegrity: result.pairIntegrity ?? null,
     confirmatoryEligible: Boolean(result.confirmatoryEligible),
-    datasetValidation:  result.datasetValidation ?? null,
-    protocolManifest:   result.protocolManifest ?? null,
+    datasetValidation: result.datasetValidation ?? null,
+    protocolManifest: result.protocolManifest ?? null,
     environmentManifest: result.environmentManifest ?? null,
-    loadMetrics:        result.loadMetrics ?? null,
-    gpuResult:          result,
+    loadMetrics: result.loadMetrics ?? null,
+    gpuResult: result,
   };
 }
 
@@ -484,7 +484,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
           console.log('[Backend] ZIP metadata found:', JSON.stringify(zipMetadata));
         }
       } catch (zipErr: any) {
-        fs.unlink(evalFile.path, () => {});
+        fs.unlink(evalFile.path, () => { });
         return res.status(400).json({ error: zipErr.message || 'Failed to extract ZIP file.' });
       }
     }
@@ -494,14 +494,14 @@ export const runEvaluation = async (req: Request, res: Response) => {
     const baseModelRepo = String(history.baseModel || '').trim();
     const requestedBaseModel = String(req.body.base_model_hf_repo || '').trim();
     if (!baseModelRepo) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       if (zipTempDir) cleanupTempDir(zipTempDir);
       return res.status(400).json({
         error: 'TrainingHistory does not contain the exact precursor Base model required for paired evaluation.',
       });
     }
     if (requestedBaseModel && requestedBaseModel !== baseModelRepo) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       if (zipTempDir) cleanupTempDir(zipTempDir);
       return res.status(400).json({
         error: `Base model mismatch: training job used ${baseModelRepo}, not ${requestedBaseModel}.`,
@@ -513,7 +513,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
 
     const judgeApiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
     if (!judgeApiKey) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       return res.status(400).json({
         error: 'missing_openrouter_key',
         message: 'Hãy cấu hình OpenRouter API key trước khi chạy Gemini Judge.',
@@ -528,7 +528,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
         throw new Error(`test_dataset hash mismatch: metadata=${declaredTestHash}, actual=${lockedDatasetTrace.contentSha256}`);
       }
     } catch (datasetErr: any) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       if (zipTempDir) cleanupTempDir(zipTempDir);
       return res.status(400).json({
         error: 'invalid_locked_test_dataset',
@@ -540,7 +540,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
     try {
       embeddedSystemPrompt = readEmbeddedSystemPrompt(evalFile.path);
     } catch (promptErr: any) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       if (zipTempDir) cleanupTempDir(zipTempDir);
       return res.status(400).json({
         error: 'invalid_test_system_prompt',
@@ -579,7 +579,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
           },
         );
       } else {
-        fs.unlink(evalFile.path, () => {});
+        fs.unlink(evalFile.path, () => { });
         if (zipTempDir) cleanupTempDir(zipTempDir);
         const resumable = recovery.state === 'resumable';
         const active = recovery.state === 'active';
@@ -603,27 +603,27 @@ export const runEvaluation = async (req: Request, res: Response) => {
       hf_repo_id: history.hfRepoId,
       hf_token: history.hfToken || '',
       model_max_length: history.parameters?.modelMaxLength || 2048,
-      judge_model:          RESEARCH_MODEL_CATALOG.judge,
-      judge_provider:       'openrouter',
-      judge_api_key:        judgeApiKey,
-      base_model_hf_repo:   baseModelRepo,
-      system_prompt:        evalSystemPrompt,
+      judge_model: RESEARCH_MODEL_CATALOG.judge,
+      judge_provider: 'openrouter',
+      judge_api_key: judgeApiKey,
+      base_model_hf_repo: baseModelRepo,
+      system_prompt: evalSystemPrompt,
       system_prompt_source: promptTrace.source,
-      system_prompt_version:promptTrace.version,
-      system_prompt_hash:   promptTrace.hash,
-      protocol_mode:        'locked_single_turn',
-      prompt_variant:       'P1',
-      subject_override:     '',
-      max_new_tokens:       512,
-      warmup_runs:          1,
-      bootstrap_resamples:  10000,
-      bootstrap_seed:       42,
-      temperature:          0,
-      top_p:                1,
-      repetition_penalty:   1,
-      eval_file_name:       zipMetadata?.datasetVersionName || uploadedEvalFileName,
-      dataset_file_sha256:  lockedDatasetTrace.fileSha256,
-      subject_counts:       lockedDatasetTrace.subjectCounts,
+      system_prompt_version: promptTrace.version,
+      system_prompt_hash: promptTrace.hash,
+      protocol_mode: 'locked_single_turn',
+      prompt_variant: 'P1',
+      subject_override: '',
+      max_new_tokens: 512,
+      warmup_runs: 1,
+      bootstrap_resamples: 10000,
+      bootstrap_seed: 42,
+      temperature: 0,
+      top_p: 1,
+      repetition_penalty: 1,
+      eval_file_name: zipMetadata?.datasetVersionName || uploadedEvalFileName,
+      dataset_file_sha256: lockedDatasetTrace.fileSha256,
+      subject_counts: lockedDatasetTrace.subjectCounts,
     };
 
     // 4. Tạo Evaluation record trong MongoDB với status PENDING
@@ -635,20 +635,20 @@ export const runEvaluation = async (req: Request, res: Response) => {
       totalConversations: 0,
       validConversations: 0,
       results: [],
-      evalMode:     config.base_model_hf_repo ? 'paired' : 'single',
-      ftModelRepo:  history.hfRepoId,
-      baseModelRepo:config.base_model_hf_repo || undefined,
-      judgeModel:   config.judge_model,
+      evalMode: config.base_model_hf_repo ? 'paired' : 'single',
+      ftModelRepo: history.hfRepoId,
+      baseModelRepo: config.base_model_hf_repo || undefined,
+      judgeModel: config.judge_model,
       // Dataset & Prompt traceability from ZIP metadata
-      systemPrompt:       evalSystemPrompt,
-      systemPromptVersion:promptTrace.version,
+      systemPrompt: evalSystemPrompt,
+      systemPromptVersion: promptTrace.version,
       systemPromptSource: promptTrace.source,
-      systemPromptHash:   promptTrace.hash,
-      datasetVersionId:   zipMetadata?.datasetVersionId || '',
+      systemPromptHash: promptTrace.hash,
+      datasetVersionId: zipMetadata?.datasetVersionId || '',
       datasetVersionName: zipMetadata?.datasetVersionName || uploadedEvalFileName,
-      datasetMetadata:    zipMetadata || undefined,
-      datasetFileHash:    lockedDatasetTrace.fileSha256,
-      datasetValidation:  lockedDatasetTrace,
+      datasetMetadata: zipMetadata || undefined,
+      datasetFileHash: lockedDatasetTrace.fileSha256,
+      datasetValidation: lockedDatasetTrace,
       summary: {
         knowledge: 0,
         socratic: 0,
@@ -673,7 +673,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
     // 6. Kiểm tra GPU trước khi dispatch
     const gpuStatus = await getGpuStatus();
     if (!gpuStatus) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       await ModelEvaluation.updateOne(
         { modelEvalId: eval_job_id, ownerId },
         { status: 'FAILED', error: 'GPU service không phản hồi trước khi dispatch evaluation.', failureStage: 'gpu_preflight', completedAt: new Date() },
@@ -681,7 +681,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
       return res.status(503).json({ error: 'gpu_offline', message: 'GPU service không phản hồi' });
     }
     if (gpuStatus.eval_checkpoint_protocol < 1) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       await ModelEvaluation.updateOne(
         { modelEvalId: eval_job_id, ownerId },
         {
@@ -697,7 +697,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
       });
     }
     if (!gpuStatus.can_create_eval) {
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       await ModelEvaluation.updateOne(
         { modelEvalId: eval_job_id, ownerId },
         { status: 'FAILED', error: `GPU đang bận (${gpuStatus.active_evals}/${gpuStatus.max_evals} slots).`, failureStage: 'gpu_capacity', completedAt: new Date() },
@@ -717,7 +717,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
 
     if (gpuResponse.status === 409) {
       // Race condition: GPU vừa nhận job khác trong khoảng thời gian ngắn
-      fs.unlink(evalFile.path, () => {});
+      fs.unlink(evalFile.path, () => { });
       await ModelEvaluation.updateOne(
         { modelEvalId: eval_job_id, ownerId },
         { status: 'FAILED', error: 'GPU vừa nhận job khác nên không còn slot trống.', failureStage: 'gpu_dispatch', completedAt: new Date() },
@@ -854,8 +854,8 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
             : 'Kết nối GPU tạm thời lỗi',
           stage_detail: terminalGpuError
             ? (missingGpuJob
-                ? 'GPU xác nhận không có job và không có checkpoint có thể Resume.'
-                : 'Chưa thể xác nhận job hoặc checkpoint vì GPU không phản hồi. Không tự chạy lại evaluation.')
+              ? 'GPU xác nhận không có job và không có checkpoint có thể Resume.'
+              : 'Chưa thể xác nhận job hoặc checkpoint vì GPU không phản hồi. Không tự chạy lại evaluation.')
             : `GPU status endpoint trả về HTTP ${response.status} (${consecutiveGpuStatusErrors}/3). Đang thử lại; không chạy lại evaluation lúc này.`,
           error: text?.slice(0, 300),
           resumable: false,
@@ -999,12 +999,14 @@ export const getActiveEvaluation = async (req: Request, res: Response) => {
       if (recovery.state === 'missing') {
         await ModelEvaluation.updateOne(
           { modelEvalId: stale.modelEvalId, ownerId },
-          { $set: {
-            status: 'FAILED',
-            error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
-            failureStage: 'gpu_job_lost',
-            completedAt: new Date(),
-          } },
+          {
+            $set: {
+              status: 'FAILED',
+              error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
+              failureStage: 'gpu_job_lost',
+              completedAt: new Date(),
+            }
+          },
         );
       } else if (recovery.state === 'resumable') {
         await ModelEvaluation.updateOne(
@@ -1049,12 +1051,14 @@ export const getActiveEvaluation = async (req: Request, res: Response) => {
     if (recovery.state === 'missing') {
       await ModelEvaluation.updateOne(
         { modelEvalId: interruptedEvaluation.modelEvalId, ownerId },
-        { $set: {
-          status: 'FAILED',
-          error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
-          failureStage: 'gpu_checkpoint_missing',
-          completedAt: new Date(),
-        } },
+        {
+          $set: {
+            status: 'FAILED',
+            error: 'GPU worker has neither this evaluation job nor a durable checkpoint.',
+            failureStage: 'gpu_checkpoint_missing',
+            completedAt: new Date(),
+          }
+        },
       );
     } else {
       return res.json({
@@ -1228,31 +1232,31 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
     await ModelEvaluation.findOneAndUpdate(
       { modelEvalId: evalJobId, ownerId },
       {
-        status:             'COMPLETED',
-        evalMode:           normalized.evalMode,
-        ftModelRepo:        normalized.ftModelRepo,
-        baseModelRepo:      normalized.baseModelRepo,
+        status: 'COMPLETED',
+        evalMode: normalized.evalMode,
+        ftModelRepo: normalized.ftModelRepo,
+        baseModelRepo: normalized.baseModelRepo,
         totalConversations: normalized.totalConversations,
         validConversations: normalized.validConversations,
-        results:            normalized.results,
-        baseResults:        normalized.baseResults,
-        summary:            normalized.summary,
-        baseSummary:        normalized.baseSummary,
-        delta:              normalized.delta,
-        gpuResult:          normalized.gpuResult,
-        judgeModel:         result.judgeModel ?? undefined,
-        startedAt:          result.startedAt ? new Date(result.startedAt) : new Date(),
-        completedAt:        result.completedAt ? new Date(result.completedAt) : new Date(),
-        flags:              normalized.flags,
+        results: normalized.results,
+        baseResults: normalized.baseResults,
+        summary: normalized.summary,
+        baseSummary: normalized.baseSummary,
+        delta: normalized.delta,
+        gpuResult: normalized.gpuResult,
+        judgeModel: result.judgeModel ?? undefined,
+        startedAt: result.startedAt ? new Date(result.startedAt) : new Date(),
+        completedAt: result.completedAt ? new Date(result.completedAt) : new Date(),
+        flags: normalized.flags,
         researchStatistics: normalized.researchStatistics,
         adaptiveDiagnostic: normalized.adaptiveDiagnostic,
         hypothesisDecisions: normalized.hypothesisDecisions,
-        pairIntegrity:      normalized.pairIntegrity,
+        pairIntegrity: normalized.pairIntegrity,
         confirmatoryEligible: normalized.confirmatoryEligible,
-        datasetValidation:  normalized.datasetValidation,
-        protocolManifest:   normalized.protocolManifest,
+        datasetValidation: normalized.datasetValidation,
+        protocolManifest: normalized.protocolManifest,
         environmentManifest: normalized.environmentManifest,
-        loadMetrics:        normalized.loadMetrics,
+        loadMetrics: normalized.loadMetrics,
       },
       { upsert: true }
     );
@@ -1320,26 +1324,26 @@ export const saveEvalResult = async (req: Request, res: Response) => {
         modelEvalId: result.modelEvalId,
         jobId: result.jobId,
         status: result.status || 'COMPLETED',
-        evalMode:           normalized.evalMode,
-        ftModelRepo:        normalized.ftModelRepo,
-        baseModelRepo:      normalized.baseModelRepo,
+        evalMode: normalized.evalMode,
+        ftModelRepo: normalized.ftModelRepo,
+        baseModelRepo: normalized.baseModelRepo,
         totalConversations: normalized.totalConversations,
         validConversations: normalized.validConversations,
-        results:            normalized.results,
-        baseResults:        normalized.baseResults,
-        summary:            normalized.summary,
-        baseSummary:        normalized.baseSummary,
-        delta:              normalized.delta,
-        gpuResult:          normalized.gpuResult,
+        results: normalized.results,
+        baseResults: normalized.baseResults,
+        summary: normalized.summary,
+        baseSummary: normalized.baseSummary,
+        delta: normalized.delta,
+        gpuResult: normalized.gpuResult,
         researchStatistics: normalized.researchStatistics,
         adaptiveDiagnostic: normalized.adaptiveDiagnostic,
         hypothesisDecisions: normalized.hypothesisDecisions,
-        pairIntegrity:      normalized.pairIntegrity,
+        pairIntegrity: normalized.pairIntegrity,
         confirmatoryEligible: normalized.confirmatoryEligible,
-        datasetValidation:  normalized.datasetValidation,
-        protocolManifest:   normalized.protocolManifest,
+        datasetValidation: normalized.datasetValidation,
+        protocolManifest: normalized.protocolManifest,
         environmentManifest: normalized.environmentManifest,
-        loadMetrics:        normalized.loadMetrics,
+        loadMetrics: normalized.loadMetrics,
         startedAt: result.startedAt ? new Date(result.startedAt) : new Date(),
         completedAt: result.completedAt ? new Date(result.completedAt) : new Date(),
       },
@@ -1465,7 +1469,7 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
   const uploaded = req.file;
   if (!uploaded) return res.status(400).json({ error: 'locked_test_file_required' });
   if (!/^[A-Za-z0-9._:/-]{3,200}$/.test(model)) {
-    fs.unlink(uploaded.path, () => {});
+    fs.unlink(uploaded.path, () => { });
     return res.status(400).json({ error: 'invalid_model_id' });
   }
 
@@ -1581,15 +1585,15 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
         job.detail = 'Chạy LLM lớn thất bại';
       } finally {
         if (extractedTempDir) cleanupTempDir(extractedTempDir);
-        fs.unlink(uploaded.path, () => {});
-        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+        fs.unlink(uploaded.path, () => { });
+        fs.rm(tempDir, { recursive: true, force: true }, () => { });
       }
     });
 
     return res.status(202).json({ referenceJobId, status: job.status });
   } catch (err: any) {
     if (extractedTempDir) cleanupTempDir(extractedTempDir);
-    fs.unlink(uploaded.path, () => {});
+    fs.unlink(uploaded.path, () => { });
     return res.status(Number(err.statusCode || 500)).json({ error: err.message || 'Could not start large-LLM reference' });
   }
 };
@@ -1682,7 +1686,7 @@ export const runVersion1SharedReference = async (req: Request, res: Response) =>
   const uploaded = req.file;
   if (!uploaded) return res.status(400).json({ error: 'locked_test_file_required' });
   if (!trainingJobId) {
-    fs.unlink(uploaded.path, () => {});
+    fs.unlink(uploaded.path, () => { });
     return res.status(400).json({ error: 'version1_training_job_required' });
   }
 
@@ -1691,7 +1695,7 @@ export const runVersion1SharedReference = async (req: Request, res: Response) =>
   let datasetName = uploaded.originalname;
   const cleanup = () => {
     if (extractedTempDir) cleanupTempDir(extractedTempDir);
-    fs.unlink(uploaded.path, () => {});
+    fs.unlink(uploaded.path, () => { });
   };
 
   try {
@@ -1891,14 +1895,14 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
             exploratory_overall: displayEval?.status === 'COMPLETED'
               ? displayEval?.summary?.exploratory_overall ?? displayEval?.summary?.overall ?? null
               : null,
-            overall:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
-            group_a:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
-            group_b:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
-            group_c:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_c ?? null : null,
-            group_d:  displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_d ?? null : null,
+            overall: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
+            group_a: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
+            group_b: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
+            group_c: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_c ?? null : null,
+            group_d: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_d ?? null : null,
             criteria: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.criteria ?? null : null,
             avg_latency_ms: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.avg_latency_ms ?? null : null,
-            non_scoring:    displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
+            non_scoring: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
           },
         };
       })

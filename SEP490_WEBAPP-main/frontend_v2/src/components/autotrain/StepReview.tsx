@@ -51,7 +51,7 @@ const StepReview: React.FC<StepReviewProps> = ({
   const isGpuOnline = useMemo(() => {
     if (!systemResources) return false;
     const workers = systemResources.workers || [];
-    return workers.some((w: any) => w.status === 'online' || !w.error);
+    return workers.some((w: any) => w.status === 'online' || ('vram_total_mb' in w && !w.error));
   }, [systemResources]);
 
   const isOnlineModel = useMemo(() => {
@@ -218,13 +218,9 @@ const StepReview: React.FC<StepReviewProps> = ({
               <div style={{ animation: 'atSlideIn 0.2s ease-out', background: '#FFFFFF', border: '1px solid #FCA5A5', borderRadius: 'var(--at-radius)', padding: '12px 14px' }}>
                 <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9F1239', marginBottom: 6 }}>⚙️ GPU Worker Setup:</span>
                 <ol style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--at-text-secondary)', lineHeight: 1.6 }}>
-                  <li>Ensure python is installed on your GPU server.</li>
-                  <li>
-                    Run this connection script in terminal:
-                    <pre style={{ background: '#F4F4F5', border: '1px solid var(--at-border)', padding: '6px 8px', borderRadius: 6, fontSize: 10, fontFamily: 'monospace', marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                      python scripts/connect_gpu_worker.py --server http://localhost:8000
-                    </pre>
-                  </li>
+                  <li>Start your GPU worker (e.g. app.py in Google Colab).</li>
+                  <li>Copy the public GPU URL (e.g. https://xxxx.loca.lt).</li>
+                  <li>Go to <strong>Settings &gt; System Config</strong> and paste it into "GPU Service URL".</li>
                   <li>Wait 5-10 seconds for the indicator to turn green.</li>
                 </ol>
               </div>

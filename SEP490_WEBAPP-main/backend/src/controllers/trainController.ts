@@ -61,6 +61,7 @@ class WorkerManager {
 
   getUrls() {
     this.syncWorkers();
+    if (this.workers.length === 0) return ['http://localhost:5000'];
     return this.workers.map(w => w.url);
   }
 }
@@ -810,6 +811,7 @@ export const stopTraining = async (req: Request, res: Response) => {
 export const getSystemResources = async (_req: Request, res: Response) => {
   try {
     const urls = workerManager.getUrls();
+    console.log('[getSystemResources] Worker URLs:', urls);
     const resourcePromises = urls.map(async (url) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30-second timeout (increased for slow localtunnel/ngrok)
@@ -819,9 +821,18 @@ export const getSystemResources = async (_req: Request, res: Response) => {
           headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
           signal: controller.signal as any
         });
-        const data: any = await response.json();
-        return { url, ...data };
-      } catch (err) {
+        const text = await response.text();
+        console.log(`[getSystemResources] Raw response from ${url}: status=${response.status}, body=${text.slice(0, 300)}`);
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          console.error(`[getSystemResources] Non-JSON response from ${url}:`, text.slice(0, 200));
+          return { url, error: 'Worker returned non-JSON response' };
+        }
+        return { url, status: 'online', ...data };
+      } catch (err: any) {
+        console.error(`[getSystemResources] Fetch error from ${url}:`, err.message);
         return { url, error: 'Worker unreachable' };
       } finally {
         clearTimeout(timeoutId);
@@ -829,6 +840,7 @@ export const getSystemResources = async (_req: Request, res: Response) => {
     });
 
     const results: any[] = await Promise.all(resourcePromises);
+    console.log('[getSystemResources] Final results:', JSON.stringify(results));
 
     // Aggregated resources for backward compatibility if needed, 
     // or just return the list of workers

@@ -3,7 +3,6 @@
 // ============================================================
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import axios from 'axios';
 import {
   Zap,
   History,
@@ -12,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { getAuthToken } from '../services/authSession';
-import { apiService } from '../services/api';
+import { apiService, api } from '../services/api';
 import '../styles/autotrain.css';
 
 // ── Component Imports ──
@@ -191,30 +190,28 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   useEffect(() => {
     const fetchResources = async () => {
       try {
-        const res = await axios.get('/api/system/resources', { headers: getAuthHeaders() });
+        const res = await api.get('/system/resources');
+        console.log('[AutoTrain] /api/system/resources response:', JSON.stringify(res.data));
         setSystemResources(res.data);
       } catch (e) {
         console.error('Error fetching system GPU resources:', e);
-        // Fallback: try the same endpoint Navbar uses (which doesn't require requireManager)
+        // Fallback: use the same endpoint Navbar uses (apiService.checkGpuStatus)
         try {
-          const fallbackRes = await axios.get('/api/model-eval/gpu-status', {
-            headers: getAuthHeaders(),
-            timeout: 6000,
-          });
-          if (fallbackRes.status === 200 && fallbackRes.data) {
+          const { isOk, data: statsData } = await apiService.checkGpuStatus();
+          if (isOk && statsData) {
             // Construct a compatible workers array from gpu-status response
             setSystemResources({
               workers: [{
                 status: 'online',
                 gpu_name: 'GPU Worker',
-                vram_used_mb: fallbackRes.data.vram_used_mb || 0,
-                vram_total_mb: fallbackRes.data.vram_total_mb || 0,
-                vram_free: ((fallbackRes.data.vram_total_mb - fallbackRes.data.vram_used_mb) / 1024).toFixed(1),
-                gpu_util: fallbackRes.data.gpu_util || 0,
+                vram_used_mb: statsData.vram_used_mb || 0,
+                vram_total_mb: statsData.vram_total_mb || 0,
+                vram_free: ((statsData.vram_total_mb - statsData.vram_used_mb) / 1024).toFixed(1),
+                gpu_util: statsData.gpu_util || 0,
               }],
-              vram_used_mb: fallbackRes.data.vram_used_mb || 0,
-              vram_total_mb: fallbackRes.data.vram_total_mb || 0,
-              gpu_util: fallbackRes.data.gpu_util || 0,
+              vram_used_mb: statsData.vram_used_mb || 0,
+              vram_total_mb: statsData.vram_total_mb || 0,
+              gpu_util: statsData.gpu_util || 0,
             });
           }
         } catch (fallbackErr) {
@@ -241,7 +238,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   useEffect(() => {
     const restoreActiveJobs = async () => {
       try {
-        const res = await axios.get('/api/train/active', { headers: getAuthHeaders() });
+        const res = await api.get('/train/active');
         const jobs = Array.isArray(res.data) ? res.data : [];
         jobs.forEach((job: any) => {
           const jobId = job.jobId || job.id;
@@ -783,7 +780,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         gpuOnline={useMemo(() => {
           if (!systemResources) return false;
           const workers = systemResources.workers || [];
-          return workers.some((w: any) => w.status === 'online' || !w.error);
+          return workers.some((w: any) => w.status === 'online' || ('vram_total_mb' in w && !w.error));
         }, [systemResources])}
         onConfirm={handleStartTrainingConfirm}
         onCancel={() => setIsConfirmOpen(false)}
