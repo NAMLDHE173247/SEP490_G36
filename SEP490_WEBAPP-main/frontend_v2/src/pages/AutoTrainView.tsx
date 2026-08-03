@@ -42,7 +42,7 @@ const globalTrainingState = {
   lossHistories: {} as Record<string, LossPoint[]>,
   evalLossHistories: {} as Record<string, LossPoint[]>,
   jobConfigs: {} as Record<string, any>,
-  eventSources: {} as Record<string, EventSource>,
+  eventSources: {} as Record<string, any>,
   listeners: new Set<() => void>(),
 
   subscribe(listener: () => void) {
@@ -412,20 +412,16 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         id: jobId,
         status: 'QUEUED',
         progress: 0,
-        logs: ['Establishing connection to SSE stream...'],
+        logs: ['Establishing connection to background job...'],
       }
     };
 
-    const token = getAuthToken();
-    const streamUrl = `/api/train/stream/${jobId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-    const es = new EventSource(streamUrl);
-
-    globalTrainingState.eventSources[jobId] = es;
-
-    es.onmessage = (event) => {
+    const pollJob = async () => {
       try {
-        const data = JSON.parse(event.data);
-        console.log(`[AutoTrain] stream msg for ${jobId}:`, data);
+        const res = await api.get(`/train/status/${jobId}`);
+        const data = res.data;
+        
+        console.log(`[AutoTrain] poll msg for ${jobId}:`, data);
         const previousLogs = globalTrainingState.activeJobs[jobId]?.logs || [];
         const receivedLogs = Array.isArray(data.logs) ? data.logs : [];
         const fallbackErrorLogs = receivedLogs.length === 0 && data.error
@@ -489,27 +485,19 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         }
 
         globalTrainingState.notify();
-      } catch (err) {
-        console.error('SSE message parse error:', err);
+      } catch (err: any) {
+        console.error('Polling error:', err);
+        // Only mark ERROR if it fails completely (API down), transient 502/504s should retry
+        if (err.response && err.response.status === 404) {
+           closeTracking(jobId, 'ERROR');
+           globalTrainingState.notify();
+        }
       }
     };
 
-    es.onerror = () => {
-      // Instead of instantly failing on transient SSE disconnects (e.g. LocalTunnel hiccups),
-      // verify actual job status from backend API before declaring job ERROR.
-      api.get(`/train/status/${jobId}`)
-        .then((res) => {
-          const status = res.data?.status;
-          if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(status)) {
-            closeTracking(jobId, status);
-          } else {
-            console.warn(`[SSE Stream] Transient stream disconnect on job ${jobId}. Browser will auto-reconnect.`);
-          }
-        })
-        .catch(() => {
-          closeTracking(jobId, 'ERROR');
-        });
-    };
+    pollJob(); // call immediately
+    const intervalId = setInterval(pollJob, 2000);
+    globalTrainingState.eventSources[jobId] = { close: () => clearInterval(intervalId) };
 
     globalTrainingState.notify();
   };

@@ -636,6 +636,64 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
       }
     }
 
+    // --- DB SYNC FOR POLLING ---
+    if (data.status) {
+      TrainingHistory.updateOne(
+        { jobId, ownerId },
+        { status: data.status }
+      ).catch(err => console.error('[Backend] Failed to update status in DB during poll:', err));
+    }
+
+    if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
+      const updateFields: any = {};
+      if (data.latest_checkpoint) updateFields.latest_checkpoint_file_id = data.latest_checkpoint;
+      
+      const pushFields: any = {};
+      if (data.metrics && typeof data.metrics.loss === 'number') {
+        pushFields.lossHistory = { progress: data.progress || 0, loss: data.metrics.loss };
+      }
+      if (data.metrics && typeof data.metrics.eval_loss === 'number') {
+        pushFields.evalLossHistory = { progress: data.progress || 0, loss: data.metrics.eval_loss };
+      }
+
+      TrainingHistory.updateOne(
+        { jobId, ownerId },
+        {
+          ...updateFields,
+          ...(Object.keys(pushFields).length > 0 ? { $push: pushFields } : {})
+        }
+      ).catch(err => console.error('[Backend] Failed to update history during poll:', err));
+    }
+
+    if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(data.status)) {
+      const workerMetrics = data.metrics || {};
+      let finalLoss = typeof data.loss === 'number' && data.loss > 0 ? data.loss : (typeof workerMetrics.loss === 'number' ? workerMetrics.loss : 0);
+      
+      if (finalLoss === 0 && history && history.lossHistory && history.lossHistory.length > 0) {
+        const lastValid = history.lossHistory.filter(h => h.loss > 0).pop();
+        if (lastValid) finalLoss = lastValid.loss;
+      }
+
+      TrainingHistory.updateOne(
+        { jobId, ownerId },
+        {
+          status: data.status,
+          completedAt: new Date(),
+          trainingDuration: Math.max(0, Date.now() - new Date(history.startedAt).getTime()),
+          finalMetrics: {
+            loss: finalLoss,
+            eval_loss: typeof workerMetrics.eval_loss === 'number' ? workerMetrics.eval_loss : 0,
+            accuracy: typeof workerMetrics.accuracy === 'number' ? workerMetrics.accuracy : 0,
+            vram: typeof workerMetrics.vram === 'number' ? workerMetrics.vram : 0,
+            gpu_util: typeof workerMetrics.gpu_util === 'number' ? workerMetrics.gpu_util : 0,
+          },
+          ...(data.latest_checkpoint ? { latest_checkpoint_file_id: data.latest_checkpoint } : {})
+        }
+      ).catch(err => console.error('[Backend] Failed to update final status in DB:', err));
+      workerManager.decrementJobs(workerUrl);
+    }
+    // --- END DB SYNC ---
+
     return res.status(response.status).json(data);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to get training status' });
