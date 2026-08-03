@@ -678,14 +678,23 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
   res.flushHeaders();
 
   const intervalId = setInterval(async () => {
+    let data: any;
     try {
       const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
         headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
       });
-      const data: any = await response.json();
+      
+      if (!response.ok && response.status !== 404) {
+         throw new Error(`Worker returned HTTP ${response.status}`);
+      }
+      data = await response.json();
+    } catch (fetchErr: any) {
+      console.warn(`[Backend] Failed to fetch status from worker: ${fetchErr.message}`);
+      data = { status: 'NOT_FOUND', message: 'Worker is unreachable or returned invalid response' };
+    }
 
-      if (data.status === 'NOT_FOUND') {
-        const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
+    if (data.status === 'NOT_FOUND') {
+      const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
         if (jobAgeMs > 15000) {
           data.status = 'ERROR';
           data.logs = ['[System] Lỗi: Kết nối huấn luyện bị mất. Trạng thái công việc không tìm thấy trên GPU Worker (có thể Worker đã bị khởi động lại hoặc ngắt kết nối).'];
