@@ -678,9 +678,10 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
   res.flushHeaders();
 
   const intervalId = setInterval(async () => {
-    let data: any;
     try {
-      const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
+      let data: any;
+      try {
+        const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
         headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
       });
       
