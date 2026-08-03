@@ -9,7 +9,7 @@ export function getAuthUserId(req: Request): string | null {
   const normalized = String(userId);
   // Persistence-scoped controllers store ownerId as a Mongo ObjectId.
   // optionalAuthMiddleware uses "public" as a request role marker, not a DB owner.
-  if (!/^[a-f\d]{24}$/i.test(normalized)) {
+  if (normalized === 'public') {
     return null;
   }
   return normalized;

@@ -443,6 +443,11 @@ export const startTraining = async (req: Request, res: Response) => {
       });
     }
 
+    if (!gpuResponse.ok) {
+      if (zipTempDir) cleanupTempDir(zipTempDir);
+      return res.status(gpuResponse.status).json(data);
+    }
+
     let savedDatasetPath: string | undefined;
 
     // Clean up the temporary upload file on the backend to save disk space
