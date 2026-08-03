@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
 export interface ITrainingHistory extends Document {
-  ownerId: mongoose.Types.ObjectId;
+  ownerId: string;
   jobId: string;
   projectName: string;
   baseModel: string;
@@ -67,7 +67,7 @@ export interface ITrainingHistory extends Document {
 
 const TrainingHistorySchema = new Schema<ITrainingHistory>(
   {
-    ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    ownerId: { type: String, ref: 'User', required: true, index: true },
     jobId: { type: String, required: true, unique: true, index: true },
     projectName: { type: String, required: true },
     baseModel: { type: String, required: true, index: true },

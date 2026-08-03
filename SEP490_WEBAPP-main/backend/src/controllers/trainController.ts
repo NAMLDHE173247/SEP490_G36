@@ -653,18 +653,18 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
     return;
   }
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
-
-  // Get worker URL from DB
+  // Get worker URL from DB BEFORE sending headers
   const history = await TrainingHistory.findOne({ jobId, ownerId });
   if (!history) {
     res.status(404).json({ error: 'Training job not found' });
     return;
   }
   const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
 
   const intervalId = setInterval(async () => {
     try {
