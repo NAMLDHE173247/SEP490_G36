@@ -619,12 +619,23 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     if (!history) {
       return res.status(404).json({ error: 'Training job not found' });
     }
-    const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
+    const workerUrl = history.workerUrl || workerManager.getUrls()[0];
 
     const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
       headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
     });
-    const data = await response.json();
+    const data: any = await response.json();
+
+    if (data.status === 'NOT_FOUND') {
+      const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
+      if (jobAgeMs > 15000) {
+        data.status = 'ERROR';
+        data.logs = ['[System] Lỗi: Kết nối huấn luyện bị mất. Trạng thái công việc không tìm thấy trên GPU Worker.'];
+      } else {
+        data.status = 'QUEUED';
+      }
+    }
+
     return res.status(response.status).json(data);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to get training status' });
