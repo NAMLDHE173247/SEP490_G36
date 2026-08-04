@@ -130,7 +130,8 @@ export const BASE_MODEL_GROUPS: ModelGroup[] = [
   {
     category: "Môn Toán học",
     models: [
-      { id: "unsloth/Qwen2.5-Math-7B-Instruct-bnb-4bit", name: "Qwen 2.5 Math (7B) — Chuyên giải Toán" }
+      { id: "unsloth/Qwen2.5-Math-7B-Instruct-bnb-4bit", name: "Qwen 2.5 Math (7B) — Chuyên giải Toán" },
+      { id: "unsloth/DeepSeek-R1-Distill-Qwen-7B-unsloth-bnb-4bit", name: "DeepSeek R1 Distill Qwen (7B 4-bit) — Reasoning & Socratic Math" }
     ]
   }
 ];
