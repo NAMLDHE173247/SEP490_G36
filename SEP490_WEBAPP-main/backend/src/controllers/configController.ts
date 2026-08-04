@@ -24,23 +24,30 @@ const parseApiKeyUpdates = (body: any) => {
   return updates;
 };
 
-export const getGpuConfig = (_req: Request, res: Response) => {
-  const gpuUrl = configService.getGpuUrls().join(', ');
+export const getGpuConfig = (req: Request, res: Response) => {
+  const userId = getAuthUserId(req);
+  const gpuUrls = configService.getGpuUrls(userId || undefined);
   res.json({
-    gpuUrl,
-    configured: configService.isGpuConfigured(),
+    gpuUrl: gpuUrls.join(', '),
+    configured: configService.isGpuConfigured(userId || undefined),
   });
 };
 
 export const updateGpuConfig = (req: Request, res: Response) => {
+  const userId = getAuthUserId(req);
   const { gpuUrl } = req.body;
   if (typeof gpuUrl === 'string') {
     if (gpuUrl.trim() === '') {
-      configService.clearGpuUrl();
+      if (userId) configService.setUserGpuUrl(userId, '');
+      configService.clearGpuUrl(userId || undefined);
       res.json({ success: true, gpuUrl: '', configured: false });
     } else {
+      if (userId) {
+        configService.setUserGpuUrl(userId, gpuUrl);
+      }
       configService.setGpuUrlStr(gpuUrl);
-      res.json({ success: true, gpuUrl: configService.getGpuUrls().join(', '), configured: true });
+      const updatedUrls = configService.getGpuUrls(userId || undefined);
+      res.json({ success: true, gpuUrl: updatedUrls.join(', '), configured: true });
     }
   } else {
     res.status(400).json({ error: 'Invalid gpuUrl format' });
