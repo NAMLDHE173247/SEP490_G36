@@ -123,6 +123,20 @@ class LockedProtocolTests(unittest.TestCase):
         self.assertEqual(decisions["H2"], "supported")
         self.assertTrue(all(v["decision"] == "supported" for v in decisions["H4_by_subject"].values()))
 
+    def test_h2_rejects_component_degradation_hidden_by_upper_bound(self):
+        statistics_result = {
+            "macro_equal_weight": {
+                "K": {"status": "ok", "ci95": [0.10, 0.40]},
+                "S": {"status": "ok", "ci95": [0.20, 0.80]},
+                "A1": {"status": "ok", "ci95": [-1.20, 0.10]},
+                "A2": {"status": "ok", "ci95": [0.00, 0.50]},
+                "A3": {"status": "ok", "ci95": [0.00, 0.50]},
+            },
+            "per_subject": {},
+        }
+        decisions = decide_hypotheses(statistics_result, [], [])
+        self.assertEqual(decisions["H2"], "not_supported")
+
     def test_pair_integrity_detects_rendered_prompt_mismatch(self):
         judge = "google/gemini-2.5-flash"
         common = {
