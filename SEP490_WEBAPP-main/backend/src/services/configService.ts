@@ -6,8 +6,10 @@ dotenv.config();
 
 class ConfigService {
   private gpuUrls: string[];
+  private userGpuMap: Map<string, string[]> = new Map();
   private gpuCleared: boolean = false;
   private readonly runtimeFile = path.join(os.tmpdir(), 'sep490-gpu-service-url.txt');
+  private readonly userGpuFile = path.join(os.tmpdir(), 'sep490-user-gpu-urls.json');
 
   private normalizeUrl(value: string): string {
     let url = String(value || '').trim().replace(/^['"`]|['"`]$/g, '');
@@ -41,9 +43,35 @@ class ConfigService {
     }
     const raw = persisted || process.env.GPU_SERVICE_URL || '';
     this.gpuUrls = raw ? this.normalizeList(raw) : [];
+
+    // Load persisted user GPU mapping if present
+    try {
+      if (fs.existsSync(this.userGpuFile)) {
+        const rawUserMap = fs.readFileSync(this.userGpuFile, 'utf8').trim();
+        if (rawUserMap) {
+          const data = JSON.parse(rawUserMap);
+          for (const [uid, urls] of Object.entries(data)) {
+            if (Array.isArray(urls)) {
+              this.userGpuMap.set(uid, urls as string[]);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[ConfigService] Could not load user GPU file:', e);
+    }
   }
 
-  getGpuUrl(instanceId?: number): string {
+  getGpuUrl(instanceId?: number, userId?: string): string {
+    if (userId && this.userGpuMap.has(userId)) {
+      const userUrls = this.userGpuMap.get(userId)!;
+      if (userUrls.length > 0) {
+        if (instanceId && instanceId > 0 && instanceId <= userUrls.length) {
+          return userUrls[instanceId - 1];
+        }
+        return userUrls[0];
+      }
+    }
     if (!this.gpuUrls.length) return 'http://localhost:5000';
     if (instanceId && instanceId > 0 && instanceId <= this.gpuUrls.length) {
       return this.gpuUrls[instanceId - 1];
@@ -51,11 +79,41 @@ class ConfigService {
     return this.gpuUrls[0];
   }
 
-  getGpuUrls(): string[] {
+  getGpuUrls(userId?: string): string[] {
+    if (userId && this.userGpuMap.has(userId)) {
+      const userUrls = this.userGpuMap.get(userId)!;
+      if (userUrls.length > 0) return userUrls;
+    }
     return this.gpuUrls;
   }
 
-  isGpuConfigured(): boolean {
+  setUserGpuUrl(userId: string, urlStr: string) {
+    if (!userId) return;
+    if (!urlStr || urlStr.trim() === '') {
+      this.userGpuMap.delete(userId);
+    } else {
+      const urls = this.normalizeList(urlStr);
+      this.userGpuMap.set(userId, urls);
+    }
+    this.saveUserGpuMap();
+  }
+
+  private saveUserGpuMap() {
+    try {
+      const obj: Record<string, string[]> = {};
+      for (const [uid, urls] of this.userGpuMap.entries()) {
+        obj[uid] = urls;
+      }
+      fs.writeFileSync(this.userGpuFile, JSON.stringify(obj, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[ConfigService] Failed to save user GPU map:', e);
+    }
+  }
+
+  isGpuConfigured(userId?: string): boolean {
+    if (userId && this.userGpuMap.has(userId)) {
+      return (this.userGpuMap.get(userId)?.length || 0) > 0;
+    }
     return this.gpuUrls.length > 0 && !this.gpuCleared;
   }
 
@@ -69,7 +127,11 @@ class ConfigService {
     console.log('[ConfigService] GPU_SERVICE_URL updated to:', this.gpuUrls);
   }
 
-  clearGpuUrl() {
+  clearGpuUrl(userId?: string) {
+    if (userId) {
+      this.userGpuMap.delete(userId);
+      this.saveUserGpuMap();
+    }
     this.gpuUrls = [];
     this.gpuCleared = true;
     fs.writeFileSync(this.runtimeFile, '', 'utf8');
