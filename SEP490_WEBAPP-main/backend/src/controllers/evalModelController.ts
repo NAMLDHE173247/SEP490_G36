@@ -1505,8 +1505,13 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
     }
 
     const scriptCandidates = [
+      path.resolve(process.cwd(), 'scripts', 'run_large_llm_reference.py'),
       path.resolve(process.cwd(), '..', 'scripts', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', 'scripts', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', '..', 'scripts', 'run_large_llm_reference.py'),
       path.resolve(__dirname, '..', '..', '..', 'scripts', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '../../../../scripts/run_large_llm_reference.py'),
     ];
     const scriptPath = scriptCandidates.find(candidate => fs.existsSync(candidate));
     if (!scriptPath) throw new Error('Large-LLM runner script was not found');

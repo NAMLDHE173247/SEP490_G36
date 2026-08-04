@@ -653,9 +653,15 @@ def decide_hypotheses(statistics_result: dict, ft_results: list[dict], base_resu
     dimension_cis = {metric: ci(metric) for metric in ("A1", "A2", "A3")}
     h1 = "supported" if k_ci and k_ci[0] > 0 else ("not_supported" if k_ci else "not_testable")
     h2_testable = s_ci is not None and all(value is not None for value in dimension_cis.values())
+    # H2 is a superiority endpoint for S with a strict no-harm guardrail for
+    # each Socratic component.  The lower CI bound must be non-negative: an
+    # upper-bound check would allow a CI such as [-1.2, 0.1] to pass even
+    # though substantial component degradation remains compatible with the
+    # data.  If a future protocol adopts a non-inferiority margin, that
+    # margin must be explicit and applied to the lower bound instead.
     h2 = (
         "supported"
-        if h2_testable and s_ci[0] > 0 and all(value[1] >= 0 for value in dimension_cis.values() if value)
+        if h2_testable and s_ci[0] > 0 and all(value[0] >= 0 for value in dimension_cis.values() if value)
         else "not_supported" if h2_testable else "not_testable"
     )
 
