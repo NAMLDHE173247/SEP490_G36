@@ -20,6 +20,18 @@ import importlib.metadata
 
 import torch
 import pynvml
+
+# Compatibility patch for peft / torchao LinearActivationQuantizedTensor mismatch
+try:
+    import torchao.quantization
+    if not hasattr(torchao.quantization, "LinearActivationQuantizedTensor"):
+        setattr(
+            torchao.quantization,
+            "LinearActivationQuantizedTensor",
+            getattr(torchao.quantization, "AffineQuantizedTensor", object)
+        )
+except Exception:
+    pass
 import anthropic
 from flask import Flask, request, jsonify, Response
 from werkzeug.utils import secure_filename
