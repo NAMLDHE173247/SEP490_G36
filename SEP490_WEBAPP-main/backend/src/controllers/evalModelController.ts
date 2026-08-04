@@ -1769,7 +1769,7 @@ export const runVersion1SharedReference = async (req: Request, res: Response) =>
       judge_model: evaluation.judgeModel || RESEARCH_MODEL_CATALOG.judge,
       judge_provider: 'openrouter',
       judge_api_key: judgeApiKey,
-      base_model_hf_repo: '',
+      base_model_hf_repo: String(version1History.baseModel || ''),
       system_prompt: String(evaluation.systemPrompt || ''),
       system_prompt_source: 'specialist_evaluation_reference',
       system_prompt_version: evaluation.systemPromptVersion || evaluation.protocolManifest?.prompt_version || 'RP4-locked-v1',
