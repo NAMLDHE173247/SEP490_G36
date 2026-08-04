@@ -2133,16 +2133,16 @@ export default function ModelEvalView() {
                         ))}</tbody>
                       </table>
                     ) : (
-                      <div className="research-reading-note" style={{ background: 'rgba(99, 102, 241, 0.08)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: '12px', padding: '16px 20px', marginTop: '12px' }}>
-                        <BrainCircuit size={22} style={{ color: '#6366f1', flexShrink: 0, marginTop: '2px' }} />
+                      <div className="research-reading-note" style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '14px', padding: '18px 22px', marginTop: '14px', display: 'flex', alignItems: 'flex-start', gap: '14px' }}>
+                        <BrainCircuit size={24} style={{ color: '#4f46e5', flexShrink: 0, marginTop: '2px' }} />
                         <div style={{ fontSize: '13.5px', lineHeight: '1.6' }}>
-                          <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: '4px', fontSize: '14px' }}>
+                          <div style={{ fontWeight: 800, color: '#1e1b4b', marginBottom: '4px', fontSize: '14.5px' }}>
                             Chế độ đánh giá Tiêu chuẩn (Standard A1–D2 Benchmark)
                           </div>
-                          <span style={{ color: '#94a3b8' }}>
+                          <span style={{ color: '#334155' }}>
                             Lần đánh giá này sử dụng tập kiểm thử chuẩn 10 tiêu chí (<b>A1–D2</b>). Điểm chính <b>K</b> (Kiến thức) và <b>S</b> (Gợi mở Socratic) đã được thống kê đầy đủ ở bảng chính trên.
                           </span>
-                          <div style={{ marginTop: '8px', color: '#cbd5e1', fontSize: '13px' }}>
+                          <div style={{ marginTop: '8px', color: '#4338ca', fontSize: '13px', fontWeight: 600 }}>
                             📌 <b>Lưu ý về P1 / O1 / E1</b>: Đây là bộ <i>Chẩn đoán cá nhân hóa Nâng cao (Adaptive Protocol)</i>. 
                             {evaluationDetail.adaptiveDiagnostic?.status === 'invalid'
                               ? ` Trạng thái: ${(evaluationDetail.adaptiveDiagnostic?.dataset_validation?.errors || []).join(' · ')}`
