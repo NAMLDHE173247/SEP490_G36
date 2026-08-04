@@ -4,6 +4,9 @@ FROM node:20-alpine
 # Thiết lập thư mục làm việc
 WORKDIR /app
 
+# Cài đặt python3
+RUN apk add --no-cache python3
+
 # Copy package.json và package-lock.json
 COPY package*.json ./
 

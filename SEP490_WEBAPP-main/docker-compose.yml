@@ -78,6 +78,8 @@ services:
       - PORT=3000
     volumes:
       - uploads_data:/app/uploads
+      - ./scripts:/app/scripts
+      - ./gpu-service:/app/gpu-service
     networks:
       - app_network
     depends_on:
