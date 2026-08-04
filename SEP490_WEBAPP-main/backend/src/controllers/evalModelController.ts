@@ -1505,6 +1505,8 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
     }
 
     const scriptCandidates = [
+      path.resolve(process.cwd(), 'python-runner', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', '..', 'python-runner', 'run_large_llm_reference.py'),
       path.resolve(process.cwd(), 'scripts', 'run_large_llm_reference.py'),
       path.resolve(process.cwd(), '..', 'scripts', 'run_large_llm_reference.py'),
       path.resolve(__dirname, '..', 'scripts', 'run_large_llm_reference.py'),
@@ -1547,7 +1549,7 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
       '--seed', '42',
     ];
     if (evaluationPrompt) args.push('--prompt-file', promptPath);
-    const python = process.env.RP5_PYTHON || 'python';
+    const python = process.env.RP5_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
     const child = spawn(python, args, {
       cwd: path.dirname(scriptPath),
       env: { ...process.env, OPENROUTER_API_KEY: openRouterKey },
