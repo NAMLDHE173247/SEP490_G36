@@ -22,35 +22,35 @@ function safeParseUser(raw: string | null): AuthSessionUser | null {
   }
 }
 
-function migrateLegacyLocalStorageSession() {
-  const sessionToken = sessionStorage.getItem(TOKEN_KEY);
-  const sessionUser = sessionStorage.getItem(USER_KEY);
-  if (sessionToken || sessionUser) {
+function migrateLegacySessionStorageSession() {
+  const localToken = localStorage.getItem(TOKEN_KEY);
+  const localUser = localStorage.getItem(USER_KEY);
+  if (localToken || localUser) {
     return;
   }
 
-  const legacyToken = localStorage.getItem(TOKEN_KEY);
-  const legacyUser = localStorage.getItem(USER_KEY);
-  if (legacyToken) {
-    sessionStorage.setItem(TOKEN_KEY, legacyToken);
+  const sessionToken = sessionStorage.getItem(TOKEN_KEY);
+  const sessionUser = sessionStorage.getItem(USER_KEY);
+  if (sessionToken) {
+    localStorage.setItem(TOKEN_KEY, sessionToken);
   }
-  if (legacyUser) {
-    sessionStorage.setItem(USER_KEY, legacyUser);
+  if (sessionUser) {
+    localStorage.setItem(USER_KEY, sessionUser);
   }
-  if (legacyToken || legacyUser) {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+  if (sessionToken || sessionUser) {
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
   }
 }
 
 export function getAuthToken(): string | null {
-  migrateLegacyLocalStorageSession();
-  return sessionStorage.getItem(TOKEN_KEY);
+  migrateLegacySessionStorageSession();
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function getAuthUser(): AuthSessionUser | null {
-  migrateLegacyLocalStorageSession();
-  return safeParseUser(sessionStorage.getItem(USER_KEY));
+  migrateLegacySessionStorageSession();
+  return safeParseUser(localStorage.getItem(USER_KEY));
 }
 
 export function getAuthUserId(): string {
@@ -59,13 +59,15 @@ export function getAuthUserId(): string {
 }
 
 export function setAuthSession(user: AuthSessionUser, token: string): void {
-  sessionStorage.setItem(TOKEN_KEY, token);
-  sessionStorage.setItem(USER_KEY, JSON.stringify(user));
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  sessionStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(USER_KEY);
 }
 
 export function clearAuthSession(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(USER_KEY);
 }

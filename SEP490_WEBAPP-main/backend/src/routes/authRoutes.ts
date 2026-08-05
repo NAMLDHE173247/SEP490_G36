@@ -11,7 +11,9 @@ import {
   googleCallback, 
   outlookRedirect, 
   outlookCallback, 
-  mockConsentPage 
+  mockConsentPage,
+  requestPasswordResetOtp,
+  verifyOtpAndResetPassword,
 } from '../controllers/authController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 
@@ -33,6 +35,8 @@ const requireUserDirectoryReader: express.RequestHandler = (req, res, next) => {
 
 router.post('/register', optionalAuthMiddleware, register);
 router.post('/login', login);
+router.post('/forgot-password', requestPasswordResetOtp);
+router.post('/reset-password', verifyOtpAndResetPassword);
 router.get('/google/redirect', googleRedirect);
 router.get('/google/callback', googleCallback);
 router.get('/outlook/redirect', outlookRedirect);

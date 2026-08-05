@@ -3,6 +3,13 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import axios from 'axios';
+import { sendTransactionalEmail } from '../services/emailService';
+
+// ── In-memory OTP store ────────────────────────────────────────────────────────
+// { email → { otp, expiresAt } }
+// Entries are automatically purged after TTL check at verification time.
+const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 const JWT_SECRET: string = process.env.JWT_SECRET || 'sep490_socratic_jwt_secret_key_2026';
 const JWT_EXPIRES_IN = '7d';
@@ -534,6 +541,100 @@ export const updateUserStatus = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Update user status error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+};
+
+// ── Forgot Password — Step 1: Request OTP ─────────────────────────────────────
+export const requestPasswordResetOtp = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      res.status(400).json({ error: 'Vui lòng cung cấp địa chỉ email.' });
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // Always respond with the same message to avoid user enumeration
+    if (!user) {
+      res.status(200).json({ message: 'Nếu email tồn tại, mã OTP đã được gửi.' });
+      return;
+    }
+
+    // Generate 6-digit OTP
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    otpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS });
+
+    console.log(`[OTP] Reset password OTP for ${normalizedEmail}: ${otp}`);
+
+    // Send email (non-blocking; failure is logged but not surfaced to user)
+    void sendTransactionalEmail({
+      to: normalizedEmail,
+      subject: '[SEP490] Mã xác thực đặt lại mật khẩu',
+      text: `Xin chào ${user.name},\n\nMã OTP đặt lại mật khẩu của bạn là: ${otp}\n\nMã có hiệu lực trong 10 phút. Không chia sẻ mã này với bất kỳ ai.\n\nNếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này.\n\n— SEP490 Learning Hub`,
+    }).then((result) => {
+      if (!result.sent && result.reason !== 'email_not_configured') {
+        console.warn('[OTP Email] Delivery failed:', result.reason);
+      }
+    });
+
+    res.status(200).json({ message: 'Nếu email tồn tại, mã OTP đã được gửi.' });
+  } catch (error: any) {
+    console.error('requestPasswordResetOtp error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+};
+
+// ── Forgot Password — Step 2: Verify OTP & Reset Password ────────────────────
+export const verifyOtpAndResetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      res.status(400).json({ error: 'Vui lòng cung cấp email, mã OTP và mật khẩu mới.' });
+      return;
+    }
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      res.status(400).json({ error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' });
+      return;
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const entry = otpStore.get(normalizedEmail);
+
+    if (!entry) {
+      res.status(400).json({ error: 'Mã OTP không hợp lệ hoặc đã hết hạn.' });
+      return;
+    }
+    if (Date.now() > entry.expiresAt) {
+      otpStore.delete(normalizedEmail);
+      res.status(400).json({ error: 'Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.' });
+      return;
+    }
+    if (entry.otp !== String(otp).trim()) {
+      res.status(400).json({ error: 'Mã OTP không chính xác.' });
+      return;
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      res.status(400).json({ error: 'Không tìm thấy tài khoản.' });
+      return;
+    }
+
+    // Hash and update password
+    const salt = await bcrypt.genSalt(10);
+    user.passwordHash = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    // Invalidate OTP immediately
+    otpStore.delete(normalizedEmail);
+
+    res.status(200).json({ message: 'Mật khẩu đã được đặt lại thành công. Vui lòng đăng nhập lại.' });
+  } catch (error: any) {
+    console.error('verifyOtpAndResetPassword error:', error);
     res.status(500).json({ error: 'Internal server error.' });
   }
 };

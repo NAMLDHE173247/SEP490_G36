@@ -1,5 +1,6 @@
-import React, { createContext, useState, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { getAuthUser, setAuthSession, clearAuthSession } from '../services/authSession';
+import toast from 'react-hot-toast';
 
 interface User {
   id?: string;
@@ -31,6 +32,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     return null;
   }); // null = chưa đăng nhập
+
+  // Sync logout across tabs
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // If token is removed from localStorage (in another tab), log out this tab
+      if (e.key === 'token' && e.newValue === null) {
+        setUser(null);
+        toast('Phiên đăng nhập đã hết hạn hoặc bạn đã đăng xuất ở tab khác.', {
+          icon: '⚠️',
+          duration: 5000,
+        });
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const login = (userData: User, token: string) => {
     const mappedUser = {
