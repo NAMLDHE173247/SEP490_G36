@@ -1414,6 +1414,55 @@ export const getEvaluation = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// PUT /api/model-eval/:evalId/extended-references
+// Persist extended comparison references (Large-LLM & Version 1 shared FT)
+// into MongoDB so they are accessible from any machine/browser.
+// ---------------------------------------------------------------------------
+export const saveExtendedReferences = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+    const { evalId } = req.params;
+    const references = req.body?.references;
+    if (!Array.isArray(references)) {
+      return res.status(400).json({ error: 'references must be an array' });
+    }
+    // Sanitize: only keep known fields to avoid storing arbitrary data
+    const sanitized = references.slice(0, 5).map((ref: any) => ({
+      comparisonRole: String(ref.comparisonRole || 'large_llm'),
+      model: String(ref.model || ''),
+      judgeModel: String(ref.judgeModel || ''),
+      total: Number(ref.total || 0),
+      valid: Number(ref.valid || 0),
+      knowledge: ref.knowledge != null ? Number(ref.knowledge) : null,
+      socratic: ref.socratic != null ? Number(ref.socratic) : null,
+      a1ViolationRate: ref.a1ViolationRate != null ? Number(ref.a1ViolationRate) : null,
+      e2eMedianMs: ref.e2eMedianMs != null ? Number(ref.e2eMedianMs) : null,
+      throughputMean: ref.throughputMean != null ? Number(ref.throughputMean) : null,
+      outputLimitRate: ref.outputLimitRate != null ? Number(ref.outputLimitRate) : null,
+      costPer100Usd: ref.costPer100Usd != null ? Number(ref.costPer100Usd) : null,
+      outputTokensMean: ref.outputTokensMean != null ? Number(ref.outputTokensMean) : null,
+      totalInputTokens: ref.totalInputTokens != null ? Number(ref.totalInputTokens) : null,
+      totalOutputTokens: ref.totalOutputTokens != null ? Number(ref.totalOutputTokens) : null,
+      totalTokens: ref.totalTokens != null ? Number(ref.totalTokens) : null,
+      runValidity: String(ref.runValidity || 'unknown'),
+      protocolMatch: Boolean(ref.protocolMatch),
+      protocolNotes: Array.isArray(ref.protocolNotes) ? ref.protocolNotes.map(String) : [],
+    }));
+    const result = await ModelEvaluation.updateOne(
+      { modelEvalId: evalId, ownerId },
+      { $set: { extendedReferences: sanitized } },
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+    return res.json({ saved: sanitized.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to save extended references' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Large-LLM contextual references. These runs intentionally remain separate
 // from the paired Base-vs-FT causal comparison.
 // ---------------------------------------------------------------------------

@@ -56,6 +56,7 @@ import {
   getLargeLlmReferenceStatus,
   runVersion1SharedReference,
   getVersion1SharedReferenceStatus,
+  saveExtendedReferences,
 } from '../controllers/evalModelController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
@@ -297,6 +298,7 @@ router.post('/model-eval/:evalId/large-llm/run', authMiddleware, requireManager,
 router.get('/model-eval/version1-shared/status/:referenceJobId', authMiddleware, requireManager, getVersion1SharedReferenceStatus);
 router.post('/model-eval/:evalId/version1-shared/run', authMiddleware, requireManager, upload.single('eval_file'), runVersion1SharedReference);
 router.get('/model-eval/:evalId/export', exportEvaluationArtifact);
+router.put('/model-eval/:evalId/extended-references', authMiddleware, requireManager, saveExtendedReferences);
 router.delete('/model-eval/:evalId', deleteEvaluation);        // ⚠️ trước GET /:evalId
 router.get('/model-eval/:evalId', getEvaluation);              // ⚠️ wildcard — đứng cuối cùng
 

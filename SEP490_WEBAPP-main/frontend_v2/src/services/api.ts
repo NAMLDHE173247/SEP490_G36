@@ -798,6 +798,10 @@ export const apiService = {
     const response = await api.get(`/model-eval/version1-shared/status/${referenceJobId}`);
     return response.data;
   },
+  saveExtendedReferences: async (evalId: string, references: any[]): Promise<any> => {
+    const response = await api.put(`/model-eval/${evalId}/extended-references`, { references });
+    return response.data;
+  },
   runEvaluation: async (jobId: string, file: File, options: { judgeModel?: string; baseModelHfRepo?: string }): Promise<any> => {
     const formData = new FormData();
     formData.append('eval_file', file);

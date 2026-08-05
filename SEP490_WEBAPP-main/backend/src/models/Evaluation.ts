@@ -142,6 +142,7 @@ export interface IEvaluation extends Document {
   hypothesisDecisions?: Record<string, any>;
   pairIntegrity?: Record<string, any>;
   confirmatoryEligible?: boolean;
+  extendedReferences?: Record<string, any>[];
 }
 
 const EvaluationResultSchema = new Schema<IEvalResult>(
@@ -224,6 +225,7 @@ const EvaluationSchema = new Schema<IEvaluation>(
     hypothesisDecisions:{ type: Schema.Types.Mixed, default: null },
     pairIntegrity:      { type: Schema.Types.Mixed, default: null },
     confirmatoryEligible:{ type: Boolean, default: false },
+    extendedReferences: { type: [Schema.Types.Mixed], default: [] },
   },
   { timestamps: true }
 );
