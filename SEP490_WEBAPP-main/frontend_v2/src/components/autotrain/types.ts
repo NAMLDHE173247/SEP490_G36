@@ -142,6 +142,9 @@ export const BASE_MODEL_GROUPS: ModelGroup[] = [
       { id: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", name: "Llama 3.2 (3B) — Lightweight English Socratic Tutor" },
       { id: "unsloth/Llama-3.2-1B-Instruct-bnb-4bit", name: "Llama 3.2 (1B) — Fast Edge English Tutor" },
       { id: "google/gemma-3-4b-it", name: "Gemma 3 (4B/12B) — SocraticBench Top Performer" },
+      { id: "unsloth/gemma-4-E4B-it", name: "Gemma 4 E4B (Unsloth) — Text SFT, ~10–17GB VRAM" },
+      { id: "unsloth/gemma-4-E2B-it", name: "Gemma 4 E2B (Unsloth) — Nhẹ nhất, ~8–10GB VRAM" },
+      { id: "unsloth/gemma-4-31B-it", name: "Gemma 4 31B (Unsloth) — QLoRA ~22GB+, template thinking" },
       { id: "unsloth/Mistral-Small-24B-Instruct-2501-bnb-4bit", name: "Mistral-Small 3.1 (24B) — Quản lý hội thoại tinh tế" },
       { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Chẩn đoán ngữ pháp tiếng Anh" }
     ]

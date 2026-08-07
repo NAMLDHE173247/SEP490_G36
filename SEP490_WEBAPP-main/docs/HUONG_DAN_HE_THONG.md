@@ -395,10 +395,12 @@ so sánh nhiều run với nhau.
 Có vài thứ chạy ngầm trước và trong lúc train mà bạn nên biết.
 
 **Chọn đúng chat template của model.** Hệ thống giữ template sẵn trên tokenizer
-của model Instruct (Llama, Gemma, Qwen…). Chỉ khi tokenizer thiếu template nó
-mới gắn bản Unsloth theo family. Việc ép một format chung (ví dụ ChatML) cho mọi
-model sẽ làm model học format khác lúc chat — đây là lỗi chất lượng nghiêm trọng
-đã được loại bỏ.
+của model Instruct (Llama, Gemma 3, Qwen…). Chỉ khi tokenizer thiếu template nó
+mới gắn bản Unsloth theo family. **Gemma 4** là ngoại lệ: theo notebook Unsloth
+[Gemma4-31B](https://www.kaggle.com/code/danielhanchen/gemma4-31b-unsloth), hệ
+thống luôn gắn `gemma-4` (E2B/E4B/12B) hoặc `gemma-4-thinking` (26B/31B) — không
+dùng ChatML hay template Gemma cũ. Việc ép một format chung cho mọi model sẽ làm
+model học format khác lúc chat.
 
 **Cổng chất lượng dữ liệu.** Trước khi format, các mẫu không có lượt user /
 assistant, assistant quá ngắn, hoặc trùng nội dung gần exact bị loại. Log ghi

@@ -227,7 +227,11 @@ def test_filter_supported_kwargs_drops_unknown():
 
 def test_chat_template_maps_by_family():
     assert resolve_chat_template_name("unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit") == "llama-3"
-    assert resolve_chat_template_name("google/gemma-3-4b-it") == "gemma"
+    assert resolve_chat_template_name("google/gemma-3-4b-it") == "gemma3"
+    assert resolve_chat_template_name("unsloth/gemma-4-E4B-it") == "gemma-4"
+    assert resolve_chat_template_name("unsloth/gemma-4-E2B-it") == "gemma-4"
+    assert resolve_chat_template_name("unsloth/gemma-4-31B-it") == "gemma-4-thinking"
+    assert resolve_chat_template_name("unsloth/gemma-4-26B-A4B-it") == "gemma-4-thinking"
     assert resolve_chat_template_name("unsloth/Qwen2.5-7B-Instruct-bnb-4bit") == "qwen-2.5"
     assert resolve_chat_template_name("Viet-Mistral/Vistral-7B-Chat") == "mistral"
     assert resolve_chat_template_name("unknown-base") is None
@@ -241,6 +245,21 @@ def test_apply_chat_template_keeps_native():
     assert info["mode"] == "native"
     assert info["applied"] == "native"
     assert tok.chat_template == "{{ messages }}"
+
+
+def test_gemma4_forces_unsloth_template_even_with_native():
+    """Theo notebook Unsloth Gemma4-31B: luôn gọi get_chat_template('gemma-4*')."""
+    class Tok:
+        chat_template = "stale-or-wrong-native"
+
+    # Không có Unsloth trong môi trường test → fallback native kèm error, nhưng
+    # vẫn đánh dấu force_unsloth và suggested đúng family.
+    tok, info = apply_chat_template(Tok(), "unsloth/gemma-4-31B-it")
+    assert info["force_unsloth"] is True
+    assert info["suggested"] == "gemma-4-thinking"
+    assert info["mode"] in ("unsloth", "native_fallback", "failed")
+    if info["mode"] == "native_fallback":
+        assert tok.chat_template == "stale-or-wrong-native"
 
 
 class _FakeHFDataset:

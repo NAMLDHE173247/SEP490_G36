@@ -120,15 +120,25 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
         if not has_system:
             messages.insert(0, {"role": "system", "content": fallback_system})
 
-        # SỬ DỤNG TOKENIZER ĐỂ ÁP DỤNG CHAT TEMPLATE CỦA MÔ HÌNH
+        # SỬ DỤNG TOKENIZER ĐỂ ÁP DỤNG CHAT TEMPLATE CỦA MÔ HÌNH.
+        # Gemma 4 / Qwen3: tắt thinking khi format dữ liệu Socratic (tránh train
+        # vào khối <|think|> trống). Tham khảo Unsloth Gemma4-31B notebook.
         try:
-            formatted_text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=False
-            )
+            try:
+                formatted_text = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                formatted_text = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
             texts.append(formatted_text)
-        except Exception as e:
+        except Exception:
             # Fallback nếu template lỗi
             fallback_text = ""
             for msg in messages:
@@ -145,6 +155,9 @@ class AssistantOnlyDataCollator:
     FALLBACK_HEADERS = (
         r"<\|im_start\|>assistant",
         r"<start_of_turn>model",
+        # Gemma 4 (Unsloth / HF): <|turn>model … khác Gemma 2/3
+        r"<\|turn>model",
+        r"<\|turn\|>model",
         r"<\|start_header_id\|>assistant",
         r"### Response:",
         r"### Assistant:",
@@ -166,11 +179,18 @@ class AssistantOnlyDataCollator:
         # DYNAMICALLY DETECT THE ASSISTANT HEADER BY FORMATTING A DUMMY MESSAGE
         try:
             dummy = [{"role": "assistant", "content": "MAGICAL_CONTENT_12345"}]
-            formatted = tokenizer.apply_chat_template(dummy, tokenize=False, add_generation_prompt=False)
+            try:
+                formatted = tokenizer.apply_chat_template(
+                    dummy, tokenize=False, add_generation_prompt=False, enable_thinking=False,
+                )
+            except TypeError:
+                formatted = tokenizer.apply_chat_template(
+                    dummy, tokenize=False, add_generation_prompt=False,
+                )
             start_idx = formatted.find("MAGICAL_CONTENT_12345")
             self.header_str = formatted[:start_idx].strip() # e.g. "<|im_start|>assistant" or "<start_of_turn>model"
             self.end_str = formatted[start_idx + len("MAGICAL_CONTENT_12345"):].strip() # e.g. "<|im_end|>" or "<end_of_turn>"
-        except:
+        except Exception:
             self.header_str = "assistant\n"
             self.end_str = "\n"
             

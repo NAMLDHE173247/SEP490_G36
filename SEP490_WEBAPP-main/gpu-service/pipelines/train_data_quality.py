@@ -19,15 +19,37 @@ MAX_LENGTH_SAMPLE = 500
 TRUNCATION_WARN_RATIO = 0.20
 
 
+def _is_gemma4(model_name: str) -> bool:
+    name = (model_name or "").lower()
+    return "gemma-4" in name or "gemma4" in name
+
+
+def _is_large_gemma4(model_name: str) -> bool:
+    """26B / 31B (và MoE A4B) theo khuyến nghị Unsloth notebook Kaggle."""
+    name = (model_name or "").lower()
+    if not _is_gemma4(name):
+        return False
+    return any(token in name for token in ("31b", "26b", "a4b"))
+
+
 def resolve_chat_template_name(model_name: str) -> str | None:
     """Suy tên template Unsloth theo family model.
 
-    Trả về None nghĩa là nên giữ chat_template sẵn trên tokenizer (Unsloth
-    Instruct thường đã đúng). Chỉ map khi tokenizer thiếu template.
+    Gemma 4 (tham khảo notebook Unsloth 31B):
+      - bản lớn 26B/31B → `gemma-4-thinking`
+      - bản nhỏ E2B/E4B/12B → `gemma-4`
+    Không dùng ChatML hay template `gemma` cũ (Gemma 2).
+
+    Trả về None nghĩa là nên giữ chat_template sẵn trên tokenizer khi không
+    bắt buộc phải ép Unsloth.
     """
     name = (model_name or "").lower()
     if "llama-3" in name or "llama3" in name or "meta-llama-3" in name:
         return "llama-3"
+    if _is_gemma4(name):
+        return "gemma-4-thinking" if _is_large_gemma4(name) else "gemma-4"
+    if "gemma-3" in name or "gemma3" in name:
+        return "gemma3"
     if "gemma" in name:
         return "gemma"
     if "phi-4" in name or "phi4" in name:
@@ -44,30 +66,40 @@ def resolve_chat_template_name(model_name: str) -> str | None:
 
 
 def apply_chat_template(tokenizer, model_name: str):
-    """Áp chat template đúng family; ưu tiên native nếu đã có.
+    """Áp chat template đúng family.
+
+    - Gemma 4: luôn gắn template Unsloth (`gemma-4` / `gemma-4-thinking`) như
+      notebook https://www.kaggle.com/code/danielhanchen/gemma4-31b-unsloth —
+      không tin native/ChatML.
+    - Họ khác: giữ native nếu đã có; thiếu thì gắn Unsloth theo family.
 
     Trả về `(tokenizer, info)` với info dùng cho log / effective_config.
     """
     native = getattr(tokenizer, "chat_template", None)
     has_native = bool(native and str(native).strip())
     suggested = resolve_chat_template_name(model_name)
+    force_unsloth = _is_gemma4(model_name)
 
     info = {
         "had_native_template": has_native,
         "suggested": suggested,
         "applied": None,
         "mode": "native",
+        "force_unsloth": force_unsloth,
     }
 
-    if has_native:
+    if has_native and not force_unsloth:
         info["applied"] = "native"
         info["mode"] = "native"
         return tokenizer, info
 
-    # Tokenizer thiếu template → thử Unsloth theo family, fallback chatml.
+    # Tokenizer thiếu template, hoặc Gemma 4 bắt buộc Unsloth.
     template_name = suggested or "chatml"
     try:
-        from unsloth import get_chat_template
+        try:
+            from unsloth.chat_templates import get_chat_template
+        except ImportError:
+            from unsloth import get_chat_template
 
         tokenizer = get_chat_template(
             tokenizer,
@@ -83,9 +115,15 @@ def apply_chat_template(tokenizer, model_name: str):
         info["applied"] = template_name
         info["mode"] = "unsloth"
     except Exception as exc:
-        info["applied"] = None
-        info["mode"] = "failed"
-        info["error"] = str(exc)
+        # Gemma 4 mà Unsloth fail: giữ native nếu có, tránh silent ChatML.
+        if has_native:
+            info["applied"] = "native"
+            info["mode"] = "native_fallback"
+            info["error"] = str(exc)
+        else:
+            info["applied"] = None
+            info["mode"] = "failed"
+            info["error"] = str(exc)
 
     return tokenizer, info
 
