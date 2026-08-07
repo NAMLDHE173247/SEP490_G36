@@ -1143,10 +1143,9 @@ def replay_conversation(
         prompt_source = "service_default"
 
     user_turns = [m["content"] for m in messages if m.get("role") == "user"]
-    if protocol_mode == "locked_single_turn" and user_turns:
-        # Strict validation is performed before replay. This slice prevents
-        # model-generated history from leaking into later test inputs.
-        user_turns = user_turns[:1]
+    # Multi-turn replay: all user turns are replayed sequentially.
+    # The model generates its own response at each turn, building up
+    # conversation_history organically without leaking gold assistant answers.
     if not user_turns:
         return {
             **item_meta,
