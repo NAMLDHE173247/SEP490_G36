@@ -48,7 +48,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ${BACKEND_IMAGE:-dothang2504/trainner-be:latest}
+    image: ${BACKEND_IMAGE:-viht7/trainner-be:latest}
     container_name: trainner_backend_prod
     restart: unless-stopped
     ports:
@@ -143,7 +143,7 @@ services:
     build:
       context: ./gpu-service
       dockerfile: Dockerfile
-    image: ${GPU_IMAGE:-dothang2504/trainner-gpu:latest}
+    image: ${GPU_IMAGE:-viht7/trainner-gpu:latest}
     container_name: trainner_gpu_prod
     restart: unless-stopped
     environment:
