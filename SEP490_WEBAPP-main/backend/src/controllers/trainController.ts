@@ -21,20 +21,34 @@ import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 dotenv.config();
 
-/** Đồng bộ log/audit/effective_config từ GPU status vào Mongo (fire-and-forget). */
+/**
+ * Đồng bộ log/audit/effective_config/metrics từ GPU status vào Mongo
+ * (fire-and-forget). Trả về raw update để caller sync bản sao local (SSE giữ
+ * document trong RAM suốt stream).
+ */
 function persistTrainAudit(
   jobId: string,
   ownerId: string,
   data: Record<string, any>,
-  previousLogs: string[] = [],
-  previousLastError: string = '',
-) {
-  const raw = buildTrainAuditUpdate(data, previousLogs, previousLastError);
+  history: {
+    trainLogs?: string[];
+    lastError?: string;
+    progress?: number;
+    lastMetricsAt?: Date;
+  },
+): Record<string, unknown> {
+  const raw = buildTrainAuditUpdate(data, {
+    logs: Array.isArray(history.trainLogs) ? history.trainLogs : [],
+    lastError: history.lastError || '',
+    progress: typeof history.progress === 'number' ? history.progress : undefined,
+    metricsAt: history.lastMetricsAt || null,
+  });
   const mongo = toMongoAuditUpdate(raw);
-  if (!mongo.$set && !mongo.$push) return;
+  if (!mongo.$set && !mongo.$push) return raw;
   TrainingHistory.updateOne({ jobId, ownerId }, mongo).catch((err) =>
     console.error('[Backend] Failed to persist train audit:', err),
   );
+  return raw;
 }
 
 class WorkerManager {
@@ -667,6 +681,125 @@ export const getActiveTrainingJobs = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// GET /api/train/monitor
+// Giám sát job đang chạy: heartbeat, phát hiện treo, tình trạng worker.
+// Đọc Mongo là chính — chỉ ping worker (timeout ngắn) để báo sống/chết.
+// ---------------------------------------------------------------------------
+const STALL_THRESHOLD_MS: Record<string, number> = {
+  TRAINING: 5 * 60 * 1000,
+  RUNNING: 5 * 60 * 1000,
+  // Nạp model / xếp hàng vốn im lặng lâu — ngưỡng rộng hơn để khỏi báo nhầm
+  LOADING_MODEL: 15 * 60 * 1000,
+  QUEUED: 15 * 60 * 1000,
+  PENDING: 15 * 60 * 1000,
+};
+const STALL_RENOTIFY_MS = 10 * 60 * 1000;
+
+async function pingWorker(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${url}/api/train/status/__monitor_ping__`, {
+      headers: GPU_TUNNEL_HEADERS,
+      signal: controller.signal as any,
+    });
+    // Kể cả 404/NOT_FOUND vẫn tính là sống — worker đã trả lời.
+    return response.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export const getTrainingMonitor = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const activeStatuses = Object.keys(STALL_THRESHOLD_MS);
+    const jobs = await TrainingHistory.find({
+      ownerId,
+      status: { $in: activeStatuses },
+    })
+      .select('jobId projectName baseModel status progress lastLogLine lastError startedAt updatedAt workerUrl lastProgressAt stallNotifiedAt')
+      .sort({ startedAt: -1 })
+      .lean();
+
+    const now = Date.now();
+    const monitored = jobs.map((job: any) => {
+      const heartbeat = job.lastProgressAt || job.updatedAt || job.startedAt;
+      const silentMs = Math.max(0, now - new Date(heartbeat).getTime());
+      const threshold = STALL_THRESHOLD_MS[job.status] ?? STALL_THRESHOLD_MS.TRAINING;
+      const stalled = silentMs > threshold;
+      return {
+        jobId: job.jobId,
+        projectName: job.projectName,
+        baseModel: job.baseModel,
+        status: job.status,
+        progress: job.progress ?? null,
+        lastLogLine: job.lastLogLine || '',
+        lastError: job.lastError || '',
+        startedAt: job.startedAt,
+        lastProgressAt: heartbeat,
+        silentMs,
+        stalled,
+        workerUrl: job.workerUrl || null,
+      };
+    });
+
+    // Ghi audit event STALL (dedupe: chỉ nhắc lại sau STALL_RENOTIFY_MS)
+    for (const job of monitored.filter((j) => j.stalled)) {
+      const raw = jobs.find((j: any) => j.jobId === job.jobId) as any;
+      const lastNotified = raw?.stallNotifiedAt ? new Date(raw.stallNotifiedAt).getTime() : 0;
+      if (now - lastNotified < STALL_RENOTIFY_MS) continue;
+      const minutes = Math.round(job.silentMs / 60000);
+      TrainingHistory.updateOne(
+        { jobId: job.jobId, ownerId },
+        {
+          $set: { stallNotifiedAt: new Date() },
+          $push: {
+            auditEvents: {
+              $each: [{
+                ts: new Date(),
+                level: 'warn',
+                source: 'monitor',
+                code: 'STALL',
+                message: `Không có tiến triển trong ~${minutes} phút (status ${job.status}). Kiểm tra GPU worker hoặc cân nhắc Stop/Resume.`,
+              }],
+              $slice: -500,
+            },
+          },
+        },
+      ).catch((err) => console.error('[Backend] Failed to record stall event:', err));
+    }
+
+    // Ping mỗi worker duy nhất (song song, timeout 3s)
+    const workerUrls = [...new Set(
+      monitored.map((j) => j.workerUrl).filter((u): u is string => !!u)
+    )];
+    const reachability = await Promise.all(workerUrls.map((url) => pingWorker(url)));
+    const workers = workerUrls.map((url, i) => ({ url, reachable: reachability[i] }));
+
+    return res.json({
+      checkedAt: new Date(),
+      jobs: monitored.map((j) => ({
+        ...j,
+        workerReachable: j.workerUrl
+          ? workers.find((w) => w.url === j.workerUrl)?.reachable ?? null
+          : null,
+      })),
+      workers,
+    });
+  } catch (err: any) {
+    console.error('[Backend] getTrainingMonitor error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to get training monitor' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // GET /api/train/status/:jobId
 // Proxy to GPU Service — no changes needed
 // ---------------------------------------------------------------------------
@@ -714,13 +847,7 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
       ).catch(err => console.error('[Backend] Failed to update status in DB during poll:', err));
     }
 
-    persistTrainAudit(
-      jobId,
-      ownerId,
-      data,
-      Array.isArray(history.trainLogs) ? history.trainLogs : [],
-      history.lastError || '',
-    );
+    persistTrainAudit(jobId, ownerId, data, history);
 
     if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
       const updateFields: any = {};
@@ -878,19 +1005,12 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
         ).catch(err => console.error('[Backend] Failed to update status in DB during stream:', err));
       }
 
-      persistTrainAudit(
-        jobId,
-        ownerId,
-        data,
-        Array.isArray(history.trainLogs) ? history.trainLogs : [],
-        history.lastError || '',
-      );
-      if (Array.isArray(data.logs)) {
-        history.trainLogs = data.logs;
-      }
-      if (typeof data.error === 'string' && data.error.trim()) {
-        history.lastError = data.error.trim();
-      }
+      // Sync bản sao local để lần lặp sau chỉ diff phần mới (stream giữ doc trong RAM).
+      const auditRaw = persistTrainAudit(jobId, ownerId, data, history);
+      if (Array.isArray(auditRaw.trainLogs)) history.trainLogs = auditRaw.trainLogs as string[];
+      if (typeof auditRaw.lastError === 'string') history.lastError = auditRaw.lastError;
+      if (typeof auditRaw.progress === 'number') history.progress = auditRaw.progress;
+      if (auditRaw.lastMetricsAt instanceof Date) history.lastMetricsAt = auditRaw.lastMetricsAt;
 
       // IF latest_checkpoint exists, update the DB so we can resume later
       if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {

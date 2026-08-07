@@ -15,6 +15,25 @@ export interface TrainAuditEvent {
 
 export const MAX_TRAIN_LOGS = 2000;
 export const MAX_AUDIT_EVENTS = 500;
+export const MAX_METRICS_POINTS = 500;
+/** Tối thiểu giữa 2 snapshot tài nguyên — stream poll mỗi 1s, không lưu hết. */
+export const METRICS_SNAPSHOT_INTERVAL_MS = 30_000;
+
+export interface TrainAuditPrevState {
+  logs?: string[];
+  lastError?: string;
+  progress?: number;
+  metricsAt?: Date | string | null;
+}
+
+export interface TrainMetricsSnapshot {
+  ts: Date;
+  loss?: number;
+  eval_loss?: number;
+  vram?: number;
+  gpu_util?: number;
+  progress?: number;
+}
 
 function classifyLogLine(line: string): AuditLevel | null {
   const text = String(line || '');
@@ -56,13 +75,14 @@ function eventCode(line: string): string | undefined {
 
 /**
  * Build $set fields for TrainingHistory từ payload status GPU.
- * `previousLogs` dùng để chỉ tạo audit event cho dòng log mới.
+ * `prev` là trạng thái đã lưu — dùng để chỉ ghi phần mới (log, error, metrics).
  */
 export function buildTrainAuditUpdate(
   data: Record<string, any>,
-  previousLogs: string[] = [],
-  previousLastError: string = '',
+  prev: TrainAuditPrevState = {},
 ): Record<string, unknown> {
+  const previousLogs = prev.logs || [];
+  const previousLastError = prev.lastError || '';
   const update: Record<string, unknown> = {};
   const now = new Date();
 
@@ -85,26 +105,26 @@ export function buildTrainAuditUpdate(
     update.technicalError = data.technical_error.trim();
   }
 
-  const prev = previousLogs.map(String);
+  const prevLines = previousLogs.map(String);
   const incoming = incomingLogs || [];
   let newLines: string[] = [];
   if (incoming.length > 0) {
     // Ưu tiên suffix khi previous là prefix (tránh duplicate khi poll liên tiếp).
-    let isPrefix = prev.length > 0 && incoming.length >= prev.length;
+    let isPrefix = prevLines.length > 0 && incoming.length >= prevLines.length;
     if (isPrefix) {
-      for (let i = 0; i < prev.length; i++) {
-        if (prev[i] !== incoming[i]) {
+      for (let i = 0; i < prevLines.length; i++) {
+        if (prevLines[i] !== incoming[i]) {
           isPrefix = false;
           break;
         }
       }
     }
     if (isPrefix) {
-      newLines = incoming.slice(prev.length);
-    } else if (prev.length === 0) {
+      newLines = incoming.slice(prevLines.length);
+    } else if (prevLines.length === 0) {
       newLines = incoming;
     } else {
-      const prevSet = new Set(prev);
+      const prevSet = new Set(prevLines);
       newLines = incoming.filter((line) => !prevSet.has(line));
     }
   }
@@ -113,10 +133,45 @@ export function buildTrainAuditUpdate(
     // Không cho payload ngắn (vd '[System] Lỗi...' sau khi worker restart)
     // ghi đè toàn bộ log thật đã lưu — chỉ nối thêm dòng mới.
     const merged =
-      incoming.length >= prev.length ? incoming : prev.concat(newLines);
+      incoming.length >= prevLines.length ? incoming : prevLines.concat(newLines);
     update.trainLogs = merged.slice(-MAX_TRAIN_LOGS);
     const last = merged[merged.length - 1];
     if (last) update.lastLogLine = last;
+  }
+
+  // ── Monitor: heartbeat tiến triển ─────────────────────────────────────────
+  const incomingProgress =
+    typeof data.progress === 'number' && Number.isFinite(data.progress)
+      ? data.progress
+      : undefined;
+  if (incomingProgress !== undefined) {
+    update.progress = incomingProgress;
+  }
+  const progressAdvanced =
+    incomingProgress !== undefined &&
+    (prev.progress === undefined || incomingProgress > prev.progress);
+  if (newLines.length > 0 || progressAdvanced) {
+    update.lastProgressAt = now;
+  }
+
+  // ── Monitor: snapshot tài nguyên (throttle) ───────────────────────────────
+  const metrics = data.metrics && typeof data.metrics === 'object' ? data.metrics : null;
+  if (metrics) {
+    const lastAt = prev.metricsAt ? new Date(prev.metricsAt).getTime() : 0;
+    const hasSignal = ['loss', 'eval_loss', 'vram', 'gpu_util'].some(
+      (k) => typeof metrics[k] === 'number' && metrics[k] > 0,
+    );
+    if (hasSignal && now.getTime() - lastAt >= METRICS_SNAPSHOT_INTERVAL_MS) {
+      const snapshot: TrainMetricsSnapshot = { ts: now };
+      for (const k of ['loss', 'eval_loss', 'vram', 'gpu_util'] as const) {
+        if (typeof metrics[k] === 'number' && Number.isFinite(metrics[k])) {
+          snapshot[k] = metrics[k];
+        }
+      }
+      if (incomingProgress !== undefined) snapshot.progress = incomingProgress;
+      update._newMetricsSnapshot = snapshot;
+      update.lastMetricsAt = now;
+    }
   }
 
   const events: TrainAuditEvent[] = [];
@@ -170,21 +225,30 @@ export function buildTrainAuditUpdate(
   return update;
 }
 
-/** Tách field nội bộ `_newAuditEvents` thành update Mongo hợp lệ ($set + $push). */
+/** Tách các field nội bộ `_new*` thành update Mongo hợp lệ ($set + $push). */
 export function toMongoAuditUpdate(raw: Record<string, unknown>): Record<string, unknown> {
   const events = raw._newAuditEvents as TrainAuditEvent[] | undefined;
-  const { _newAuditEvents, ...setFields } = raw;
+  const snapshot = raw._newMetricsSnapshot as TrainMetricsSnapshot | undefined;
+  const { _newAuditEvents, _newMetricsSnapshot, ...setFields } = raw;
   const mongo: Record<string, unknown> = {};
   if (Object.keys(setFields).length > 0) {
     mongo.$set = setFields;
   }
+  const push: Record<string, unknown> = {};
   if (events && events.length > 0) {
-    mongo.$push = {
-      auditEvents: {
-        $each: events,
-        $slice: -MAX_AUDIT_EVENTS,
-      },
+    push.auditEvents = {
+      $each: events,
+      $slice: -MAX_AUDIT_EVENTS,
     };
+  }
+  if (snapshot) {
+    push.metricsHistory = {
+      $each: [snapshot],
+      $slice: -MAX_METRICS_POINTS,
+    };
+  }
+  if (Object.keys(push).length > 0) {
+    mongo.$push = push;
   }
   return mongo;
 }

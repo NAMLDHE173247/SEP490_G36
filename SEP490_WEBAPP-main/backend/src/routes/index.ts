@@ -11,6 +11,7 @@ import {
   getTrainingStatus,
   getDashboardStats,
   getSystemResources,
+  getTrainingMonitor,
   streamTrainingStatus,
   downloadCloudDataset,
   getActiveTrainingJobs,
@@ -225,6 +226,7 @@ router.put('/config/global-keys', authMiddleware, requireAdmin, updateGlobalApiK
 router.post('/train/start', authMiddleware, requireManager, upload.single('dataset_file'), startTraining);
 router.post('/train/download-cloud', authMiddleware, requireManager, downloadCloudDataset);
 router.get('/train/active', authMiddleware, getActiveTrainingJobs);
+router.get('/train/monitor', authMiddleware, getTrainingMonitor);
 router.get('/train/status/:jobId', authMiddleware, getTrainingStatus);
 router.get('/train/stream/:jobId', authMiddleware, streamTrainingStatus);
 router.post('/train/stop/:jobId', authMiddleware, requireManager, stopTraining);

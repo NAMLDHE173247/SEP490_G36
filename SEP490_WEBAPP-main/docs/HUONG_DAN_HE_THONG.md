@@ -472,6 +472,27 @@ Lưu ý: log được đồng bộ **trong lúc backend theo dõi job** (màn Au
 hoặc có poll trạng thái). Job train xong mà chưa từng được theo dõi thì phần
 audit có thể trống.
 
+### 7.6 Giám sát job đang chạy (monitor)
+
+Ngoài audit sau khi chạy, hệ thống theo dõi **heartbeat** của từng job:
+
+- Mỗi lần thấy log mới hoặc progress tăng, backend ghi `lastProgressAt` vào
+  Mongo. Job đang `TRAINING` mà im lặng quá **5 phút** (hoặc `LOADING_MODEL` /
+  `QUEUED` quá **15 phút**) bị coi là **nghi treo**.
+- **Lịch sử Huấn luyện** hiện badge **⚠ treo?** cạnh trạng thái của job nghi
+  treo. Đồng thời một sự kiện `STALL` (mức warn) được ghi vào Audit — nhắc lại
+  tối đa mỗi 10 phút, không spam.
+- Snapshot **VRAM / GPU util** được lưu mỗi ~30 giây khi job đang được theo
+  dõi. Xem lại trong Audit & Logs → tab **Tài nguyên** (biểu đồ theo thời
+  gian) — hữu ích khi truy nguyên job chết vì hết VRAM.
+- API tổng hợp: `GET /api/train/monitor` trả về toàn bộ job đang chạy kèm
+  `silentMs` (im lặng bao lâu), cờ `stalled`, và tình trạng **GPU worker
+  sống/chết** (ping timeout 3 giây). Dùng cho dashboard hoặc script cảnh báo
+  ngoài (cron + webhook).
+
+Khi thấy job treo: kiểm tra worker còn sống không (`workers` trong response
+monitor), rồi quyết định Stop và Resume từ checkpoint gần nhất.
+
 ---
 
 ## 8. Vận hành và xử lý sự cố

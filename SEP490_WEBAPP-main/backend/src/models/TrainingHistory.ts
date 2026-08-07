@@ -92,6 +92,20 @@ export interface ITrainingHistory extends Document {
   effectiveConfig?: any;
   lastError?: string;
   technicalError?: string;
+
+  // Monitor — phát hiện job treo + lịch sử tài nguyên
+  progress?: number;            // % tiến độ gần nhất từ GPU
+  lastProgressAt?: Date;        // lần cuối thấy log/progress mới (heartbeat)
+  lastMetricsAt?: Date;         // throttle snapshot metricsHistory
+  stallNotifiedAt?: Date;       // dedupe cảnh báo treo
+  metricsHistory?: {
+    ts: Date;
+    loss?: number;
+    eval_loss?: number;
+    vram?: number;
+    gpu_util?: number;
+    progress?: number;
+  }[];
 }
 
 const TrainingHistorySchema = new Schema<ITrainingHistory>(
@@ -201,6 +215,22 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
     effectiveConfig: { type: Schema.Types.Mixed },
     lastError: { type: String, default: '' },
     technicalError: { type: String, default: '' },
+
+    // Monitor
+    progress: { type: Number },
+    lastProgressAt: { type: Date },
+    lastMetricsAt: { type: Date },
+    stallNotifiedAt: { type: Date },
+    metricsHistory: [
+      {
+        ts: { type: Date, default: Date.now },
+        loss: { type: Number },
+        eval_loss: { type: Number },
+        vram: { type: Number },
+        gpu_util: { type: Number },
+        progress: { type: Number },
+      },
+    ],
   },
   {
     timestamps: true, // tự tạo createdAt, updatedAt

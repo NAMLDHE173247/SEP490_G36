@@ -183,7 +183,7 @@ export const getTrainingHistoryList = async (req: Request, res: Response) => {
 
     // Loại trainLogs/auditEvents khỏi list — payload lớn; lấy qua /audit khi cần
     const histories = await TrainingHistory.find(filter)
-      .select('-trainLogs -auditEvents -effectiveConfig -technicalError -hfToken')
+      .select('-trainLogs -auditEvents -effectiveConfig -technicalError -hfToken -metricsHistory')
       .sort({ completedAt: -1 })
       .lean();
 
@@ -284,7 +284,7 @@ export const getTrainingHistoryAudit = async (req: Request, res: Response) => {
 
     const { jobId } = req.params;
     const history = await TrainingHistory.findOne({ jobId, ownerId })
-      .select('jobId status lastLogLine lastError technicalError trainLogs auditEvents effectiveConfig updatedAt completedAt')
+      .select('jobId status lastLogLine lastError technicalError trainLogs auditEvents effectiveConfig metricsHistory progress lastProgressAt updatedAt completedAt')
       .lean();
 
     if (!history) {
@@ -300,6 +300,9 @@ export const getTrainingHistoryAudit = async (req: Request, res: Response) => {
       trainLogs: Array.isArray((history as any).trainLogs) ? (history as any).trainLogs : [],
       auditEvents: Array.isArray((history as any).auditEvents) ? (history as any).auditEvents : [],
       effectiveConfig: (history as any).effectiveConfig || null,
+      metricsHistory: Array.isArray((history as any).metricsHistory) ? (history as any).metricsHistory : [],
+      progress: (history as any).progress ?? null,
+      lastProgressAt: (history as any).lastProgressAt || null,
       updatedAt: history.updatedAt,
       completedAt: history.completedAt,
       source: 'mongo',

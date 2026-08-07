@@ -416,6 +416,20 @@
   color: #fbbf24;
 }
 
+/* Stall warning badge */
+.stall-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 /* Audit trail panel */
 .audit-panel {
   margin-top: 16px;

@@ -67,6 +67,9 @@ interface TrainingHistoryItem {
   };
   lastLogLine?: string;
   lastError?: string;
+  progress?: number;
+  lastProgressAt?: string;
+  updatedAt?: string;
   trainingDuration: number;
   startedAt: string;
   completedAt?: string;
@@ -94,7 +97,28 @@ interface TrainAuditPayload {
     message: string;
   }[];
   effectiveConfig?: Record<string, unknown> | null;
+  metricsHistory?: {
+    ts: string;
+    loss?: number;
+    eval_loss?: number;
+    vram?: number;
+    gpu_util?: number;
+    progress?: number;
+  }[];
+  progress?: number | null;
+  lastProgressAt?: string | null;
   source?: string;
+}
+
+const ACTIVE_STATUSES = ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'];
+const STALL_UI_MS = 5 * 60 * 1000;
+
+/** Job đang chạy mà không có heartbeat mới trong 5 phút → nghi treo. */
+function isLikelyStalled(item: TrainingHistoryItem): boolean {
+  if (!ACTIVE_STATUSES.includes(item.status)) return false;
+  const heartbeat = item.lastProgressAt || item.updatedAt || item.startedAt;
+  if (!heartbeat) return false;
+  return Date.now() - new Date(heartbeat).getTime() > STALL_UI_MS;
 }
 
 interface TrainingHistoryViewProps {
@@ -396,7 +420,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   // Audit log (Mongo) — xem lỗi/log khi GPU worker đã tắt
   const [auditByJob, setAuditByJob] = useState<Record<string, TrainAuditPayload>>({});
   const [auditLoading, setAuditLoading] = useState<string | null>(null);
-  const [auditTab, setAuditTab] = useState<'events' | 'logs' | 'config'>('events');
+  const [auditTab, setAuditTab] = useState<'events' | 'logs' | 'config' | 'resources'>('events');
 
   // Fetch base models
   const fetchBaseModels = useCallback(async () => {
@@ -814,6 +838,14 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                           <span className="status-dot" />
                           {item.status}
                         </span>
+                        {isLikelyStalled(item) && (
+                          <span
+                            className="stall-badge"
+                            title="Không thấy tiến triển mới trong hơn 5 phút — kiểm tra GPU worker"
+                          >
+                            ⚠ treo?
+                          </span>
+                        )}
                       </td>
                       <td className="font-bold">{item.projectName}</td>
                       <td className="text-muted text-sm">{item.baseModel}</td>
@@ -937,14 +969,14 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                 </div>
                               )}
                               <div className="audit-tabs">
-                                {(['events', 'logs', 'config'] as const).map((tab) => (
+                                {(['events', 'logs', 'config', 'resources'] as const).map((tab) => (
                                   <button
                                     key={tab}
                                     type="button"
                                     className={`audit-tab ${auditTab === tab ? 'active' : ''}`}
                                     onClick={() => setAuditTab(tab)}
                                   >
-                                    {tab === 'events' ? 'Sự kiện' : tab === 'logs' ? 'Full logs' : 'Effective config'}
+                                    {tab === 'events' ? 'Sự kiện' : tab === 'logs' ? 'Full logs' : tab === 'config' ? 'Effective config' : 'Tài nguyên'}
                                   </button>
                                 ))}
                                 <button
@@ -1002,6 +1034,34 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                         ? JSON.stringify(auditByJob[item.jobId]?.effectiveConfig, null, 2)
                                         : '(chưa có effective_config — thường xuất hiện sau khi job bắt đầu train)'}
                                     </pre>
+                                  )}
+                                  {auditTab === 'resources' && (
+                                    (auditByJob[item.jobId]?.metricsHistory || []).length > 0 ? (
+                                      <div style={{ background: 'white', border: '1px solid var(--border)', borderRadius: '12px', padding: '12px', height: '220px', marginTop: 8 }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                          <LineChart
+                                            data={(auditByJob[item.jobId]?.metricsHistory || []).map((m) => ({
+                                              time: new Date(m.ts).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                                              vram: m.vram ?? null,
+                                              gpu: m.gpu_util ?? null,
+                                            }))}
+                                          >
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                            <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                                            <YAxis yAxisId="vram" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                                            <YAxis yAxisId="gpu" orientation="right" domain={[0, 100]} tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                                            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} />
+                                            <Legend wrapperStyle={{ fontSize: 11 }} />
+                                            <Line yAxisId="vram" type="monotone" dataKey="vram" name="VRAM (MB)" stroke="#8b5cf6" strokeWidth={1.5} dot={false} connectNulls />
+                                            <Line yAxisId="gpu" type="monotone" dataKey="gpu" name="GPU (%)" stroke="#10b981" strokeWidth={1.5} dot={false} connectNulls />
+                                          </LineChart>
+                                        </ResponsiveContainer>
+                                      </div>
+                                    ) : (
+                                      <div className="text-muted text-sm" style={{ padding: 12 }}>
+                                        Chưa có snapshot tài nguyên. Snapshot được lưu mỗi ~30 giây khi job đang được theo dõi.
+                                      </div>
+                                    )
                                   )}
                                 </>
                               )}
