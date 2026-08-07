@@ -94,6 +94,39 @@ Model học **chuỗi định dạng**, không chỉ nội dung. Train sai templ
 - Bản lớn (26B/31B) luôn dùng template `gemma-4-thinking` (cấu trúc model), dù cờ think tắt hay bật.
 - **Chat/serve** vẫn lọc khối think khi stream (không tự bật thinking lúc inference).
 
+### 2.2.1 Model lạ (Custom HF ID) — chọn template thế nào?
+
+Khi chọn model **ngoài danh sách** (dropdown → `🤗 Custom HuggingFace Model ID...`),
+phần Advanced hiện thêm ô **“Model lạ — định dạng hội thoại”**. Quy trình:
+
+1. **Luôn để `Tự động` trước.** Hệ thống ưu tiên template native của tokenizer,
+   thiếu mới gắn template Unsloth theo họ model.
+2. Train xong (hoặc đang chạy) → **Lịch sử Huấn luyện** → mở job → **Audit & Logs**
+   → tìm dòng `[ChatTemplate]`:
+   - `applied=native` hoặc `applied=<tên họ>` → **ổn, không cần làm gì**.
+   - `mode=failed` hoặc cảnh báo ⚠️ → mới cần can thiệp (bước 3/4).
+3. **Biết model thuộc họ nào** (đọc model card HF: “fine-tuned from Qwen2.5…”)
+   → chọn đúng mục “Đây là họ Qwen / Llama 3 / …” rồi train lại.
+4. **Có chuỗi template từ người tạo model** → chọn **“Dán template thủ công…”**
+   và paste chuỗi Jinja vào ô textarea. Lấy chuỗi này ở: repo HF → tab **Files**
+   → `tokenizer_config.json` → copy giá trị field `chat_template`
+   (chuỗi chứa `{{` / `{%`). Log sẽ hiện `mode=jinja_override applied=jinja`.
+
+**Không đoán bừa họ model theo tên tự đặt.** Nếu không biết base model và auto
+fail, hỏi người tạo model trước khi train tiếp.
+
+Các giá trị `mode` trong log `[ChatTemplate]`:
+
+| `mode` | Ý nghĩa |
+|---|---|
+| `native` | Dùng template sẵn trong tokenizer — bình thường nhất |
+| `unsloth` | Tokenizer thiếu template → hệ thống gắn theo họ model |
+| `unsloth_override` | Bạn ép template qua dropdown |
+| `jinja_override` | Bạn dán template thủ công |
+| `native_override` | Bạn chọn “Giữ template gốc” (bỏ qua ép Gemma 4) |
+| `native_fallback` | Ép Unsloth lỗi → lui về native (xem `error` kèm theo) |
+| `failed` | Không có template nào áp được — **phải xử lý** trước khi tin kết quả |
+
 ### 2.3 Gợi ý chọn nhanh
 
 | Tình huống | Chọn |
@@ -109,6 +142,133 @@ Model học **chuỗi định dạng**, không chỉ nội dung. Train sai templ
 ## 3. Các cờ / tham số — từ điển đầy đủ
 
 Tên bên trái là **tên gửi API / GPU service** (snake_case). UI có thể dùng camelCase tương đương.
+
+### 3.0 Request body `POST /api/train/start` — từ điển key backend nhận
+
+Frontend gửi **multipart/form-data** (mọi giá trị là string, backend tự parse).
+Đây là toàn bộ key backend đọc từ `req.body`, khớp 1-1 với destructuring trong
+`backend/src/controllers/trainController.ts` (hàm `startTraining`).
+
+#### Nhóm A — Model & nguồn dữ liệu
+
+| Key | Kiểu | Ví dụ | Ý nghĩa |
+|---|---|---|---|
+| `model_name` | string, **bắt buộc** | `unsloth/Qwen2.5-7B-Instruct-bnb-4bit` | HF id model nền sẽ fine-tune |
+| `file` (multipart) | file | `dataset.json` / `.jsonl` / `.csv` / `.zip` | Dataset upload trực tiếp. ZIP có thể kèm metadata + validation set |
+| `dataset` | string | `team/vi-socratic-math` | HF Hub **dataset** id — chỉ dùng khi **không** upload `file` |
+| `cloudLoadedDataset` | string | `/app/uploads/cloud/abc.json` | Path file backend đã tải sẵn từ object storage (luồng "Load from cloud") |
+
+Ưu tiên: `file` > `cloudLoadedDataset` > `dataset`. Gửi cả ba thì file thắng.
+
+#### Nhóm B — Tham số học (optimizer / schedule)
+
+| Key | Kiểu | Mặc định backend | Ví dụ | Ý nghĩa |
+|---|---|---|---|---|
+| `epochs` | int | — (bắt buộc hợp lệ) | `3` | Số lần quét hết dataset |
+| `batchSize` | int | `1` | `2` | Mẫu / bước / GPU |
+| `learningRate` | float | `2e-4` | `0.00005` | Tốc độ học. LoRA khuyến nghị 2e-5–5e-5 |
+| `blockSize` | int | `512` | `1024` | Số token tối đa một mẫu khi train |
+| `modelMaxLength` | int | `2048` | `1024` | Max seq length nạp model |
+| `gradient_accumulation_steps` | int | `4` | `4` | Batch hiệu dụng = batchSize × số này |
+| `warmup_steps` | int | `5` | `10` | Số bước LR tăng dần từ 0 |
+| `optim` | string | `adamw_8bit` | `adamw_8bit` | Xem mục 3.6 danh sách hợp lệ |
+| `weight_decay` | float | `0.01` | `0.01` | Regularization |
+| `lr_scheduler_type` | string | `linear` | `cosine` | Xem mục 3.6 |
+| `seed` / `random_state` | int | `3407` | `3407` | Seed tái lập. UI gửi cùng giá trị cho cả hai |
+
+#### Nhóm C — LoRA
+
+| Key | Kiểu | Mặc định | Ví dụ | Ý nghĩa |
+|---|---|---|---|---|
+| `r` | int | `16` | `16` | Rank LoRA — to hơn = học nhiều hơn, dễ overfit dataset nhỏ |
+| `lora_alpha` | int | `16` | `32` | Hệ số scale, thường = 2×r |
+| `lora_dropout` | float | `0` | `0.05` | Dropout trên nhánh LoRA |
+| `lora_target_modules` | string | preset gpu-service | `all-linear` hoặc `q_proj,k_proj,v_proj` | Preset (`attention`, `all-linear`) hoặc danh sách module cách nhau dấu phẩy |
+| `use_rslora` | bool-string | `false` | `"true"` | Rank-stabilized LoRA |
+
+#### Nhóm D — Chất lượng / chống overfit (tuỳ chọn)
+
+**Chỉ gửi khi người dùng đặt rõ** — bỏ trống để gpu-service tự áp mặc định đã
+hiệu chỉnh (backend cố tình không điền default cho nhóm này).
+
+| Key | Kiểu | Ví dụ | Ý nghĩa |
+|---|---|---|---|
+| `early_stopping_loss` | float | `0.3` | Dừng khi train loss < ngưỡng. Không gửi = tắt |
+| `early_stopping_patience` | int | `3` | Số lần eval không cải thiện thì dừng |
+| `early_stopping_min_delta` | float | `0.01` | Cải thiện tối thiểu để tính là "tốt hơn" |
+| `neftune_noise_alpha` | float | `5` | Nhiễu embedding NEFTune. UI chỉ gửi khi > 0 |
+| `max_grad_norm` | float | `1` | Ngưỡng clip gradient |
+| `warmup_ratio` | float | `0.03` | Warmup theo tỉ lệ tổng bước. UI chỉ gửi khi > 0 |
+| `group_by_length` | bool-string | `"false"` | Gom mẫu cùng độ dài, giảm padding |
+| `eval_steps` | int | `50` | Bước giữa 2 lần validate. Trống = tự suy (~8 điểm/run) |
+| `save_steps` | int | `50` | Bước lưu checkpoint. Trống = bằng `eval_steps` |
+| `dataloader_num_workers` | int | `2` | Worker nạp data. Trống = 0 |
+| `auto_tune` | bool-string | `"false"` | `false` = khóa AutoTune, giữ nguyên mọi knob tay. Không gửi = bật |
+| `enable_thinking` | bool-string | `"false"` | Train khối reasoning/think — xem mục 2.2 |
+| `chat_template` | string | `auto` / `paste` / `qwen-2.5` | Override định dạng hội thoại — xem mục 2.2.1 |
+| `chat_template_jinja` | string | `{% for message in messages %}...` | Chuỗi Jinja dán tay, đi kèm `chat_template=paste`. Backend cắt tối đa 200KB |
+
+#### Nhóm E — Hugging Face Hub
+
+| Key | Kiểu | Ví dụ | Ý nghĩa |
+|---|---|---|---|
+| `push_to_hub` | bool-string | `"true"` | Đẩy adapter lên HF Hub sau train |
+| `hf_repo_id` | string | `team/socratic-tutor-v1` | Repo đích (bắt buộc khi push) |
+| `hf_token` | string | `hf_xxx...` | Token HF — cần khi model gated hoặc push |
+
+#### Nhóm F — Metadata (chỉ lưu `TrainingHistory`, không đổi hành vi train)
+
+| Key | Kiểu | Ví dụ | Ý nghĩa |
+|---|---|---|---|
+| `projectName` | string | `socratic-math-tutor-v2` | Tên hiển thị trên UI Lịch sử |
+| `datasetSource` | string | `local` / `hub` / `cloud` | Nguồn dataset — để UI hiển thị đúng |
+| `columnMapping` / `column_mapping` | string | `messages` | Cột chứa hội thoại. Nhận cả 2 dạng; ZIP metadata có thể ghi đè |
+| `systemPrompt` | string | `Bạn là gia sư Socratic...` | Persona — **được gửi xuống GPU** để train đúng prompt lúc serve |
+| `systemPromptVersion` | string | `Math-Socratic-V2` | Truy vết phiên bản prompt |
+| `totalTokens` | int | `48210` | Ước tính token của dataset (frontend đếm sẵn) |
+| `totalRecords` | int | `120` | Số mẫu của dataset |
+
+(`systemPrompt` nằm nhóm này vì frontend gửi camelCase, nhưng nó **có** ảnh
+hưởng train — backend đổi tên thành `system_prompt` khi forward xuống GPU.)
+
+#### Nhóm G — Chống double-submit
+
+| Key | Kiểu | Ví dụ | Ý nghĩa |
+|---|---|---|---|
+| `clientTrainingKey` / `idempotencyKey` | string | `uuid-v4-do-client-tao` | Client tạo 1 key cho mỗi lần bấm Start. Nếu đã có job **đang chạy** cùng key + cùng user → backend trả lại job cũ thay vì tạo job trùng |
+
+#### Ví dụ request hoàn chỉnh
+
+```bash
+curl -X POST https://<backend>/api/train/start \
+  -H "Authorization: Bearer <JWT>" \
+  -F "file=@socratic_math.json" \
+  -F "model_name=unsloth/Qwen2.5-7B-Instruct-bnb-4bit" \
+  -F "epochs=3" -F "batchSize=1" -F "learningRate=0.00005" \
+  -F "blockSize=1024" -F "modelMaxLength=1024" \
+  -F "r=16" -F "lora_alpha=32" -F "lora_dropout=0.05" \
+  -F "gradient_accumulation_steps=4" -F "warmup_steps=5" \
+  -F "weight_decay=0.01" -F "seed=3407" -F "random_state=3407" \
+  -F "optim=adamw_8bit" -F "lr_scheduler_type=cosine" \
+  -F "lora_target_modules=all-linear" -F "use_rslora=false" \
+  -F "neftune_noise_alpha=5" -F "warmup_ratio=0.03" \
+  -F "group_by_length=false" -F "enable_thinking=false" \
+  -F "early_stopping_patience=3" -F "max_grad_norm=1" \
+  -F "push_to_hub=true" -F "hf_repo_id=team/socratic-tutor-v1" -F "hf_token=hf_xxx" \
+  -F "projectName=socratic-math-tutor-v2" \
+  -F "datasetSource=local" -F "columnMapping=messages" \
+  -F "systemPrompt=Bạn là gia sư Toán theo phương pháp Socratic..." \
+  -F "systemPromptVersion=Math-Socratic-V2" \
+  -F "totalRecords=120" -F "totalTokens=48210" \
+  -F "clientTrainingKey=550e8400-e29b-41d4-a716-446655440000"
+```
+
+Model lạ cần dán template thủ công thì thêm:
+
+```bash
+  -F "chat_template=paste" \
+  -F "chat_template_jinja={% for message in messages %}...{% endfor %}"
+```
 
 ### 3.1 Nhóm bắt buộc / nhận diện job
 
@@ -173,6 +333,8 @@ Tên bên trái là **tên gửi API / GPU service** (snake_case). UI có thể 
 | `save_total_limit` | (API) | `2` | Giữ tối đa N checkpoint local |
 | `group_by_length` | Group By Length | `false` | Gom mẫu dài gần bằng nhau → ít padding. Tắt khi so sánh nhiều run (đổi thứ tự batch) |
 | `enable_thinking` | Train Thinking | `false` | Bật format reasoning/think (Gemma 4 / Qwen3). **Tắt** cho tutor Socratic. Khi bật: Gemma 4 nhỏ chuyển sang template `gemma-4-thinking`; log cảnh báo nếu \<75% mẫu có dấu hiệu think. Chat/serve vẫn lọc `<think>` mặc định |
+| `chat_template` | Model lạ → định dạng hội thoại | `auto` | Override cách đóng gói hội thoại: `auto` (khuyến nghị), `native`, `paste`, hoặc tên template Unsloth (`qwen-2.5`, `llama-3`, `gemma-4`, `gemma-4-thinking`, `gemma3`, `mistral`, `phi-4`, `chatml`). UI chỉ hiện khi dùng Custom HF model — xem mục 2.2.1 |
+| `chat_template_jinja` | Dán template thủ công | — | Chuỗi Jinja dán tay (copy từ `tokenizer_config.json` của model). Gửi kèm `chat_template=paste`. Ưu tiên cao nhất, thắng cả rule ép Gemma 4 |
 | `auto_tune` | (API, mặc định true) | `true` | Tự dưới rank/epochs khi dataset nhỏ. Gửi `false` để khóa mọi knob tay |
 | `gradient_checkpointing` | (API) | `true` | Đổi VRAM lấy thời gian; Unsloth dùng `"unsloth"` |
 | `dataloader_num_workers` | (API) | `0` | Worker nạp data. Giữ 0 cho ổn định; thử 2–4 trên GPU Linux nếu chắc chắn |

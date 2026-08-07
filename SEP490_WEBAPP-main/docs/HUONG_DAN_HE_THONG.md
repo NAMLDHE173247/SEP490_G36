@@ -447,6 +447,31 @@ Log còn hiện thêm dòng tóm tắt cấu hình thực tế đã chạy (số
 hiệu dụng, lịch eval, tỉ lệ token được tính loss). Khi cần so sánh hai run hoặc
 truy nguyên một kết quả lạ, dòng này là chỗ nhìn đầu tiên.
 
+### 7.5 Xem lại log và lỗi sau khi train (Audit & Logs)
+
+Toàn bộ log, cảnh báo và cấu hình hiệu lực của mỗi job được **đồng bộ về MongoDB**
+trong lúc train. Nghĩa là bạn xem lại được mọi thứ trên web, **không cần SSH vào
+GPU worker** — kể cả khi worker (Colab/Kaggle) đã tắt hoặc restart.
+
+Cách xem: **Lịch sử Huấn luyện** → bấm vào một job để mở rộng → khối
+**Audit & Logs** với ba tab:
+
+- **Sự kiện** — các dòng đáng chú ý đã được lọc sẵn theo mức độ:
+  đỏ = lỗi (`Traceback`, `CUDA out of memory`, job FAILED…), vàng = cảnh báo
+  (`[AutoTune]`, `[DataQuality]`, fallback…), xanh = thông tin
+  (`[ChatTemplate]`, `[Thinking]`, `[SFT Mask]`…). Sự kiện mới nhất ở trên cùng.
+- **Full logs** — toàn bộ log train đã đồng bộ (tối đa 2000 dòng gần nhất).
+- **Effective config** — cấu hình **thực tế** GPU đã chạy sau khi AutoTune /
+  clamp / template được áp. Khi kết quả lạ, so sánh tab này với tham số bạn
+  nhập là cách truy nguyên nhanh nhất.
+
+Nếu job lỗi, thông báo lỗi cuối hiện ngay trên đầu khối (băng đỏ). API tương
+ứng: `GET /api/train/history/:jobId/audit` (chỉ đọc từ Mongo).
+
+Lưu ý: log được đồng bộ **trong lúc backend theo dõi job** (màn AutoTrain mở,
+hoặc có poll trạng thái). Job train xong mà chưa từng được theo dõi thì phần
+audit có thể trống.
+
 ---
 
 ## 8. Vận hành và xử lý sự cố

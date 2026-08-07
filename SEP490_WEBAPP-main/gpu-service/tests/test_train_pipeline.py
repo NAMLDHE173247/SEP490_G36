@@ -274,6 +274,24 @@ def test_chat_template_passed_in_config():
     assert empty["chat_template"] is None
 
 
+def test_chat_template_jinja_override():
+    class Tok:
+        chat_template = "old"
+
+    jinja = "{% for message in messages %}{{ message.content }}{% endfor %}"
+    tok, info = apply_chat_template(
+        Tok(),
+        "CongTyXYZ/SocraticTutor-V1-7B",
+        chat_template_jinja=jinja,
+    )
+    assert info["mode"] == "jinja_override"
+    assert info["applied"] == "jinja"
+    assert tok.chat_template == jinja
+
+    cfg, _ = build_train_config({"chat_template_jinja": jinja})
+    assert cfg["chat_template_jinja"] == jinja
+
+
 def test_gemma4_forces_unsloth_template_even_with_native():
     """Theo notebook Unsloth Gemma4-31B: luôn gọi get_chat_template('gemma-4*')."""
     class Tok:

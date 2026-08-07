@@ -4,31 +4,31 @@
 
 // ── Training Configuration ──
 export interface TrainingConfig {
-  projectName: string;
+  apiKey: string;
   baseModel: string;
-  datasetSource: 'local' | 'hub' | 'cloud';
+  projectName: string;
+  systemPrompt: string;
+  columnMapping: string;
   localFile: File | null;
   selectedHfDataset: string;
   cloudLoadedDataset: string;
-  columnMapping: string;
-  systemPrompt: string;
-  apiKey: string;
+  datasetSource: 'local' | 'hub' | 'cloud';
 
   // Training parameters
-  epochs: string;
-  batchSize: string;
-  learningRate: string;
-  blockSize: string;
-  modelMaxLength: string;
   r: string;
-  loraAlpha: string;
-  loraDropout: string;
-  gradAccum: string;
-  warmupSteps: string;
-  weightDecay: string;
   seed: string;
   optim: string;
+  epochs: string;
+  batchSize: string;
+  blockSize: string;
+  loraAlpha: string;
+  gradAccum: string;
+  loraDropout: string;
+  warmupSteps: string;
+  weightDecay: string;
   lrScheduler: string;
+  learningRate: string;
+  modelMaxLength: string;
 
   // Quality & regularization (advanced) — bỏ trống để GPU service tự chọn
   loraTargets: string;
@@ -38,8 +38,10 @@ export interface TrainingConfig {
   warmupRatio: string;
   groupByLength: boolean;
   enableThinking: boolean;
-  /** auto | native | gemma-4 | gemma-4-thinking | llama-3 | qwen-2.5 | ... */
+  /** auto | native | paste | gemma-4 | llama-3 | qwen-2.5 | ... */
   chatTemplate: string;
+  /** Chuỗi Jinja dán tay khi chatTemplate === 'paste' */
+  customChatTemplate: string;
   earlyStoppingPatience: string;
   evalSteps: string;
 
@@ -49,44 +51,42 @@ export interface TrainingConfig {
 }
 
 export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
-  projectName: 'my-first-lm-project',
-  baseModel: 'Qwen/Qwen2.5-7B-Instruct',
-  datasetSource: 'local',
-  localFile: null,
-  selectedHfDataset: '',
-  cloudLoadedDataset: '',
-  columnMapping: 'text',
-  systemPrompt: '',
-  apiKey: '',
-
-  epochs: '3',
-  batchSize: '1',
-  learningRate: '0.00005',
-  blockSize: '1024',
-  modelMaxLength: '1024',
   r: '16',
-  loraAlpha: '32',
-  loraDropout: '0.05',
-  gradAccum: '4',
-  warmupSteps: '5',
-  weightDecay: '0.01',
+  apiKey: '',
+  epochs: '3',
+  hfToken: '',
   seed: '3407',
-  optim: 'adamw_8bit',
-  lrScheduler: 'cosine',
-
-  loraTargets: 'all-linear',
+  hfRepoId: '',
+  evalSteps: '',
+  batchSize: '1',
+  gradAccum: '4',
+  localFile: null,
+  loraAlpha: '32',
+  systemPrompt: '',
+  warmupSteps: '5',
   useRslora: false,
-  neftuneAlpha: '0',
   maxGradNorm: '1',
   warmupRatio: '0',
+  blockSize: '1024',
+  neftuneAlpha: '0',
+  loraDropout: '0.05',
+  weightDecay: '0.01',
+  optim: 'adamw_8bit',
   groupByLength: false,
-  enableThinking: false,
   chatTemplate: 'auto',
+  selectedHfDataset: '',
+  columnMapping: 'text',
+  lrScheduler: 'cosine',
+  enableThinking: false,
+  datasetSource: 'local',
+  cloudLoadedDataset: '',
+  modelMaxLength: '1024',
+  customChatTemplate: '',
+  learningRate: '0.00005',
+  loraTargets: 'all-linear',
   earlyStoppingPatience: '3',
-  evalSteps: '',
-
-  hfRepoId: '',
-  hfToken: '',
+  projectName: 'my-first-lm-project',
+  baseModel: 'Qwen/Qwen2.5-7B-Instruct',
 };
 
 // ── Dataset Preview ──
@@ -178,28 +178,28 @@ export const SYSTEM_PROMPT_TEMPLATES: PromptTemplate[] = [
 
 // ── Parameter Presets ──
 export interface ParamPreset {
+  r: number;
+  optim: string;
   epochs: number;
   batchSize: number;
-  learningRate: number;
   blockSize: number;
-  modelMaxLength: number;
-  r: number;
   lora_alpha: number;
+  learningRate: number;
   lora_dropout: number;
-  gradient_accumulation_steps: number;
   warmup_steps: number;
   weight_decay: number;
-  optim: string;
+  modelMaxLength: number;
   lr_scheduler_type: string;
+  gradient_accumulation_steps: number;
   // Knob chất lượng — tuỳ chọn để preset cũ đã lưu trong localStorage vẫn đọc được
-  lora_target_modules?: string;
   use_rslora?: boolean;
-  neftune_noise_alpha?: number;
-  max_grad_norm?: number;
   warmup_ratio?: number;
+  max_grad_norm?: number;
+  chat_template?: string;
   group_by_length?: boolean;
   enable_thinking?: boolean;
-  chat_template?: string;
+  lora_target_modules?: string;
+  neftune_noise_alpha?: number;
   early_stopping_patience?: number;
 }
 
@@ -239,18 +239,18 @@ export interface ToastMessage {
 // ── Training Job (from SSE) ──
 export interface TrainingJob {
   id: string;
+  loss?: number;
   status: string;
+  error?: string;
   progress: number;
-  current_epoch?: number;
+  eval_loss?: number;
+  total_steps?: number;
   total_epochs?: number;
   current_step?: number;
-  total_steps?: number;
-  loss?: number;
-  eval_loss?: number;
-  vram_used?: string | number;
-  gpu_util?: string | number;
-  error?: string;
+  current_epoch?: number;
   technical_error?: string;
+  gpu_util?: string | number;
+  vram_used?: string | number;
   metrics?: {
     loss?: number;
     eval_loss?: number;

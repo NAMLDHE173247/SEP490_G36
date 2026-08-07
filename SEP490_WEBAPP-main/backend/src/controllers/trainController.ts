@@ -141,56 +141,69 @@ export const startTraining = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Từ điển đầy đủ (kiểu, mặc định, ví dụ từng key):
+    // docs/FINE_TUNING_MODELS_VA_CO.md — mục 3.0 "Request body POST /api/train/start".
     const {
-      model_name,
+      // ── Model & nguồn dữ liệu ──────────────────────────────────────────────
+      model_name,          // HF id model nền, vd "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
+      dataset,             // HF Hub dataset id — chỉ khi KHÔNG upload file
+      cloudLoadedDataset,  // path file backend đã tải sẵn từ cloud storage
+
+      // ── Tham số học (optimizer / schedule) ────────────────────────────────
+      seed,
       epochs,
       batchSize,
-      learningRate,
       blockSize,
+      learningRate,
       modelMaxLength,
-      dataset, // HuggingFace Hub ID string (if no file uploaded)
-      // New parameters
+      optim,
+      warmup_steps,
+      weight_decay,
+      random_state,
+      lr_scheduler_type,
+      gradient_accumulation_steps,
+
+      // ── LoRA ──────────────────────────────────────────────────────────────
       r,
       lora_alpha,
+      use_rslora,
       lora_dropout,
-      random_state,
-      gradient_accumulation_steps,
-      warmup_steps,
-      optim,
-      weight_decay,
-      lr_scheduler_type,
-      seed,
+      lora_target_modules,
+
+      // ── Chất lượng / chống overfit (tuỳ chọn — gpu-service tự áp mặc định) ─
       early_stopping_loss,
       early_stopping_patience,
       early_stopping_min_delta,
-      // Knob chất lượng nâng cao — tuỳ chọn, gpu-service tự áp mặc định khi thiếu
-      lora_target_modules,
-      use_rslora,
-      neftune_noise_alpha,
-      max_grad_norm,
-      warmup_ratio,
-      group_by_length,
       eval_steps,
       save_steps,
+      warmup_ratio,
+      max_grad_norm,
+      group_by_length,
+      neftune_noise_alpha,
       dataloader_num_workers,
-      auto_tune,
-      enable_thinking,
-      chat_template,
-      push_to_hub,
-      hf_repo_id,
+      auto_tune,           // false = khóa AutoTune, giữ nguyên knob tay
+      enable_thinking,     // train khối reasoning/think (Gemma 4 / Qwen3)
+      chat_template_jinja, // chuỗi Jinja dán tay (đi kèm chat_template=paste)
+      chat_template,       // override template: auto|native|paste|qwen-2.5|...
+
+      // ── Hugging Face Hub ──────────────────────────────────────────────────
       hf_token,
-      // Metadata from frontend to save initial TrainingHistory
+      hf_repo_id,
+      push_to_hub,
+
+      // ── Metadata — chỉ lưu TrainingHistory, không đổi hành vi train ───────
       projectName,
-      datasetSource,
-      columnMapping,
-      column_mapping, // Accept both camelCase and snake_case
-      systemPrompt,
-      systemPromptVersion,
       totalTokens,
+      systemPrompt,
       totalRecords,
-      cloudLoadedDataset,
-      clientTrainingKey,
+      columnMapping,
+      systemPromptVersion,
+      datasetSource,       // 'local' | 'hub' | 'cloud'
+      column_mapping,      // chấp nhận cả camelCase lẫn snake_case
+
+      // ── Chống double-submit (bấm Start 2 lần) ─────────────────────────────
       idempotencyKey,
+      clientTrainingKey,
     } = req.body;
 
     console.log('[Backend] Received columnMapping:', columnMapping);
@@ -359,21 +372,25 @@ export const startTraining = async (req: Request, res: Response) => {
       optionalKnobs[key] = raw === true || raw === 'true';
     };
 
-    putNumber('early_stopping_loss', early_stopping_loss);
-    putNumber('early_stopping_patience', early_stopping_patience);
-    putNumber('early_stopping_min_delta', early_stopping_min_delta);
-    putNumber('neftune_noise_alpha', neftune_noise_alpha);
-    putNumber('max_grad_norm', max_grad_norm);
-    putNumber('warmup_ratio', warmup_ratio);
+    putBoolean('auto_tune', auto_tune);
     putNumber('eval_steps', eval_steps);
     putNumber('save_steps', save_steps);
-    putNumber('dataloader_num_workers', dataloader_num_workers);
     putBoolean('use_rslora', use_rslora);
+    putNumber('warmup_ratio', warmup_ratio);
+    putNumber('max_grad_norm', max_grad_norm);
     putBoolean('group_by_length', group_by_length);
-    putBoolean('auto_tune', auto_tune);
     putBoolean('enable_thinking', enable_thinking);
+    putNumber('early_stopping_loss', early_stopping_loss);
+    putNumber('neftune_noise_alpha', neftune_noise_alpha);
+    putNumber('dataloader_num_workers', dataloader_num_workers);
+    putNumber('early_stopping_patience', early_stopping_patience);
+    putNumber('early_stopping_min_delta', early_stopping_min_delta);
     if (typeof chat_template === 'string' && chat_template.trim()) {
       optionalKnobs.chat_template = chat_template.trim();
+    }
+    if (typeof chat_template_jinja === 'string' && chat_template_jinja.trim()) {
+      // Giới hạn kích thước — Jinja tokenizer_config thường < 100KB
+      optionalKnobs.chat_template_jinja = chat_template_jinja.trim().slice(0, 200_000);
     }
     if (lora_target_modules) {
       // Chuẩn về chuỗi: vừa hợp schema TrainingHistory, vừa được gpu-service
@@ -387,35 +404,35 @@ export const startTraining = async (req: Request, res: Response) => {
     const config: any = {
       job_id,
       model_name,
-      epochs: epochsNum,
-      batchSize: parseInt(batchSize as string) || 1,
-      learningRate: parseFloat(learningRate as string) || 2e-4,
-      blockSize: parseInt(blockSize as string) || 512,
-      modelMaxLength: parseInt(modelMaxLength as string) || 2048,
-      r: parseInt(r as string) || 16,
-      lora_alpha: parseInt(lora_alpha as string) || 16,
-      lora_dropout: parseFloat(lora_dropout as string) || 0,
-      random_state: parseInt(random_state as string) || 3407,
-      gradient_accumulation_steps: parseInt(gradient_accumulation_steps as string) || 4,
-      warmup_steps: parseInt(warmup_steps as string) || 5,
-      optim: (optim as string) || 'adamw_8bit',
-      weight_decay: parseFloat(weight_decay as string) || 0.01,
-      lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
-      seed: parseInt(seed as string) || 3407,
       ...optionalKnobs,
-      push_to_hub: push_to_hub === 'true' || push_to_hub === true,
-      hf_repo_id: hf_repo_id || '',
+      epochs: epochsNum,
       hf_token: hf_token || '',
-      system_prompt: effectiveSystemPrompt,
-      system_prompt_version: effectiveSystemPromptVersion,
-      // Google Drive for checkpoint saving
-      drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
-      service_account: parsedGoogleCredentials,
-      // Pass column mapping to GPU service in multiple formats to be safe
-      column_mapping: finalColumnMapping,
-      dataset_text_field: finalColumnMapping,
+      hf_repo_id: hf_repo_id || '',
+      r: parseInt(r as string) || 16,
       text_column: finalColumnMapping,
       target_column: finalColumnMapping,
+      column_mapping: finalColumnMapping,
+      system_prompt: effectiveSystemPrompt,
+      // Google Drive for checkpoint saving
+      seed: parseInt(seed as string) || 3407,
+      dataset_text_field: finalColumnMapping,
+      drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
+      optim: (optim as string) || 'adamw_8bit',
+      service_account: parsedGoogleCredentials,
+      batchSize: parseInt(batchSize as string) || 1,
+      blockSize: parseInt(blockSize as string) || 512,
+      lora_alpha: parseInt(lora_alpha as string) || 16,
+      warmup_steps: parseInt(warmup_steps as string) || 5,
+      system_prompt_version: effectiveSystemPromptVersion,
+      lora_dropout: parseFloat(lora_dropout as string) || 0,
+      random_state: parseInt(random_state as string) || 3407,
+      learningRate: parseFloat(learningRate as string) || 2e-4,
+      weight_decay: parseFloat(weight_decay as string) || 0.01,
+      modelMaxLength: parseInt(modelMaxLength as string) || 2048,
+      push_to_hub: push_to_hub === 'true' || push_to_hub === true,
+      lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
+      // Pass column mapping to GPU service in multiple formats to be safe
+      gradient_accumulation_steps: parseInt(gradient_accumulation_steps as string) || 4,
     };
 
     // If no file uploaded, embed HF Hub ID directly into config

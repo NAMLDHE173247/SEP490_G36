@@ -10,8 +10,8 @@ Ba việc trước khi trainer chạy:
 from __future__ import annotations
 
 import json
-import hashlib
 import random
+import hashlib
 from collections import Counter
 
 MIN_ASSISTANT_CHARS = 8
@@ -68,11 +68,17 @@ def resolve_chat_template_name(model_name: str, enable_thinking: bool = False) -
     return None
 
 
+def _looks_like_jinja_template(text: str) -> bool:
+    """Chuỗi dán tay từ tokenizer_config.json thường chứa {{ hoặc {%."""
+    return "{{" in (text or "") or "{%" in (text or "")
+
+
 def apply_chat_template(
     tokenizer,
     model_name: str,
     enable_thinking: bool = False,
     chat_template_override: str | None = None,
+    chat_template_jinja: str | None = None,
 ):
     """Áp chat template đúng family.
 
@@ -84,6 +90,7 @@ def apply_chat_template(
         * rỗng / auto → hành vi mặc định
         * native → giữ tokenizer.chat_template (không ép Unsloth)
         * tên Unsloth (gemma-4, llama-3, qwen-2.5, ...) → ép template đó
+    - `chat_template_jinja`: dán nguyên chuỗi Jinja (từ HF / người tạo model).
 
     Trả về `(tokenizer, info)` với info dùng cho log / effective_config.
     """
@@ -91,8 +98,14 @@ def apply_chat_template(
     has_native = bool(native and str(native).strip())
     suggested = resolve_chat_template_name(model_name, enable_thinking=enable_thinking)
     force_unsloth = _is_gemma4(model_name)
-    override = (chat_template_override or "").strip().lower()
-    if override in ("", "auto", "default", "none"):
+    override_raw = (chat_template_override or "").strip()
+    jinja = (chat_template_jinja or "").strip()
+    # Cho phép dán Jinja nhầm vào field chat_template.
+    if not jinja and _looks_like_jinja_template(override_raw):
+        jinja = override_raw
+        override_raw = ""
+    override = override_raw.lower()
+    if override in ("", "auto", "default", "none", "paste", "custom"):
         override = ""
 
     info = {
@@ -102,8 +115,28 @@ def apply_chat_template(
         "mode": "native",
         "force_unsloth": force_unsloth,
         "enable_thinking": bool(enable_thinking),
-        "override": override or None,
+        "override": "jinja" if jinja else (override or None),
     }
+
+    if jinja:
+        if not _looks_like_jinja_template(jinja):
+            info["applied"] = None
+            info["mode"] = "failed"
+            info["error"] = (
+                "chat_template_jinja không giống Jinja (cần có {{ hoặc {%}). "
+                "Hãy copy trường chat_template trong tokenizer_config.json."
+            )
+            return tokenizer, info
+        try:
+            tokenizer.chat_template = jinja
+            info["applied"] = "jinja"
+            info["mode"] = "jinja_override"
+            info["jinja_chars"] = len(jinja)
+        except Exception as exc:
+            info["applied"] = None
+            info["mode"] = "failed"
+            info["error"] = str(exc)
+        return tokenizer, info
 
     if override == "native":
         info["applied"] = "native" if has_native else None

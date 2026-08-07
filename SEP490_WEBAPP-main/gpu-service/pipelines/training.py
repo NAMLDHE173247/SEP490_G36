@@ -11,9 +11,9 @@ import traceback
 import numpy as np
 from datasets import load_dataset
 from trl import SFTTrainer, SFTConfig
-from transformers import TrainerCallback, DataCollatorForLanguageModeling
-from unsloth import FastLanguageModel, is_bfloat16_supported
 from huggingface_hub import login, HfApi, snapshot_download
+from unsloth import FastLanguageModel, is_bfloat16_supported
+from transformers import TrainerCallback, DataCollatorForLanguageModeling
 
 from core.gpu_state import (
     jobs_db, active_training_jobs,
@@ -231,15 +231,17 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
 
         enable_thinking = bool(config.get('enable_thinking', False))
         chat_template_override = config.get('chat_template')
+        chat_template_jinja = config.get('chat_template_jinja')
 
         # Chat template: giữ native nếu Instruct đã có; chỉ gắn Unsloth khi thiếu.
         # Gemma 4 + enable_thinking → gemma-4-thinking (notebook Unsloth 31B).
-        # chat_template override cho model mới / template đặc biệt.
+        # chat_template / chat_template_jinja cho model mới / template đặc biệt.
         tokenizer, chat_template_info = apply_chat_template(
             tokenizer,
             config['model_name'],
             enable_thinking=enable_thinking,
             chat_template_override=chat_template_override,
+            chat_template_jinja=chat_template_jinja,
         )
         ensure_right_padding(tokenizer)
         template_msg = (

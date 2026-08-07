@@ -154,6 +154,12 @@ def build_train_config(parsed):
             if parsed.get("chat_template") not in (None, "")
             else None
         ),
+        # Dán nguyên Jinja từ tokenizer_config.json / người tạo model.
+        "chat_template_jinja": (
+            str(parsed.get("chat_template_jinja")).strip()
+            if parsed.get("chat_template_jinja") not in (None, "")
+            else None
+        ),
         # Dataset nhỏ + LoRA rank cao dễ học vẹt. Mặc định bật; client gửi
         # auto_tune=false để giữ nguyên mọi knob người dùng chọn.
         "auto_tune": (

@@ -73,11 +73,6 @@ export function buildTrainAuditUpdate(
   const incomingLogs = Array.isArray(data.logs)
     ? data.logs.map((line: unknown) => String(line)).filter(Boolean)
     : null;
-  if (incomingLogs) {
-    update.trainLogs = incomingLogs.slice(-MAX_TRAIN_LOGS);
-    const last = incomingLogs[incomingLogs.length - 1];
-    if (last) update.lastLogLine = last;
-  }
 
   if (data.effective_config && typeof data.effective_config === 'object') {
     update.effectiveConfig = data.effective_config;
@@ -113,6 +108,17 @@ export function buildTrainAuditUpdate(
       newLines = incoming.filter((line) => !prevSet.has(line));
     }
   }
+
+  if (incoming.length > 0) {
+    // Không cho payload ngắn (vd '[System] Lỗi...' sau khi worker restart)
+    // ghi đè toàn bộ log thật đã lưu — chỉ nối thêm dòng mới.
+    const merged =
+      incoming.length >= prev.length ? incoming : prev.concat(newLines);
+    update.trainLogs = merged.slice(-MAX_TRAIN_LOGS);
+    const last = merged[merged.length - 1];
+    if (last) update.lastLogLine = last;
+  }
+
   const events: TrainAuditEvent[] = [];
 
   for (const line of newLines) {
@@ -145,13 +151,16 @@ export function buildTrainAuditUpdate(
     !previousLastError &&
     !events.some((e) => e.level === 'error')
   ) {
+    const message = `Job kết thúc với trạng thái ${data.status}`;
     events.push({
       ts: now,
       level: 'error',
       source: 'backend',
       code: String(data.status),
-      message: `Job kết thúc với trạng thái ${data.status}`,
+      message,
     });
+    // Ghi lastError để lần poll sau không tạo lại event trùng.
+    update.lastError = message;
   }
 
   if (events.length > 0) {
