@@ -15,10 +15,27 @@ import { configService } from '../services/configService';
 import { TrainingHistory } from '../models/TrainingHistory';
 import { DataPrepProject } from '../models/DataPrepProject';
 import { DatasetSampleAssignment } from '../models/DatasetSampleAssignment';
+import { buildTrainAuditUpdate, toMongoAuditUpdate } from '../utils/trainAudit';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
 import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 dotenv.config();
+
+/** Đồng bộ log/audit/effective_config từ GPU status vào Mongo (fire-and-forget). */
+function persistTrainAudit(
+  jobId: string,
+  ownerId: string,
+  data: Record<string, any>,
+  previousLogs: string[] = [],
+  previousLastError: string = '',
+) {
+  const raw = buildTrainAuditUpdate(data, previousLogs, previousLastError);
+  const mongo = toMongoAuditUpdate(raw);
+  if (!mongo.$set && !mongo.$push) return;
+  TrainingHistory.updateOne({ jobId, ownerId }, mongo).catch((err) =>
+    console.error('[Backend] Failed to persist train audit:', err),
+  );
+}
 
 class WorkerManager {
   private workers: { url: string; activeJobs: number }[] = [];
@@ -158,6 +175,7 @@ export const startTraining = async (req: Request, res: Response) => {
       dataloader_num_workers,
       auto_tune,
       enable_thinking,
+      chat_template,
       push_to_hub,
       hf_repo_id,
       hf_token,
@@ -354,6 +372,9 @@ export const startTraining = async (req: Request, res: Response) => {
     putBoolean('group_by_length', group_by_length);
     putBoolean('auto_tune', auto_tune);
     putBoolean('enable_thinking', enable_thinking);
+    if (typeof chat_template === 'string' && chat_template.trim()) {
+      optionalKnobs.chat_template = chat_template.trim();
+    }
     if (lora_target_modules) {
       // Chuẩn về chuỗi: vừa hợp schema TrainingHistory, vừa được gpu-service
       // hiểu (tên preset hoặc danh sách ngăn cách bởi dấu phẩy).
@@ -676,6 +697,14 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
       ).catch(err => console.error('[Backend] Failed to update status in DB during poll:', err));
     }
 
+    persistTrainAudit(
+      jobId,
+      ownerId,
+      data,
+      Array.isArray(history.trainLogs) ? history.trainLogs : [],
+      history.lastError || '',
+    );
+
     if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
       const updateFields: any = {};
       if (data.latest_checkpoint) updateFields.latest_checkpoint_file_id = data.latest_checkpoint;
@@ -726,8 +755,37 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     }
     // --- END DB SYNC ---
 
+    // Khi worker mất job nhưng Mongo còn audit → trả kèm để UI vẫn xem được log
+    if ((!Array.isArray(data.logs) || data.logs.length === 0) && Array.isArray(history.trainLogs) && history.trainLogs.length > 0) {
+      data.logs = history.trainLogs;
+      data.from_mongo_audit = true;
+    }
+    if (!data.effective_config && history.effectiveConfig) {
+      data.effective_config = history.effectiveConfig;
+    }
+    if (!data.error && history.lastError) data.error = history.lastError;
+    if (!data.technical_error && history.technicalError) data.technical_error = history.technicalError;
+
     return res.status(response.status).json(data);
   } catch (err: any) {
+    // Worker unreachable: vẫn cố trả audit đã lưu trên Mongo
+    try {
+      const ownerId = getAuthUserId(req);
+      const { jobId } = req.params;
+      if (ownerId && jobId) {
+        const history = await TrainingHistory.findOne({ jobId, ownerId }).lean();
+        if (history && Array.isArray((history as any).trainLogs) && (history as any).trainLogs.length > 0) {
+          return res.status(200).json({
+            status: (history as any).status || 'ERROR',
+            logs: (history as any).trainLogs,
+            effective_config: (history as any).effectiveConfig,
+            error: (history as any).lastError || err.message,
+            technical_error: (history as any).technicalError,
+            from_mongo_audit: true,
+          });
+        }
+      }
+    } catch { /* ignore fallback errors */ }
     return res.status(500).json({ error: err.message || 'Failed to get training status' });
   }
 };
@@ -801,6 +859,20 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
           { jobId, ownerId },
           { status: data.status }
         ).catch(err => console.error('[Backend] Failed to update status in DB during stream:', err));
+      }
+
+      persistTrainAudit(
+        jobId,
+        ownerId,
+        data,
+        Array.isArray(history.trainLogs) ? history.trainLogs : [],
+        history.lastError || '',
+      );
+      if (Array.isArray(data.logs)) {
+        history.trainLogs = data.logs;
+      }
+      if (typeof data.error === 'string' && data.error.trim()) {
+        history.lastError = data.error.trim();
       }
 
       // IF latest_checkpoint exists, update the DB so we can resume later

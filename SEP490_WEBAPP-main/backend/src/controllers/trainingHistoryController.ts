@@ -1,8 +1,8 @@
-import { Request, Response } from 'express';
-import { TrainingHistory } from '../models/TrainingHistory';
-import { ModelEvaluation } from '../models/Evaluation';
-import { getAuthUserId } from '../utils/auth';
 import fs from 'fs';
+import { Request, Response } from 'express';
+import { getAuthUserId } from '../utils/auth';
+import { ModelEvaluation } from '../models/Evaluation';
+import { TrainingHistory } from '../models/TrainingHistory';
 
 type EvalStats = { evalCount: number; pinnedOverallPct: number | null };
 
@@ -181,7 +181,9 @@ export const getTrainingHistoryList = async (req: Request, res: Response) => {
       filter.baseModel = baseModel.trim();
     }
 
+    // Loại trainLogs/auditEvents khỏi list — payload lớn; lấy qua /audit khi cần
     const histories = await TrainingHistory.find(filter)
+      .select('-trainLogs -auditEvents -effectiveConfig -technicalError -hfToken')
       .sort({ completedAt: -1 })
       .lean();
 
@@ -254,7 +256,9 @@ export const getTrainingHistoryDetail = async (req: Request, res: Response) => {
     }
 
     const { jobId } = req.params;
-    const history = await TrainingHistory.findOne({ jobId, ownerId }).lean();
+    const history = await TrainingHistory.findOne({ jobId, ownerId })
+      .select('-hfToken')
+      .lean();
 
     if (!history) {
       return res.status(404).json({ error: 'Training history not found' });
@@ -264,6 +268,45 @@ export const getTrainingHistoryDetail = async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Backend] getTrainingHistoryDetail error:', err);
     return res.status(500).json({ error: err.message || 'Failed to get training history detail' });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// GET /api/train/history/:jobId/audit
+// Đọc log + audit event + effective_config từ Mongo (không cần GPU worker)
+// ---------------------------------------------------------------------------
+export const getTrainingHistoryAudit = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { jobId } = req.params;
+    const history = await TrainingHistory.findOne({ jobId, ownerId })
+      .select('jobId status lastLogLine lastError technicalError trainLogs auditEvents effectiveConfig updatedAt completedAt')
+      .lean();
+
+    if (!history) {
+      return res.status(404).json({ error: 'Training history not found' });
+    }
+
+    return res.status(200).json({
+      jobId: history.jobId,
+      status: history.status,
+      lastLogLine: history.lastLogLine || '',
+      lastError: (history as any).lastError || '',
+      technicalError: (history as any).technicalError || '',
+      trainLogs: Array.isArray((history as any).trainLogs) ? (history as any).trainLogs : [],
+      auditEvents: Array.isArray((history as any).auditEvents) ? (history as any).auditEvents : [],
+      effectiveConfig: (history as any).effectiveConfig || null,
+      updatedAt: history.updatedAt,
+      completedAt: history.completedAt,
+      source: 'mongo',
+    });
+  } catch (err: any) {
+    console.error('[Backend] getTrainingHistoryAudit error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to get training audit' });
   }
 };
 

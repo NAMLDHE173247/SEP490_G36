@@ -310,6 +310,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         warmupRatio: preset.warmup_ratio !== undefined ? String(preset.warmup_ratio) : prev.warmupRatio,
         groupByLength: preset.group_by_length ?? prev.groupByLength,
         enableThinking: preset.enable_thinking ?? prev.enableThinking,
+        chatTemplate: preset.chat_template || prev.chatTemplate,
         earlyStoppingPatience: preset.early_stopping_patience !== undefined
           ? String(preset.early_stopping_patience)
           : prev.earlyStoppingPatience,
@@ -341,6 +342,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         warmup_ratio: parseFloat(config.warmupRatio) || 0,
         group_by_length: config.groupByLength,
         enable_thinking: config.enableThinking,
+        chat_template: config.chatTemplate,
         early_stopping_patience: parseInt(config.earlyStoppingPatience) || 3,
       };
 
@@ -593,6 +595,9 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       formData.append('use_rslora', String(config.useRslora));
       formData.append('group_by_length', String(config.groupByLength));
       formData.append('enable_thinking', String(config.enableThinking));
+      if (config.chatTemplate && config.chatTemplate !== 'auto') {
+        formData.append('chat_template', config.chatTemplate);
+      }
       formData.append('max_grad_norm', config.maxGradNorm);
       formData.append('early_stopping_patience', config.earlyStoppingPatience);
       if (parseFloat(config.neftuneAlpha) > 0) formData.append('neftune_noise_alpha', config.neftuneAlpha);

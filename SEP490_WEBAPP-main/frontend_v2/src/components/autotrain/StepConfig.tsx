@@ -777,6 +777,28 @@ const StepConfig: React.FC<StepConfigProps> = ({
                       style={{ width: 16, height: 16 }}
                     />
                   </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Chat Template <HelpTooltip text="auto = family detection (Gemma 4 → Unsloth). native = keep HF tokenizer template. Pick a named Unsloth template for new/custom models when auto is wrong." /></span>
+                    <select
+                      className="at-select"
+                      value={config.chatTemplate || 'auto'}
+                      onChange={handleParamChange('chatTemplate')}
+                      style={{ width: 150, padding: '4px 8px' }}
+                    >
+                      <option value="auto">auto</option>
+                      <option value="native">native</option>
+                      <option value="gemma-4">gemma-4</option>
+                      <option value="gemma-4-thinking">gemma-4-thinking</option>
+                      <option value="gemma3">gemma3</option>
+                      <option value="llama-3">llama-3</option>
+                      <option value="qwen-2.5">qwen-2.5</option>
+                      <option value="mistral">mistral</option>
+                      <option value="phi-4">phi-4</option>
+                      <option value="phi-3">phi-3</option>
+                      <option value="chatml">chatml</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             )}

@@ -416,6 +416,116 @@
   color: #fbbf24;
 }
 
+/* Audit trail panel */
+.audit-panel {
+  margin-top: 16px;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.audit-error-banner {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.audit-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+  align-items: center;
+}
+
+.audit-tab {
+  border: 1px solid #e2e8f0;
+  background: white;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.audit-tab.active {
+  border-color: #6366f1;
+  color: #4338ca;
+  background: #eef2ff;
+  font-weight: 600;
+}
+
+.audit-events {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audit-event {
+  display: grid;
+  grid-template-columns: 52px auto 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e2e8f0;
+}
+
+.audit-event.audit-error {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.audit-event.audit-warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
+.audit-level {
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.audit-event.audit-error .audit-level { color: #dc2626; }
+.audit-event.audit-warn .audit-level { color: #d97706; }
+.audit-event.audit-info .audit-level { color: #2563eb; }
+
+.audit-code {
+  font-family: Consolas, monospace;
+  font-size: 11px;
+  color: #475569;
+}
+
+.audit-msg {
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.audit-log-scroll {
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
 /* Modal Styling */
 .modal-overlay {
   position: fixed;

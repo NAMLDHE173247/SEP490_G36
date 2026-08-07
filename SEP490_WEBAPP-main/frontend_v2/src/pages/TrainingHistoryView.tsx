@@ -66,6 +66,7 @@ interface TrainingHistoryItem {
     gpu_util: number;
   };
   lastLogLine?: string;
+  lastError?: string;
   trainingDuration: number;
   startedAt: string;
   completedAt?: string;
@@ -76,6 +77,24 @@ interface TrainingHistoryItem {
   workerUrl?: string;
   totalTokens?: number;
   totalRecords?: number;
+}
+
+interface TrainAuditPayload {
+  jobId: string;
+  status: string;
+  lastLogLine?: string;
+  lastError?: string;
+  technicalError?: string;
+  trainLogs: string[];
+  auditEvents: {
+    ts: string;
+    level: 'info' | 'warn' | 'error';
+    source: string;
+    code?: string;
+    message: string;
+  }[];
+  effectiveConfig?: Record<string, unknown> | null;
+  source?: string;
 }
 
 interface TrainingHistoryViewProps {
@@ -374,6 +393,11 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   const [selectedEvalId, setSelectedEvalId] = useState<string>('');
   const [registering, setRegistering] = useState(false);
 
+  // Audit log (Mongo) — xem lỗi/log khi GPU worker đã tắt
+  const [auditByJob, setAuditByJob] = useState<Record<string, TrainAuditPayload>>({});
+  const [auditLoading, setAuditLoading] = useState<string | null>(null);
+  const [auditTab, setAuditTab] = useState<'events' | 'logs' | 'config'>('events');
+
   // Fetch base models
   const fetchBaseModels = useCallback(async () => {
     try {
@@ -420,6 +444,28 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
     fetchHistories();
     fetchRegistries();
   }, [fetchBaseModels, fetchHistories, fetchRegistries]);
+
+  useEffect(() => {
+    if (!expandedId) return;
+    let cancelled = false;
+    setAuditTab('events');
+    setAuditLoading(expandedId);
+    (async () => {
+      try {
+        const res = await api.get(`/train/history/${expandedId}/audit`);
+        if (!cancelled && res.data) {
+          setAuditByJob((prev) => ({ ...prev, [expandedId]: res.data as TrainAuditPayload }));
+        }
+      } catch (err) {
+        console.error('Failed to fetch train audit:', err);
+      } finally {
+        if (!cancelled) setAuditLoading(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [expandedId]);
 
   // Model filter handler
   const handleModelFilterChange = (model: string) => {
@@ -875,6 +921,91 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                                 <pre className="log-content">{item.lastLogLine}</pre>
                               </div>
                             )}
+
+                            {/* Audit trail — Mongo, không cần SSH / GPU worker */}
+                            <div className="audit-panel" onClick={(e) => e.stopPropagation()}>
+                              <div className="detail-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <ClipboardList size={16} />
+                                Audit &amp; Logs
+                                <span className="text-muted text-sm" style={{ fontWeight: 400 }}>
+                                  (lưu Mongo — xem lại khi worker đã tắt)
+                                </span>
+                              </div>
+                              {(item.lastError || auditByJob[item.jobId]?.lastError) && (
+                                <div className="audit-error-banner">
+                                  {item.lastError || auditByJob[item.jobId]?.lastError}
+                                </div>
+                              )}
+                              <div className="audit-tabs">
+                                {(['events', 'logs', 'config'] as const).map((tab) => (
+                                  <button
+                                    key={tab}
+                                    type="button"
+                                    className={`audit-tab ${auditTab === tab ? 'active' : ''}`}
+                                    onClick={() => setAuditTab(tab)}
+                                  >
+                                    {tab === 'events' ? 'Sự kiện' : tab === 'logs' ? 'Full logs' : 'Effective config'}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  className="audit-tab"
+                                  style={{ marginLeft: 'auto' }}
+                                  onClick={async () => {
+                                    setAuditLoading(item.jobId);
+                                    try {
+                                      const res = await api.get(`/train/history/${item.jobId}/audit`);
+                                      setAuditByJob((prev) => ({ ...prev, [item.jobId]: res.data }));
+                                    } catch {
+                                      toast.error('Không tải được audit');
+                                    } finally {
+                                      setAuditLoading(null);
+                                    }
+                                  }}
+                                >
+                                  <RefreshCw size={12} /> Tải lại
+                                </button>
+                              </div>
+                              {auditLoading === item.jobId && !auditByJob[item.jobId] ? (
+                                <div className="text-muted text-sm" style={{ padding: 12 }}>Đang tải audit…</div>
+                              ) : (
+                                <>
+                                  {auditTab === 'events' && (
+                                    <div className="audit-events">
+                                      {(auditByJob[item.jobId]?.auditEvents || []).length === 0 ? (
+                                        <div className="text-muted text-sm" style={{ padding: 12 }}>
+                                          Chưa có sự kiện cảnh báo/lỗi. Mở job đang train hoặc đợi sync từ GPU.
+                                        </div>
+                                      ) : (
+                                        (auditByJob[item.jobId]?.auditEvents || []).slice().reverse().map((ev, idx) => (
+                                          <div key={`${ev.ts}-${idx}`} className={`audit-event audit-${ev.level}`}>
+                                            <span className="audit-level">{ev.level}</span>
+                                            {ev.code && <span className="audit-code">{ev.code}</span>}
+                                            <span className="audit-msg">{ev.message}</span>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                  {auditTab === 'logs' && (
+                                    <div className="log-box" style={{ marginTop: 8 }}>
+                                      <pre className="log-content audit-log-scroll">
+                                        {(auditByJob[item.jobId]?.trainLogs || []).length
+                                          ? (auditByJob[item.jobId]?.trainLogs || []).join('\n')
+                                          : '(chưa có log được đồng bộ)'}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {auditTab === 'config' && (
+                                    <pre className="params-code-box" style={{ marginTop: 8, maxHeight: 280, overflow: 'auto' }}>
+                                      {auditByJob[item.jobId]?.effectiveConfig
+                                        ? JSON.stringify(auditByJob[item.jobId]?.effectiveConfig, null, 2)
+                                        : '(chưa có effective_config — thường xuất hiện sau khi job bắt đầu train)'}
+                                    </pre>
+                                  )}
+                                </>
+                              )}
+                            </div>
 
                             {/* Actions bar */}
                             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>

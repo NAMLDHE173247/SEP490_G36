@@ -230,11 +230,16 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         )
 
         enable_thinking = bool(config.get('enable_thinking', False))
+        chat_template_override = config.get('chat_template')
 
         # Chat template: giữ native nếu Instruct đã có; chỉ gắn Unsloth khi thiếu.
         # Gemma 4 + enable_thinking → gemma-4-thinking (notebook Unsloth 31B).
+        # chat_template override cho model mới / template đặc biệt.
         tokenizer, chat_template_info = apply_chat_template(
-            tokenizer, config['model_name'], enable_thinking=enable_thinking,
+            tokenizer,
+            config['model_name'],
+            enable_thinking=enable_thinking,
+            chat_template_override=chat_template_override,
         )
         ensure_right_padding(tokenizer)
         template_msg = (
@@ -242,6 +247,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             f"applied={chat_template_info.get('applied')} "
             f"suggested={chat_template_info.get('suggested')} "
             f"had_native={chat_template_info.get('had_native_template')} "
+            f"override={chat_template_info.get('override')} "
             f"enable_thinking={enable_thinking}"
         )
         print(template_msg)

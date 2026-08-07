@@ -148,6 +148,12 @@ def build_train_config(parsed):
         # Train với khối reasoning/think (Gemma 4 / Qwen3). Mặc định tắt —
         # gia sư Socratic thường không muốn học chuỗi suy nghĩ ẩn.
         "enable_thinking": _as_bool("enable_thinking", parsed.get("enable_thinking")),
+        # Override chat template: auto|native|gemma-4|llama-3|qwen-2.5|...
+        "chat_template": (
+            str(parsed.get("chat_template")).strip()
+            if parsed.get("chat_template") not in (None, "")
+            else None
+        ),
         # Dataset nhỏ + LoRA rank cao dễ học vẹt. Mặc định bật; client gửi
         # auto_tune=false để giữ nguyên mọi knob người dùng chọn.
         "auto_tune": (

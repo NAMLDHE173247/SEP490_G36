@@ -41,6 +41,7 @@ export interface ITrainingHistory extends Document {
     save_steps?: number;                // Bỏ trống = bằng eval_steps
     dataloader_num_workers?: number;    // Số worker nạp dữ liệu
     enable_thinking?: boolean;          // Train với reasoning/think traces
+    chat_template?: string;             // Override template (auto|native|gemma-4|...)
   };
   pushToHub: boolean;
   hfRepoId: string;
@@ -77,6 +78,19 @@ export interface ITrainingHistory extends Document {
   // Actual stats processed
   totalTokens?: number;
   totalRecords?: number;
+
+  // Audit — xem lại log/lỗi trên UI khi GPU worker đã tắt
+  trainLogs?: string[];
+  auditEvents?: {
+    ts: Date;
+    level: 'info' | 'warn' | 'error';
+    source: string;
+    code?: string;
+    message: string;
+  }[];
+  effectiveConfig?: any;
+  lastError?: string;
+  technicalError?: string;
 }
 
 const TrainingHistorySchema = new Schema<ITrainingHistory>(
@@ -122,6 +136,7 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       save_steps: { type: Number },
       dataloader_num_workers: { type: Number },
       enable_thinking: { type: Boolean },
+      chat_template: { type: String },
     },
     pushToHub: { type: Boolean, default: false },
     hfRepoId: { type: String, default: '' },
@@ -169,6 +184,21 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
     // Actual stats processed
     totalTokens: { type: Number, default: 0 },
     totalRecords: { type: Number, default: 0 },
+
+    // Audit trail (đồng bộ từ GPU status/stream — đọc lại không cần SSH)
+    trainLogs: { type: [String], default: [] },
+    auditEvents: [
+      {
+        ts: { type: Date, default: Date.now },
+        level: { type: String, enum: ['info', 'warn', 'error'], default: 'info' },
+        source: { type: String, default: 'gpu-train' },
+        code: { type: String },
+        message: { type: String, required: true },
+      },
+    ],
+    effectiveConfig: { type: Schema.Types.Mixed },
+    lastError: { type: String, default: '' },
+    technicalError: { type: String, default: '' },
   },
   {
     timestamps: true, // tự tạo createdAt, updatedAt

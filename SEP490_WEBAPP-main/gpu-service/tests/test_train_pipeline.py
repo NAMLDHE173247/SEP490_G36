@@ -255,6 +255,25 @@ def test_apply_chat_template_keeps_native():
     assert tok.chat_template == "{{ messages }}"
 
 
+def test_chat_template_override_native_skips_force():
+    class Tok:
+        chat_template = "keep-me"
+
+    tok, info = apply_chat_template(
+        Tok(), "unsloth/gemma-4-E4B-it", chat_template_override="native",
+    )
+    assert info["mode"] == "native_override"
+    assert info["applied"] == "native"
+    assert tok.chat_template == "keep-me"
+
+
+def test_chat_template_passed_in_config():
+    config, _ = build_train_config({"chat_template": "llama-3"})
+    assert config["chat_template"] == "llama-3"
+    empty, _ = build_train_config({})
+    assert empty["chat_template"] is None
+
+
 def test_gemma4_forces_unsloth_template_even_with_native():
     """Theo notebook Unsloth Gemma4-31B: luôn gọi get_chat_template('gemma-4*')."""
     class Tok:

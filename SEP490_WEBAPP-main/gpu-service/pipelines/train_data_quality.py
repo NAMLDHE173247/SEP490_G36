@@ -68,13 +68,22 @@ def resolve_chat_template_name(model_name: str, enable_thinking: bool = False) -
     return None
 
 
-def apply_chat_template(tokenizer, model_name: str, enable_thinking: bool = False):
+def apply_chat_template(
+    tokenizer,
+    model_name: str,
+    enable_thinking: bool = False,
+    chat_template_override: str | None = None,
+):
     """Áp chat template đúng family.
 
     - Gemma 4: luôn gắn template Unsloth (`gemma-4` / `gemma-4-thinking`) như
       notebook https://www.kaggle.com/code/danielhanchen/gemma4-31b-unsloth —
-      không tin native/ChatML.
+      không tin native/ChatML — trừ khi user override tường minh.
     - Họ khác: giữ native nếu đã có; thiếu thì gắn Unsloth theo family.
+    - `chat_template_override`:
+        * rỗng / auto → hành vi mặc định
+        * native → giữ tokenizer.chat_template (không ép Unsloth)
+        * tên Unsloth (gemma-4, llama-3, qwen-2.5, ...) → ép template đó
 
     Trả về `(tokenizer, info)` với info dùng cho log / effective_config.
     """
@@ -82,6 +91,9 @@ def apply_chat_template(tokenizer, model_name: str, enable_thinking: bool = Fals
     has_native = bool(native and str(native).strip())
     suggested = resolve_chat_template_name(model_name, enable_thinking=enable_thinking)
     force_unsloth = _is_gemma4(model_name)
+    override = (chat_template_override or "").strip().lower()
+    if override in ("", "auto", "default", "none"):
+        override = ""
 
     info = {
         "had_native_template": has_native,
@@ -90,15 +102,23 @@ def apply_chat_template(tokenizer, model_name: str, enable_thinking: bool = Fals
         "mode": "native",
         "force_unsloth": force_unsloth,
         "enable_thinking": bool(enable_thinking),
+        "override": override or None,
     }
 
-    if has_native and not force_unsloth:
+    if override == "native":
+        info["applied"] = "native" if has_native else None
+        info["mode"] = "native_override"
+        if not has_native:
+            info["error"] = "chat_template=native nhưng tokenizer không có template"
+        return tokenizer, info
+
+    if not override and has_native and not force_unsloth:
         info["applied"] = "native"
         info["mode"] = "native"
         return tokenizer, info
 
-    # Tokenizer thiếu template, hoặc Gemma 4 bắt buộc Unsloth.
-    template_name = suggested or "chatml"
+    # Override tường minh, tokenizer thiếu template, hoặc Gemma 4 bắt buộc Unsloth.
+    template_name = override or suggested or "chatml"
     try:
         try:
             from unsloth.chat_templates import get_chat_template
@@ -117,7 +137,7 @@ def apply_chat_template(tokenizer, model_name: str, enable_thinking: bool = Fals
             },
         )
         info["applied"] = template_name
-        info["mode"] = "unsloth"
+        info["mode"] = "unsloth_override" if override else "unsloth"
     except Exception as exc:
         # Gemma 4 mà Unsloth fail: giữ native nếu có, tránh silent ChatML.
         if has_native:

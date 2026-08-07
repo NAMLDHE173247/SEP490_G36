@@ -38,6 +38,8 @@ export interface TrainingConfig {
   warmupRatio: string;
   groupByLength: boolean;
   enableThinking: boolean;
+  /** auto | native | gemma-4 | gemma-4-thinking | llama-3 | qwen-2.5 | ... */
+  chatTemplate: string;
   earlyStoppingPatience: string;
   evalSteps: string;
 
@@ -79,6 +81,7 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   warmupRatio: '0',
   groupByLength: false,
   enableThinking: false,
+  chatTemplate: 'auto',
   earlyStoppingPatience: '3',
   evalSteps: '',
 
@@ -196,6 +199,7 @@ export interface ParamPreset {
   warmup_ratio?: number;
   group_by_length?: boolean;
   enable_thinking?: boolean;
+  chat_template?: string;
   early_stopping_patience?: number;
 }
 

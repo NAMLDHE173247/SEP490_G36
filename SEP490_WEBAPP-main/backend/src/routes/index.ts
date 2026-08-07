@@ -21,6 +21,7 @@ import {
   getDistinctBaseModels,
   getTrainingHistoryList,
   getTrainingHistoryDetail,
+  getTrainingHistoryAudit,
 } from '../controllers/trainingHistoryController';
 import { chatWithAI, inferWithAI, chatWithAIStream, inferWithAIStream, saveChatHistory, getChatHistory, loadModel, getInferenceLogs, validateModel, stopInference, unloadModel } from '../controllers/chatController';
 import {
@@ -235,6 +236,7 @@ router.get('/system/dashboard-stats', authMiddleware, getDashboardStats);
 router.get('/train/history/models', authMiddleware, getDistinctBaseModels);
 router.post('/train/history', authMiddleware, requireManager, saveTrainingHistory);
 router.get('/train/history', authMiddleware, getTrainingHistoryList);
+router.get('/train/history/:jobId/audit', authMiddleware, getTrainingHistoryAudit);
 router.get('/train/history/:jobId', authMiddleware, getTrainingHistoryDetail);
 router.delete('/train/history/:jobId', authMiddleware, requireManager, deleteTrainingHistory);
 
