@@ -108,8 +108,8 @@ def validate_locked_dataset(conversations: list[dict], strict: bool = True) -> d
             errors.append(f"{item_id}: messages must be an array")
             continue
         user_messages = [m for m in messages if isinstance(m, dict) and m.get("role") == "user"]
-        if len(user_messages) != 1:
-            message = f"{item_id}: locked single-turn requires exactly one user message (found {len(user_messages)})"
+        if len(user_messages) < 1:
+            message = f"{item_id}: requires at least one user message (found {len(user_messages)})"
             (errors if strict else warnings).append(message)
         if item_id in seen:
             errors.append(f"duplicate item_id: {item_id}")
