@@ -43,7 +43,12 @@ RUN pip install --no-cache-dir --force-reinstall "bitsandbytes==0.43.3"
 RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
 # --- Bước 4: Copy source code ---
-COPY app.py locked_eval_protocol.py ./
+COPY app.py ./
+COPY constants ./constants
+COPY core ./core
+COPY pipelines ./pipelines
+COPY services ./services
+COPY utils ./utils
 
 # Tạo thư mục cần thiết
 RUN mkdir -p /app/dataset_uploads /tmp/checkpoints_

@@ -16,44 +16,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── GPU Service (ĐÃ TẮT - CHẠY TRÊN COLAB) ──────────────────────────────────
-  # gpu-service:
-  #   build:
-  #     context: ./gpu-service
-  #     dockerfile: Dockerfile
-  #   image: hoanglam51/sep490-gpu-service:latest
-  #   container_name: sep490_gpu
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - HOST=0.0.0.0
-  #     - PORT=5000
-  #     - TORCHDYNAMO_DISABLE=1
-  #     - CUDA_LAUNCH_BLOCKING=1
-  #     - BACKEND_URL=http://backend:3000
-  #   # Không expose ra host — backend gọi nội bộ qua http://gpu-service:5000
-  #   expose:
-  #     - "5000"
-  #   volumes:
-  #     - gpu_checkpoints:/tmp/checkpoints_
-  #     - gpu_uploads:/app/dataset_uploads
-  #   networks:
-  #     - app_network
-  #   # Healthcheck: đợi Flask thực sự sẵn sàng trước khi backend kết nối
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5000/api/train/status/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     start_period: 120s   # unsloth + torch load lâu, cho 2 phút
-  #     retries: 5
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
+  # ── GPU Service ─────────────────────────────────────────────────────────────
+  # Không chạy ở dev compose (cần GPU). Bản self-hosted GPU nằm ở docker-compose.prod.yml.
 
   # ── MinIO (S3-compatible object storage) ────────────────────────────────────
   # Local/dev storage backend for datasets. In production the same S3 API is
@@ -155,10 +119,6 @@ volumes:
   uploads_data:
     driver: local
   minio_data:
-    driver: local
-  gpu_checkpoints:
-    driver: local
-  gpu_uploads:
     driver: local
   certbot_certs:
     driver: local
