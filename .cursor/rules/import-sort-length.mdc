@@ -1,0 +1,36 @@
+---
+description: Sort all import statements by line length, shortest to longest
+globs: **/*.{ts,tsx,js,jsx,mjs,cjs}
+alwaysApply: true
+---
+
+# Import Sorting — Shortest To Longest
+
+When adding, editing, or reviewing imports in any JS/TS file, order every
+top-level `import` statement by the **full character length of the line**, from
+**shortest to longest**.
+
+## Rules
+
+- Compare the entire import line length (including `import`, quotes, and `;`).
+- Shorter lines come first; longer lines last.
+- On equal length, keep the original relative order (stable sort).
+- Only reorder the contiguous block(s) of top-level imports. Do not move imports
+  past side-effectful ones (e.g. `import './setup'`) if that changes behavior.
+- Do not change import contents, just their order.
+
+## Example
+
+```typescript
+// ❌ BAD (unordered)
+import { configService } from '../services/configService';
+import fs from 'fs';
+import express, { Express } from 'express';
+import cors from 'cors';
+
+// ✅ GOOD (shortest → longest)
+import fs from 'fs';
+import cors from 'cors';
+import express, { Express } from 'express';
+import { configService } from '../services/configService';
+```
