@@ -156,6 +156,7 @@ export const startTraining = async (req: Request, res: Response) => {
       eval_steps,
       save_steps,
       dataloader_num_workers,
+      auto_tune,
       push_to_hub,
       hf_repo_id,
       hf_token,
@@ -350,6 +351,7 @@ export const startTraining = async (req: Request, res: Response) => {
     putNumber('dataloader_num_workers', dataloader_num_workers);
     putBoolean('use_rslora', use_rslora);
     putBoolean('group_by_length', group_by_length);
+    putBoolean('auto_tune', auto_tune);
     if (lora_target_modules) {
       // Chuẩn về chuỗi: vừa hợp schema TrainingHistory, vừa được gpu-service
       // hiểu (tên preset hoặc danh sách ngăn cách bởi dấu phẩy).

@@ -145,6 +145,12 @@ def build_train_config(parsed):
         "gradient_checkpointing": _as_bool(
             "gradient_checkpointing", parsed.get("gradient_checkpointing")
         ),
+        # Dataset nhỏ + LoRA rank cao dễ học vẹt. Mặc định bật; client gửi
+        # auto_tune=false để giữ nguyên mọi knob người dùng chọn.
+        "auto_tune": (
+            True if parsed.get("auto_tune") is None
+            else _as_bool("auto_tune", parsed.get("auto_tune"))
+        ),
         # Lịch eval/save: để trống -> tự suy theo kích thước dataset.
         "eval_steps": parsed.get("eval_steps"),
         "save_steps": parsed.get("save_steps"),
@@ -196,6 +202,71 @@ def build_train_config(parsed):
         )
 
     return config, warnings
+
+
+def apply_size_aware_defaults(config, n_train):
+    """Hạ hyperparam nguy hiểm khi dataset nhỏ. Trả về `(config, changes)`.
+
+    Chỉ chạy khi `auto_tune` còn bật. Không tăng tham số — chỉ kẹp trần/sàn
+    an toàn để tránh học vẹt trên vài chục mẫu.
+    """
+    config = dict(config)
+    changes = []
+
+    if not config.get("auto_tune", True):
+        return config, changes
+
+    n = max(0, int(n_train or 0))
+
+    def _cap(key, new_value, reason):
+        old = config.get(key)
+        if old is None:
+            return
+        try:
+            old_num = float(old) if isinstance(new_value, float) else int(old)
+        except (TypeError, ValueError):
+            return
+        if old_num > new_value:
+            config[key] = type(new_value)(new_value) if not isinstance(new_value, float) else float(new_value)
+            # Giữ kiểu int cho các field số nguyên.
+            if isinstance(new_value, int):
+                config[key] = int(new_value)
+            changes.append(f"{key} {old}→{config[key]} ({reason})")
+
+    def _floor(key, new_value, reason):
+        old = config.get(key)
+        if old is None:
+            return
+        try:
+            old_num = float(old)
+        except (TypeError, ValueError):
+            return
+        if old_num < new_value:
+            config[key] = float(new_value)
+            changes.append(f"{key} {old}→{config[key]} ({reason})")
+
+    if n < 30:
+        reason = f"chỉ có {n} mẫu"
+        _cap("epochs", 3, reason)
+        _cap("r", 8, reason)
+        _floor("lora_dropout", 0.05, reason)
+        _cap("early_stopping_patience", 2, reason)
+    elif n < 100:
+        reason = f"chỉ có {n} mẫu"
+        _cap("epochs", 4, reason)
+        _cap("r", 16, reason)
+
+    # alpha < r sau khi hạ rank → kéo alpha lên tối thiểu = r.
+    try:
+        rank = int(config.get("r") or 0)
+        alpha = int(config.get("lora_alpha") or 0)
+    except (TypeError, ValueError):
+        rank, alpha = 0, 0
+    if rank and alpha and alpha < rank:
+        config["lora_alpha"] = rank
+        changes.append(f"lora_alpha {alpha}→{rank} (giữ alpha ≥ r sau AutoTune)")
+
+    return config, changes
 
 
 def resolve_schedule(num_examples, batch_size, grad_accum, epochs, config):

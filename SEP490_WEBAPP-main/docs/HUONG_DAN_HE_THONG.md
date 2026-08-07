@@ -392,26 +392,39 @@ so sánh nhiều run với nhau.
 
 ### 7.3 Hệ thống tự làm gì cho bạn
 
-Có vài thứ chạy ngầm mà bạn nên biết là chúng tồn tại.
+Có vài thứ chạy ngầm trước và trong lúc train mà bạn nên biết.
 
-**Chỉ tính loss trên phần trả lời của gia sư.** Một hội thoại gồm lượt của học
-sinh và lượt của gia sư. Model chỉ cần học cách *trả lời*, không cần học cách
-*đặt câu hỏi thay học sinh*. Vì thế hệ thống che (mask) toàn bộ lượt của học
-sinh và system prompt khi tính loss. Trước khi train, nó thử nghiệm trên 8 mẫu
-để chắc chắn việc che này hoạt động; nếu dataset sai định dạng khiến việc che
-thất bại, bạn sẽ thấy cảnh báo rõ ràng trong log thay vì âm thầm nhận về một
-model kém.
+**Chọn đúng chat template của model.** Hệ thống giữ template sẵn trên tokenizer
+của model Instruct (Llama, Gemma, Qwen…). Chỉ khi tokenizer thiếu template nó
+mới gắn bản Unsloth theo family. Việc ép một format chung (ví dụ ChatML) cho mọi
+model sẽ làm model học format khác lúc chat — đây là lỗi chất lượng nghiêm trọng
+đã được loại bỏ.
+
+**Cổng chất lượng dữ liệu.** Trước khi format, các mẫu không có lượt user /
+assistant, assistant quá ngắn, hoặc trùng nội dung gần exact bị loại. Log ghi
+`kept/dropped` kèm lý do. Nếu sau lọc còn 0 mẫu, job dừng ngay với lỗi rõ ràng.
+
+**Tự chỉnh hyperparam theo cỡ dataset (AutoTune).** Dataset nhỏ mà LoRA rank /
+epoch cao dễ học vẹt. Khi còn bật `auto_tune` (mặc định), hệ thống kẹp trần an
+toàn: dưới 30 mẫu thì epochs ≤ 3 và r ≤ 8; dưới 100 mẫu thì epochs ≤ 4 và r ≤ 16.
+Mọi thay đổi được ghi `[AutoTune] …` trong log. Gửi `auto_tune=false` nếu bạn
+muốn giữ nguyên mọi knob đã chọn.
+
+**Báo cáo độ dài và truncation.** Sau khi format, hệ thống ước lượng phân phối
+độ dài token và cảnh báo nếu hơn 20% mẫu bị cắt bởi `modelMaxLength`.
+
+**Chỉ tính loss trên phần trả lời của gia sư.** Model chỉ cần học cách *trả lời*,
+không học cách *đặt câu hỏi thay học sinh*. Trước khi train, hệ thống thử mask
+trên 8 mẫu; nếu dataset sai định dạng, log cảnh báo rõ thay vì train âm thầm sai.
 
 **Tự dừng khi bắt đầu học vẹt** và **tự lấy lại checkpoint tốt nhất** khi kết
-thúc, chứ không phải checkpoint cuối cùng. Nếu model đạt đỉnh ở bước 40 rồi tệ
-dần tới bước 100, thứ bạn nhận được là bản ở bước 40.
+thúc, chứ không phải checkpoint cuối cùng.
 
-**Kiểm tra và kẹp biên tham số.** Nếu bạn nhập một giá trị vô lý, hệ thống kẹp
-nó về khoảng hợp lệ và báo cảnh báo, thay vì để job chạy nửa chừng rồi chết vì
-hết VRAM.
+**Kiểm tra và kẹp biên tham số.** Giá trị vô lý bị kẹp về khoảng hợp lệ kèm cảnh
+báo, thay vì để job chết OOM giữa chừng.
 
-**Lưu checkpoint định kỳ và cho phép resume.** Nếu job bị gián đoạn, bạn tiếp
-tục được từ checkpoint gần nhất.
+**Lưu checkpoint định kỳ và cho phép resume.** Job gián đoạn có thể tiếp tục từ
+checkpoint gần nhất.
 
 ### 7.4 Đọc kết quả huấn luyện
 

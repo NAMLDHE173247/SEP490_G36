@@ -13,7 +13,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from utils.data_formatting import AssistantOnlyDataCollator, preflight_assistant_mask
-from pipelines.train_config import build_train_config, resolve_schedule, filter_supported_kwargs
+from pipelines.train_config import (
+    build_train_config,
+    resolve_schedule,
+    filter_supported_kwargs,
+    apply_size_aware_defaults,
+)
+from pipelines.train_data_quality import (
+    resolve_chat_template_name,
+    apply_chat_template,
+    filter_training_rows,
+    build_length_report,
+)
 
 
 class CharTokenizer:
@@ -212,6 +223,121 @@ def test_filter_supported_kwargs_drops_unknown():
 
     kept, dropped = filter_supported_kwargs(Fake, {"alpha": 1, "gamma": 3})
     assert kept == {"alpha": 1} and dropped == ["gamma"]
+
+
+def test_chat_template_maps_by_family():
+    assert resolve_chat_template_name("unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit") == "llama-3"
+    assert resolve_chat_template_name("google/gemma-3-4b-it") == "gemma"
+    assert resolve_chat_template_name("unsloth/Qwen2.5-7B-Instruct-bnb-4bit") == "qwen-2.5"
+    assert resolve_chat_template_name("Viet-Mistral/Vistral-7B-Chat") == "mistral"
+    assert resolve_chat_template_name("unknown-base") is None
+
+
+def test_apply_chat_template_keeps_native():
+    class Tok:
+        chat_template = "{{ messages }}"
+
+    tok, info = apply_chat_template(Tok(), "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit")
+    assert info["mode"] == "native"
+    assert info["applied"] == "native"
+    assert tok.chat_template == "{{ messages }}"
+
+
+class _FakeHFDataset:
+    """Subset tối thiểu giống HuggingFace Dataset cho filter_training_rows."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def __len__(self):
+        return len(self._rows)
+
+    def __getitem__(self, index):
+        return self._rows[index]
+
+    def select(self, indices):
+        return _FakeHFDataset([self._rows[i] for i in indices])
+
+
+def test_filter_training_rows_drops_bad_and_duplicates():
+    rows = [
+        {
+            "messages": [
+                {"role": "user", "content": "2+2?"},
+                {"role": "assistant", "content": "Ban thu dem xem sao?"},
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "2+2?"},
+                {"role": "assistant", "content": "Ban thu dem xem sao?"},
+            ]
+        },  # duplicate
+        {"messages": [{"role": "user", "content": "hello"}]},  # missing assistant
+        {
+            "messages": [
+                {"role": "user", "content": "x"},
+                {"role": "assistant", "content": "ok"},  # too short
+            ]
+        },
+        {
+            "messages": [
+                {"role": "user", "content": "Giai thich photosyntesis?"},
+                {"role": "assistant", "content": "Ban nghi cay lay nang luong tu dau?"},
+            ]
+        },
+    ]
+    filtered, report = filter_training_rows(_FakeHFDataset(rows), "messages")
+    assert report["kept"] == 2
+    assert report["reasons"]["duplicate"] == 1
+    assert report["reasons"]["missing_assistant"] == 1
+    assert report["reasons"]["assistant_too_short"] == 1
+    assert len(filtered) == 2
+
+
+def test_auto_tune_caps_small_datasets():
+    base, _ = build_train_config({
+        "epochs": 5,
+        "r": 32,
+        "lora_alpha": 64,
+        "lora_dropout": 0.0,
+        "early_stopping_patience": 5,
+    })
+    tuned, changes = apply_size_aware_defaults(base, 20)
+    assert tuned["epochs"] == 3
+    assert tuned["r"] == 8
+    assert tuned["lora_dropout"] >= 0.05
+    assert tuned["early_stopping_patience"] == 2
+    assert tuned["lora_alpha"] >= tuned["r"]
+    assert changes
+
+    mid, mid_changes = apply_size_aware_defaults(base, 50)
+    assert mid["r"] == 16
+    assert mid["epochs"] == 4
+    assert mid_changes
+
+    large, large_changes = apply_size_aware_defaults(base, 200)
+    assert large["r"] == 32 and large["epochs"] == 5
+    assert large_changes == []
+
+    disabled = dict(base)
+    disabled["auto_tune"] = False
+    same, no_changes = apply_size_aware_defaults(disabled, 10)
+    assert same["r"] == 32 and no_changes == []
+
+
+def test_length_report_warns_on_truncation():
+    class CountingTok:
+        def __call__(self, text, truncation=False, add_special_tokens=True):
+            # Mỗi ký tự = 1 token để dễ kiểm.
+            return {"input_ids": list(range(len(text)))}
+
+    texts = ["a" * 100, "b" * 120, "c" * 40, "d" * 90, "e" * 110]
+    report = build_length_report(CountingTok(), texts, max_length=80)
+    assert report["sampled"] == 5
+    assert report["truncated_ratio"] == 0.8
+    assert report["warn"] is True
+    assert report["p50"] > 0
 
 
 if __name__ == "__main__":

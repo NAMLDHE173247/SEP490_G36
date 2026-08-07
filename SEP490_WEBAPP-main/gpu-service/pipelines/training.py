@@ -27,7 +27,18 @@ from utils.data_formatting import (
     preflight_assistant_mask,
 )
 from constants.training_defaults import MAX_JOB_LOG_LINES, PREFLIGHT_SAMPLES
-from pipelines.train_config import resolve_schedule, filter_supported_kwargs
+from pipelines.train_config import (
+    resolve_schedule,
+    filter_supported_kwargs,
+    apply_size_aware_defaults,
+)
+from pipelines.train_data_quality import (
+    apply_chat_template,
+    filter_training_rows,
+    format_filter_report,
+    build_length_report,
+    format_length_report,
+)
 
 
 def _append_log(job_id, line):
@@ -217,16 +228,91 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             token=hf_token or None,
         )
 
-        # Cấu hình Chat Template cho OpenAI format
-        from unsloth import get_chat_template
-        tokenizer = get_chat_template(
-            tokenizer,
-            chat_template = "chatml", # Hoặc dùng mapping tự động dựa trên model_name
-            mapping = {"role" : "role", "content" : "content", "user" : "user", "assistant" : "assistant", "system" : "system"},
-        )
-
-
+        # Chat template: giữ native nếu Instruct đã có; chỉ gắn Unsloth khi thiếu.
+        # Bản cũ luôn ép "chatml" → Llama/Gemma học format khác lúc serve.
+        tokenizer, chat_template_info = apply_chat_template(tokenizer, config['model_name'])
         ensure_right_padding(tokenizer)
+        template_msg = (
+            f"[ChatTemplate] mode={chat_template_info.get('mode')} "
+            f"applied={chat_template_info.get('applied')} "
+            f"suggested={chat_template_info.get('suggested')} "
+            f"had_native={chat_template_info.get('had_native_template')}"
+        )
+        print(template_msg)
+        _append_log(job_id, template_msg)
+        if chat_template_info.get("error"):
+            _append_log(job_id, f"⚠️ [ChatTemplate] {chat_template_info['error']}")
+
+        col_map = config.get('column_mapping') or config.get('dataset_text_field') or 'text'
+        sys_prompt = config.get('system_prompt')
+        print(f"[Dataset] Using column mapping: {col_map}")
+        if sys_prompt:
+            print(f"[Dataset] Using custom system prompt: {str(sys_prompt)[:50]}...")
+        else:
+            _append_log(
+                job_id,
+                "⚠️ [Dataset] Không nhận được system_prompt — dùng prompt Socratic mặc định. "
+                "Kiểm tra lại cấu hình AutoTrain nếu bạn có prompt riêng.",
+            )
+
+        if filepath:
+            ext = os.path.splitext(filepath)[1]
+            dataset = load_dataset('json' if 'json' in ext else 'csv', data_files=filepath, split='train')
+        elif config.get('dataset_hf_id'):
+            dataset = load_dataset(config['dataset_hf_id'], split='train')
+        else:
+            raise ValueError("No dataset source provided.")
+
+        if len(dataset) == 0:
+            raise ValueError("Dataset is empty. Please check your data file.")
+
+        print(f"[Dataset] Loaded {len(dataset)} examples.")
+
+        # Cổng chất lượng trước format — mẫu trống/assistant ngắn/trùng không được vào trainer.
+        dataset, train_filter_report = filter_training_rows(dataset, col_map)
+        _append_log(job_id, format_filter_report("train_raw", train_filter_report))
+        print(format_filter_report("train_raw", train_filter_report))
+        if len(dataset) == 0:
+            raise ValueError(
+                "Không còn mẫu hợp lệ sau cổng chất lượng dữ liệu "
+                f"(dropped={train_filter_report['dropped']}, reasons={train_filter_report['reasons']})."
+            )
+
+        validation_dataset = None
+        dataset_eval = None
+        val_filter_report = None
+
+        # V2: ưu tiên validation partition đã được Split Guard khóa từ trước.
+        if validation_filepath:
+            validation_ext = os.path.splitext(validation_filepath)[1]
+            validation_dataset = load_dataset(
+                'json' if 'json' in validation_ext else 'csv',
+                data_files=validation_filepath,
+                split='train',
+            )
+            validation_dataset, val_filter_report = filter_training_rows(validation_dataset, col_map)
+            _append_log(job_id, format_filter_report("validation", val_filter_report))
+            print(format_filter_report("validation", val_filter_report))
+            print(f"[Dataset] Using locked validation partition: {len(validation_dataset)} examples.")
+            raw_train = dataset
+            raw_eval = validation_dataset if len(validation_dataset) > 0 else None
+        elif len(dataset) >= 10:
+            split = dataset.train_test_split(test_size=0.1, seed=42)
+            raw_train = split["train"]
+            raw_eval = split["test"]
+        else:
+            print("[Dataset] Warning: Dataset too small for splitting. Using entire dataset for training.")
+            raw_train = dataset
+            raw_eval = None
+
+        # Auto-tune theo cỡ train SAU khi lọc, TRƯỚC khi gắn LoRA (r/dropout ảnh hưởng PEFT).
+        config, auto_tune_changes = apply_size_aware_defaults(config, len(raw_train))
+        for change in auto_tune_changes:
+            line = f"[AutoTune] {change}"
+            print(line)
+            _append_log(job_id, line)
+        if not auto_tune_changes and config.get("auto_tune", True):
+            _append_log(job_id, f"[AutoTune] giữ nguyên hyperparam (n_train={len(raw_train)}).")
 
         lora_targets = config.get('lora_target_modules') or [
             "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
@@ -243,66 +329,15 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             use_rslora=bool(config.get('use_rslora', False)),
         )
 
-        col_map = config.get('column_mapping') or config.get('dataset_text_field') or 'text'
-        sys_prompt = config.get('system_prompt')
-        print(f"[Dataset] Using column mapping: {col_map}")
-        if sys_prompt:
-            print(f"[Dataset] Using custom system prompt: {str(sys_prompt)[:50]}...")
-        else:
-            # Không có prompt nghĩa là dữ liệu train mang prompt mặc định trong
-            # khi eval/serve dùng prompt của AutoTrain — model sẽ bị lệch điều kiện.
-            _append_log(
-                job_id,
-                "⚠️ [Dataset] Không nhận được system_prompt — dùng prompt Socratic mặc định. "
-                "Kiểm tra lại cấu hình AutoTrain nếu bạn có prompt riêng.",
+        dataset_train = raw_train.map(
+            lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt),
+            batched=True,
+        )
+        if raw_eval is not None:
+            dataset_eval = raw_eval.map(
+                lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt),
+                batched=True,
             )
-
-        if filepath:
-            ext = os.path.splitext(filepath)[1]
-            dataset = load_dataset('json' if 'json' in ext else 'csv', data_files=filepath, split='train')
-        elif config.get('dataset_hf_id'):
-            dataset = load_dataset(config['dataset_hf_id'], split='train')
-        else:
-            raise ValueError("No dataset source provided.")
-
-        # dataset = dataset.train_test_split(test_size=0.1, seed=42)
-
-
-        # dataset_train = dataset["train"].map(lambda x: formatting_prompts_func(x, tokenizer), batched=True)
-        # dataset_eval  = dataset["test"].map(lambda x: formatting_prompts_func(x, tokenizer), batched=True)
-
-        # # Map dữ liệu
-        # # dataset_train = dataset["train"].map(formatting_prompts_func, batched=True)
-        # # dataset_eval  = dataset["test"].map(formatting_prompts_func, batched=True)
-
-        # print("Text:",dataset_train[0]['text'])
-
-        if len(dataset) == 0:
-            raise ValueError("Dataset is empty. Please check your data file.")
-
-        print(f"[Dataset] Loaded {len(dataset)} examples.")
-
-        # V2: ưu tiên validation partition đã được Split Guard khóa từ trước.
-        # Không re-split train vì việc đó làm mất tính truy vết của thí nghiệm.
-        if validation_filepath:
-            validation_ext = os.path.splitext(validation_filepath)[1]
-            validation_dataset = load_dataset(
-                'json' if 'json' in validation_ext else 'csv',
-                data_files=validation_filepath,
-                split='train',
-            )
-            dataset_train = dataset.map(lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt), batched=True)
-            dataset_eval = validation_dataset.map(lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt), batched=True)
-            print(f"[Dataset] Using locked validation partition: {len(validation_dataset)} examples.")
-        # Legacy upload: only split internally when no explicit validation exists.
-        elif len(dataset) >= 10:
-            dataset = dataset.train_test_split(test_size=0.1, seed=42)
-            dataset_train = dataset["train"].map(lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt), batched=True)
-            dataset_eval  = dataset["test"].map(lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt), batched=True)
-        else:
-            print("[Dataset] Warning: Dataset too small for splitting. Using entire dataset for training.")
-            dataset_train = dataset.map(lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt), batched=True)
-            dataset_eval  = None
 
         if len(dataset_train) > 0:
             print("Sample text:", dataset_train[0]['text'][:200], "...")
@@ -319,6 +354,15 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             if len(dataset_eval) == 0:
                 print("[Dataset] Validation partition rỗng — tắt eval, early-stopping và load_best_model.")
                 dataset_eval = None
+
+        length_report = build_length_report(
+            tokenizer,
+            dataset_train["text"] if len(dataset_train) else [],
+            config['modelMaxLength'],
+        )
+        length_line = format_length_report(length_report)
+        print(length_line)
+        _append_log(job_id, length_line)
 
         resume_from = None
         # A new training job must start from the base model. The target HF repo
@@ -577,6 +621,18 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 'schedule': schedule,
                 'mask_preflight': preflight,
                 'system_prompt_version': config.get('system_prompt_version'),
+                'chat_template': chat_template_info,
+                'auto_tune': {
+                    'enabled': bool(config.get('auto_tune', True)),
+                    'changes': auto_tune_changes,
+                    'n_train': len(dataset_train),
+                },
+                'data_report': {
+                    'train_filter': train_filter_report,
+                    'validation_filter': val_filter_report,
+                    'length': length_report,
+                    'mask_preflight': preflight,
+                },
             }
 
         # 2.5. SFTTrainer Config (TỐI ƯU CHỐNG OVERFIT)
