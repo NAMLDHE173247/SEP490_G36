@@ -32,12 +32,13 @@ def _is_large_gemma4(model_name: str) -> bool:
     return any(token in name for token in ("31b", "26b", "a4b"))
 
 
-def resolve_chat_template_name(model_name: str) -> str | None:
+def resolve_chat_template_name(model_name: str, enable_thinking: bool = False) -> str | None:
     """Suy tên template Unsloth theo family model.
 
     Gemma 4 (tham khảo notebook Unsloth 31B):
-      - bản lớn 26B/31B → `gemma-4-thinking`
-      - bản nhỏ E2B/E4B/12B → `gemma-4`
+      - bản lớn 26B/31B → luôn `gemma-4-thinking` (cấu trúc đúng model)
+      - bản nhỏ + `enable_thinking=True` → `gemma-4-thinking`
+      - bản nhỏ + tắt think → `gemma-4`
     Không dùng ChatML hay template `gemma` cũ (Gemma 2).
 
     Trả về None nghĩa là nên giữ chat_template sẵn trên tokenizer khi không
@@ -47,7 +48,9 @@ def resolve_chat_template_name(model_name: str) -> str | None:
     if "llama-3" in name or "llama3" in name or "meta-llama-3" in name:
         return "llama-3"
     if _is_gemma4(name):
-        return "gemma-4-thinking" if _is_large_gemma4(name) else "gemma-4"
+        if enable_thinking or _is_large_gemma4(name):
+            return "gemma-4-thinking"
+        return "gemma-4"
     if "gemma-3" in name or "gemma3" in name:
         return "gemma3"
     if "gemma" in name:
@@ -65,7 +68,7 @@ def resolve_chat_template_name(model_name: str) -> str | None:
     return None
 
 
-def apply_chat_template(tokenizer, model_name: str):
+def apply_chat_template(tokenizer, model_name: str, enable_thinking: bool = False):
     """Áp chat template đúng family.
 
     - Gemma 4: luôn gắn template Unsloth (`gemma-4` / `gemma-4-thinking`) như
@@ -77,7 +80,7 @@ def apply_chat_template(tokenizer, model_name: str):
     """
     native = getattr(tokenizer, "chat_template", None)
     has_native = bool(native and str(native).strip())
-    suggested = resolve_chat_template_name(model_name)
+    suggested = resolve_chat_template_name(model_name, enable_thinking=enable_thinking)
     force_unsloth = _is_gemma4(model_name)
 
     info = {
@@ -86,6 +89,7 @@ def apply_chat_template(tokenizer, model_name: str):
         "applied": None,
         "mode": "native",
         "force_unsloth": force_unsloth,
+        "enable_thinking": bool(enable_thinking),
     }
 
     if has_native and not force_unsloth:
@@ -320,6 +324,51 @@ def build_length_report(tokenizer, texts, max_length: int, sample_cap: int = MAX
         "p95": _pct(95),
         "max_observed": lengths[-1],
         "warn": ratio > TRUNCATION_WARN_RATIO,
+    }
+
+
+def estimate_thinking_coverage(dataset, col_map: str | None = None, sample_cap: int = 200) -> dict:
+    """Ước lượng tỉ lệ mẫu có dấu hiệu reasoning/think trong assistant.
+
+    Unsloth khuyến nghị giữ ≥75% mẫu có reasoning nếu muốn giữ khả năng think.
+    """
+    total = len(dataset)
+    if total == 0:
+        return {"sampled": 0, "with_thinking": 0, "ratio": 0.0, "warn_low": False}
+
+    indices = list(range(total))
+    if total > sample_cap:
+        rng = random.Random(3407)
+        indices = rng.sample(indices, sample_cap)
+
+    markers = (
+        "<think>", "</think>", "<|think|>", "<|channel>thought",
+        "<channel>thought", "◁think▷",
+    )
+    with_thinking = 0
+    sampled = 0
+    for index in indices:
+        example = dataset[index]
+        column = _pick_column(example, col_map)
+        if column is None:
+            continue
+        messages = _normalize_messages(example.get(column))
+        if not messages:
+            continue
+        sampled += 1
+        assistant_blob = "\n".join(
+            m["content"] for m in messages if m.get("role") == "assistant"
+        )
+        lower = assistant_blob.lower()
+        if any(marker.lower() in lower for marker in markers):
+            with_thinking += 1
+
+    ratio = (with_thinking / sampled) if sampled else 0.0
+    return {
+        "sampled": sampled,
+        "with_thinking": with_thinking,
+        "ratio": round(ratio, 4),
+        "warn_low": sampled > 0 and ratio < 0.75,
     }
 
 

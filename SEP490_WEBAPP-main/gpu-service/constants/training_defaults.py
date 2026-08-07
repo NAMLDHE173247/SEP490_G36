@@ -67,6 +67,9 @@ BOOL_PARAMS = {
     # tắt mặc định để giữ tính tái lập của các run so sánh.
     "group_by_length": False,
     "gradient_checkpointing": True,
+    # Train thinking/reasoning traces (Gemma 4 template + enable_thinking).
+    # Tắt mặc định cho tutor Socratic; bật khi dataset có chuỗi suy nghĩ.
+    "enable_thinking": False,
 }
 
 # Số điểm validation mong muốn trên toàn bộ run khi tự động tính eval_steps.

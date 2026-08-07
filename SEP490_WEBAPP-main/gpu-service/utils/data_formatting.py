@@ -64,13 +64,20 @@ def ensure_right_padding(tokenizer):
 #     return {"text": texts}
 
 
-def formatting_prompts_func(examples, tokenizer, col_map="messages", default_system=None):
+def formatting_prompts_func(
+    examples,
+    tokenizer,
+    col_map="messages",
+    default_system=None,
+    enable_thinking=False,
+):
     texts = []
 
     # The AutoTrain prompt is the canonical condition for every training row.
     # Dataset exports may retain old row-level prompts from a previous version.
     canonical_system = str(default_system or "").strip()
     fallback_system = DEFAULT_SOCRATIC_PROMPT
+    want_thinking = bool(enable_thinking)
     # Kiểm tra cột dữ liệu thực tế
     if col_map not in examples:
         # Nếu không tìm thấy cột map, thử dùng 'messages', 'conversations', 'instruction' hoặc cột đầu tiên không phải metadata/tracking
@@ -120,16 +127,15 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
         if not has_system:
             messages.insert(0, {"role": "system", "content": fallback_system})
 
-        # SỬ DỤNG TOKENIZER ĐỂ ÁP DỤNG CHAT TEMPLATE CỦA MÔ HÌNH.
-        # Gemma 4 / Qwen3: tắt thinking khi format dữ liệu Socratic (tránh train
-        # vào khối <|think|> trống). Tham khảo Unsloth Gemma4-31B notebook.
+        # Chat template của model. `enable_thinking` bật khi train reasoning
+        # (Gemma 4 / Qwen3); mặc định tắt cho tutor Socratic.
         try:
             try:
                 formatted_text = tokenizer.apply_chat_template(
                     messages,
                     tokenize=False,
                     add_generation_prompt=False,
-                    enable_thinking=False,
+                    enable_thinking=want_thinking,
                 )
             except TypeError:
                 formatted_text = tokenizer.apply_chat_template(
@@ -166,8 +172,9 @@ class AssistantOnlyDataCollator:
         r"assistant\n",
     )
 
-    def __init__(self, tokenizer):
+    def __init__(self, tokenizer, enable_thinking=False):
         self.tokenizer = tokenizer
+        self.enable_thinking = bool(enable_thinking)
         self.text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         self.padder = DataCollatorWithPadding(tokenizer=self.text_tokenizer, padding=True)
 
@@ -181,7 +188,10 @@ class AssistantOnlyDataCollator:
             dummy = [{"role": "assistant", "content": "MAGICAL_CONTENT_12345"}]
             try:
                 formatted = tokenizer.apply_chat_template(
-                    dummy, tokenize=False, add_generation_prompt=False, enable_thinking=False,
+                    dummy,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                    enable_thinking=self.enable_thinking,
                 )
             except TypeError:
                 formatted = tokenizer.apply_chat_template(

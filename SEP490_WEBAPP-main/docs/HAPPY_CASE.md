@@ -188,6 +188,7 @@ sequenceDiagram
 ## 7. Tài liệu liên quan
 
 - [`docs/HUONG_DAN_HE_THONG.md`](./HUONG_DAN_HE_THONG.md) — giới thiệu hệ thống, cấu hình, và hướng dẫn huấn luyện kèm ý nghĩa từng tham số.
+- [`docs/FINE_TUNING_MODELS_VA_CO.md`](./FINE_TUNING_MODELS_VA_CO.md) — từ điển model nền + toàn bộ cờ fine-tune (mặc định, biên, khi nào đổi).
 - [`README.md`](../README.md) — hướng dẫn cài đặt & chạy hệ thống.
 - [`docs/QUALITY_REVIEW_WORKFLOW.md`](./QUALITY_REVIEW_WORKFLOW.md) — quy trình kiểm duyệt chất lượng.
 - [`docs/LOCKED_EVALUATION_GUIDE.md`](./LOCKED_EVALUATION_GUIDE.md) — chuẩn đánh giá khóa (locked eval).

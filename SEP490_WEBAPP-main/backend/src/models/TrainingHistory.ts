@@ -40,6 +40,7 @@ export interface ITrainingHistory extends Document {
     eval_steps?: number;                // Bỏ trống = tự suy theo cỡ dataset
     save_steps?: number;                // Bỏ trống = bằng eval_steps
     dataloader_num_workers?: number;    // Số worker nạp dữ liệu
+    enable_thinking?: boolean;          // Train với reasoning/think traces
   };
   pushToHub: boolean;
   hfRepoId: string;
@@ -120,6 +121,7 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       eval_steps: { type: Number },
       save_steps: { type: Number },
       dataloader_num_workers: { type: Number },
+      enable_thinking: { type: Boolean },
     },
     pushToHub: { type: Boolean, default: false },
     hfRepoId: { type: String, default: '' },

@@ -37,6 +37,7 @@ export interface TrainingConfig {
   maxGradNorm: string;
   warmupRatio: string;
   groupByLength: boolean;
+  enableThinking: boolean;
   earlyStoppingPatience: string;
   evalSteps: string;
 
@@ -77,6 +78,7 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   maxGradNorm: '1',
   warmupRatio: '0',
   groupByLength: false,
+  enableThinking: false,
   earlyStoppingPatience: '3',
   evalSteps: '',
 
@@ -193,6 +195,7 @@ export interface ParamPreset {
   max_grad_norm?: number;
   warmup_ratio?: number;
   group_by_length?: boolean;
+  enable_thinking?: boolean;
   early_stopping_patience?: number;
 }
 

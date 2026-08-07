@@ -145,6 +145,9 @@ def build_train_config(parsed):
         "gradient_checkpointing": _as_bool(
             "gradient_checkpointing", parsed.get("gradient_checkpointing")
         ),
+        # Train với khối reasoning/think (Gemma 4 / Qwen3). Mặc định tắt —
+        # gia sư Socratic thường không muốn học chuỗi suy nghĩ ẩn.
+        "enable_thinking": _as_bool("enable_thinking", parsed.get("enable_thinking")),
         # Dataset nhỏ + LoRA rank cao dễ học vẹt. Mặc định bật; client gửi
         # auto_tune=false để giữ nguyên mọi knob người dùng chọn.
         "auto_tune": (

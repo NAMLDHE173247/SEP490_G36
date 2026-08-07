@@ -230,11 +230,19 @@ def test_chat_template_maps_by_family():
     assert resolve_chat_template_name("google/gemma-3-4b-it") == "gemma3"
     assert resolve_chat_template_name("unsloth/gemma-4-E4B-it") == "gemma-4"
     assert resolve_chat_template_name("unsloth/gemma-4-E2B-it") == "gemma-4"
+    assert resolve_chat_template_name("unsloth/gemma-4-E4B-it", enable_thinking=True) == "gemma-4-thinking"
     assert resolve_chat_template_name("unsloth/gemma-4-31B-it") == "gemma-4-thinking"
     assert resolve_chat_template_name("unsloth/gemma-4-26B-A4B-it") == "gemma-4-thinking"
     assert resolve_chat_template_name("unsloth/Qwen2.5-7B-Instruct-bnb-4bit") == "qwen-2.5"
     assert resolve_chat_template_name("Viet-Mistral/Vistral-7B-Chat") == "mistral"
     assert resolve_chat_template_name("unknown-base") is None
+
+
+def test_enable_thinking_defaults_off():
+    config, _ = build_train_config({})
+    assert config["enable_thinking"] is False
+    on, _ = build_train_config({"enable_thinking": True})
+    assert on["enable_thinking"] is True
 
 
 def test_apply_chat_template_keeps_native():

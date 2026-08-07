@@ -309,6 +309,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         maxGradNorm: preset.max_grad_norm !== undefined ? String(preset.max_grad_norm) : prev.maxGradNorm,
         warmupRatio: preset.warmup_ratio !== undefined ? String(preset.warmup_ratio) : prev.warmupRatio,
         groupByLength: preset.group_by_length ?? prev.groupByLength,
+        enableThinking: preset.enable_thinking ?? prev.enableThinking,
         earlyStoppingPatience: preset.early_stopping_patience !== undefined
           ? String(preset.early_stopping_patience)
           : prev.earlyStoppingPatience,
@@ -339,6 +340,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         max_grad_norm: parseFloat(config.maxGradNorm) || 1,
         warmup_ratio: parseFloat(config.warmupRatio) || 0,
         group_by_length: config.groupByLength,
+        enable_thinking: config.enableThinking,
         early_stopping_patience: parseInt(config.earlyStoppingPatience) || 3,
       };
 
@@ -590,6 +592,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       formData.append('lora_target_modules', config.loraTargets);
       formData.append('use_rslora', String(config.useRslora));
       formData.append('group_by_length', String(config.groupByLength));
+      formData.append('enable_thinking', String(config.enableThinking));
       formData.append('max_grad_norm', config.maxGradNorm);
       formData.append('early_stopping_patience', config.earlyStoppingPatience);
       if (parseFloat(config.neftuneAlpha) > 0) formData.append('neftune_noise_alpha', config.neftuneAlpha);

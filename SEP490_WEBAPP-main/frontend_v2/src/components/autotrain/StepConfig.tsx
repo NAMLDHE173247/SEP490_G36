@@ -767,6 +767,16 @@ const StepConfig: React.FC<StepConfigProps> = ({
                       style={{ width: 16, height: 16 }}
                     />
                   </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Train Thinking <HelpTooltip text="Enable reasoning/think blocks while formatting (Gemma 4 / Qwen3). Keep OFF for Socratic tutors. When ON, Unsloth recommends ≥75% of samples contain reasoning traces. Chat serving still filters think tags by default." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.enableThinking}
+                      onChange={handleToggleChange('enableThinking')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
                 </div>
               </div>
             )}

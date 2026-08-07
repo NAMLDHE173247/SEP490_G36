@@ -38,6 +38,7 @@ from pipelines.train_data_quality import (
     format_filter_report,
     build_length_report,
     format_length_report,
+    estimate_thinking_coverage,
 )
 
 
@@ -228,15 +229,20 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             token=hf_token or None,
         )
 
+        enable_thinking = bool(config.get('enable_thinking', False))
+
         # Chat template: giữ native nếu Instruct đã có; chỉ gắn Unsloth khi thiếu.
-        # Bản cũ luôn ép "chatml" → Llama/Gemma học format khác lúc serve.
-        tokenizer, chat_template_info = apply_chat_template(tokenizer, config['model_name'])
+        # Gemma 4 + enable_thinking → gemma-4-thinking (notebook Unsloth 31B).
+        tokenizer, chat_template_info = apply_chat_template(
+            tokenizer, config['model_name'], enable_thinking=enable_thinking,
+        )
         ensure_right_padding(tokenizer)
         template_msg = (
             f"[ChatTemplate] mode={chat_template_info.get('mode')} "
             f"applied={chat_template_info.get('applied')} "
             f"suggested={chat_template_info.get('suggested')} "
-            f"had_native={chat_template_info.get('had_native_template')}"
+            f"had_native={chat_template_info.get('had_native_template')} "
+            f"enable_thinking={enable_thinking}"
         )
         print(template_msg)
         _append_log(job_id, template_msg)
@@ -329,13 +335,35 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             use_rslora=bool(config.get('use_rslora', False)),
         )
 
+        if enable_thinking:
+            think_cov = estimate_thinking_coverage(raw_train, col_map)
+            think_line = (
+                f"[Thinking] enable_thinking=True | "
+                f"{think_cov['with_thinking']}/{think_cov['sampled']} mẫu có dấu hiệu reasoning "
+                f"({think_cov['ratio'] * 100:.1f}%)"
+            )
+            print(think_line)
+            _append_log(job_id, think_line)
+            if think_cov.get("warn_low"):
+                _append_log(
+                    job_id,
+                    "⚠️ [Thinking] Unsloth khuyến nghị ≥75% mẫu có reasoning nếu muốn giữ "
+                    "khả năng think — tỉ lệ hiện tại thấp, model có thể mất dần thinking.",
+                )
+        else:
+            _append_log(job_id, "[Thinking] enable_thinking=False — format không bật khối think.")
+
         dataset_train = raw_train.map(
-            lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt),
+            lambda x: formatting_prompts_func(
+                x, tokenizer, col_map, sys_prompt, enable_thinking,
+            ),
             batched=True,
         )
         if raw_eval is not None:
             dataset_eval = raw_eval.map(
-                lambda x: formatting_prompts_func(x, tokenizer, col_map, sys_prompt),
+                lambda x: formatting_prompts_func(
+                    x, tokenizer, col_map, sys_prompt, enable_thinking,
+                ),
                 batched=True,
             )
 
@@ -549,7 +577,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         # Train on assistant spans with robust fallback. Preflight chạy trên
         # nhiều mẫu: một mẫu duy nhất không đại diện cho cả dataset, và mẫu lệch
         # định dạng sẽ âm thầm được train trên toàn bộ hội thoại.
-        collator = AssistantOnlyDataCollator(tokenizer)
+        collator = AssistantOnlyDataCollator(tokenizer, enable_thinking=enable_thinking)
         sample_count = min(PREFLIGHT_SAMPLES, len(dataset_train))
         preflight = preflight_assistant_mask(
             tokenizer,
@@ -622,6 +650,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 'mask_preflight': preflight,
                 'system_prompt_version': config.get('system_prompt_version'),
                 'chat_template': chat_template_info,
+                'enable_thinking': enable_thinking,
                 'auto_tune': {
                     'enabled': bool(config.get('auto_tune', True)),
                     'changes': auto_tune_changes,

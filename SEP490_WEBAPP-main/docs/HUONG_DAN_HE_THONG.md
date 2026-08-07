@@ -399,8 +399,8 @@ của model Instruct (Llama, Gemma 3, Qwen…). Chỉ khi tokenizer thiếu temp
 mới gắn bản Unsloth theo family. **Gemma 4** là ngoại lệ: theo notebook Unsloth
 [Gemma4-31B](https://www.kaggle.com/code/danielhanchen/gemma4-31b-unsloth), hệ
 thống luôn gắn `gemma-4` (E2B/E4B/12B) hoặc `gemma-4-thinking` (26B/31B) — không
-dùng ChatML hay template Gemma cũ. Việc ép một format chung cho mọi model sẽ làm
-model học format khác lúc chat.
+dùng ChatML hay template Gemma cũ. Cờ **Train Thinking** (`enable_thinking`)
+quyết định có format khối reasoning hay không (mặc định tắt).
 
 **Cổng chất lượng dữ liệu.** Trước khi format, các mẫu không có lượt user /
 assistant, assistant quá ngắn, hoặc trùng nội dung gần exact bị loại. Log ghi
@@ -508,6 +508,7 @@ kiểm tra đường ống có thông không, đừng đánh giá chất lượn
 
 ## 10. Tài liệu liên quan
 
+- [FINE_TUNING_MODELS_VA_CO.md](./FINE_TUNING_MODELS_VA_CO.md) — **chi tiết từng model nền + từng cờ fine-tune**
 - [HAPPY_CASE.md](./HAPPY_CASE.md) — luồng nghiệp vụ end-to-end kèm sơ đồ
 - [gpu-service/docs/ARCHITECTURE.md](../gpu-service/docs/ARCHITECTURE.md) — kiến trúc chi tiết dịch vụ GPU
 - [LOCKED_EVALUATION_GUIDE.md](./LOCKED_EVALUATION_GUIDE.md) — giao thức đánh giá bất biến
