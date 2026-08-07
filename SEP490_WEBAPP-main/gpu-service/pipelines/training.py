@@ -24,7 +24,26 @@ from utils.data_formatting import (
     formatting_prompts_func,
     AssistantOnlyDataCollator,
     ensure_right_padding,
+    preflight_assistant_mask,
 )
+from constants.training_defaults import MAX_JOB_LOG_LINES, PREFLIGHT_SAMPLES
+from pipelines.train_config import resolve_schedule, filter_supported_kwargs
+
+
+def _append_log(job_id, line):
+    """Ghi một dòng log của job và cắt bớt phần cũ.
+
+    Run dài với logging_steps=1 sinh hàng nghìn dòng; `jobs_db` nằm trong RAM và
+    không bao giờ được dọn nên cần chặn trần.
+    """
+    entry = jobs_db.get(job_id)
+    if entry is None:
+        return
+    logs = entry.setdefault('logs', [])
+    logs.append(line)
+    overflow = len(logs) - MAX_JOB_LOG_LINES
+    if overflow > 0:
+        del logs[:overflow]
 
 
 class FlaskProgressCallback(TrainerCallback):
@@ -83,21 +102,19 @@ class FlaskProgressCallback(TrainerCallback):
         if self.last_eval_loss is not None:
             update_payload['metrics']['eval_loss'] = round(self.last_eval_loss, 4)
 
-        jobs_db[self.job_id].update(update_payload)
+        if self.job_id in jobs_db:
+            jobs_db[self.job_id].update(update_payload)
 
         # Ghi log dòng Step (Bổ sung hiển thị Eval Loss nếu có)
         log_line = f"Step {state.global_step} | Epoch {epoch_val} | Loss: {loss_val:.4f}"
         if eval_loss is not None:
             log_line += f" | Eval Loss (Overfit): {eval_loss:.4f}"
 
-        if 'logs' not in jobs_db[self.job_id]: jobs_db[self.job_id]['logs'] = []
-        jobs_db[self.job_id]['logs'].append(log_line)
+        _append_log(self.job_id, log_line)
 
     def on_save(self, args, state, control, **kwargs):
         # Giữ nguyên phần save checkpoint của bạn
-        checkpoint_msg = f"💾 Checkpoint saved locally at step {state.global_step}."
-        if 'logs' not in jobs_db[self.job_id]: jobs_db[self.job_id]['logs'] = []
-        jobs_db[self.job_id]['logs'].append(checkpoint_msg)
+        _append_log(self.job_id, f"💾 Checkpoint saved locally at step {state.global_step}.")
 
 class EnhancedWatchdogCallback(TrainerCallback):
     def __init__(self, job_id):
@@ -111,15 +128,25 @@ class EnhancedWatchdogCallback(TrainerCallback):
             control.should_training_stop = True
 
 class AutoTrainEarlyStoppingCallback(TrainerCallback):
-    def __init__(self, job_id, min_loss=0.5, patience=5):
+    """Dừng sớm dựa trên eval_loss của tập validation đã khoá.
+
+    Tiêu chí chính là patience: số lần đánh giá liên tiếp mà eval_loss không
+    cải thiện quá `min_delta`. Ngưỡng loss tuyệt đối (`target_loss`) chỉ chạy
+    khi người dùng đặt rõ — mặc định cũ `eval_loss < 0.5` là con số tuỳ tiện:
+    có dataset chạm ngưỡng sau vài step nên dừng non, có dataset không bao giờ
+    chạm nên cơ chế thành vô dụng.
+    """
+
+    def __init__(self, job_id, patience=3, min_delta=0.0, target_loss=None):
         self.job_id = job_id
-        self.min_loss = min_loss
-        self.patience = patience
         # Early stopping must use the locked validation partition. A single
         # training batch is noisy and previously stopped the 3 comparable runs
         # at different steps (38, 41 and 56), invalidating the comparison.
+        self.patience = max(1, int(patience))
+        self.min_delta = max(0.0, float(min_delta or 0.0))
+        self.target_loss = float(target_loss) if target_loss else None
         self.best_eval_loss = float('inf')
-        self.steps_without_improvement = 0
+        self.evals_without_improvement = 0
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if not logs: return
@@ -128,27 +155,28 @@ class AutoTrainEarlyStoppingCallback(TrainerCallback):
         if eval_loss is None:
             return
 
-        if eval_loss < self.min_loss:
-            msg = f"📉 Ngắt sớm: Eval Loss {eval_loss:.4f} đã đạt mục tiêu (< {self.min_loss})."
-            self._log_to_db(msg)
-            control.should_training_stop = True
-            return
-
-        if eval_loss < self.best_eval_loss:
+        if eval_loss < self.best_eval_loss - self.min_delta:
             self.best_eval_loss = eval_loss
-            self.steps_without_improvement = 0
+            self.evals_without_improvement = 0
         else:
-            self.steps_without_improvement += 1
-            if self.steps_without_improvement >= self.patience:
-                msg = f"⏳ Tự động dừng: Eval Loss không giảm sau {self.patience} lần đánh giá."
-                self._log_to_db(msg)
+            self.evals_without_improvement += 1
+            if self.evals_without_improvement >= self.patience:
+                self._log_to_db(
+                    f"⏳ Dừng sớm: eval_loss không cải thiện sau {self.patience} lần đánh giá "
+                    f"(tốt nhất {self.best_eval_loss:.4f})."
+                )
                 control.should_training_stop = True
+                return
+
+        if self.target_loss is not None and eval_loss < self.target_loss:
+            self._log_to_db(
+                f"📉 Dừng sớm: eval_loss {eval_loss:.4f} đạt ngưỡng mục tiêu (< {self.target_loss})."
+            )
+            control.should_training_stop = True
 
     def _log_to_db(self, msg):
         print(msg)
-        if self.job_id in jobs_db:
-            if 'logs' not in jobs_db[self.job_id]: jobs_db[self.job_id]['logs'] = []
-            jobs_db[self.job_id]['logs'].append(msg)
+        _append_log(self.job_id, msg)
 
 
 def background_train_task(job_id, config, filepath, validation_filepath, hf_token):
@@ -200,22 +228,34 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
 
         ensure_right_padding(tokenizer)
 
+        lora_targets = config.get('lora_target_modules') or [
+            "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+        ]
         model = FastLanguageModel.get_peft_model(
             model,
             r=config['r'],
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=lora_targets,
             lora_alpha=config['lora_alpha'],
             lora_dropout=config['lora_dropout'],
             bias="none",
-            use_gradient_checkpointing="unsloth",
+            use_gradient_checkpointing="unsloth" if config.get('gradient_checkpointing', True) else False,
             random_state=config['random_state'],
+            use_rslora=bool(config.get('use_rslora', False)),
         )
 
         col_map = config.get('column_mapping') or config.get('dataset_text_field') or 'text'
         sys_prompt = config.get('system_prompt')
         print(f"[Dataset] Using column mapping: {col_map}")
         if sys_prompt:
-            print(f"[Dataset] Using custom system prompt: {sys_prompt[:50]}...")
+            print(f"[Dataset] Using custom system prompt: {str(sys_prompt)[:50]}...")
+        else:
+            # Không có prompt nghĩa là dữ liệu train mang prompt mặc định trong
+            # khi eval/serve dùng prompt của AutoTrain — model sẽ bị lệch điều kiện.
+            _append_log(
+                job_id,
+                "⚠️ [Dataset] Không nhận được system_prompt — dùng prompt Socratic mặc định. "
+                "Kiểm tra lại cấu hình AutoTrain nếu bạn có prompt riêng.",
+            )
 
         if filepath:
             ext = os.path.splitext(filepath)[1]
@@ -276,6 +316,9 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             if "text" not in dataset_eval.column_names:
                 raise ValueError("Formatted validation dataset is missing the required 'text' column.")
             dataset_eval = dataset_eval.select_columns(["text"])
+            if len(dataset_eval) == 0:
+                print("[Dataset] Validation partition rỗng — tắt eval, early-stopping và load_best_model.")
+                dataset_eval = None
 
         resume_from = None
         # A new training job must start from the base model. The target HF repo
@@ -365,9 +408,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             if not resume_from:
                 raise ValueError(f"Can't find a persistent worker checkpoint for job {job_id}")
             print(f"[✅] Resuming from persistent worker checkpoint: {resume_from}")
-            jobs_db[job_id].setdefault('logs', []).append(
-                f"Resuming from persistent worker checkpoint: {resume_from}"
-            )
+            _append_log(job_id, f"Resuming from persistent worker checkpoint: {resume_from}")
             _normalize_checkpoint_rng_state(resume_from)
 
         if resume_repo_id:
@@ -409,9 +450,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
 
             if resume_from:
                 print(f"[✅] Resuming from checkpoint: {resume_from}")
-                if 'logs' not in jobs_db[job_id]:
-                    jobs_db[job_id]['logs'] = []
-                jobs_db[job_id]['logs'].append(f"Resuming from checkpoint: {resume_from}")
+                _append_log(job_id, f"Resuming from checkpoint: {resume_from}")
                 _normalize_checkpoint_rng_state(resume_from)
                 
                 # Fix: Patch training_args.bin precision to prevent c10::BFloat16 != c10::Half errors
@@ -463,110 +502,188 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         #     tokenizer=tokenizer
         # )
 
-        # Train on assistant spans with robust fallback
+        # Train on assistant spans with robust fallback. Preflight chạy trên
+        # nhiều mẫu: một mẫu duy nhất không đại diện cho cả dataset, và mẫu lệch
+        # định dạng sẽ âm thầm được train trên toàn bộ hội thoại.
         collator = AssistantOnlyDataCollator(tokenizer)
-        try:
-            preflight_encoding = tokenizer(
-                dataset_train[0]["text"],
-                truncation=True,
-                max_length=config['modelMaxLength'],
+        sample_count = min(PREFLIGHT_SAMPLES, len(dataset_train))
+        preflight = preflight_assistant_mask(
+            tokenizer,
+            collator,
+            dataset_train[:sample_count]["text"],
+            config['modelMaxLength'],
+        )
+
+        if not preflight.get("ok"):
+            reason = preflight.get("error") or "không khớp header assistant"
+            message = (
+                f"⚠️ [SFT Mask] Preflight thất bại trên {preflight.get('checked', 0)} mẫu ({reason}). "
+                "Chuyển sang DataCollatorForLanguageModeling (train trên toàn bộ text)."
             )
-            preflight_batch = collator([preflight_encoding])
-            supervised_tokens = int((preflight_batch["labels"] != -100).sum().item())
-            total_tokens = int(preflight_batch["attention_mask"].sum().item())
-            if supervised_tokens <= 0:
-                print("⚠️ [SFT Mask] Could not match assistant header in preflight. Falling back to DataCollatorForLanguageModeling.")
-                collator = DataCollatorForLanguageModeling(tokenizer=getattr(tokenizer, "tokenizer", tokenizer), mlm=False)
-            else:
-                print(
-                    f"[SFT Mask] assistant_tokens={supervised_tokens} "
-                    f"total_tokens={total_tokens} ignored_tokens={total_tokens - supervised_tokens}"
-                )
-        except Exception as preflight_err:
-            print(f"⚠️ [SFT Mask] Preflight check error ({preflight_err}). Falling back to DataCollatorForLanguageModeling.")
+            print(message)
+            _append_log(job_id, message)
             collator = DataCollatorForLanguageModeling(tokenizer=getattr(tokenizer, "tokenizer", tokenizer), mlm=False)
+        else:
+            message = (
+                f"[SFT Mask] {preflight['matched']}/{preflight['checked']} mẫu mask được assistant, "
+                f"supervised {preflight['supervised_ratio'] * 100:.1f}% token."
+            )
+            print(message)
+            _append_log(job_id, message)
+            if preflight.get("unmatched"):
+                warning = (
+                    f"⚠️ [SFT Mask] {preflight['unmatched']}/{preflight['checked']} mẫu không khớp header — "
+                    "những mẫu này sẽ học cả lượt của học sinh, nên kiểm tra lại định dạng dataset."
+                )
+                print(warning)
+                _append_log(job_id, warning)
+            collator.rows_masked = 0
+            collator.rows_unmatched = 0
+            collator.rows_slow_path = 0
+
+        schedule = resolve_schedule(
+            num_examples=len(dataset_train),
+            batch_size=config['batchSize'],
+            grad_accum=config['gradient_accumulation_steps'],
+            epochs=config['epochs'],
+            config=config,
+        )
+        summary = (
+            f"[Config] {config['model_name']} | epochs={config['epochs']} "
+            f"effective_batch={schedule['effective_batch']} steps/epoch={schedule['steps_per_epoch']} "
+            f"total_steps={schedule['total_steps']} eval_steps={schedule['eval_steps']} "
+            f"save_steps={schedule['save_steps']} | lr={config['learningRate']} "
+            f"scheduler={config['lr_scheduler_type']} | LoRA r={config['r']} alpha={config['lora_alpha']} "
+            f"dropout={config['lora_dropout']} rslora={bool(config.get('use_rslora'))} "
+            f"targets={config.get('lora_target_preset', 'custom')} | "
+            f"neftune={config.get('neftune_noise_alpha', 0)}"
+        )
+        print(summary)
+        _append_log(job_id, summary)
+        if job_id in jobs_db:
+            jobs_db[job_id]['effective_config'] = {
+                'model_name': config['model_name'],
+                'epochs': config['epochs'],
+                'learning_rate': config['learningRate'],
+                'lr_scheduler_type': config['lr_scheduler_type'],
+                'lora': {
+                    'r': config['r'],
+                    'alpha': config['lora_alpha'],
+                    'dropout': config['lora_dropout'],
+                    'rslora': bool(config.get('use_rslora')),
+                    'targets': lora_targets,
+                },
+                'neftune_noise_alpha': config.get('neftune_noise_alpha', 0),
+                'schedule': schedule,
+                'mask_preflight': preflight,
+                'system_prompt_version': config.get('system_prompt_version'),
+            }
 
         # 2.5. SFTTrainer Config (TỐI ƯU CHỐNG OVERFIT)
+        has_eval = dataset_eval is not None
+        sft_kwargs = {
+            'max_length': config['modelMaxLength'],
+            'dataset_text_field': "text",
+            # Keep one conversation per sequence. Packing reduced this
+            # 40-conversation dataset to only four optimizer steps/epoch
+            # and blurred conversation boundaries.
+            'packing': False,
+            'per_device_train_batch_size': config['batchSize'],
+            'gradient_accumulation_steps': config['gradient_accumulation_steps'],
+            'num_train_epochs': config['epochs'],
+            'learning_rate': config['learningRate'],
+            # Tự động chọn kiểu dữ liệu tối ưu dựa trên phần cứng GPU
+            'fp16': not is_bfloat16_supported(),
+            'bf16': is_bfloat16_supported(),
+            'logging_steps': config.get('logging_steps', 1),
+            'max_grad_norm': config.get('max_grad_norm', 1.0),
+
+            # --- CẤU HÌNH TÍNH TOÁN OVERFIT ---
+            # Lịch eval/save suy theo số optimizer step thực tế: hằng số 10 cũ
+            # chỉ cho một điểm validation ở run ngắn, và quá dày ở dataset lớn.
+            'eval_strategy': "steps" if has_eval else "no",
+            'eval_steps': schedule['eval_steps'] if has_eval else None,
+
+            # --- CHIẾN LƯỢC CHỐNG "HỌC VẸT" ---
+            'load_best_model_at_end': has_eval,
+            'metric_for_best_model': "eval_loss" if has_eval else None,
+            'greater_is_better': False,     # Loss càng thấp càng tốt
+
+            'optim': config['optim'],
+            'weight_decay': config['weight_decay'],
+            'lr_scheduler_type': config['lr_scheduler_type'],
+            'seed': config['seed'],
+            'output_dir': local_job_dir,
+            'save_strategy': "steps",
+            'save_steps': schedule['save_steps'],
+            # Cần chỗ cho cả checkpoint tốt nhất lẫn checkpoint cuối.
+            'save_total_limit': config.get('save_total_limit', 2),
+            'group_by_length': bool(config.get('group_by_length', False)),
+            'dataloader_num_workers': config.get('dataloader_num_workers', 0),
+            'dataloader_pin_memory': True,
+            'report_to': "none",
+            'push_to_hub': config.get('push_to_hub', False),
+            'hub_model_id': hf_repo_id,
+            'hub_token': hf_token,
+            'hub_strategy': "checkpoint",
+        }
+
+        # warmup_ratio bám theo tổng số step nên ổn định hơn khi dataset đổi cỡ;
+        # chỉ dùng warmup_steps khi người dùng không đặt ratio.
+        if config.get('warmup_ratio', 0):
+            sft_kwargs['warmup_ratio'] = config['warmup_ratio']
+        else:
+            sft_kwargs['warmup_steps'] = config['warmup_steps']
+
+        if config.get('neftune_noise_alpha', 0):
+            sft_kwargs['neftune_noise_alpha'] = config['neftune_noise_alpha']
+
+        sft_kwargs, dropped_kwargs = filter_supported_kwargs(SFTConfig, sft_kwargs)
+        if dropped_kwargs:
+            _append_log(
+                job_id,
+                f"[Config] TRL đang cài không hỗ trợ: {', '.join(sorted(dropped_kwargs))} — bỏ qua.",
+            )
+
+        callbacks = [FlaskProgressCallback(job_id), EnhancedWatchdogCallback(job_id)]
+        if has_eval:
+            callbacks.append(AutoTrainEarlyStoppingCallback(
+                job_id=job_id,
+                patience=config.get('early_stopping_patience', 3),
+                min_delta=config.get('early_stopping_min_delta', 0.0),
+                target_loss=config.get('early_stopping_loss'),
+            ))
+
         trainer = SFTTrainer(
             model = model,
             processing_class = tokenizer,
-            # tokenizer = tokenizer,
             train_dataset = dataset_train,
             eval_dataset = dataset_eval,      # Phải có tập này để tính Overfit
-            # dataset_text_field = "text",
-
             data_collator = collator,
-            # max_seq_length = config['modelMaxLength'],
-
-            # args = TrainingArguments(
-            args = SFTConfig(
-                max_length = config['modelMaxLength'],
-                dataset_text_field = "text",
-                # Keep one conversation per sequence. Packing reduced this
-                # 40-conversation dataset to only four optimizer steps/epoch
-                # and blurred conversation boundaries.
-                packing = False,
-                per_device_train_batch_size = config['batchSize'],
-                gradient_accumulation_steps = config['gradient_accumulation_steps'],
-                warmup_steps = config['warmup_steps'],
-                num_train_epochs = config['epochs'],
-                learning_rate = config['learningRate'],
-                # Tự động chọn kiểu dữ liệu tối ưu dựa trên phần cứng GPU
-                fp16 = not is_bfloat16_supported(),
-                bf16 = is_bfloat16_supported(),
-                logging_steps = 1,
-
-                # --- CẤU HÌNH TÍNH TOÁN OVERFIT ---
-                # eval_strategy = "steps", # Đánh giá định kỳ theo bước
-                # eval_steps = 50,
-                eval_strategy = "steps" if dataset_eval else "no", # Đánh giá định kỳ theo bước
-                # Small LoRA runs often have only 50-100 optimizer steps. An
-                # interval of 50 produced just one validation point, making
-                # load_best_model_at_end effectively meaningless.
-                eval_steps = 10 if dataset_eval else None,
-
-                # --- CHIẾN LƯỢC CHỐNG "HỌC VẸT" ---
-                # load_best_model_at_end = True, # Kết thúc sẽ lấy Model có kết quả thi tốt nhất
-                # metric_for_best_model = "eval_loss",
-
-                load_best_model_at_end = True if dataset_eval else False, # Kết thúc sẽ lấy Model có kết quả thi tốt nhất
-                metric_for_best_model = "eval_loss" if dataset_eval else None,
-                greater_is_better = False,     # Loss càng thấp càng tốt
-
-
-                optim = config['optim'],
-                weight_decay = config['weight_decay'],
-                lr_scheduler_type = config['lr_scheduler_type'],
-                seed = config['seed'],
-                output_dir = local_job_dir,
-                save_strategy = "steps",
-                save_steps = 10,
-                save_total_limit = 1,          # Tiết kiệm bộ nhớ Colab
-                report_to = "none",
-                push_to_hub = config.get('push_to_hub', False),
-                hub_model_id = hf_repo_id,
-                hub_token = hf_token,
-                hub_strategy = "checkpoint",
-            ),
-            callbacks=[
-                FlaskProgressCallback(job_id),
-                EnhancedWatchdogCallback(job_id),
-                AutoTrainEarlyStoppingCallback(
-                    job_id=job_id,
-                    min_loss=config.get('early_stopping_loss', 0.5),
-                    patience=config.get('early_stopping_patience', 100),
-                )
-            ]
+            args = SFTConfig(**sft_kwargs),
+            callbacks = callbacks,
         )
 
         # 2.6. Bắt đầu huấn luyện (Tự động Resume nếu có checkpoint)
         trainer.train(resume_from_checkpoint = resume_from)
 
+        unmatched_rows = getattr(collator, 'rows_unmatched', 0)
+        if unmatched_rows:
+            _append_log(
+                job_id,
+                f"⚠️ [SFT Mask] {unmatched_rows} lượt hàng không mask được assistant trong lúc train "
+                "— phần đó đã học cả lượt của học sinh.",
+            )
+        slow_rows = getattr(collator, 'rows_slow_path', 0)
+        if slow_rows:
+            _append_log(
+                job_id,
+                f"[SFT Mask] {slow_rows} lượt hàng phải dùng đường decode chậm (tokenizer chuẩn hoá khoảng trắng).",
+            )
+
         # A user stop is a resumable terminal state, not a completed training.
         if jobs_db.get(job_id, {}).get('status') == 'STOPPED':
-            jobs_db[job_id].setdefault('logs', []).append(
-                f"Checkpoint retained at {local_job_dir}; use Resume to continue."
-            )
+            _append_log(job_id, f"Checkpoint retained at {local_job_dir}; use Resume to continue.")
             return
 
         if config.get('push_to_hub') and hf_repo_id:

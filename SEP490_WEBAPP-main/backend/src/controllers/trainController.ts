@@ -145,6 +145,17 @@ export const startTraining = async (req: Request, res: Response) => {
       seed,
       early_stopping_loss,
       early_stopping_patience,
+      early_stopping_min_delta,
+      // Knob chất lượng nâng cao — tuỳ chọn, gpu-service tự áp mặc định khi thiếu
+      lora_target_modules,
+      use_rslora,
+      neftune_noise_alpha,
+      max_grad_norm,
+      warmup_ratio,
+      group_by_length,
+      eval_steps,
+      save_steps,
+      dataloader_num_workers,
       push_to_hub,
       hf_repo_id,
       hf_token,
@@ -313,6 +324,40 @@ export const startTraining = async (req: Request, res: Response) => {
       console.warn(`[Backend] No HF Token provided in request body`);
     }
 
+    // ── Knob tuỳ chọn ────────────────────────────────────────────────────────
+    // Chỉ gửi khi client đặt rõ. Ép giá trị mặc định ở đây (như `|| 0.5` cho
+    // early_stopping_loss trước kia) khiến gpu-service không bao giờ dùng được
+    // mặc định đã hiệu chỉnh của nó.
+    const optionalKnobs: Record<string, unknown> = {};
+    const putNumber = (key: string, raw: unknown) => {
+      if (raw === undefined || raw === null || raw === '') return;
+      const value = Number(raw);
+      if (Number.isFinite(value)) optionalKnobs[key] = value;
+    };
+    const putBoolean = (key: string, raw: unknown) => {
+      if (raw === undefined || raw === null || raw === '') return;
+      optionalKnobs[key] = raw === true || raw === 'true';
+    };
+
+    putNumber('early_stopping_loss', early_stopping_loss);
+    putNumber('early_stopping_patience', early_stopping_patience);
+    putNumber('early_stopping_min_delta', early_stopping_min_delta);
+    putNumber('neftune_noise_alpha', neftune_noise_alpha);
+    putNumber('max_grad_norm', max_grad_norm);
+    putNumber('warmup_ratio', warmup_ratio);
+    putNumber('eval_steps', eval_steps);
+    putNumber('save_steps', save_steps);
+    putNumber('dataloader_num_workers', dataloader_num_workers);
+    putBoolean('use_rslora', use_rslora);
+    putBoolean('group_by_length', group_by_length);
+    if (lora_target_modules) {
+      // Chuẩn về chuỗi: vừa hợp schema TrainingHistory, vừa được gpu-service
+      // hiểu (tên preset hoặc danh sách ngăn cách bởi dấu phẩy).
+      optionalKnobs.lora_target_modules = Array.isArray(lora_target_modules)
+        ? lora_target_modules.join(',')
+        : String(lora_target_modules);
+    }
+
     // ── Build JSON config for GPU Service ─────────────────────────────────────
     const config: any = {
       job_id,
@@ -332,8 +377,7 @@ export const startTraining = async (req: Request, res: Response) => {
       weight_decay: parseFloat(weight_decay as string) || 0.01,
       lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
       seed: parseInt(seed as string) || 3407,
-      early_stopping_loss: parseFloat(early_stopping_loss as string) || 0.5,
-      early_stopping_patience: parseInt(early_stopping_patience as string) || 100,
+      ...optionalKnobs,
       push_to_hub: push_to_hub === 'true' || push_to_hub === true,
       hf_repo_id: hf_repo_id || '',
       hf_token: hf_token || '',
@@ -498,8 +542,7 @@ export const startTraining = async (req: Request, res: Response) => {
           warmup_steps: parseInt(warmup_steps as string) || 5,
           weight_decay: parseFloat(weight_decay as string) || 0.01,
           seed: parseInt(seed as string) || 3407,
-          early_stopping_loss: parseFloat(early_stopping_loss as string) || 0.5,
-          early_stopping_patience: parseInt(early_stopping_patience as string) || 100,
+          ...optionalKnobs,
           optim: (optim as string) || 'adamw_8bit',
           lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
         },

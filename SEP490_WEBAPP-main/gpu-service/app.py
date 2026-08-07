@@ -101,6 +101,7 @@ from pipelines.training import background_train_task  # extracted module
 
 
 from pipelines.eval_core import background_eval_task  # extracted module
+from pipelines.train_config import build_train_config  # validate/normalize config
 from constants.config import DEFAULT_JUDGE_MODEL
 
 _service = ClusteringService()  # clustering singleton dung boi cac route dataprep
@@ -139,34 +140,13 @@ def start_training():
     job_id = parsed_config.get('job_id')
     if not job_id: return jsonify({"error": "Missing 'job_id' in config"}), 400
 
-    config = {
-        'model_name': parsed_config.get('model_name', "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"),
-        'epochs': int(parsed_config.get('epochs', 1)),
-        'batchSize': int(parsed_config.get('batchSize', 2)),
-        'learningRate': float(parsed_config.get('learningRate', 2e-4)),
-        'modelMaxLength': int(parsed_config.get('modelMaxLength', 2048)),
-        'r': int(parsed_config.get('r', 16)),
-        'lora_alpha': int(parsed_config.get('lora_alpha', 16)),
-        'lora_dropout': float(parsed_config.get('lora_dropout', 0)),
-        'random_state': int(parsed_config.get('random_state', 3407)),
-        'gradient_accumulation_steps': int(parsed_config.get('gradient_accumulation_steps', 4)),
-        'warmup_steps': int(parsed_config.get('warmup_steps', 5)),
-        'dataset_hf_id': parsed_config.get('dataset_hf_id'),
-        'push_to_hub': parsed_config.get('push_to_hub', False),
-        'hf_repo_id': parsed_config.get('hf_repo_id'),
-        'optim': parsed_config.get('optim', 'adamw_8bit'),
-        'weight_decay': float(parsed_config.get('weight_decay', 0.01)),
-        'lr_scheduler_type': parsed_config.get('lr_scheduler_type', 'linear'),
-        'seed': int(parsed_config.get('seed', 3407)),
-        'early_stopping_loss': float(parsed_config.get('early_stopping_loss', 0.5)),
-        'early_stopping_patience': int(parsed_config.get('early_stopping_patience', 100)),
-        # Resume metadata must survive request parsing. Older code dropped these
-        # fields here, so the trainer always restarted from step 0.
-        'checkpoint_source': parsed_config.get('checkpoint_source'),
-        'checkpoint_hf_repo': parsed_config.get('checkpoint_hf_repo'),
-        'checkpoint_file_id': parsed_config.get('checkpoint_file_id'),
-        'column_mapping': parsed_config.get('column_mapping') or parsed_config.get('columnMapping'),
-    }
+    # Ép kiểu, kẹp biên và suy các mặc định chất lượng ở một chỗ duy nhất.
+    # Resume metadata và system_prompt cũng đi qua đây: bản cũ đánh rơi
+    # system_prompt nên dữ liệu train mang prompt mặc định trong khi eval và
+    # inference lại dùng prompt do người dùng cấu hình.
+    config, config_warnings = build_train_config(parsed_config)
+    for warning in config_warnings:
+        print(f"[Train Config] {warning}")
 
     # Ưu tiên token từ request, fallback sang Docker Secret / env HF_TOKEN
     hf_token = parsed_config.get('hf_token') or _read_secret("HF_TOKEN")
@@ -195,9 +175,17 @@ def start_training():
 
     # THÊM JOB VÀO HÀNG ĐỢI THAY VÌ CHẠY NGAY LẬP TỨC
     job_queue.append((job_id, config, file_path, validation_file_path, hf_token))
-    jobs_db[job_id] = {'status': 'QUEUED', 'progress': 0, 'logs': [f"Job {job_id} is in queue."]}
+    jobs_db[job_id] = {
+        'status': 'QUEUED',
+        'progress': 0,
+        'logs': [f"Job {job_id} is in queue."] + [f"[Config] {w}" for w in config_warnings],
+    }
 
-    return jsonify({"message": "Job queued successfully", "job_id": job_id}), 202
+    return jsonify({
+        "message": "Job queued successfully",
+        "job_id": job_id,
+        "warnings": config_warnings,
+    }), 202
 
 
 @app.route('/api/train/status/<job_id>')

@@ -48,6 +48,7 @@ flowchart TD
     end
     subgraph pipelines["pipelines/"]
         train["training.py<br/>fine-tune (SFT/LoRA)"]
+        tcfg["train_config.py<br/>validate config + lịch eval/save"]
         ecore["eval_core.py<br/>replay + LLM judge pipeline"]
         escore["eval_scoring.py<br/>scoring thuần"]
     end
@@ -68,11 +69,14 @@ flowchart TD
     app --> inf
     app --> state
     app --> train
+    app --> tcfg
     app --> ecore
     app --> cfg
 
     train --> state
+    train --> tcfg
     train --> fmt
+    tcfg --> constants
     ecore --> inf
     ecore --> lock
     ecore --> fmt

@@ -3,7 +3,9 @@
 formatting_prompts_func / AssistantOnlyDataCollator / compute_ngram_metrics /
 compute_question_detection_rate + DEFAULT_SOCRATIC_PROMPT.
 """
+import re
 import torch
+from bisect import bisect_left
 from transformers import DataCollatorWithPadding
 from constants.prompts import DEFAULT_SOCRATIC_PROMPT
 
@@ -140,10 +142,26 @@ def formatting_prompts_func(examples, tokenizer, col_map="messages", default_sys
 
 
 class AssistantOnlyDataCollator:
+    FALLBACK_HEADERS = (
+        r"<\|im_start\|>assistant",
+        r"<start_of_turn>model",
+        r"<\|start_header_id\|>assistant",
+        r"### Response:",
+        r"### Assistant:",
+        r"### assistant:",
+        r"Assistant:\n",
+        r"assistant\n",
+    )
+
     def __init__(self, tokenizer):
         self.tokenizer = tokenizer
         self.text_tokenizer = getattr(tokenizer, "tokenizer", tokenizer)
         self.padder = DataCollatorWithPadding(tokenizer=self.text_tokenizer, padding=True)
+
+        # Thống kê để preflight/log biết mask có thật sự bám được hay không.
+        self.rows_masked = 0
+        self.rows_unmatched = 0
+        self.rows_slow_path = 0
 
         # DYNAMICALLY DETECT THE ASSISTANT HEADER BY FORMATTING A DUMMY MESSAGE
         try:
@@ -156,6 +174,58 @@ class AssistantOnlyDataCollator:
             self.header_str = "assistant\n"
             self.end_str = "\n"
             
+    def _char_offsets(self, sequence, decoded_text):
+        """`cum[i]` = độ dài chuỗi khi decode `sequence[:i]`, tính trong một lượt.
+
+        Thay cho binary-search decode lại prefix ở từng bước — cách cũ tốn
+        O(số_span × log n × n) công decode trên CPU cho **mỗi batch**, đủ để bỏ
+        đói GPU khi hội thoại nhiều lượt. Trả về None nếu ghép các token lẻ
+        không khớp `decoded_text` (vài tokenizer chuẩn hoá khoảng trắng khi
+        decode cả chuỗi), để caller lùi về đường cũ và giữ nguyên kết quả mask.
+        """
+        try:
+            pieces = self.text_tokenizer.batch_decode([[token] for token in sequence])
+        except Exception:
+            return None
+        if len(pieces) != len(sequence) or "".join(pieces) != decoded_text:
+            return None
+
+        cumulative = [0] * (len(sequence) + 1)
+        total = 0
+        for index, piece in enumerate(pieces):
+            total += len(piece)
+            cumulative[index + 1] = total
+        return cumulative
+
+    def _locate_token(self, sequence, cumulative, target_char, lo):
+        """Token đầu tiên (chỉ số >= lo) mà phần decode tới đó phủ `target_char`."""
+        if cumulative is not None:
+            return bisect_left(cumulative, target_char, lo, len(sequence))
+
+        low, high = lo, len(sequence)
+        found = high
+        while low < high:
+            mid = (low + high) // 2
+            prefix = self.text_tokenizer.decode(sequence[:mid])
+            if isinstance(prefix, list):
+                prefix = "".join(prefix)
+            if len(prefix) >= target_char:
+                found = mid
+                high = mid
+            else:
+                low = mid + 1
+        return found
+
+    def _find_matches(self, decoded_text):
+        matches = list(re.finditer(re.escape(str(self.header_str)), decoded_text))
+        if matches:
+            return matches
+        for fallback in self.FALLBACK_HEADERS:
+            matches = list(re.finditer(fallback, decoded_text))
+            if matches:
+                return matches
+        return []
+
     def __call__(self, features):
         batch = self.padder(features)
         input_ids = batch["input_ids"]
@@ -166,84 +236,46 @@ class AssistantOnlyDataCollator:
 
         for row in range(input_ids.shape[0]):
             sequence = input_ids[row].tolist()
-            
+
             # Map token indices to their string equivalents for robust substring matching
             decoded_text = self.text_tokenizer.decode(sequence)
             if isinstance(decoded_text, list):
                 decoded_text = "".join(decoded_text)
-            
-            import re
-            
-            # Find all match spans using dynamic header & fallbacks
-            safe_header = re.escape(str(self.header_str))
-            matches = list(re.finditer(safe_header, decoded_text))
-            
+
+            matches = self._find_matches(decoded_text)
             if not matches:
-                fallback_headers = [
-                    r"<\|im_start\|>assistant",
-                    r"<start_of_turn>model",
-                    r"<\|start_header_id\|>assistant",
-                    r"### Response:",
-                    r"### Assistant:",
-                    r"### assistant:",
-                    r"Assistant:\n",
-                    r"assistant\n",
-                ]
-                for fb in fallback_headers:
-                    matches = list(re.finditer(fb, decoded_text))
-                    if matches:
-                        break
-                
-            if not matches:
+                # Không bám được header: hàng này sẽ train trên toàn bộ text.
+                # Đếm lại để preflight phát hiện thay vì hỏng âm thầm.
+                self.rows_unmatched += 1
                 continue
-                
+
+            cumulative = self._char_offsets(sequence, decoded_text)
+            if cumulative is None:
+                self.rows_slow_path += 1
+
             row_labels = torch.full_like(input_ids[row], -100)
+            valid_length = int(attention_mask[row].sum().item())
             cursor = 0
             assistant_tokens = 0
-            
+
             for match in matches:
-                char_start = match.end() # Content starts right after the header
+                char_start = match.end()  # Content starts right after the header
                 char_end = len(decoded_text)
-                
+
                 # Find the end of the response using string matching
                 if self.end_str:
                     found_end = decoded_text.find(str(self.end_str), char_start)
                     if found_end != -1:
                         char_end = found_end
-                        
-                # Binary search for content_start_tok
-                low, high = cursor, len(sequence)
-                content_start_tok = high
-                while low < high:
-                    mid = (low + high) // 2
-                    prefix = self.text_tokenizer.decode(sequence[:mid])
-                    if isinstance(prefix, list): prefix = "".join(prefix)
-                    if len(prefix) >= char_start:
-                        content_start_tok = mid
-                        high = mid
-                    else:
-                        low = mid + 1
-                        
+
+                content_start_tok = self._locate_token(sequence, cumulative, char_start, cursor)
                 if content_start_tok == len(sequence):
                     continue
-                    
-                # Binary search for content_end_tok
-                low, high = content_start_tok, len(sequence)
-                content_end_tok = high
-                while low < high:
-                    mid = (low + high) // 2
-                    prefix = self.text_tokenizer.decode(sequence[:mid])
-                    if isinstance(prefix, list): prefix = "".join(prefix)
-                    if len(prefix) >= char_end:
-                        content_end_tok = mid
-                        high = mid
-                    else:
-                        low = mid + 1
-                        
+
+                content_end_tok = self._locate_token(sequence, cumulative, char_end, content_start_tok)
                 # Ensure we don't go beyond the attention mask
-                valid_length = int(attention_mask[row].sum().item())
                 content_end_tok = min(content_end_tok, valid_length)
-                
+
                 row_labels[content_start_tok:content_end_tok] = input_ids[row, content_start_tok:content_end_tok]
                 assistant_tokens += max(0, content_end_tok - content_start_tok)
                 cursor = content_end_tok
@@ -251,22 +283,84 @@ class AssistantOnlyDataCollator:
             row_labels[attention_mask[row] == 0] = -100
             if assistant_tokens > 0:
                 labels[row] = row_labels
-                
+                self.rows_masked += 1
+            else:
+                self.rows_unmatched += 1
+
         batch["labels"] = labels
         return batch
 
 
-import nltk
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from rouge_score import rouge_scorer
+def preflight_assistant_mask(tokenizer, collator, texts, max_length):
+    """Thử mask trên nhiều mẫu để biết collator có bám được header assistant không.
 
-nltk.download('punkt', quiet=True)
-nltk.download('punkt_tab', quiet=True)
+    Bản cũ chỉ kiểm mẫu đầu tiên và dựa vào `supervised_tokens <= 0` — điều
+    không bao giờ xảy ra, vì khi không match collator giữ nguyên nhãn full-text.
+    Nghĩa là lỗi mask trôi qua im lặng và model học cả lượt của học sinh.
+    Ở đây ta đọc trực tiếp bộ đếm match/unmatch của collator.
+    """
+    before_masked = collator.rows_masked
+    before_unmatched = collator.rows_unmatched
+
+    checked = 0
+    supervised = 0
+    total = 0
+
+    for text in texts:
+        if not text:
+            continue
+        try:
+            encoding = tokenizer(text, truncation=True, max_length=max_length)
+            batch = collator([encoding])
+        except Exception as error:
+            return {"ok": False, "error": str(error), "checked": checked}
+        checked += 1
+        supervised += int((batch["labels"] != -100).sum().item())
+        total += int(batch["attention_mask"].sum().item())
+
+    matched = collator.rows_masked - before_masked
+    unmatched = collator.rows_unmatched - before_unmatched
+
+    return {
+        "ok": checked > 0 and matched > 0,
+        "checked": checked,
+        "matched": matched,
+        "unmatched": unmatched,
+        "supervised_tokens": supervised,
+        "total_tokens": total,
+        "coverage": round(matched / checked, 4) if checked else 0.0,
+        "supervised_ratio": round(supervised / total, 4) if total else 0.0,
+    }
+
+
+_NGRAM_DEPS = None
+
+
+def _load_ngram_deps():
+    """Nạp nltk/rouge ở lần dùng đầu tiên.
+
+    Chỉ pipeline eval cần BLEU/ROUGE, nhưng module này nằm trên đường import của
+    training — nạp sẵn buộc job train kéo theo cả nltk và gọi `nltk.download`
+    (chạm mạng) ngay lúc service khởi động.
+    """
+    global _NGRAM_DEPS
+    if _NGRAM_DEPS is None:
+        import nltk
+        from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+        from rouge_score import rouge_scorer
+
+        nltk.download('punkt', quiet=True)
+        nltk.download('punkt_tab', quiet=True)
+        _NGRAM_DEPS = (nltk, sentence_bleu, SmoothingFunction, rouge_scorer)
+    return _NGRAM_DEPS
+
 
 def compute_ngram_metrics(expected: str, answer: str) -> dict:
     """Tính BLEU-1 và ROUGE-L giữa answer và expected reference."""
     if not expected or not answer:
         return {"bleu": 0.0, "rouge_l": 0.0}
+
+    nltk, sentence_bleu, SmoothingFunction, rouge_scorer = _load_ngram_deps()
     try:
         ref_tokens = nltk.word_tokenize(expected.lower())
         hyp_tokens = nltk.word_tokenize(answer.lower())
@@ -281,17 +375,13 @@ def compute_ngram_metrics(expected: str, answer: str) -> dict:
         rouge_l = 0.0
     return {"bleu": bleu, "rouge_l": rouge_l}
 
-print('✅ N-gram metrics (BLEU + ROUGE-L) sẵn sàng.')
-
 
 def compute_question_detection_rate(assistant_turns: list[str]) -> float:
-    """
-    T?nh t? l? turn c?a assistant k?t th?c b?ng c?u h?i.
-    Non-scoring metric ? ch? d?ng ?? ph?n t?ch xu h??ng.
+    """Tỉ lệ lượt assistant có chứa câu hỏi.
 
-    Logic: turn ???c coi l? c? c?u h?i n?u:
-      - K?t th?c b?ng '?' (sau khi strip whitespace), HO?C
-      - Ch?a '?' ? trong 100 k? t? cu?i (h? tr? c?u h?i kh?ng ? cu?i c?ng)
+    Non-scoring metric — chỉ dùng để phân tích xu hướng Socratic, không tính
+    vào điểm. Một lượt được coi là có câu hỏi nếu 100 ký tự cuối chứa '?'
+    (bắt được cả câu hỏi không nằm ở cuối cùng).
 
     Returns: float trong [0.0, 1.0]
     """
@@ -301,11 +391,9 @@ def compute_question_detection_rate(assistant_turns: list[str]) -> float:
     count = 0
     for turn in assistant_turns:
         text = turn.strip()
-        # Ki?m tra 100 k? t? cu?i ?? b?t c?u h?i embedded
+        # Kiểm tra 100 ký tự cuối để bắt cả câu hỏi nằm giữa lượt
         tail = text[-100:] if len(text) > 100 else text
         if '?' in tail:
             count += 1
 
     return round(count / len(assistant_turns), 4)
-
-print('? Question Detection Rate s?n s?ng.')

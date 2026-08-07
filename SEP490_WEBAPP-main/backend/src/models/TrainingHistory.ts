@@ -29,6 +29,17 @@ export interface ITrainingHistory extends Document {
     early_stopping_patience: number;    // Steps to wait for loss decrease
     optim: string;                      // Optimizer type
     lr_scheduler_type: string;          // LR scheduler type
+    // Knob chất lượng nâng cao — tuỳ chọn, chỉ ghi khi người dùng đặt rõ
+    early_stopping_min_delta?: number;  // Mức cải thiện tối thiểu để reset patience
+    lora_target_modules?: string;       // Preset hoặc danh sách module áp LoRA
+    use_rslora?: boolean;               // Rank-stabilized LoRA
+    neftune_noise_alpha?: number;       // Nhiễu embedding lúc train (0 = tắt)
+    max_grad_norm?: number;             // Ngưỡng clip gradient
+    warmup_ratio?: number;              // Warmup theo tỉ lệ tổng số step
+    group_by_length?: boolean;          // Gom sample cùng độ dài để bớt padding
+    eval_steps?: number;                // Bỏ trống = tự suy theo cỡ dataset
+    save_steps?: number;                // Bỏ trống = bằng eval_steps
+    dataloader_num_workers?: number;    // Số worker nạp dữ liệu
   };
   pushToHub: boolean;
   hfRepoId: string;
@@ -93,10 +104,22 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       warmup_steps: { type: Number, default: 5 },
       weight_decay: { type: Number, default: 0.01 },
       seed: { type: Number, default: 3407 },
-      early_stopping_loss: { type: Number, default: 0.5 },
-      early_stopping_patience: { type: Number, default: 100 },
+      // Không đặt default cho early stopping: giá trị mặc định thật nằm ở
+      // gpu-service, ghi sẵn 0.5/100 ở đây làm lịch sử job hiển thị sai.
+      early_stopping_loss: { type: Number },
+      early_stopping_patience: { type: Number },
       optim: { type: String, default: 'adamw_8bit' },
       lr_scheduler_type: { type: String, default: 'linear' },
+      early_stopping_min_delta: { type: Number },
+      lora_target_modules: { type: String },
+      use_rslora: { type: Boolean },
+      neftune_noise_alpha: { type: Number },
+      max_grad_norm: { type: Number },
+      warmup_ratio: { type: Number },
+      group_by_length: { type: Boolean },
+      eval_steps: { type: Number },
+      save_steps: { type: Number },
+      dataloader_num_workers: { type: Number },
     },
     pushToHub: { type: Boolean, default: false },
     hfRepoId: { type: String, default: '' },

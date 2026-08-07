@@ -30,6 +30,16 @@ export interface TrainingConfig {
   optim: string;
   lrScheduler: string;
 
+  // Quality & regularization (advanced) — bỏ trống để GPU service tự chọn
+  loraTargets: string;
+  useRslora: boolean;
+  neftuneAlpha: string;
+  maxGradNorm: string;
+  warmupRatio: string;
+  groupByLength: boolean;
+  earlyStoppingPatience: string;
+  evalSteps: string;
+
   // HF Hub push
   hfRepoId: string;
   hfToken: string;
@@ -59,7 +69,16 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   weightDecay: '0.01',
   seed: '3407',
   optim: 'adamw_8bit',
-  lrScheduler: 'linear',
+  lrScheduler: 'cosine',
+
+  loraTargets: 'all-linear',
+  useRslora: false,
+  neftuneAlpha: '0',
+  maxGradNorm: '1',
+  warmupRatio: '0',
+  groupByLength: false,
+  earlyStoppingPatience: '3',
+  evalSteps: '',
 
   hfRepoId: '',
   hfToken: '',
@@ -164,23 +183,37 @@ export interface ParamPreset {
   weight_decay: number;
   optim: string;
   lr_scheduler_type: string;
+  // Knob chất lượng — tuỳ chọn để preset cũ đã lưu trong localStorage vẫn đọc được
+  lora_target_modules?: string;
+  use_rslora?: boolean;
+  neftune_noise_alpha?: number;
+  max_grad_norm?: number;
+  warmup_ratio?: number;
+  group_by_length?: boolean;
+  early_stopping_patience?: number;
 }
 
 export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
   "Quick Training (~5 min)": {
     epochs: 1, batchSize: 2, learningRate: 0.0002, blockSize: 512, modelMaxLength: 512,
     r: 4, lora_alpha: 8, lora_dropout: 0.0, gradient_accumulation_steps: 8,
-    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
+    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear",
+    lora_target_modules: "attention", use_rslora: false, neftune_noise_alpha: 0,
+    max_grad_norm: 1.0, warmup_ratio: 0, group_by_length: false, early_stopping_patience: 2
   },
   "Standard (Recommended ~15 min)": {
     epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 1024, modelMaxLength: 1024,
     r: 16, lora_alpha: 32, lora_dropout: 0.05, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine",
+    lora_target_modules: "all-linear", use_rslora: false, neftune_noise_alpha: 5,
+    max_grad_norm: 1.0, warmup_ratio: 0.03, group_by_length: false, early_stopping_patience: 3
   },
   "High Quality (~45 min)": {
     epochs: 5, batchSize: 1, learningRate: 0.0001, blockSize: 1024, modelMaxLength: 1024,
-    r: 32, lora_alpha: 64, lora_dropout: 0.0, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine"
+    r: 32, lora_alpha: 64, lora_dropout: 0.05, gradient_accumulation_steps: 4,
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine",
+    lora_target_modules: "all-linear", use_rslora: true, neftune_noise_alpha: 5,
+    max_grad_norm: 1.0, warmup_ratio: 0.05, group_by_length: false, early_stopping_patience: 4
   }
 };
 

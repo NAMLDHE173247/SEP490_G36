@@ -302,6 +302,16 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),
         optim: preset.optim || 'adamw_8bit',
         lrScheduler: preset.lr_scheduler_type || preset.lrScheduler || 'linear',
+        // Preset cũ lưu trong localStorage không có các knob này — giữ giá trị đang dùng.
+        loraTargets: preset.lora_target_modules || prev.loraTargets,
+        useRslora: preset.use_rslora ?? prev.useRslora,
+        neftuneAlpha: preset.neftune_noise_alpha !== undefined ? String(preset.neftune_noise_alpha) : prev.neftuneAlpha,
+        maxGradNorm: preset.max_grad_norm !== undefined ? String(preset.max_grad_norm) : prev.maxGradNorm,
+        warmupRatio: preset.warmup_ratio !== undefined ? String(preset.warmup_ratio) : prev.warmupRatio,
+        groupByLength: preset.group_by_length ?? prev.groupByLength,
+        earlyStoppingPatience: preset.early_stopping_patience !== undefined
+          ? String(preset.early_stopping_patience)
+          : prev.earlyStoppingPatience,
       }));
     },
     [customPresets],
@@ -323,6 +333,13 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         weight_decay: parseFloat(config.weightDecay) || 0.01,
         optim: config.optim,
         lr_scheduler_type: config.lrScheduler,
+        lora_target_modules: config.loraTargets,
+        use_rslora: config.useRslora,
+        neftune_noise_alpha: parseFloat(config.neftuneAlpha) || 0,
+        max_grad_norm: parseFloat(config.maxGradNorm) || 1,
+        warmup_ratio: parseFloat(config.warmupRatio) || 0,
+        group_by_length: config.groupByLength,
+        early_stopping_patience: parseInt(config.earlyStoppingPatience) || 3,
       };
 
       const updated = { ...customPresets, [name]: newPreset };
@@ -569,6 +586,15 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       formData.append('random_state', config.seed);
       formData.append('optim', config.optim);
       formData.append('lr_scheduler_type', config.lrScheduler);
+      // Knob chất lượng: chỉ gửi khi khác mặc định để gpu-service tự quyết phần còn lại.
+      formData.append('lora_target_modules', config.loraTargets);
+      formData.append('use_rslora', String(config.useRslora));
+      formData.append('group_by_length', String(config.groupByLength));
+      formData.append('max_grad_norm', config.maxGradNorm);
+      formData.append('early_stopping_patience', config.earlyStoppingPatience);
+      if (parseFloat(config.neftuneAlpha) > 0) formData.append('neftune_noise_alpha', config.neftuneAlpha);
+      if (parseFloat(config.warmupRatio) > 0) formData.append('warmup_ratio', config.warmupRatio);
+      if (config.evalSteps.trim()) formData.append('eval_steps', config.evalSteps.trim());
       formData.append('systemPrompt', config.systemPrompt);
       formData.append('columnMapping', config.columnMapping);
       formData.append('projectName', config.projectName);

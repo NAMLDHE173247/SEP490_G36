@@ -164,6 +164,13 @@ const StepConfig: React.FC<StepConfigProps> = ({
     [onConfigChange],
   );
 
+  const handleToggleChange = useCallback(
+    (key: keyof TrainingConfig) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      onConfigChange({ [key]: e.target.checked } as Partial<TrainingConfig>);
+    },
+    [onConfigChange],
+  );
+
   const handlePresetSelect = useCallback(
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       onPresetChange(e.target.value);
@@ -654,6 +661,110 @@ const StepConfig: React.FC<StepConfigProps> = ({
                       value={config.loraDropout}
                       onChange={handleParamChange('loraDropout')}
                       style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">LoRA Targets <HelpTooltip text="Which layers get an adapter. 'all-linear' (attention + MLP) gives the best quality; 'attention' is lighter on VRAM and enough for very small datasets." /></span>
+                    <select
+                      className="at-select"
+                      value={config.loraTargets}
+                      onChange={handleParamChange('loraTargets')}
+                      style={{ width: 120, padding: '4px 8px' }}
+                    >
+                      <option value="all-linear">all-linear</option>
+                      <option value="attention">attention</option>
+                      <option value="mlp">mlp</option>
+                    </select>
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">rsLoRA <HelpTooltip text="Rank-stabilized LoRA. Keeps the update scale sane when Rank is 32 or higher. Little effect at low rank." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.useRslora}
+                      onChange={handleToggleChange('useRslora')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="at-section-divider-line" style={{ margin: '14px 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Quality &amp; Regularization
+                </div>
+
+                <div className="at-param-rows">
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">NEFTune Alpha <HelpTooltip text="Adds noise to embeddings during training. Usually improves instruction-following quality. 0 = off, 5 is the recommended value." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={config.neftuneAlpha}
+                      onChange={handleParamChange('neftuneAlpha')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Max Grad Norm <HelpTooltip text="Clips gradients to this norm so a single bad batch cannot blow up the run. Default 1.0." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={config.maxGradNorm}
+                      onChange={handleParamChange('maxGradNorm')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Warmup Ratio <HelpTooltip text="Warmup as a fraction of total steps (e.g. 0.03). More stable than a fixed step count when the dataset size changes. 0 = use Warmup Steps instead." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={config.warmupRatio}
+                      onChange={handleParamChange('warmupRatio')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Early Stop Patience <HelpTooltip text="How many validation checks may pass without improvement before training stops. Lower = stops sooner on overfitting." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      value={config.earlyStoppingPatience}
+                      onChange={handleParamChange('earlyStoppingPatience')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Eval Steps <HelpTooltip text="Validate every N optimizer steps. Leave empty to let the service pick a value that gives about 8 validation points across the run." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      placeholder="auto"
+                      value={config.evalSteps}
+                      onChange={handleParamChange('evalSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Group By Length <HelpTooltip text="Batches samples of similar length together to waste less compute on padding. Changes batch order, so leave off when comparing runs." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.groupByLength}
+                      onChange={handleToggleChange('groupByLength')}
+                      style={{ width: 16, height: 16 }}
                     />
                   </div>
                 </div>
