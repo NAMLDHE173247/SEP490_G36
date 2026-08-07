@@ -102,7 +102,7 @@ function validateLockedTestFile(filePath: string) {
     else counts[subject] = (counts[subject] || 0) + 1;
     const messages = Array.isArray(record?.messages) ? record.messages : [];
     const userCount = messages.filter((message: any) => message?.role === 'user').length;
-    if (userCount !== 1) errors.push(`${itemId || index + 1}: expected exactly one user message, found ${userCount}`);
+    if (userCount < 1) errors.push(`${itemId || index + 1}: expected at least one user message, found ${userCount}`);
     if (!String(record?.reference_answer || '').trim() && !(Array.isArray(record?.gold_key_points) && record.gold_key_points.length > 0)) {
       errors.push(`${itemId || index + 1}: missing reference_answer/gold_key_points`);
     }
