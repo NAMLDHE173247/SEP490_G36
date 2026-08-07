@@ -6,10 +6,9 @@ import {
 } from 'lucide-react';
 import '../styles/stafflabel.css';
 import { api } from '../services/api';
-import { useDebounce } from '../hooks/useDebounce';
 import { useToast } from '../hooks/useToast';
+import { useDebounce } from '../hooks/useDebounce';
 import ToastContainer from '../components/ToastContainer';
-import { getCliProxyModels } from '../services/configApi';
 
 const SUBJECT_OPTIONS = ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro'];
 const SUBJECT_LABEL_MAP: Record<string, string> = {
@@ -27,10 +26,9 @@ const INTENT_OPTIONS = [
   'DISCOURAGED', 'OFF_TOPIC', 'READY_NEXT', 'CONFIRM_UNDERSTANDING',
 ];
 const ACTION_OPTIONS = [
-  'CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 'CORRECT_MISTAKE',
-  'PRAISING', 'SCAFFOLDING', 'HINTING', 'CONCEPT_CLARIFY',
-  'LOGIC_BREAKDOWN', 'SIMPLIFYING', 'MOTIVATING', 'REDIRECTING',
-  'TRANSITIONING', 'DIRECT_ANSWER', 'WAITING',
+  'CONFIRM_CORRECT_ANSWER', 'IDENTIFY_INCORRECT_ANSWER', 
+  'CORRECT_MISTAKE', 'PRAISING', 'SCAFFOLDING', 'HINTING', 'CONCEPT_CLARIFY',
+  'LOGIC_BREAKDOWN', 'SIMPLIFYING', 'MOTIVATING', 'REDIRECTING', 'TRANSITIONING', 'DIRECT_ANSWER', 'WAITING',
 ];
 const COMPLETION_OPTIONS = ['Completed', 'Incomplete', 'Abandoned'];
 const RESPONSE_QUALITY_OPTIONS = ['Gold', 'Bad'];
@@ -44,33 +42,33 @@ const ACTION_GROUPS = [
 const QUALITY_OPTIONS = ['Gold', 'Rewrite', 'Bad'];
 const FLAG_OPTIONS = ['Factual Error', 'Direct Answer', 'Language Issue'];
 const LABEL_TEXT: Record<string, string> = {
-  ANSWER_ATTEMPT: 'Học sinh trả lời/thử làm bài',
-  REQUEST_HINT: 'Xin gợi ý',
-  ASK_THEORY: 'Hỏi lý thuyết',
-  REQUEST_EXPLANATION: 'Yêu cầu giải thích',
-  REQUEST_SIMPLER: 'Muốn giải thích đơn giản hơn',
-  SKIP_EXERCISE: 'Bỏ qua bài',
+  Abandoned: 'Bỏ dở',
+  HINTING: 'Đưa gợi ý',
+  PRAISING: 'Khen ngợi',
   DISCOURAGED: 'Chán nản',
+  MOTIVATING: 'Động viên',
+  Completed: 'Hoàn thành',
+  REQUEST_HINT: 'Xin gợi ý',
   OFF_TOPIC: 'Ngoài phạm vi',
+  ASK_THEORY: 'Hỏi lý thuyết',
+  SKIP_EXERCISE: 'Bỏ qua bài',
+  Incomplete: 'Chưa hoàn thành',
+  CORRECT_MISTAKE: 'Sửa lỗi sai',
+  SCAFFOLDING: 'Dẫn dắt từng bước',
+  WAITING: 'Chờ học sinh phản hồi',
+  SIMPLIFYING: 'Diễn giải đơn giản',
+  REDIRECTING: 'Kéo về đúng chủ đề',
+  CONCEPT_CLARIFY: 'Làm rõ khái niệm',
+  TRANSITIONING: 'Chuyển bước/chủ đề',
+  LOGIC_BREAKDOWN: 'Phân tích lập luận',
+  DIRECT_ANSWER: 'Đưa đáp án trực tiếp',
   READY_NEXT: 'Muốn học tiếp/chuyển câu',
+  REQUEST_EXPLANATION: 'Yêu cầu giải thích',
   CONFIRM_UNDERSTANDING: 'Xác nhận đã hiểu',
+ANSWER_ATTEMPT: 'Học sinh trả lời/thử làm bài',
+  REQUEST_SIMPLER: 'Muốn giải thích đơn giản hơn',
   CONFIRM_CORRECT_ANSWER: 'Xác nhận câu trả lời đúng',
   IDENTIFY_INCORRECT_ANSWER: 'Chỉ ra câu trả lời sai',
-  CORRECT_MISTAKE: 'Sửa lỗi sai',
-  PRAISING: 'Khen ngợi',
-  SCAFFOLDING: 'Dẫn dắt từng bước',
-  HINTING: 'Đưa gợi ý',
-  CONCEPT_CLARIFY: 'Làm rõ khái niệm',
-  LOGIC_BREAKDOWN: 'Phân tích lập luận',
-  SIMPLIFYING: 'Diễn giải đơn giản',
-  MOTIVATING: 'Động viên',
-  REDIRECTING: 'Kéo về đúng chủ đề',
-  TRANSITIONING: 'Chuyển bước/chủ đề',
-  DIRECT_ANSWER: 'Đưa đáp án trực tiếp',
-  WAITING: 'Chờ học sinh phản hồi',
-  Completed: 'Hoàn thành',
-  Incomplete: 'Chưa hoàn thành',
-  Abandoned: 'Bỏ dở',
   Gold: 'Gold', Rewrite: 'Rewrite', Bad: 'Bad', Good: 'Gold', Medium: 'Rewrite', Poor: 'Bad',
   'Needs Review': 'Cần xem lại',
   'Factual Error': 'Sai kiến thức',
@@ -81,25 +79,25 @@ const LABEL_TEXT: Record<string, string> = {
   'Lich su': 'Lịch sử', 'Dia ly': 'Địa lý', 'Tin hoc': 'Tin học', 'Lien mon': 'Liên môn', 'Chua ro': 'Chưa rõ',
 };
 const LABEL_HELP: Record<string, string> = {
-  ANSWER_ATTEMPT: 'Dùng khi học sinh đang đưa ra lời giải, đáp án hoặc thử làm bài. Không đánh giá đúng/sai ở Intent.',
+  Gold: 'Phản hồi đạt chuẩn, có thể giữ lại.',
+  SCAFFOLDING: 'AI dẫn dắt từng bước bằng câu hỏi hoặc gợi mở.',
+  Rewrite: 'Phản hồi có thể dùng nhưng cần viết lại/chỉnh sửa.',
+  OFF_TOPIC: 'Học sinh nói sang nội dung không liên quan bài học.',
+  DISCOURAGED: 'Học sinh thể hiện chán nản, bỏ cuộc, mất động lực.',
+  HINTING: 'AI đưa gợi ý ngắn, đúng trọng tâm, không giải hộ toàn bộ.',
+  CONFIRM_CORRECT_ANSWER: 'AI xác nhận câu trả lời của học sinh là đúng.',
+  CORRECT_MISTAKE: 'AI sửa lỗi sai hoặc chỉnh lại hiểu nhầm của học sinh.',
+  Bad: 'Phản hồi sai, không phù hợp hoặc nên loại khỏi dữ liệu huấn luyện.',
+  SKIP_EXERCISE: 'Học sinh bỏ qua bài hiện tại hoặc muốn đổi sang bài khác.',
+  CONFIRM_UNDERSTANDING: 'Học sinh xác nhận đã hiểu sau khi được giải thích.',
   REQUEST_HINT: 'Học sinh xin gợi ý hoặc nói bị bí, chưa cần lời giải đầy đủ.',
   ASK_THEORY: 'Học sinh hỏi khái niệm, công thức, định nghĩa hoặc quy tắc nền.',
-  REQUEST_EXPLANATION: 'Học sinh muốn giải thích vì sao đúng/sai hoặc vì sao dùng cách đó.',
   REQUEST_SIMPLER: 'Học sinh muốn diễn giải dễ hiểu hơn, ngắn hơn hoặc có ví dụ.',
-  SKIP_EXERCISE: 'Học sinh bỏ qua bài hiện tại hoặc muốn đổi sang bài khác.',
-  DISCOURAGED: 'Học sinh thể hiện chán nản, bỏ cuộc, mất động lực.',
-  OFF_TOPIC: 'Học sinh nói sang nội dung không liên quan bài học.',
-  READY_NEXT: 'Học sinh đã xong ý hiện tại và muốn tiếp tục/chuyển câu. Không dùng cho câu hỏi đầu bài.',
-  CONFIRM_UNDERSTANDING: 'Học sinh xác nhận đã hiểu sau khi được giải thích.',
-  CONFIRM_CORRECT_ANSWER: 'AI xác nhận câu trả lời của học sinh là đúng.',
-  IDENTIFY_INCORRECT_ANSWER: 'AI chỉ ra câu trả lời/lập luận của học sinh đang sai hoặc chưa chính xác.',
-  CORRECT_MISTAKE: 'AI sửa lỗi sai hoặc chỉnh lại hiểu nhầm của học sinh.',
-  SCAFFOLDING: 'AI dẫn dắt từng bước bằng câu hỏi hoặc gợi mở.',
-  HINTING: 'AI đưa gợi ý ngắn, đúng trọng tâm, không giải hộ toàn bộ.',
   DIRECT_ANSWER: 'AI đưa đáp án trực tiếp. Thường cần có lỗi nếu làm lộ đáp án quá sớm.',
-  Gold: 'Phản hồi đạt chuẩn, có thể giữ lại.',
-  Rewrite: 'Phản hồi có thể dùng nhưng cần viết lại/chỉnh sửa.',
-  Bad: 'Phản hồi sai, không phù hợp hoặc nên loại khỏi dữ liệu huấn luyện.',
+  REQUEST_EXPLANATION: 'Học sinh muốn giải thích vì sao đúng/sai hoặc vì sao dùng cách đó.',
+  READY_NEXT: 'Học sinh đã xong ý hiện tại và muốn tiếp tục/chuyển câu. Không dùng cho câu hỏi đầu bài.',
+  IDENTIFY_INCORRECT_ANSWER: 'AI chỉ ra câu trả lời/lập luận của học sinh đang sai hoặc chưa chính xác.',
+  ANSWER_ATTEMPT: 'Dùng khi học sinh đang đưa ra lời giải, đáp án hoặc thử làm bài. Không đánh giá đúng/sai ở Intent.',
 };
 
 const ITEMS_PER_PAGE = 20;
@@ -108,9 +106,9 @@ const getLabelHelp = (value: string) => LABEL_HELP[value] || '';
 const normalizeOption = (value: unknown, allowed: string[], fallback = '') => {
   const normalized = String(value || '').trim();
   const aliasMap: Record<string, string> = {
+    ENCOURAGE: 'DISCOURAGED',
     WAIT_READY: 'READY_NEXT',
     NEXT_SECTION: 'READY_NEXT',
-    ENCOURAGE: 'DISCOURAGED',
   };
   const aliased = aliasMap[normalized] || normalized;
   if (normalized === 'Good') return allowed.includes('Gold') ? 'Gold' : fallback;
@@ -140,28 +138,28 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     );
   }
 
-  const [tablePage, setTablePage] = useState(1);
-  const [tableSearch, setTableSearch] = useState('');
-  const debouncedSearch = useDebounce(tableSearch, 300);
-  const [tableFilter, setTableFilter] = useState<'all' | 'ready' | 'draft' | 'unlabeled'>('all');
-  const [tableSort, setTableSort] = useState<'id_asc' | 'id_desc' | 'status'>('id_asc');
   const { toasts, toast } = useToast();
-  const [drawerSampleId, setDrawerSampleId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tablePage, setTablePage] = useState(1);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [samples, setSamples] = useState<any[]>([]);
+  const [tableSearch, setTableSearch] = useState('');
+  const [savedDraft, setSavedDraft] = useState(false);
   const [chatFontSize, setChatFontSize] = useState(13);
+  const debouncedSearch = useDebounce(tableSearch, 300);
+  const [showGuideline, setShowGuideline] = useState(false);
+  const taskName = task?.name || 'Gán nhãn Toán 11 — Batch 1';
+  const [flagOptions, setFlagOptions] = useState(FLAG_OPTIONS);
   const [labels, setLabels] = useState<Record<string, any>>({});
   const [showSubmitModal, setShowSubmitModal] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [savedDraft, setSavedDraft] = useState(false);
-  const [showGuideline, setShowGuideline] = useState(false);
-  const [subjectOptions, setSubjectOptions] = useState(SUBJECT_OPTIONS);
   const [intentOptions, setIntentOptions] = useState(INTENT_OPTIONS);
   const [actionOptions, setActionOptions] = useState(ACTION_OPTIONS);
-  const [flagOptions, setFlagOptions] = useState(FLAG_OPTIONS);
+  const [subjectOptions, setSubjectOptions] = useState(SUBJECT_OPTIONS);
+  const [drawerSampleId, setDrawerSampleId] = useState<string | null>(null);
+  const [tableSort, setTableSort] = useState<'id_asc' | 'id_desc' | 'status'>('id_asc');
+  const [tableFilter, setTableFilter] = useState<'all' | 'ready' | 'draft' | 'unlabeled'>('all');
   const [recentlyEdited, setRecentlyEdited] = useState<string[]>([]); // ordered by most recent edit
-  const taskName = task?.name || 'Gán nhãn Toán 11 — Batch 1';
-  const [samples, setSamples] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   // aiAssistEnabled: ưu tiên giá trị fresh từ server (submission), fallback về task prop
   const [aiAssistEnabled, setAiAssistEnabled] = useState<boolean>(!!task?.aiAssistEnabled);
 
@@ -260,19 +258,11 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
   const [aiBackup, setAiBackup] = useState<Record<string, any>>({});
   const [aiProvider, setAiProvider] = useState('openrouter');
   const [aiModel, setAiModel] = useState('');
-  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
-  React.useEffect(() => {
-    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
-    getCliProxyModels()
-      .then((result) => { setGatewayModels(result.models || []); setAiModel(result.defaultModel || ''); })
-      .catch(() => { setGatewayModels([]); setAiModel(''); });
-  }, [aiProvider, gatewayModels.length]);
   // aiMeta[sampleId][msgIdx] = { confidence, is_correct_pedagogy, pedagogy_note }
   const [aiMeta, setAiMeta] = useState<Record<string, Record<number, any>>>({});
   // aiSummary[sampleId] = { subject, completion, quality, quality_reason }
   const [aiSummary, setAiSummary] = useState<Record<string, any>>({});
   const AI_PROVIDERS = [
-    { value: 'oauth_gateway', label: 'OAuth Gateway (tự động fallback)' },
     { value: 'gemini', label: 'Gemini' },
     { value: 'openai', label: 'ChatGPT / OpenAI' },
     { value: 'deepseek', label: 'Deepseek Chat' },
@@ -287,7 +277,7 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
     setIsAiLoading(true);
     try {
       setAiBackup(prev => ({ ...prev, [sampleId]: labels[sampleId] || {} }));
-      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages.map((message: any, index: number) => ({ ...message, content: getEditedMessageContent(sampleId, index, message.content || '') })), provider: aiProvider, model: aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined });
+      const res = await api.post(`/dataprep/assignments/my-task/${task.id}/auto-label-v2`, { messages: sample.messages.map((message: any, index: number) => ({ ...message, content: getEditedMessageContent(sampleId, index, message.content || '') })), provider: aiProvider, model: aiModel || undefined });
       if (res.data.success && res.data.data) {
         const suggestion = res.data.data;
 
@@ -890,12 +880,6 @@ function StaffLabelView({ task, onBack }: { task: any; onBack: () => void }) {
                         <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value); setAiModel(''); }} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', cursor: 'pointer', minWidth: '170px' }} disabled={isAiLoading}>
                           {AI_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                         </select>
-                        {aiProvider === 'oauth_gateway' && (
-                          <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sl-inline-select" style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '12px', color: '#475569', minWidth: '210px' }} disabled={isAiLoading} title="Chỉ hiển thị model tài khoản OAuth đang có quyền sử dụng">
-                            <option value="">Tự động chọn model</option>
-                            {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                          </select>
-                        )}
                         <button className="sl-ai-btn" onClick={() => handleAIAssist(drawerSample.id)} disabled={isAiLoading}>
                           {isAiLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
                           {isAiLoading ? 'Đang phân tích...' : 'Gợi ý AI'}

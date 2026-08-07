@@ -1,17 +1,22 @@
-import { Request, Response } from 'express';
+import axios from 'axios';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
-import axios from 'axios';
+import { Request, Response } from 'express';
 import { sendTransactionalEmail } from '../services/emailService';
 
 // ── In-memory OTP store ────────────────────────────────────────────────────────
 // { email → { otp, expiresAt } }
 // Entries are automatically purged after TTL check at verification time.
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+const otpStore = new Map<string, { otp: string; expiresAt: number; attempts: number }>();
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const OTP_MAX_ATTEMPTS = 5;
 
-const JWT_SECRET: string = process.env.JWT_SECRET || 'sep490_socratic_jwt_secret_key_2026';
+const JWT_SECRET: string = process.env.JWT_SECRET ?? '';
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET is required. Refusing to start with an insecure fallback secret.');
+}
 const JWT_EXPIRES_IN = '7d';
 
 export const register = async (req: Request, res: Response) => {
@@ -248,8 +253,17 @@ const OUTLOOK_REDIRECT_URI = process.env.OUTLOOK_REDIRECT_URI || '';
 
 const FRONTEND_URL = process.env.FRONTEND_URL || '';
 
+// The mock OAuth screens let anyone sign in as an arbitrary email without a real
+// identity provider. That is a login bypass, so it is only allowed outside
+// production (or with an explicit opt-in for controlled staging).
+const ALLOW_MOCK_OAUTH = process.env.NODE_ENV !== 'production' || process.env.ALLOW_MOCK_OAUTH === 'true';
+
 export const googleRedirect = (_req: Request, res: Response) => {
   if (!GOOGLE_CLIENT_ID) {
+    if (!ALLOW_MOCK_OAUTH) {
+      res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Google login chưa được cấu hình.')}`);
+      return;
+    }
     res.redirect(`/api/auth/mock-consent?provider=google`);
     return;
   }
@@ -260,6 +274,10 @@ export const googleRedirect = (_req: Request, res: Response) => {
 
 export const outlookRedirect = (_req: Request, res: Response) => {
   if (!OUTLOOK_CLIENT_ID) {
+    if (!ALLOW_MOCK_OAUTH) {
+      res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Outlook login chưa được cấu hình.')}`);
+      return;
+    }
     res.redirect(`/api/auth/mock-consent?provider=outlook`);
     return;
   }
@@ -269,6 +287,10 @@ export const outlookRedirect = (_req: Request, res: Response) => {
 };
 
 export const mockConsentPage = (req: Request, res: Response) => {
+  if (!ALLOW_MOCK_OAUTH) {
+    res.status(404).json({ error: 'Not found.' });
+    return;
+  }
   const { provider } = req.query;
   const isGoogle = provider === 'google';
   const providerName = isGoogle ? 'Google' : 'Microsoft Outlook';
@@ -364,7 +386,11 @@ const handleSocialCallbackUser = async (email: string, name: string) => {
   let user = await User.findOne({ email });
   if (!user) {
     const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash('social-login-secure-password-9988', salt);
+    // Social accounts authenticate via the provider, never via password. Use a
+    // random unguessable secret so the account cannot be taken over with a
+    // shared/known password through the normal login form.
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const passwordHash = await bcrypt.hash(randomPassword, salt);
     user = new User({
       name,
       email,
@@ -408,9 +434,17 @@ export const googleCallback = async (req: Request, res: Response) => {
     let name = '';
 
     if (mock_email) {
+      if (!ALLOW_MOCK_OAUTH) {
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Mock OAuth bị vô hiệu hóa.')}`);
+        return;
+      }
       email = String(mock_email);
       name = email.split('@')[0];
     } else if (code && String(code).startsWith('mock-code-')) {
+      if (!ALLOW_MOCK_OAUTH) {
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Mock OAuth bị vô hiệu hóa.')}`);
+        return;
+      }
       email = String(code).replace('mock-code-', '');
       name = email.split('@')[0];
     } else if (code) {
@@ -458,9 +492,17 @@ export const outlookCallback = async (req: Request, res: Response) => {
     let name = '';
 
     if (mock_email) {
+      if (!ALLOW_MOCK_OAUTH) {
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Mock OAuth bị vô hiệu hóa.')}`);
+        return;
+      }
       email = String(mock_email);
       name = email.split('@')[0];
     } else if (code && String(code).startsWith('mock-code-')) {
+      if (!ALLOW_MOCK_OAUTH) {
+        res.redirect(`${FRONTEND_URL}/login?error=${encodeURIComponent('Mock OAuth bị vô hiệu hóa.')}`);
+        return;
+      }
       email = String(code).replace('mock-code-', '');
       name = email.split('@')[0];
     } else if (code) {
@@ -565,9 +607,9 @@ export const requestPasswordResetOtp = async (req: Request, res: Response) => {
 
     // Generate 6-digit OTP
     const otp = String(Math.floor(100000 + Math.random() * 900000));
-    otpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS });
+    otpStore.set(normalizedEmail, { otp, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0 });
 
-    console.log(`[OTP] Reset password OTP for ${normalizedEmail}: ${otp}`);
+    // Never log the OTP: logs are a common exfiltration path for account takeover.
 
     // Send email (non-blocking; failure is logged but not surfaced to user)
     void sendTransactionalEmail({
@@ -613,7 +655,16 @@ export const verifyOtpAndResetPassword = async (req: Request, res: Response) => 
       res.status(400).json({ error: 'Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.' });
       return;
     }
+    // Bound the number of guesses so a 6-digit OTP cannot be brute-forced
+    // within its 10-minute lifetime.
+    if (entry.attempts >= OTP_MAX_ATTEMPTS) {
+      otpStore.delete(normalizedEmail);
+      res.status(429).json({ error: 'Bạn đã nhập sai OTP quá nhiều lần. Vui lòng yêu cầu mã mới.' });
+      return;
+    }
     if (entry.otp !== String(otp).trim()) {
+      entry.attempts += 1;
+      otpStore.set(normalizedEmail, entry);
       res.status(400).json({ error: 'Mã OTP không chính xác.' });
       return;
     }

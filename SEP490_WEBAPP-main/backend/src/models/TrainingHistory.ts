@@ -58,6 +58,8 @@ export interface ITrainingHistory extends Document {
   config_snapshot?: any;
   datasetPath?: string;
   datasetFileId?: string; // ID từ Multer hoặc File System
+  datasetStorageKey?: string; // Object key trong MinIO/CDN (bền vững qua restart)
+  datasetUrl?: string; // Public URL của dataset trên object storage
   workerUrl?: string;
 
   // Actual stats processed
@@ -130,12 +132,14 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
     pinnedEvalId: { type: String, default: null },
 
     // Added for Resume Checkpoint
-    latest_checkpoint_file_id: { type: String },
-    drive_folder_id: { type: String },
-    config_snapshot: { type: Schema.Types.Mixed }, // Store arbitrary JSON config
+    workerUrl: { type: String },
+    datasetUrl: { type: String },
     datasetPath: { type: String },
     datasetFileId: { type: String },
-    workerUrl: { type: String },
+    drive_folder_id: { type: String },
+    datasetStorageKey: { type: String },
+    latest_checkpoint_file_id: { type: String },
+    config_snapshot: { type: Schema.Types.Mixed }, // Store arbitrary JSON config
 
     // Actual stats processed
     totalTokens: { type: Number, default: 0 },

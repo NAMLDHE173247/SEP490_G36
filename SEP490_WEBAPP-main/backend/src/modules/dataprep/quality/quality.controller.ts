@@ -1066,7 +1066,7 @@ export class QualityController {
       }
 
       // Run AutoLabelV2Service to predict the action for the submitted text
-      const providerName = String(req.body?.provider || 'oauth_gateway');
+      const providerName = String(req.body?.provider || 'gemini');
       const model = typeof req.body?.model === 'string' ? req.body.model.trim() : undefined;
       const provider = await apiKeyService.createProvider(userId, providerName, true, model || undefined);
       const autoLabelService = new AutoLabelV2Service(provider);

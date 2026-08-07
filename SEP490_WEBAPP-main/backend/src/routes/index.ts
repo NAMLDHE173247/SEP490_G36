@@ -5,118 +5,96 @@ import { HuggingFaceController } from '../controllers/huggingfaceController';
 import { CloudStorageController } from '../controllers/cloudStorageController';
 import { EvaluationController } from '../controllers/evaluationController';
 import {
-  startTraining,
-  getActiveTrainingJobs,
-  getTrainingStatus,
-  streamTrainingStatus,
   stopTraining,
-  getSystemResources,
+  startTraining,
   resumeTraining,
+  getTrainingStatus,
   getDashboardStats,
+  getSystemResources,
+  streamTrainingStatus,
   downloadCloudDataset,
+  getActiveTrainingJobs,
 } from '../controllers/trainController';
 import {
   saveTrainingHistory,
-  getTrainingHistoryList,
-  getTrainingHistoryDetail,
   deleteTrainingHistory,
   getDistinctBaseModels,
+  getTrainingHistoryList,
+  getTrainingHistoryDetail,
 } from '../controllers/trainingHistoryController';
 import { chatWithAI, inferWithAI, chatWithAIStream, inferWithAIStream, saveChatHistory, getChatHistory, loadModel, getInferenceLogs, validateModel, stopInference, unloadModel } from '../controllers/chatController';
 import {
   getSessions,
-  getSessionById,
   createSession,
-  appendMessageToSession,
   deleteSession,
-  updateSessionTitle
+  getSessionById,
+  updateSessionTitle,
+  appendMessageToSession,
 } from '../controllers/chatSessionController';
-import { clusterData, clusterFilter, deleteClusterCache, clusterVisualize, removeNoise, deduplicate, safeSplit } from '../controllers/clusterController';
-import { ModelRegistryController } from '../controllers/modelRegistryController';
-import { PromptController } from '../controllers/promptController';
 import authRoutes from './authRoutes';
+import { PromptController } from '../controllers/promptController';
+import { ModelRegistryController } from '../controllers/modelRegistryController';
+import { clusterData, clusterFilter, deleteClusterCache, clusterVisualize, removeNoise, deduplicate, safeSplit } from '../controllers/clusterController';
 import {
   runEvaluation,
-  streamEvalStatus,
-  saveEvalResult,
   getEvaluation,
-  getEvaluatedModels,
-  getEvalHistory,
   pinEvaluation,
+  saveEvalResult,
+  getEvalHistory,
   unpinEvaluation,
+  streamEvalStatus,
   deleteEvaluation,
-  compareEvaluations,
-  getGpuStatusEndpoint,
-  getActiveEvaluation,
   resumeEvaluation,
+  getEvaluatedModels,
+  compareEvaluations,
   reviewConversation,
+  getActiveEvaluation,
+  getGpuStatusEndpoint,
+  runLargeLlmReference,
+  saveExtendedReferences,
   exportEvaluationArtifact,
   getLargeLlmReferenceModels,
-  runLargeLlmReference,
   getLargeLlmReferenceStatus,
   runVersion1SharedReference,
   getVersion1SharedReferenceStatus,
-  saveExtendedReferences,
 } from '../controllers/evalModelController';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
-import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys, getCliProxyStatus, getCliProxyModels, startCliProxyOAuth, getCliProxyOAuthStatus, listCliProxyAccounts, disconnectCliProxyAccount } from '../controllers/configController';
 import { autoLabelGroups } from '../controllers/autoLabelController';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
+import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys } from '../controllers/configController';
 import { decideRoute, evaluateRouter, getRouterMetrics, runEndToEndRouterEval } from '../controllers/routerController';
-import { isManager } from '../utils/auth';
 import {
-  adjudicateHumanAudit,
+  requireAdmin as rbacRequireAdmin,
+  requireStaff as rbacRequireStaff,
+  requireManager as rbacRequireManager,
+  requireAdjudicator as rbacRequireAdjudicator,
+} from '../middleware/rbac';
+import {
   assignHumanAudit,
-  getManagedHumanAuditDetail,
   getMyHumanAuditWork,
-  listHumanAuditCheckers,
   listHumanAuditStaff,
+  adjudicateHumanAudit,
+  listHumanAuditCheckers,
   listManagedHumanAudits,
-  listMyHumanAuditAssignments,
   saveMyHumanAuditReview,
+  getManagedHumanAuditDetail,
+  listMyHumanAuditAssignments,
 } from '../controllers/humanAuditController';
 
 
 const router = express.Router();
 const controller = new ConversionController();
+const promptController = new PromptController();
 const hfController = new HuggingFaceController();
-const cloudStorageController = new CloudStorageController();
 const evalController = new EvaluationController();
 const registryController = new ModelRegistryController();
-const promptController = new PromptController();
+const cloudStorageController = new CloudStorageController();
 
-const requireManager: express.RequestHandler = (req, res, next) => {
-  if (!isManager(req)) {
-    res.status(403).json({ error: 'Admin or supervisor role required.' });
-    return;
-  }
-  next();
-};
-
-const requireAdjudicator: express.RequestHandler = (req, res, next) => {
-  if (!['admin', 'supervisor', 'checker'].includes(String((req as any).user?.role || ''))) {
-    res.status(403).json({ error: 'Admin, supervisor, or checker role required.' });
-    return;
-  }
-  next();
-};
-
-const requireAdmin: express.RequestHandler = (req, res, next) => {
-  if (String((req as any).user?.role || '') !== 'admin') {
-    res.status(403).json({ error: 'Admin role required.' });
-    return;
-  }
-  next();
-};
-
-const requireStaff: express.RequestHandler = (req, res, next) => {
-  if (String((req as any).user?.role || '') !== 'staff') {
-    res.status(403).json({ error: 'Staff role required.' });
-    return;
-  }
-  next();
-};
+const requireAdmin = rbacRequireAdmin;
+const requireStaff = rbacRequireStaff;
+const requireManager = rbacRequireManager;
+const requireAdjudicator = rbacRequireAdjudicator;
 
 import path from 'path';
 import fs from 'fs';
@@ -241,12 +219,6 @@ router.get('/config/personal-keys', authMiddleware, getPersonalApiKeys);
 router.put('/config/personal-keys', authMiddleware, updatePersonalApiKeys);
 router.get('/config/global-keys', authMiddleware, requireAdmin, getGlobalApiKeys);
 router.put('/config/global-keys', authMiddleware, requireAdmin, updateGlobalApiKeys);
-router.get('/config/cli-proxy/status', authMiddleware, getCliProxyStatus);
-router.get('/config/cli-proxy/models', authMiddleware, getCliProxyModels);
-router.post('/config/cli-proxy/oauth/:provider/start', authMiddleware, startCliProxyOAuth);
-router.get('/config/cli-proxy/oauth/status', authMiddleware, getCliProxyOAuthStatus);
-router.get('/config/cli-proxy/accounts', authMiddleware, listCliProxyAccounts);
-router.delete('/config/cli-proxy/accounts/:accountId', authMiddleware, disconnectCliProxyAccount);
 
 // Training Routes
 router.post('/train/start', authMiddleware, requireManager, upload.single('dataset_file'), startTraining);

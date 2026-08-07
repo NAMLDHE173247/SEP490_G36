@@ -1,25 +1,25 @@
-import unsloth
-from unsloth import FastLanguageModel, is_bfloat16_supported
 import os
-import json
 import re
-import threading
+import gc
+import json
 import time
-import datetime
+import uuid
+import hmac
+import torch
 import shutil
+import pynvml
+import unsloth
+import hashlib
+import datetime
+import platform
+import threading
+import traceback
 import contextlib
 import collections
-import gc
-import uuid
-import traceback
-import hashlib
-import urllib.request
 import urllib.error
-import platform
+import urllib.request
 import importlib.metadata
-
-import torch
-import pynvml
+from unsloth import FastLanguageModel, is_bfloat16_supported
 
 # Compatibility patch for peft / torchao LinearActivationQuantizedTensor mismatch
 try:
@@ -33,33 +33,31 @@ try:
 except Exception:
     pass
 import anthropic
-from flask import Flask, request, jsonify, Response
-from werkzeug.utils import secure_filename
-from threading import Thread
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.neighbors import NearestNeighbors
-from sklearn.metrics import silhouette_score
-
-
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import DBSCAN, KMeans
+from threading import Thread
 from collections import defaultdict
+from werkzeug.utils import secure_filename
+from sklearn.cluster import DBSCAN, KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
+from flask import Flask, request, jsonify, Response
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 from locked_eval_protocol import (
+    sha256_text,
+    paired_integrity,
+    stable_json_hash,
     decide_hypotheses,
-    extract_adaptive_metadata,
-    extract_item_metadata,
     normalize_subject,
     operational_summary,
-    paired_adaptive_statistics,
-    paired_integrity,
-    paired_research_statistics,
-    sha256_text,
-    stable_json_hash,
-    validate_adaptive_dataset,
+    extract_item_metadata,
     validate_locked_dataset,
+    extract_adaptive_metadata,
+    validate_adaptive_dataset,
+    paired_adaptive_statistics,
+    paired_research_statistics,
 )
 
 
@@ -104,6 +102,31 @@ os.environ["TORCHDYNAMO_DISABLE"] = "1"
 os.environ.setdefault('CUDA_LAUNCH_BLOCKING', '0')
 
 app = Flask(__name__)
+
+# ======================================================================
+# SHARED-SECRET AUTH
+# The GPU service exposes training/eval/inference endpoints that consume real
+# money (GPU time, judge API keys). When GPU_SERVICE_TOKEN is configured, every
+# request must present a matching X-GPU-Token header. Health checks and CORS
+# preflight are exempt so probes keep working. When the token is unset the guard
+# is a no-op (local dev), but it MUST be set in any exposed deployment.
+# ======================================================================
+GPU_SERVICE_TOKEN = _read_secret("GPU_SERVICE_TOKEN")
+_AUTH_EXEMPT_PATHS = {"/health", "/api/health"}
+
+
+@app.before_request
+def _require_gpu_token():
+    if not GPU_SERVICE_TOKEN:
+        return None
+    if request.method == "OPTIONS" or request.path in _AUTH_EXEMPT_PATHS:
+        return None
+    provided = request.headers.get("X-GPU-Token", "")
+    if not hmac.compare_digest(provided, GPU_SERVICE_TOKEN):
+        return jsonify({"error": "Unauthorized: invalid or missing GPU service token."}), 401
+    return None
+
+
 UPLOAD_FOLDER = './dataset_uploads'
 LOCAL_CHECKPOINT_BASE = "/tmp/checkpoints_"
 EVAL_CHECKPOINT_BASE = os.path.join(LOCAL_CHECKPOINT_BASE, "eval_jobs")
@@ -161,6 +184,33 @@ job_manager_last_heartbeat = 0.0
 
 pynvml.nvmlInit()
 gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+
+# ======================================================================
+# GIỚI HẠN VRAM (chạy chung GPU với service khác, vd LLMAware)
+# GPU_MEMORY_FRACTION = tỉ lệ 0..1 trên TỔNG VRAM mỗi GPU. Ví dụ 0.2 = 20%.
+#   GPU 100GB + fraction 0.2 → tiến trình chỉ được cấp phát tối đa ~20GB.
+#   Vượt ngưỡng sẽ OOM (đúng ý đồ giới hạn). Để trống/0 = không giới hạn.
+# Lưu ý: fraction tính trên TỔNG VRAM của card, không phải phần còn trống.
+# ======================================================================
+def _apply_gpu_memory_cap():
+    try:
+        fraction = float(os.environ.get("GPU_MEMORY_FRACTION", "0") or 0)
+    except ValueError:
+        print("[GPU] GPU_MEMORY_FRACTION không hợp lệ — bỏ qua giới hạn VRAM.")
+        return
+    if not (0 < fraction < 1):
+        return
+    if not torch.cuda.is_available():
+        return
+    for dev in range(torch.cuda.device_count()):
+        try:
+            torch.cuda.set_per_process_memory_fraction(fraction, dev)
+            total_gb = torch.cuda.get_device_properties(dev).total_memory / (1024 ** 3)
+            print(f"[GPU] cuda:{dev} VRAM cap = {fraction * 100:.0f}% (~{total_gb * fraction:.1f}GB / {total_gb:.1f}GB)")
+        except Exception as exc:
+            print(f"[GPU] set_per_process_memory_fraction lỗi trên cuda:{dev}: {exc}")
+
+_apply_gpu_memory_cap()
 
 # Biến toàn cục cho inference cache và watchdog
 _current_infer_model = None

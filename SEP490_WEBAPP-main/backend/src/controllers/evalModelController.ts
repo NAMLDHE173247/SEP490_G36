@@ -1,23 +1,20 @@
-import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
-import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
-import { spawn } from 'child_process';
-import FormData from 'form-data';
-const fetch = async (url: any, init?: any) => {
-  const module = await import('node-fetch');
-  return module.default(url, init);
-};
+import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { ModelEvaluation, IEvalResult } from '../models/Evaluation';
-import { TrainingHistory } from '../models/TrainingHistory';
-import { isZipFile, extractForEvaluation, cleanupTempDir, DatasetMetadata } from '../services/zipService';
+import FormData from 'form-data';
+import { v4 as uuidv4 } from 'uuid';
+import { spawn } from 'child_process';
+import { Request, Response } from 'express';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
+import { TrainingHistory } from '../models/TrainingHistory';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import { ModelEvaluation, IEvalResult } from '../models/Evaluation';
+import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
+import { isZipFile, extractForEvaluation, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 import {
   HUMAN_AUDIT_RUBRIC_VERSION,
   buildHumanAuditSummary,
@@ -201,7 +198,7 @@ type GpuStatus = {
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
-  const headers = { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' };
+  const headers = GPU_TUNNEL_HEADERS;
   // Older workers expose /api/system/resources while newer workers expose the
   // eval-specific endpoint. Supporting both prevents a harmless route mismatch
   // from being recorded as a failed evaluation.
@@ -260,7 +257,7 @@ async function getGpuEvalRecoveryState(evalJobId: string): Promise<GpuEvalRecove
     const response = await fetch(
       `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(evalJobId)}`,
       {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
         signal: AbortSignal.timeout(7000),
       },
     );
@@ -286,7 +283,7 @@ async function getGpuEvalRecoveryState(evalJobId: string): Promise<GpuEvalRecove
 async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> {
   try {
     const response = await fetch(`${configService.getGpuUrl()}/api/eval/active`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
       signal: AbortSignal.timeout(7000),
     });
     if (!response.ok) return null; // Compatibility with workers not deployed yet.
@@ -305,29 +302,8 @@ async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> 
 }
 
 // ---------------------------------------------------------------------------
-// Helper: POST multipart/form-data với Content-Length (giống trainController)
+// Helper: POST multipart/form-data với Content-Length — dùng chung tại utils/gpuHttp.
 // ---------------------------------------------------------------------------
-async function fetchWithForm(url: string, form: FormData): Promise<ReturnType<typeof fetch>> {
-  return new Promise((resolve, reject) => {
-    form.getLength((err, length) => {
-      if (err) {
-        reject(new Error(`Could not compute form length: ${err.message}`));
-        return;
-      }
-      resolve(
-        fetch(url, {
-          method: 'POST',
-          body: form,
-          headers: {
-            ...form.getHeaders(),
-            'Content-Length': String(length),
-            'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
-          },
-        })
-      );
-    });
-  });
-}
 
 function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
   if (!Array.isArray(perConvResults)) return [];
@@ -833,7 +809,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   const intervalId = setInterval(async () => {
     try {
       const response = await fetch(`${configService.getGpuUrl()}/api/eval/status/${evalJobId}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
       });
       const text = await response.text();
       if (!response.ok) {
@@ -1139,8 +1115,7 @@ export const resumeEvaluation = async (req: Request, res: Response) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
-      'Bypass-Tunnel-Reminder': 'true',
+      ...GPU_TUNNEL_HEADERS,
     },
     body: JSON.stringify({
       judge_api_key: judgeApiKey,
@@ -1192,7 +1167,7 @@ export const resumeEvaluation = async (req: Request, res: Response) => {
 async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<{ saved: boolean; error?: string }> {
   try {
     const resp = await fetch(`${configService.getGpuUrl()}/api/eval/result/${evalJobId}`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
     });
 
     if (!resp.ok) {
@@ -1273,7 +1248,7 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
     // checkpoint files from the worker volume without affecting the result.
     void fetch(`${configService.getGpuUrl()}/api/eval/checkpoint/${encodeURIComponent(evalJobId)}`, {
       method: 'DELETE',
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
     }).catch(error => console.warn(`[Backend] Could not clean eval checkpoint ${evalJobId}:`, error));
     return { saved: true };
   } catch (err: any) {
@@ -1670,7 +1645,7 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
     const response = await fetch(
       `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(gpuEvalId)}`,
       {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
         signal: AbortSignal.timeout(10000),
       },
     );
@@ -1686,7 +1661,7 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
       const resultResponse = await fetch(
         `${configService.getGpuUrl()}/api/eval/result/${encodeURIComponent(gpuEvalId)}`,
         {
-          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          headers: GPU_TUNNEL_HEADERS,
           signal: AbortSignal.timeout(30000),
         },
       );

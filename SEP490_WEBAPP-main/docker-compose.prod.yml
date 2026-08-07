@@ -1,0 +1,198 @@
+# =============================================================================
+# PRODUCTION — Backend API + MongoDB (KHÔNG host frontend)
+# =============================================================================
+# - Chạy TẤT CẢ trừ frontend: mongo + backend + gpu-service.
+#   `docker compose -f docker-compose.prod.yml up -d` là chạy được toàn bộ backend.
+# - GPU service self-host bằng GPU local (thay Colab) → BẮT BUỘC máy có GPU NVIDIA
+#   + NVIDIA Container Toolkit.
+# - Object storage dùng CDN (S3 qua domain cdn-lab.fpt.edu.vn), KHÔNG chạy MinIO
+#   nội bộ ở production. Local/dev mới dùng MinIO (xem docker-compose.yml).
+#
+# ── CÔ LẬP KHỎI LLMAware (chạy chung 1 server) ───────────────────────────────
+# LLMAware (docker-compose.gpu.yml) đã chiếm:
+#   - network: external-llmaware-net   → ta dùng network RIÊNG: trainner-net
+#   - volumes: mongo-data / mongo-log / memgraph-data → ta đặt tên RIÊNG có tiền tố trainner_
+#   - container: mongodb, memgraph-*, ...            → ta đặt tên RIÊNG trainner_*
+#   - host ports: 8000, 27018, 27019, 7687, 7444, 3000(memgraph-lab)
+#     → backend KHÔNG dùng 3000, map ra 3100 để tránh đụng.
+#
+# Cách chạy (đặt project name riêng để tách hẳn khỏi LLMAware):
+#   docker compose -p trainner -f docker-compose.prod.yml up -d
+#
+# ⚠️ Thay TẤT CẢ giá trị <<...>> bằng secret thật trước khi deploy.
+#    Tuyệt đối không commit file này sau khi đã điền secret.
+# =============================================================================
+
+services:
+  # ── MongoDB (riêng của trainner) ───────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: trainner_mongo_prod
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=<<MONGO_USER>>
+      - MONGO_INITDB_ROOT_PASSWORD=<<MONGO_PASSWORD>>
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - trainner-net
+    # Không expose ra host — tránh đụng 27017/27018/27019 của LLMAware; chỉ backend truy cập nội bộ.
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend (Node.js / Express) ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-dothang2504/trainner-be:latest}
+    container_name: trainner_backend_prod
+    restart: unless-stopped
+    ports:
+      - "3100:3000"   # host 3100 (3000 đã bị memgraph-lab của LLMAware chiếm). Đặt sau reverse proxy nếu cần HTTPS.
+    environment:
+      # ── Core ────────────────────────────────────────────────────────────────
+      - NODE_ENV=production
+      - PORT=3000
+      # Dùng credential khớp mongo ở trên (authSource=admin).
+      - MONGO_URI=mongodb://<<MONGO_USER>>:<<MONGO_PASSWORD>>@mongo:27017/sep_training?authSource=admin
+
+      # ── Secrets BẮT BUỘC (không có fallback — thiếu là backend không khởi động)
+      - JWT_SECRET=<<JWT_SECRET>>
+      - ENCRYPTION_KEY=<<ENCRYPTION_KEY>>
+
+      # ── CORS / Frontend (host ở nơi khác) ─────────────────────────────────────
+      - FRONTEND_ORIGINS=<<FRONTEND_ORIGINS>>
+      - FRONTEND_URL=<<FRONTEND_URL>>
+
+      # ── GPU service (self-host local GPU, thay Colab) ─────────────────────────
+      # Backend gọi GPU service qua hostname nội bộ trên trainner-net.
+      # GPU_SERVICE_TOKEN phải TRÙNG với token đặt ở service gpu-service bên dưới.
+      - GPU_SERVICE_URL=http://gpu-service:5000
+      - GPU_SERVICE_TOKEN=<<GPU_SERVICE_TOKEN>>
+
+      # ── Object storage (production = CDN / S3 qua domain) ─────────────────────
+      - STORAGE_ENABLED=true
+      - STORAGE_ENDPOINT=cdn-lab.fpt.edu.vn
+      - STORAGE_SECURE=true
+      - STORAGE_PUBLIC_URL=https://cdn-lab.fpt.edu.vn
+      - STORAGE_BUCKET=llm_trains
+      - STORAGE_ACCESS_KEY=<<STORAGE_ACCESS_KEY>>
+      - STORAGE_SECRET_KEY=<<STORAGE_SECRET_KEY>>
+
+      # ── Cờ an toàn production ─────────────────────────────────────────────────
+      - ALLOW_DEMO_SEED=false
+      - ALLOW_MOCK_OAUTH=false
+
+      # ── OAuth: Google ─────────────────────────────────────────────────────────
+      - GOOGLE_CLIENT_ID=<<GOOGLE_CLIENT_ID>>
+      - GOOGLE_CLIENT_SECRET=<<GOOGLE_CLIENT_SECRET>>
+      - GOOGLE_REDIRECT_URI=<<GOOGLE_REDIRECT_URI>>
+
+      # ── OAuth: Outlook / Microsoft ────────────────────────────────────────────
+      - OUTLOOK_CLIENT_ID=<<OUTLOOK_CLIENT_ID>>
+      - OUTLOOK_CLIENT_SECRET=<<OUTLOOK_CLIENT_SECRET>>
+      - OUTLOOK_REDIRECT_URI=<<OUTLOOK_REDIRECT_URI>>
+
+      # ── LLM provider API keys ─────────────────────────────────────────────────
+      - OPENAI_API_KEY=<<OPENAI_API_KEY>>
+      - OPENAI_MODEL=gpt-4o-mini
+      - OPENAI_BASE_URL=https://api.openai.com/v1
+      - GEMINI_API_KEY=<<GEMINI_API_KEY>>
+      - DEEPSEEK_API_KEY=<<DEEPSEEK_API_KEY>>
+      - OPENROUTER_API_KEY=<<OPENROUTER_API_KEY>>
+      - OPENROUTER_MODEL=google/gemini-2.0-flash-001
+      - GROQ_API_KEY=<<GROQ_API_KEY>>
+      - GROQ_MODEL=llama-3.3-70b-versatile
+
+      # ── Email (Resend) — optional ─────────────────────────────────────────────
+      - RESEND_API_KEY=<<RESEND_API_KEY>>
+      - EMAIL_FROM=<<EMAIL_FROM>>
+
+      # ── Google Drive (lưu checkpoint train) — optional ────────────────────────
+      - GOOGLE_DRIVE_FOLDER_ID=<<GOOGLE_DRIVE_FOLDER_ID>>
+      # JSON service-account 1 dòng (escape đúng) hoặc để trống nếu không dùng.
+      - GOOGLE_DRIVE_CREDENTIALS=<<GOOGLE_DRIVE_CREDENTIALS_JSON>>
+
+      # ── Cloud dataset sync (Azure / GCS) — optional ───────────────────────────
+      - AZURE_STORAGE_CONNECTION_STRING=<<AZURE_STORAGE_CONNECTION_STRING>>
+      - AZURE_CONTAINER_NAME=datasets
+      - GCS_BUCKET_NAME=<<GCS_BUCKET_NAME>>
+
+      # ── Khác ──────────────────────────────────────────────────────────────────
+      - APP_TIMEZONE=Asia/Ho_Chi_Minh
+    volumes:
+      # Chỉ còn dùng cho file tạm / fallback khi STORAGE_ENABLED=false.
+      - uploads_data:/app/uploads
+    networks:
+      - trainner-net
+    depends_on:
+      mongo:
+        condition: service_healthy
+      gpu-service:
+        condition: service_started
+
+  # ── GPU service (fine-tune / eval / inference — self-host, thay Colab) ────────
+  # ⚠️ BẮT BUỘC máy có GPU NVIDIA + NVIDIA Container Toolkit (nvidia-container-runtime).
+  #    Không có GPU service sẽ crash khi khởi động (pynvml/torch.cuda).
+  # Không publish port ra host — chỉ backend gọi nội bộ qua http://gpu-service:5000.
+  gpu-service:
+    build:
+      context: ./gpu-service
+      dockerfile: Dockerfile
+    image: ${GPU_IMAGE:-dothang2504/trainner-gpu:latest}
+    container_name: trainner_gpu_prod
+    restart: unless-stopped
+    environment:
+      - HOST=0.0.0.0
+      - PORT=5000
+      # Backend gọi ngược lại (callback tiến độ train) qua hostname nội bộ.
+      - BACKEND_URL=http://backend:3000
+      # Phải TRÙNG với GPU_SERVICE_TOKEN của backend ở trên.
+      - GPU_SERVICE_TOKEN=<<GPU_SERVICE_TOKEN>>
+      # Giới hạn VRAM: tỉ lệ 0..1 trên TỔNG VRAM mỗi GPU. 0.2 = 20% (GPU 100GB → ~20GB).
+      # Để tránh tranh VRAM với LLMAware. Đặt 0 hoặc bỏ dòng này = không giới hạn.
+      - GPU_MEMORY_FRACTION=0.2
+      # (Optional) Judge API key cho eval, HF token để tải model private...
+      - ANTHROPIC_API_KEY=<<ANTHROPIC_API_KEY>>
+      - HF_TOKEN=<<HF_TOKEN>>
+    volumes:
+      - gpu_uploads:/app/dataset_uploads
+      - gpu_checkpoints:/tmp/checkpoints_
+    # PyTorch DataLoader cần shared memory lớn để tránh lỗi "bus error".
+    shm_size: "8gb"
+    networks:
+      - trainner-net
+    # Cấp GPU cho container (giống LLMAware nhưng cô lập tên/volume/network).
+    # ⚠️ Dùng CHUNG GPU với LLMAware → coi chừng tranh VRAM (có thể OOM khi train nặng).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+# ── Volumes (tên RIÊNG, cô lập khỏi LLMAware) ────────────────────────────────
+volumes:
+  mongo_data:
+    name: trainner_mongo_data
+    driver: local
+  uploads_data:
+    name: trainner_uploads_data
+    driver: local
+  gpu_uploads:
+    name: trainner_gpu_uploads
+    driver: local
+  gpu_checkpoints:
+    name: trainner_gpu_checkpoints
+    driver: local
+
+# ── Network (RIÊNG, KHÔNG dùng external-llmaware-net) ────────────────────────
+networks:
+  trainner-net:
+    name: trainner-net
+    driver: bridge

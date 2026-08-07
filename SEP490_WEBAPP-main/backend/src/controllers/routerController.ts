@@ -1,21 +1,16 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
-import { RoutingDecisionLog } from '../models/RoutingDecisionLog';
-import { decideHybridRoute } from '../services/routing/routingOrchestrator';
-import { DEFAULT_ROUTING_THRESHOLDS, RoutingMode, RoutingThresholds } from '../services/routing/routingTypes';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
+import { RoutingDecisionLog } from '../models/RoutingDecisionLog';
+import { nodeFetch as fetch, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
+import { decideHybridRoute } from '../services/routing/routingOrchestrator';
 import { ModelVersion, ModelVersionStatus } from '../models/ModelVersion';
-import crypto from 'crypto';
-
-const fetch = async (url: string, init?: any) => {
-  const module = await import('node-fetch');
-  return module.default(url, init);
-};
+import { DEFAULT_ROUTING_THRESHOLDS, RoutingMode, RoutingThresholds } from '../services/routing/routingTypes';
 
 const gpuHeaders = {
   'Content-Type': 'application/json',
-  'ngrok-skip-browser-warning': 'true',
-  'Bypass-Tunnel-Reminder': 'true',
+  ...GPU_TUNNEL_HEADERS,
 };
 
 type TokenUsage = {

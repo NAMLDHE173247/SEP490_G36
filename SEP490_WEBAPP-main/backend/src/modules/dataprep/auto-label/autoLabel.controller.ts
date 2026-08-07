@@ -19,7 +19,7 @@ export class AutoLabelingController {
       }
 
       const { versionId } = req.params;
-      const { provider, model } = req.body as { provider?: 'gemini' | 'openai' | 'deepseek' | 'oauth_gateway'; model?: string };
+      const { provider, model } = req.body as { provider?: 'gemini' | 'openai' | 'deepseek'; model?: string };
       const service = await getService(ownerId, provider, model);
       const suggestions = await service.preview(versionId, ownerId);
 

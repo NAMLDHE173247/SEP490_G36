@@ -1,18 +1,17 @@
 import React from 'react';
 import {
-  Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
   Search, Users, Star, Plus, Upload, Link as LinkIcon, Trash2, Edit3, X, Eye,
+  Check, Play, Save, ChevronDown, ListFilter, Download, ArrowRight, ArrowLeft, MoreHorizontal,
   MessageSquare, FileText, Database, Sparkles, Folder, Grid, MousePointer2, Settings, List, ChevronRight, HelpCircle, BarChart2, RefreshCw, Calendar, Loader2, Layers, ClipboardList
 } from 'lucide-react';
-import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
-import { apiService } from '../../../services/api';
-import { getAuthToken } from '../../../services/authSession';
-import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 import './Stage3Labeling.css';
+import { apiService } from '../../../services/api';
 import { useToast } from '../../../hooks/useToast';
+import { getAuthToken } from '../../../services/authSession';
 import ToastContainer from '../../../components/ToastContainer';
+import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { Stage3AiReview } from '../../../components/dataprep/Stage3AiReview';
-import { getCliProxyModels } from '../../../services/configApi';
+import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
@@ -22,15 +21,15 @@ import { getCliProxyModels } from '../../../services/configApi';
  * Đồng bộ với bộ nhãn STUDENT_INTENTS mà Staff đang dùng (V2 Socratic taxonomy).
  */
 const USER_LABEL_MAP: Record<string, string> = {
-  ANS:  'ANSWER_ATTEMPT',
-  HINT: 'REQUEST_HINT',
-  THEO: 'ASK_THEORY',
-  WHY:  'REQUEST_EXPLANATION',
-  EASY: 'REQUEST_SIMPLER',
-  SKIP: 'SKIP_EXERCISE',
-  DIS:  'DISCOURAGED',
   OFF:  'OFF_TOPIC',
+  THEO: 'ASK_THEORY',
   RDY:  'READY_NEXT',
+  DIS:  'DISCOURAGED',
+  HINT: 'REQUEST_HINT',
+  SKIP: 'SKIP_EXERCISE',
+  ANS:  'ANSWER_ATTEMPT',
+  EASY: 'REQUEST_SIMPLER',
+  WHY:  'REQUEST_EXPLANATION',
   CFM:  'CONFIRM_UNDERSTANDING',
 };
 
@@ -39,20 +38,20 @@ const USER_LABEL_MAP: Record<string, string> = {
  * Đồng bộ với bộ nhãn ASSISTANT_ACTIONS mà Staff đang dùng (V2 Socratic taxonomy).
  */
 const ASSISTANT_LABEL_MAP: Record<string, string> = {
-  CONF:  'CONFIRM_CORRECT_ANSWER',
-  WRONG: 'IDENTIFY_INCORRECT_ANSWER',
-  FIX:   'CORRECT_MISTAKE',
-  SCAF:  'SCAFFOLDING',
   HINT:  'HINTING',
-  CLR:   'CONCEPT_CLARIFY',
-  LOG:   'LOGIC_BREAKDOWN',
-  SIMP:  'SIMPLIFYING',
+  WAIT:  'WAITING',
   PR:    'PRAISING',
   MOT:   'MOTIVATING',
+  SCAF:  'SCAFFOLDING',
+  SIMP:  'SIMPLIFYING',
   REDIR: 'REDIRECTING',
   TRAN:  'TRANSITIONING',
   DIR:   'DIRECT_ANSWER',
-  WAIT:  'WAITING',
+  FIX:   'CORRECT_MISTAKE',
+  CLR:   'CONCEPT_CLARIFY',
+  LOG:   'LOGIC_BREAKDOWN',
+  CONF:  'CONFIRM_CORRECT_ANSWER',
+  WRONG: 'IDENTIFY_INCORRECT_ANSWER',
 };
 
 /** Reverse map: DB name → UI tag name cho user */
@@ -326,16 +325,8 @@ export const Stage3Labeling: React.FC = () => {
   const [customSubjectLabels, setCustomSubjectLabels] = React.useState<string[]>([]);
   const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'gemini' | 'openai'>('deepseek');
   const [aiModel, setAiModel] = React.useState('');
-  const [gatewayModels, setGatewayModels] = React.useState<string[]>([]);
-  React.useEffect(() => {
-    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
-    getCliProxyModels().then((result) => {
-      setGatewayModels(result.models || []);
-      setAiModel(result.defaultModel || '');
-    }).catch(() => { setGatewayModels([]); setAiModel(''); });
-  }, [aiProvider, gatewayModels.length]);
   const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
   const [isSavingLabels, setIsSavingLabels] = React.useState(false);
   const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
@@ -1489,19 +1480,12 @@ export const Stage3Labeling: React.FC = () => {
                       onChange={e => { setAiProvider(e.target.value as any); setAiModel(''); }}
                       disabled={isLabelingWithAI}
                     >
-                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="gemini">Gemini</option>
                       <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>
                       <option value="groq">Groq</option>
                       <option value="openrouter">OpenRouter</option>
                     </select>
-                    {aiProvider === 'oauth_gateway' && (
-                      <select className="label-model-select" value={aiModel} onChange={(e) => setAiModel(e.target.value)} disabled={isLabelingWithAI} style={{ flex: 1, padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                        <option value="">Tự động chọn model</option>
-                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>
-                    )}
                     <button
                       className="label-ai-btn"
                       style={{ flex: 1, padding: '8px', borderRadius: '6px', background: '#6366f1', color: 'white', border: 'none', cursor: 'pointer', opacity: (!clusterRan || isLabelingWithAI) ? 0.6 : 1 }}
@@ -1526,7 +1510,7 @@ export const Stage3Labeling: React.FC = () => {
                           const versionId = await ensureDatasetVersionId();
 
                           // Gọi endpoint thật: POST /dataprep/versions/:versionId/auto-label/preview
-                          const res = await apiService.previewAutoLabels(versionId, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined);
+                          const res = await apiService.previewAutoLabels(versionId, aiProvider, aiModel || undefined);
                           const suggestions = res.suggestions || [];
 
                           // BE trả về clusterId (0-indexed) → map sang groupId của GROUP_DATA

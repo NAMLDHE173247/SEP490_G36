@@ -85,25 +85,25 @@ export const Stage3Labeling = (dataPrep: any) => {
     }
     return parts.length > 0 ? <>{parts}</> : <>{content}</>;
   };
-  const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
-  const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
-  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
-  const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
-  const [isSavingLabels, setIsSavingLabels] = React.useState(false);
-  const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
-  const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
-  const [bulkSubject, setBulkSubject] = React.useState('');
-  const [newSubjectInput, setNewSubjectInput] = React.useState('');
   const [apiKey, setApiKey] = React.useState('');
+  const [bulkSubject, setBulkSubject] = React.useState('');
   const [useCustomApi, setUseCustomApi] = React.useState(false);
-  const [scoringVersionId] = React.useState<string | null>(() => localStorage.getItem('current_version_id'));
-  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ openrouter: true, deepseek: true, groq: false });
+  const [stage3SubGroup, setStage3SubGroup] = React.useState('A');
+  const [newSubjectInput, setNewSubjectInput] = React.useState('');
+  const [isSavingLabels, setIsSavingLabels] = React.useState(false);
+  const [isLabelingWithAI, setIsLabelingWithAI] = React.useState(false);
+  const [checkedConvIds, setCheckedConvIds] = React.useState<string[]>([]);
+  const [pendingAiLabels, setPendingAiLabels] = React.useState<string[]>([]);
   const [isStartingCrossCheck, setIsStartingCrossCheck] = React.useState(false);
+  const [aiGroupLabels, setAiGroupLabels] = React.useState<Record<number, string>>({});
+  const [scoringVersionId] = React.useState<string | null>(() => localStorage.getItem('current_version_id'));
+  const [aiProvider, setAiProvider] = React.useState<'deepseek' | 'groq' | 'openrouter' | 'gemini' | 'openai'>('deepseek');
+  const [judgeModels, setJudgeModels] = React.useState<Record<string, boolean>>({ openrouter: true, deepseek: true, groq: false });
   const {
-    results: crossCheckResults,
-    latestJob: crossCheckJob,
-    runMultiEval: runCrossCheck,
     error: crossCheckError,
+    latestJob: crossCheckJob,
+    results: crossCheckResults,
+    runMultiEval: runCrossCheck,
   } = useStage4Data(scoringVersionId);
 
   const handleRunCrossCheck = async () => {
@@ -121,12 +121,12 @@ export const Stage3Labeling = (dataPrep: any) => {
   };
 
   // --- Added for Assignment Dashboard ---
+  const [shareUsers, setShareUsers] = React.useState<any[]>([]);
+  const [isAssigning, setIsAssigning] = React.useState(false);
   const [assignmentTotals, setAssignmentTotals] = React.useState<any>(null);
   const [assignmentSamples, setAssignmentSamples] = React.useState<any[]>([]);
-  const [assignmentDashboard, setAssignmentDashboard] = React.useState<any>(null);
-  const [shareUsers, setShareUsers] = React.useState<any[]>([]);
   const [isFetchingDashboard, setIsFetchingDashboard] = React.useState(false);
-  const [isAssigning, setIsAssigning] = React.useState(false);
+  const [assignmentDashboard, setAssignmentDashboard] = React.useState<any>(null);
 
   const loadAssignmentReviewData = React.useCallback(async () => {
     if (!scoringVersionId) return;
@@ -746,7 +746,6 @@ export const Stage3Labeling = (dataPrep: any) => {
                         onChange={e => setAiProvider(e.target.value as any)}
                         disabled={isLabelingWithAI}
                       >
-                        <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                         <option value="gemini">Gemini</option>
                         <option value="openai">ChatGPT / OpenAI</option>
                         <option value="deepseek">Deepseek</option>
