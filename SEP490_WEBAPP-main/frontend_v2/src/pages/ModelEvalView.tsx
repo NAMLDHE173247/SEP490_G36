@@ -1011,6 +1011,19 @@ export default function ModelEvalView() {
       setLargeLlmReferences([]);
       return;
     }
+    // Primary source: backend DB (evaluationDetail.extendedReferences)
+    // This is populated when getEvaluation returns the full document
+    const dbRefs = Array.isArray(evaluationDetail?.extendedReferences) ? evaluationDetail.extendedReferences : [];
+    if (dbRefs.length > 0) {
+      const explicitlyTyped = dbRefs.filter((item: any) => ['large_llm', 'version1_shared_ft'].includes(item?.comparisonRole));
+      if (explicitlyTyped.length > 0) {
+        setLargeLlmReferences(explicitlyTyped);
+        // Sync to localStorage as cache
+        localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(explicitlyTyped));
+        return;
+      }
+    }
+    // Fallback: localStorage (for backward compatibility with older data)
     try {
       const saved = localStorage.getItem(`large_llm_references_${selectedEvalId}`);
       const parsed = saved ? JSON.parse(saved) : [];
@@ -1022,10 +1035,14 @@ export default function ModelEvalView() {
         ? explicitlyTyped
         : rows.slice(0, 1).map((item: any) => ({ ...item, comparisonRole: 'large_llm' }));
       setLargeLlmReferences(migrated);
+      // If we loaded from localStorage but DB is empty, persist to DB for cross-machine access
+      if (migrated.length > 0 && dbRefs.length === 0) {
+        apiService.saveExtendedReferences(selectedEvalId, migrated).catch(() => {});
+      }
     } catch {
       setLargeLlmReferences([]);
     }
-  }, [selectedEvalId]);
+  }, [selectedEvalId, evaluationDetail?.extendedReferences]);
 
   const handleImportLargeLlmArtifacts = async (files: FileList | null) => {
     if (!files?.length || !evaluationDetail || !selectedEvalId) return;
@@ -1211,6 +1228,8 @@ export default function ModelEvalView() {
     setLargeLlmReferences(previous => {
       const next = [...previous.filter(item => item.comparisonRole !== reference.comparisonRole), reference];
       localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(next));
+      // Persist to backend DB for cross-machine access
+      apiService.saveExtendedReferences(selectedEvalId, next).catch(() => {});
       return next;
     });
   };

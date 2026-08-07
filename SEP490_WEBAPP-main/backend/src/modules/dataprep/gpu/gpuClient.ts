@@ -1,3 +1,5 @@
+import { nodeFetch, GPU_TUNNEL_HEADERS } from '../../../utils/gpuHttp';
+
 const fetchJson = async (
   url: string,
   init?: {
@@ -5,12 +7,11 @@ const fetchJson = async (
     body?: Record<string, unknown>;
   }
 ): Promise<{ status: number; data: any }> => {
-  const fetchModule = await import('node-fetch');
-  const response = await fetchModule.default(url, {
+  const response = await nodeFetch(url, {
     method: init?.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
+      ...GPU_TUNNEL_HEADERS,
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });

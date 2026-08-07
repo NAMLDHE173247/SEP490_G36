@@ -1,7 +1,7 @@
-import dotenv from 'dotenv';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import dotenv from 'dotenv';
 dotenv.config();
 
 class ConfigService {
@@ -85,6 +85,38 @@ class ConfigService {
       if (userUrls.length > 0) return userUrls;
     }
     return this.gpuUrls;
+  }
+
+  /** Every GPU base URL currently known (global list + all per-user mappings). */
+  getAllKnownGpuBaseUrls(): string[] {
+    const set = new Set<string>();
+    for (const u of this.gpuUrls) set.add(u);
+    for (const urls of this.userGpuMap.values()) {
+      for (const u of urls) set.add(u);
+    }
+    return [...set];
+  }
+
+  /**
+   * True when `url` targets a known GPU service origin. Used to decide when to
+   * attach the shared-secret token so it is never leaked to third-party APIs.
+   */
+  isGpuTarget(url: string): boolean {
+    if (!url) return false;
+    let origin: string;
+    try {
+      origin = new URL(url).origin;
+    } catch {
+      return false;
+    }
+    for (const base of this.getAllKnownGpuBaseUrls()) {
+      try {
+        if (new URL(base).origin === origin) return true;
+      } catch {
+        // Ignore malformed persisted URLs.
+      }
+    }
+    return false;
   }
 
   setUserGpuUrl(userId: string, urlStr: string) {

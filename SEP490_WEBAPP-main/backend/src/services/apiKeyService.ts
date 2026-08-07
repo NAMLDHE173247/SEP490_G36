@@ -1,16 +1,14 @@
 import { User } from '../models/User';
-import { GlobalConfig } from '../models/GlobalConfig';
 import { encrypt, decrypt } from '../utils/crypto';
+import { GlobalConfig } from '../models/GlobalConfig';
 import { ILlmProvider } from './providers/ILlmProvider';
+import { GroqProvider } from './providers/GroqProvider';
 import { GeminiProvider } from './providers/GeminiProvider';
 import { OpenAIProvider } from './providers/OpenAIProvider';
 import { DeepseekProvider } from './providers/DeepseekProvider';
-import { GroqProvider } from './providers/GroqProvider';
-import { OpenRouterProvider } from './providers/OpenRouterProvider';
-import { CLIProxyProvider } from './providers/CLIProxyProvider';
-import { CircuitBreakerProvider } from './providers/CircuitBreakerProvider';
-import { FixedModelProvider } from './providers/FixedModelProvider';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import { OpenRouterProvider } from './providers/OpenRouterProvider';
+import { FixedModelProvider } from './providers/FixedModelProvider';
 
 export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'groq';
 
@@ -29,7 +27,12 @@ class ApiKeyService {
   async getGlobalKey(provider: ProviderType): Promise<string | null> {
     const config = await GlobalConfig.findOne({ key: 'global_api_keys' }).lean();
     if (config && config.value && config.value[provider]) {
-      return decrypt(config.value[provider]);
+      try {
+        return decrypt(config.value[provider]);
+      } catch (error) {
+        console.error(`[ApiKeyService] Failed to decrypt global ${provider} key:`, error instanceof Error ? error.message : error);
+        return null;
+      }
     }
     return null;
   }
@@ -37,7 +40,12 @@ class ApiKeyService {
   async getPersonalKey(userId: string, provider: ProviderType): Promise<string | null> {
     const user = await User.findById(userId).select('apiKeys').lean();
     if (user && user.apiKeys && (user.apiKeys as any)[provider]) {
-      return decrypt((user.apiKeys as any)[provider]);
+      try {
+        return decrypt((user.apiKeys as any)[provider]);
+      } catch (error) {
+        console.error(`[ApiKeyService] Failed to decrypt personal ${provider} key:`, error instanceof Error ? error.message : error);
+        return null;
+      }
     }
     return null;
   }
@@ -106,24 +114,6 @@ class ApiKeyService {
   async createProvider(userId: string | undefined | null, providerName: string, isJson: boolean = true, model?: string): Promise<ILlmProvider> {
     const norm = providerName.toLowerCase();
 
-    if (norm.includes('cliproxy') || norm.includes('oauth_gateway')) {
-      if (!userId) throw Object.assign(new Error('Login is required for personal OAuth Gateway.'), { statusCode: 401 });
-      try {
-        const { oauthUserPrefix } = await import('./providers/oauthIdentity.js');
-        const prefix = oauthUserPrefix(String(userId));
-        const provider = new CircuitBreakerProvider(`oauth-ai-gateway:${prefix}`, new CLIProxyProvider(prefix));
-        if (model) {
-          if (!/^[A-Za-z0-9._:/-]{1,200}$/.test(model)) throw Object.assign(new Error('Invalid model id.'), { statusCode: 400 });
-          const { FixedModelProvider } = await import('./providers/FixedModelProvider.js');
-          return new FixedModelProvider(provider, model);
-        }
-        return provider;
-      } catch (error) {
-        console.warn('[ApiKeyService] Personal OAuth Gateway is unavailable.', error instanceof Error ? error.message : error);
-        throw error;
-      }
-    }
-    
     // Research modes use one OpenRouter account and fixed model IDs so repeated
     // experiments cannot silently switch provider/model versions.
     const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');

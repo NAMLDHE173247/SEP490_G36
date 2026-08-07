@@ -1,11 +1,11 @@
 import './dotenv';
-import express, { Express } from 'express';
-import cors from 'cors';
-import compression from 'compression';
-import mongoose from 'mongoose';
-import routes from './routes';
 import fs from 'fs';
+import cors from 'cors';
 import path from 'path';
+import routes from './routes';
+import mongoose from 'mongoose';
+import compression from 'compression';
+import express, { Express } from 'express';
 
 console.log('=== APP STARTING ===');
 console.log('PORT:', process.env.PORT);
@@ -14,6 +14,9 @@ console.log('MONGO_URI exists:', !!process.env.MONGO_URI);
 // Force reload
 
 const app: Express = express();
+// Render/most PaaS run the app behind a reverse proxy. Trust the first proxy so
+// client IPs (used by rate limiting) are read from X-Forwarded-For correctly.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/sep_training';
 
@@ -26,6 +29,12 @@ import { seedDefaultStage4Data } from './seedStage4';
 import { startAssignmentDeadlineReminderService } from './services/assignmentDeadlineReminderService';
 
 async function seedDefaultUsers() {
+  // Demo accounts use the well-known password "1" and must never exist in
+  // production. Allow an explicit override only for controlled staging setups.
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_DEMO_SEED !== 'true') {
+    console.log('⏭️  Skipping demo user seeding in production.');
+    return;
+  }
   try {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash('1', salt);
@@ -79,7 +88,23 @@ mongoose
   .catch((err) => console.error('❌ MongoDB connection error:', err.message));
 
 // Middleware
-app.use(cors());
+// CORS: restrict to a configured allowlist instead of reflecting every origin.
+// FRONTEND_ORIGINS is a comma-separated list; falls back to localhost dev ports.
+const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow non-browser clients (curl, server-to-server) that send no Origin.
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`Origin ${origin} is not allowed by CORS policy.`));
+  },
+  credentials: true,
+}));
 app.use(compression({
   filter: (req, res) => {
     if (req.headers['x-no-compression']) {
@@ -102,13 +127,6 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Routes
 app.use('/api', routes);
-
-app.get('/api/debug-env', (_req, res) => {
-  res.json({
-    GPU_SERVICE_URL: process.env.GPU_SERVICE_URL || 'undefined',
-    MONGO_URI: process.env.MONGO_URI || 'undefined'
-  });
-});
 
 // Health check
 app.get('/health', (_req, res) => {

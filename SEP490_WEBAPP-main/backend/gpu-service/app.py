@@ -33,17 +33,19 @@ try:
 except Exception:
     pass
 import anthropic
-import numpy as np
 from threading import Thread
-from collections import defaultdict
 from werkzeug.utils import secure_filename
-from sklearn.cluster import DBSCAN, KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.neighbors import NearestNeighbors
 from flask import Flask, request, jsonify, Response
-from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+
+import numpy as np
+from collections import defaultdict
+from sklearn.cluster import DBSCAN, KMeans
+from sentence_transformers import SentenceTransformer
 
 from locked_eval_protocol import (
     sha256_text,
@@ -184,33 +186,6 @@ job_manager_last_heartbeat = 0.0
 
 pynvml.nvmlInit()
 gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-
-# ======================================================================
-# GIỚI HẠN VRAM (chạy chung GPU với service khác, vd LLMAware)
-# GPU_MEMORY_FRACTION = tỉ lệ 0..1 trên TỔNG VRAM mỗi GPU. Ví dụ 0.2 = 20%.
-#   GPU 100GB + fraction 0.2 → tiến trình chỉ được cấp phát tối đa ~20GB.
-#   Vượt ngưỡng sẽ OOM (đúng ý đồ giới hạn). Để trống/0 = không giới hạn.
-# Lưu ý: fraction tính trên TỔNG VRAM của card, không phải phần còn trống.
-# ======================================================================
-def _apply_gpu_memory_cap():
-    try:
-        fraction = float(os.environ.get("GPU_MEMORY_FRACTION", "0") or 0)
-    except ValueError:
-        print("[GPU] GPU_MEMORY_FRACTION không hợp lệ — bỏ qua giới hạn VRAM.")
-        return
-    if not (0 < fraction < 1):
-        return
-    if not torch.cuda.is_available():
-        return
-    for dev in range(torch.cuda.device_count()):
-        try:
-            torch.cuda.set_per_process_memory_fraction(fraction, dev)
-            total_gb = torch.cuda.get_device_properties(dev).total_memory / (1024 ** 3)
-            print(f"[GPU] cuda:{dev} VRAM cap = {fraction * 100:.0f}% (~{total_gb * fraction:.1f}GB / {total_gb:.1f}GB)")
-        except Exception as exc:
-            print(f"[GPU] set_per_process_memory_fraction lỗi trên cuda:{dev}: {exc}")
-
-_apply_gpu_memory_cap()
 
 # Biến toàn cục cho inference cache và watchdog
 _current_infer_model = None
@@ -1193,9 +1168,10 @@ def replay_conversation(
         prompt_source = "service_default"
 
     user_turns = [m["content"] for m in messages if m.get("role") == "user"]
-    # Multi-turn replay: all user turns are replayed sequentially.
-    # The model generates its own response at each turn, building up
-    # conversation_history organically without leaking gold assistant answers.
+    if protocol_mode == "locked_single_turn" and user_turns:
+        # Strict validation is performed before replay. This slice prevents
+        # model-generated history from leaking into later test inputs.
+        user_turns = user_turns[:1]
     if not user_turns:
         return {
             **item_meta,

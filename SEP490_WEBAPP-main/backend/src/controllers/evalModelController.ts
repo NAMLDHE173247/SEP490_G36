@@ -1,23 +1,20 @@
-import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
-import crypto from 'crypto';
 import os from 'os';
 import path from 'path';
-import { spawn } from 'child_process';
-import FormData from 'form-data';
-const fetch = async (url: any, init?: any) => {
-  const module = await import('node-fetch');
-  return module.default(url, init);
-};
+import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { ModelEvaluation, IEvalResult } from '../models/Evaluation';
-import { TrainingHistory } from '../models/TrainingHistory';
-import { isZipFile, extractForEvaluation, cleanupTempDir, DatasetMetadata } from '../services/zipService';
+import FormData from 'form-data';
+import { v4 as uuidv4 } from 'uuid';
+import { spawn } from 'child_process';
+import { Request, Response } from 'express';
 import { getAuthUserId } from '../utils/auth';
 import { configService } from '../services/configService';
 import { apiKeyService } from '../services/apiKeyService';
+import { TrainingHistory } from '../models/TrainingHistory';
 import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import { ModelEvaluation, IEvalResult } from '../models/Evaluation';
+import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
+import { isZipFile, extractForEvaluation, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 import {
   HUMAN_AUDIT_RUBRIC_VERSION,
   buildHumanAuditSummary,
@@ -201,7 +198,7 @@ type GpuStatus = {
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchGpuStatusOnce(): Promise<GpuStatus | null> {
-  const headers = { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' };
+  const headers = GPU_TUNNEL_HEADERS;
   // Older workers expose /api/system/resources while newer workers expose the
   // eval-specific endpoint. Supporting both prevents a harmless route mismatch
   // from being recorded as a failed evaluation.
@@ -260,7 +257,7 @@ async function getGpuEvalRecoveryState(evalJobId: string): Promise<GpuEvalRecove
     const response = await fetch(
       `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(evalJobId)}`,
       {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
         signal: AbortSignal.timeout(7000),
       },
     );
@@ -286,7 +283,7 @@ async function getGpuEvalRecoveryState(evalJobId: string): Promise<GpuEvalRecove
 async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> {
   try {
     const response = await fetch(`${configService.getGpuUrl()}/api/eval/active`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
       signal: AbortSignal.timeout(7000),
     });
     if (!response.ok) return null; // Compatibility with workers not deployed yet.
@@ -305,29 +302,8 @@ async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> 
 }
 
 // ---------------------------------------------------------------------------
-// Helper: POST multipart/form-data với Content-Length (giống trainController)
+// Helper: POST multipart/form-data với Content-Length — dùng chung tại utils/gpuHttp.
 // ---------------------------------------------------------------------------
-async function fetchWithForm(url: string, form: FormData): Promise<ReturnType<typeof fetch>> {
-  return new Promise((resolve, reject) => {
-    form.getLength((err, length) => {
-      if (err) {
-        reject(new Error(`Could not compute form length: ${err.message}`));
-        return;
-      }
-      resolve(
-        fetch(url, {
-          method: 'POST',
-          body: form,
-          headers: {
-            ...form.getHeaders(),
-            'Content-Length': String(length),
-            'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true'
-          },
-        })
-      );
-    });
-  });
-}
 
 function normalizePerConvResults(perConvResults: unknown): IEvalResult[] {
   if (!Array.isArray(perConvResults)) return [];
@@ -833,7 +809,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   const intervalId = setInterval(async () => {
     try {
       const response = await fetch(`${configService.getGpuUrl()}/api/eval/status/${evalJobId}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
       });
       const text = await response.text();
       if (!response.ok) {
@@ -1139,8 +1115,7 @@ export const resumeEvaluation = async (req: Request, res: Response) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': 'true',
-      'Bypass-Tunnel-Reminder': 'true',
+      ...GPU_TUNNEL_HEADERS,
     },
     body: JSON.stringify({
       judge_api_key: judgeApiKey,
@@ -1192,7 +1167,7 @@ export const resumeEvaluation = async (req: Request, res: Response) => {
 async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<{ saved: boolean; error?: string }> {
   try {
     const resp = await fetch(`${configService.getGpuUrl()}/api/eval/result/${evalJobId}`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
     });
 
     if (!resp.ok) {
@@ -1273,7 +1248,7 @@ async function _fetchAndSaveResult(evalJobId: string, ownerId: string): Promise<
     // checkpoint files from the worker volume without affecting the result.
     void fetch(`${configService.getGpuUrl()}/api/eval/checkpoint/${encodeURIComponent(evalJobId)}`, {
       method: 'DELETE',
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+      headers: GPU_TUNNEL_HEADERS,
     }).catch(error => console.warn(`[Backend] Could not clean eval checkpoint ${evalJobId}:`, error));
     return { saved: true };
   } catch (err: any) {
@@ -1414,6 +1389,55 @@ export const getEvaluation = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// PUT /api/model-eval/:evalId/extended-references
+// Persist extended comparison references (Large-LLM & Version 1 shared FT)
+// into MongoDB so they are accessible from any machine/browser.
+// ---------------------------------------------------------------------------
+export const saveExtendedReferences = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+    const { evalId } = req.params;
+    const references = req.body?.references;
+    if (!Array.isArray(references)) {
+      return res.status(400).json({ error: 'references must be an array' });
+    }
+    // Sanitize: only keep known fields to avoid storing arbitrary data
+    const sanitized = references.slice(0, 5).map((ref: any) => ({
+      comparisonRole: String(ref.comparisonRole || 'large_llm'),
+      model: String(ref.model || ''),
+      judgeModel: String(ref.judgeModel || ''),
+      total: Number(ref.total || 0),
+      valid: Number(ref.valid || 0),
+      knowledge: ref.knowledge != null ? Number(ref.knowledge) : null,
+      socratic: ref.socratic != null ? Number(ref.socratic) : null,
+      a1ViolationRate: ref.a1ViolationRate != null ? Number(ref.a1ViolationRate) : null,
+      e2eMedianMs: ref.e2eMedianMs != null ? Number(ref.e2eMedianMs) : null,
+      throughputMean: ref.throughputMean != null ? Number(ref.throughputMean) : null,
+      outputLimitRate: ref.outputLimitRate != null ? Number(ref.outputLimitRate) : null,
+      costPer100Usd: ref.costPer100Usd != null ? Number(ref.costPer100Usd) : null,
+      outputTokensMean: ref.outputTokensMean != null ? Number(ref.outputTokensMean) : null,
+      totalInputTokens: ref.totalInputTokens != null ? Number(ref.totalInputTokens) : null,
+      totalOutputTokens: ref.totalOutputTokens != null ? Number(ref.totalOutputTokens) : null,
+      totalTokens: ref.totalTokens != null ? Number(ref.totalTokens) : null,
+      runValidity: String(ref.runValidity || 'unknown'),
+      protocolMatch: Boolean(ref.protocolMatch),
+      protocolNotes: Array.isArray(ref.protocolNotes) ? ref.protocolNotes.map(String) : [],
+    }));
+    const result = await ModelEvaluation.updateOne(
+      { modelEvalId: evalId, ownerId },
+      { $set: { extendedReferences: sanitized } },
+    );
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+    return res.json({ saved: sanitized.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to save extended references' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Large-LLM contextual references. These runs intentionally remain separate
 // from the paired Base-vs-FT causal comparison.
 // ---------------------------------------------------------------------------
@@ -1505,6 +1529,8 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
     }
 
     const scriptCandidates = [
+      path.resolve(process.cwd(), 'python-runner', 'run_large_llm_reference.py'),
+      path.resolve(__dirname, '..', '..', 'python-runner', 'run_large_llm_reference.py'),
       path.resolve(process.cwd(), 'scripts', 'run_large_llm_reference.py'),
       path.resolve(process.cwd(), '..', 'scripts', 'run_large_llm_reference.py'),
       path.resolve(__dirname, '..', 'scripts', 'run_large_llm_reference.py'),
@@ -1547,7 +1573,7 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
       '--seed', '42',
     ];
     if (evaluationPrompt) args.push('--prompt-file', promptPath);
-    const python = process.env.RP5_PYTHON || 'python';
+    const python = process.env.RP5_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
     const child = spawn(python, args, {
       cwd: path.dirname(scriptPath),
       env: { ...process.env, OPENROUTER_API_KEY: openRouterKey },
@@ -1619,7 +1645,7 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
     const response = await fetch(
       `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(gpuEvalId)}`,
       {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+        headers: GPU_TUNNEL_HEADERS,
         signal: AbortSignal.timeout(10000),
       },
     );
@@ -1635,7 +1661,7 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
       const resultResponse = await fetch(
         `${configService.getGpuUrl()}/api/eval/result/${encodeURIComponent(gpuEvalId)}`,
         {
-          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          headers: GPU_TUNNEL_HEADERS,
           signal: AbortSignal.timeout(30000),
         },
       );
@@ -1767,7 +1793,7 @@ export const runVersion1SharedReference = async (req: Request, res: Response) =>
       judge_model: evaluation.judgeModel || RESEARCH_MODEL_CATALOG.judge,
       judge_provider: 'openrouter',
       judge_api_key: judgeApiKey,
-      base_model_hf_repo: '',
+      base_model_hf_repo: String(version1History.baseModel || ''),
       system_prompt: String(evaluation.systemPrompt || ''),
       system_prompt_source: 'specialist_evaluation_reference',
       system_prompt_version: evaluation.systemPromptVersion || evaluation.protocolManifest?.prompt_version || 'RP4-locked-v1',

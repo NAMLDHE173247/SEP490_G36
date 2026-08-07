@@ -1,25 +1,23 @@
-import { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
+import path from 'path';
 import crypto from 'crypto';
-import FormData from 'form-data';
-const fetch = async (url: any, init?: any) => {
-  const module = await import('node-fetch');
-  return module.default(url, init);
-};
 import dotenv from 'dotenv';
-import { TrainingHistory } from '../models/TrainingHistory';
+import FormData from 'form-data';
+import { v4 as uuidv4 } from 'uuid';
+import { User } from '../models/User';
+import { Request, Response } from 'express';
+import { getAuthUserId } from '../utils/auth';
+import { storage } from '../services/storage';
 import { ChatSession } from '../models/ChatSession';
-import { ModelRegistry } from '../models/ModelRegistry';
 import { ModelEvaluation } from '../models/Evaluation';
+import { ModelRegistry } from '../models/ModelRegistry';
+import { configService } from '../services/configService';
+import { TrainingHistory } from '../models/TrainingHistory';
+import { DataPrepProject } from '../models/DataPrepProject';
 import { DatasetSampleAssignment } from '../models/DatasetSampleAssignment';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
-import { User } from '../models/User';
-import { DataPrepProject } from '../models/DataPrepProject';
-import path from 'path';
+import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
-import { getAuthUserId } from '../utils/auth';
-import { configService } from '../services/configService';
 dotenv.config();
 
 class WorkerManager {
@@ -83,44 +81,8 @@ if (GOOGLE_DRIVE_CREDENTIALS) {
 
 // ---------------------------------------------------------------------------
 // Helper: forward a FormData to the GPU service with proper Content-Length.
-//
-// ROOT CAUSE OF THE BUG:
-//   node-fetch v2 + form-data streams do NOT automatically include
-//   Content-Length in the request.  Flask / Werkzeug requires Content-Length
-//   to parse a multipart body; without it every field arrives as None.
-//
-// FIX STRATEGY:
-//   • When there is NO file  → serialise the whole form into a Buffer first
-//     (synchronous, cheap for small payloads) and send that.  The buffer has
-//     a known length so we can set Content-Length explicitly.
-//   • When there IS a file   → use form.getLength() (async) to obtain the
-//     real length before streaming.  This avoids loading the entire file into
-//     RAM while still giving Flask the length it needs.
+// Shared implementation lives in utils/gpuHttp to avoid duplication.
 // ---------------------------------------------------------------------------
-async function fetchWithForm(url: string, form: FormData): Promise<ReturnType<typeof fetch>> {
-  return new Promise((resolve, reject) => {
-    form.getLength((err, length) => {
-      if (err) {
-        reject(new Error(`Could not compute form length: ${err.message}`));
-        return;
-      }
-
-      const headers = {
-        ...form.getHeaders(),
-        'Content-Length': String(length),
-        'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' // Skip ngrok free tier warning page
-      };
-
-      resolve(
-        fetch(url, {
-          method: 'POST',
-          body: form,
-          headers,
-        })
-      );
-    });
-  });
-}
 
 async function hfRepoCheckpointProbe(
   repoId: string,
@@ -449,42 +411,63 @@ export const startTraining = async (req: Request, res: Response) => {
     }
 
     let savedDatasetPath: string | undefined;
+    let datasetStorageKey: string | undefined;
+    let datasetStorageUrl: string | undefined;
 
-    // Clean up the temporary upload file on the backend to save disk space
+    // Persist the dataset so a job can be resumed later.
     if (datasetFile || (cloudLoadedDataset && fs.existsSync(cloudLoadedDataset))) {
-      // Create a persistent directory for datasets if it doesn't exist
-      const persistentDir = path.join(process.cwd(), 'uploads', 'persistent_datasets');
-      if (!fs.existsSync(persistentDir)) {
-        fs.mkdirSync(persistentDir, { recursive: true });
+      const srcPath = datasetFile ? datasetFile.path : cloudLoadedDataset!;
+      // Sanitize: the original client filename is untrusted — collapse it to a
+      // basename so it can never traverse outside the target location.
+      const srcName = path.basename(datasetFile ? datasetFile.originalname : cloudLoadedDataset!);
+
+      // Preferred path: durable object storage (MinIO/CDN). Survives container
+      // restarts, unlike the local uploads volume, and keeps disk usage bounded.
+      if (storage.isEnabled()) {
+        try {
+          const result = await storage.uploadFile(srcPath, `datasets/${job_id}/${srcName}`);
+          datasetStorageKey = result.objectKey;
+          datasetStorageUrl = result.url;
+          console.log(`[Backend] Dataset uploaded to object storage: ${result.url}`);
+          // Storage is now the source of truth; drop the local temp copy.
+          fs.unlink(srcPath, () => { });
+        } catch (err) {
+          console.warn('[Backend] Storage upload failed; falling back to local persist:', err);
+        }
       }
 
-      const srcPath = datasetFile ? datasetFile.path : cloudLoadedDataset;
-      const srcName = datasetFile ? datasetFile.originalname : path.basename(cloudLoadedDataset);
-
-      savedDatasetPath = path.join(persistentDir, `${job_id}_${srcName}`);
-
-      // Move the file instead of deleting it
-      fs.rename(srcPath, savedDatasetPath, (err) => {
-        if (err) {
-          if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
-            fs.copyFile(srcPath, savedDatasetPath!, (copyErr) => {
-              if (copyErr) {
-                console.warn(`[Backend] Could not copy dataset file: ${srcPath}`, copyErr);
-                savedDatasetPath = undefined;
-              } else {
-                console.log(`[Backend] Dataset copied persistently for Resume: ${savedDatasetPath}`);
-              }
-              fs.unlink(srcPath, () => { });
-            });
-          } else {
-            console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
-            savedDatasetPath = undefined;
-            fs.unlink(srcPath, () => { }); // Fallback to delete
-          }
-        } else {
-          console.log(`[Backend] Dataset saved persistently for Resume: ${savedDatasetPath}`);
+      // Fallback (storage disabled or upload failed): keep the legacy local copy.
+      if (!datasetStorageKey) {
+        const persistentDir = path.join(process.cwd(), 'uploads', 'persistent_datasets');
+        if (!fs.existsSync(persistentDir)) {
+          fs.mkdirSync(persistentDir, { recursive: true });
         }
-      });
+
+        savedDatasetPath = path.join(persistentDir, `${job_id}_${srcName}`);
+
+        // Move the file instead of deleting it
+        fs.rename(srcPath, savedDatasetPath, (err) => {
+          if (err) {
+            if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+              fs.copyFile(srcPath, savedDatasetPath!, (copyErr) => {
+                if (copyErr) {
+                  console.warn(`[Backend] Could not copy dataset file: ${srcPath}`, copyErr);
+                  savedDatasetPath = undefined;
+                } else {
+                  console.log(`[Backend] Dataset copied persistently for Resume: ${savedDatasetPath}`);
+                }
+                fs.unlink(srcPath, () => { });
+              });
+            } else {
+              console.warn(`[Backend] Could not move dataset file: ${srcPath}`, err);
+              savedDatasetPath = undefined;
+              fs.unlink(srcPath, () => { }); // Fallback to delete
+            }
+          } else {
+            console.log(`[Backend] Dataset saved persistently for Resume: ${savedDatasetPath}`);
+          }
+        });
+      }
     }
 
     // --- CREATE INITIAL TRAINING HISTORY RECORD ---
@@ -532,6 +515,8 @@ export const startTraining = async (req: Request, res: Response) => {
           dataset_text_field: finalColumnMapping,
         },
         datasetPath: savedDatasetPath,
+        datasetStorageKey: datasetStorageKey,
+        datasetUrl: datasetStorageUrl,
         datasetFileId: datasetFile?.filename,
         workerUrl: workerUrl,
         totalTokens: parseInt(totalTokens as string) || detectedTotalTokens,
@@ -622,7 +607,7 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     const workerUrl = history.workerUrl || workerManager.getUrls()[0];
 
     const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
+      headers: GPU_TUNNEL_HEADERS
     });
     const data: any = await response.json();
 
@@ -741,7 +726,7 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
       let data: any;
       try {
         const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
-        headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
+        headers: GPU_TUNNEL_HEADERS
       });
       
       if (!response.ok && response.status !== 404) {
@@ -871,7 +856,7 @@ export const stopTraining = async (req: Request, res: Response) => {
 
     const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
       method: 'POST',
-      headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' }
+      headers: GPU_TUNNEL_HEADERS
     });
     const data = await response.json();
 
@@ -903,7 +888,7 @@ export const getSystemResources = async (_req: Request, res: Response) => {
 
       try {
         const response = await fetch(`${url}/api/system/resources`, {
-          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          headers: GPU_TUNNEL_HEADERS,
           signal: controller.signal as any
         });
         const text = await response.text();
@@ -972,7 +957,7 @@ export const resumeTraining = async (req: Request, res: Response) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
         const probeResponse = await fetch(`${history.workerUrl}/api/train/checkpoint/${jobId}`, {
-          headers: { 'ngrok-skip-browser-warning': 'true', 'Bypass-Tunnel-Reminder': 'true' },
+          headers: GPU_TUNNEL_HEADERS,
           signal: controller.signal as any,
         });
         clearTimeout(timeout);
@@ -1041,6 +1026,20 @@ export const resumeTraining = async (req: Request, res: Response) => {
       datasetKnownLength = stats.size;
       datasetFilename = history.datasetName || path.basename(history.datasetPath);
       console.log(`[Backend] Re-attaching persistent dataset for resume: ${history.datasetPath}`);
+    } else if (history.datasetStorageKey && storage.isEnabled()) {
+      // Durable path: the local copy may be gone after a restart, but the
+      // dataset still lives in object storage. Pull it back to a temp file.
+      try {
+        const tempPath = await storage.downloadToTemp(history.datasetStorageKey);
+        const stats = fs.statSync(tempPath);
+        datasetStream = fs.createReadStream(tempPath);
+        datasetKnownLength = stats.size;
+        datasetFilename = history.datasetName || path.basename(history.datasetStorageKey);
+        datasetStream.on('close', () => fs.unlink(tempPath, () => { }));
+        console.log(`[Backend] Re-attaching dataset from object storage for resume: ${history.datasetStorageKey}`);
+      } catch (err) {
+        console.warn(`[Backend] Failed to fetch dataset from storage for resume: ${history.datasetStorageKey}`, err);
+      }
     } else if (history.datasetSource === 'hub') {
       resumeConfig.dataset_hf_id = history.datasetName || snapshotConfig.dataset;
     } else {
