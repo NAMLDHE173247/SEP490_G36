@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import '../styles/staffrewrite.css';
 import { stage4Api } from '../services/stage4Api';
-import { getCliProxyModels } from '../services/configApi';
 import * as XLSX from 'xlsx';
 
 const REWRITE_REASON_VI_MAP: Record<string, string> = {
@@ -36,23 +35,22 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     );
   }
 
-  const [rewriteTasks, setRewriteTasks] = useState<any[]>(task.rewriteTasks || []);
+  const ITEMS_PER_PAGE = 10;
+  const [tablePage, setTablePage] = useState(1);
+  const [sortBy, setSortBy] = useState('newest');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('newest');
-  const [tablePage, setTablePage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
+  const [rewriteTasks, setRewriteTasks] = useState<any[]>(task.rewriteTasks || []);
 
   // Drawer / Workbench state
-  const [drawerTask, setDrawerTask] = useState<any | null>(null);
-  const [rewriteDraftText, setRewriteDraftText] = useState('');
-  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+3');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  const [aiProvider, setAiProvider] = useState<'oauth_gateway' | 'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('oauth_gateway');
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [rewriteDraftText, setRewriteDraftText] = useState('');
+  const [drawerTask, setDrawerTask] = useState<any | null>(null);
+  const [rewriteContextMode, setRewriteContextMode] = useState('n-2:n+3');
+  const [aiProvider, setAiProvider] = useState<'openrouter' | 'groq' | 'deepseek' | 'gemini' | 'openai'>('gemini');
   const [aiModel, setAiModel] = useState('');
-  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
   const [offlineMessage, setOfflineMessage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -113,14 +111,6 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
     }
     return messages.slice(start, end + 1);
   };
-
-  React.useEffect(() => {
-    if (aiProvider !== 'oauth_gateway' || gatewayModels.length) return;
-    getCliProxyModels().then((result) => {
-      setGatewayModels(result.models || []);
-      setAiModel(result.defaultModel || '');
-    }).catch(() => { setGatewayModels([]); setAiModel(''); });
-  }, [aiProvider, gatewayModels.length]);
 
   // Navigation never writes data. Saving is always explicit.
   const handleBackWithSave = () => onBack();
@@ -670,17 +660,12 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                   {!['submitted', 'approved', 'checker_approved'].includes(drawerTask.status) && (
                     <div className="sr-ai-suggest-bar">
                       <select value={aiProvider} onChange={(e) => { setAiProvider(e.target.value as any); setAiModel(''); }} className="sr-context-select">
-                        <option value="oauth_gateway">OAuth Gateway</option>
                         <option value="gemini">Gemini</option>
                         <option value="openai">ChatGPT / OpenAI</option>
                         <option value="deepseek">DeepSeek</option>
                         <option value="groq">Groq</option>
                         <option value="openrouter">OpenRouter</option>
                       </select>
-                      {aiProvider === 'oauth_gateway' && <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} className="sr-context-select">
-                        <option value="">Tự động chọn model</option>
-                        {gatewayModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>}
                       <span>Sử dụng AI gợi ý làm bản nháp hoặc tự viết lại.</span>
                       <button 
                         className="sr-ai-suggest-btn"
@@ -688,7 +673,7 @@ export default function StaffRewriteView({ task, onBack }: StaffRewriteViewProps
                         onClick={() => {
                           const versionId = task.datasetVersionId || localStorage.getItem('current_version_id') || 'default';
                           setIsSuggesting(true);
-                          stage4Api.suggestRewrite(versionId, drawerTask.id, aiProvider, aiProvider === 'oauth_gateway' ? aiModel || undefined : undefined)
+                          stage4Api.suggestRewrite(versionId, drawerTask.id, aiProvider, aiModel || undefined)
                             .then(res => setRewriteDraftText(res.suggestedText || rewriteDraftText))
                             .catch(err => alert(err?.response?.data?.error || 'Không thể lấy gợi ý AI.'))
                             .finally(() => setIsSuggesting(false));

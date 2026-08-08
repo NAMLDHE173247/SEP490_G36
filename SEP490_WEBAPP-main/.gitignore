@@ -52,8 +52,3 @@ frontend_v2/skills-lock.json
 **/frontend_v2/skills-lock.json
 **/skills-lock.json
 **/.agents/
-
-# CLIProxyAPI OAuth credentials and runtime data
-infra/cli-proxy/config.yaml
-infra/cli-proxy/auths/
-infra/cli-proxy/logs/

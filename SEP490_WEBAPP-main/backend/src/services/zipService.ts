@@ -3,15 +3,15 @@ import fs from 'fs';
 import path from 'path';
 
 export interface DatasetMetadata {
+  totalTest?: number;
+  totalTrain?: number;
+  exportedAt?: string;
   projectName?: string;
+  systemPrompt?: string;
+  totalValidation?: number;
   datasetVersionId?: string;
   datasetVersionName?: string;
-  systemPrompt?: string;
   systemPromptVersion?: string;
-  totalTrain?: number;
-  totalValidation?: number;
-  totalTest?: number;
-  exportedAt?: string;
   datasetHashes?: {
     train_sha256?: string;
     validation_sha256?: string;
@@ -41,6 +41,19 @@ export function isZipFile(filename: string): boolean {
 }
 
 /**
+ * Join a base directory with an untrusted filename and guarantee the result
+ * stays inside the base directory (defense-in-depth against Zip Slip).
+ */
+function safeJoin(baseDir: string, filename: string): string {
+  const target = path.resolve(baseDir, path.basename(filename));
+  const normalizedBase = path.resolve(baseDir) + path.sep;
+  if (!target.startsWith(normalizedBase)) {
+    throw new Error('Refusing to write ZIP entry outside the extraction directory.');
+  }
+  return target;
+}
+
+/**
  * Extract a ZIP file uploaded for Training.
  * Looks for `train_dataset.json` as the primary data file,
  * and `_metadata.json` for traceability info.
@@ -65,6 +78,13 @@ export function extractForEvaluation(zipFilePath: string): ZipExtractionResult {
 function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionResult {
   const zip = new AdmZip(zipFilePath);
   const entries = zip.getEntries();
+
+  // Zip bomb guard: cap the total uncompressed size we are willing to write.
+  const MAX_TOTAL_UNCOMPRESSED = 500 * 1024 * 1024; // 500MB
+  const totalUncompressed = entries.reduce((sum, e) => sum + (e.header?.size || 0), 0);
+  if (totalUncompressed > MAX_TOTAL_UNCOMPRESSED) {
+    throw new Error('ZIP archive exceeds the maximum allowed uncompressed size.');
+  }
 
   const hasDatasetExtension = (name: string) => /\.jsonl?$/.test(name);
   const matchesSplitSuffix = (entryName: string, aliases: string[]) => {
@@ -134,7 +154,7 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
 
   // 3. Extract data file to temp directory
   const dataFileName = path.basename(dataEntry.entryName);
-  const dataFilePath = path.join(tempDir, dataFileName);
+  const dataFilePath = safeJoin(tempDir, dataFileName);
   fs.writeFileSync(dataFilePath, dataEntry.getData());
 
   // A V2 training archive may contain a locked validation partition. Extract it
@@ -156,7 +176,7 @@ function extractZip(zipFilePath: string, mode: 'train' | 'test'): ZipExtractionR
     }
     if (validationEntry) {
       validationFileName = path.basename(validationEntry.entryName);
-      validationFilePath = path.join(tempDir, validationFileName);
+      validationFilePath = safeJoin(tempDir, validationFileName);
       fs.writeFileSync(validationFilePath, validationEntry.getData());
     }
   }

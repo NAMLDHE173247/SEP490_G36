@@ -1,28 +1,28 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
+  X,
   Menu,
   Plus,
-  MessageSquare,
-  GitCompare,
-  ChevronDown,
-  TerminalSquare,
   Send,
+  Check,
   Upload,
-  X,
-  Sparkles,
-  Terminal,
-  RotateCcw,
   Square,
   Trash2,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  BookOpen,
-  Settings2,
   Pencil,
-  Check,
+  Loader2,
+  Download,
+  Sparkles,
+  Terminal,
+  BookOpen,
   FileText,
-  Download
+  RotateCcw,
+  Settings2,
+  GitCompare,
+  ChevronDown,
+  AlertCircle,
+  CheckCircle2,
+  MessageSquare,
+  TerminalSquare,
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
@@ -31,28 +31,27 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import 'katex/dist/katex.min.css';
 import { apiService } from '../services/api';
-import { getCliProxyModels } from '../services/configApi';
 import '../styles/chat.css';
 import { BatchModelTarget, BatchTestingModal } from '../components/BatchTestingModal';
 import { TypingIndicator } from '../components/TypingIndicator';
 
 // Constants
 const BASE_MODEL_OPTIONS = [
-  "Qwen/Qwen2.5-0.5B-Instruct",
-  "meta-llama/Llama-3.1-8B-Instruct",
-  "unsloth/gpt-oss-20b",
-  "unsloth/gpt-oss-20b-unsloth-bnb-4bit",
-  "zai-org/GLM-4.7-Flash",
-  "unsloth/GLM-4.7-Flash-GGUF",
-  "stepfun-ai/Step-3.5-Flash",
-  "unsloth/Qwen3-Coder-Next-GGUF",
-  "lightonai/LightOnOCR-2-1B",
-  "unsloth/gpt-oss-20b-GGUF",
-  "Qwen/Qwen3-Coder-Next",
-  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4",
   "zai-org/GLM-4.7",
-  "MiniMaxAI/MiniMax-M2.1",
+  "unsloth/gpt-oss-20b",
   "sshleifer/tiny-gpt2",
+  "zai-org/GLM-4.7-Flash",
+  "Qwen/Qwen3-Coder-Next",
+  "MiniMaxAI/MiniMax-M2.1",
+  "unsloth/gpt-oss-20b-GGUF",
+  "stepfun-ai/Step-3.5-Flash",
+  "lightonai/LightOnOCR-2-1B",
+  "Qwen/Qwen2.5-0.5B-Instruct",
+  "unsloth/GLM-4.7-Flash-GGUF",
+  "unsloth/Qwen3-Coder-Next-GGUF",
+  "meta-llama/Llama-3.1-8B-Instruct",
+  "unsloth/gpt-oss-20b-unsloth-bnb-4bit",
+  "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4",
 ];
 
 const HYBRID_SPEED_TEST_STEPS = [
@@ -528,16 +527,6 @@ function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [hfHubId, setHfHubId] = useState("");
   const [provider, setProvider] = useState<string>("local");
-  const [gatewayModels, setGatewayModels] = useState<string[]>([]);
-  useEffect(() => {
-    if (provider !== 'oauth_gateway' || gatewayModels.length) return;
-    getCliProxyModels()
-      .then((result) => {
-        setGatewayModels(result.models || []);
-        if (!hfHubId) setHfHubId(result.defaultModel || '');
-      })
-      .catch(() => setGatewayModels([]));
-  }, [provider, gatewayModels.length, hfHubId]);
   const [registries, setRegistries] = useState<any[]>([]);
   const [selectedRegistryId, setSelectedRegistryId] = useState<string>("");
   const [activeModelId, setActiveModelId] = useState<string>("");
@@ -1479,7 +1468,6 @@ function ChatPanel({
             <option value="gemini">Gemini 2.5 Flash · OpenRouter</option>
             <option value="openai">GPT-4o mini · OpenRouter</option>
             <option value="groq">Groq</option>
-            <option value="oauth_gateway">OAuth Gateway</option>
           </select>
 
           {provider === "hybrid" ? (
@@ -1502,7 +1490,6 @@ function ChatPanel({
             <div style={{ position: 'relative', width: '220px' }} ref={modelPickerRef}>
               <input
                 type="text"
-                list={provider === 'oauth_gateway' ? 'oauth-gateway-models' : undefined}
                 style={{ width: '100%', paddingRight: '30px' }}
                 placeholder={
                   provider === "local"
@@ -1519,11 +1506,6 @@ function ChatPanel({
                 }}
                 disabled={loading}
               />
-              {provider === 'oauth_gateway' && (
-                <datalist id="oauth-gateway-models">
-                  {gatewayModels.map((model) => <option key={model} value={model} />)}
-                </datalist>
-              )}
               {provider === "local" && (
                 <button
                   onClick={() => setShowModelPicker((p) => !p)}

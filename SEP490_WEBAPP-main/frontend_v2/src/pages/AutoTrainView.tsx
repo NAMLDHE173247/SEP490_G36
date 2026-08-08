@@ -302,6 +302,18 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         weightDecay: String(preset.weight_decay || preset.weightDecay || '0.01'),
         optim: preset.optim || 'adamw_8bit',
         lrScheduler: preset.lr_scheduler_type || preset.lrScheduler || 'linear',
+        // Preset cũ lưu trong localStorage không có các knob này — giữ giá trị đang dùng.
+        loraTargets: preset.lora_target_modules || prev.loraTargets,
+        useRslora: preset.use_rslora ?? prev.useRslora,
+        neftuneAlpha: preset.neftune_noise_alpha !== undefined ? String(preset.neftune_noise_alpha) : prev.neftuneAlpha,
+        maxGradNorm: preset.max_grad_norm !== undefined ? String(preset.max_grad_norm) : prev.maxGradNorm,
+        warmupRatio: preset.warmup_ratio !== undefined ? String(preset.warmup_ratio) : prev.warmupRatio,
+        groupByLength: preset.group_by_length ?? prev.groupByLength,
+        enableThinking: preset.enable_thinking ?? prev.enableThinking,
+        chatTemplate: preset.chat_template || prev.chatTemplate,
+        earlyStoppingPatience: preset.early_stopping_patience !== undefined
+          ? String(preset.early_stopping_patience)
+          : prev.earlyStoppingPatience,
       }));
     },
     [customPresets],
@@ -323,6 +335,15 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         weight_decay: parseFloat(config.weightDecay) || 0.01,
         optim: config.optim,
         lr_scheduler_type: config.lrScheduler,
+        lora_target_modules: config.loraTargets,
+        use_rslora: config.useRslora,
+        neftune_noise_alpha: parseFloat(config.neftuneAlpha) || 0,
+        max_grad_norm: parseFloat(config.maxGradNorm) || 1,
+        warmup_ratio: parseFloat(config.warmupRatio) || 0,
+        group_by_length: config.groupByLength,
+        enable_thinking: config.enableThinking,
+        chat_template: config.chatTemplate,
+        early_stopping_patience: parseInt(config.earlyStoppingPatience) || 3,
       };
 
       const updated = { ...customPresets, [name]: newPreset };
@@ -553,26 +574,48 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     setIsStarting(true);
     try {
       const formData = new FormData();
-      formData.append('model_name', config.baseModel);
-      formData.append('epochs', config.epochs);
-      formData.append('batchSize', config.batchSize);
-      formData.append('learningRate', config.learningRate);
-      formData.append('blockSize', config.blockSize);
-      formData.append('modelMaxLength', config.modelMaxLength);
       formData.append('r', config.r);
+      formData.append('seed', config.seed);
+      formData.append('optim', config.optim);
+      formData.append('epochs', config.epochs);
+      formData.append('random_state', config.seed);
+      formData.append('batchSize', config.batchSize);
+      formData.append('blockSize', config.blockSize);
+      formData.append('model_name', config.baseModel);
       formData.append('lora_alpha', config.loraAlpha);
       formData.append('lora_dropout', config.loraDropout);
-      formData.append('gradient_accumulation_steps', config.gradAccum);
       formData.append('warmup_steps', config.warmupSteps);
       formData.append('weight_decay', config.weightDecay);
-      formData.append('seed', config.seed);
-      formData.append('random_state', config.seed);
-      formData.append('optim', config.optim);
+      formData.append('learningRate', config.learningRate);
+      formData.append('modelMaxLength', config.modelMaxLength);
       formData.append('lr_scheduler_type', config.lrScheduler);
+      formData.append('gradient_accumulation_steps', config.gradAccum);
+      // Knob chất lượng: chỉ gửi khi khác mặc định để gpu-service tự quyết phần còn lại.
+      formData.append('use_rslora', String(config.useRslora));
+      formData.append('lora_target_modules', config.loraTargets);
+      formData.append('group_by_length', String(config.groupByLength));
+      formData.append('enable_thinking', String(config.enableThinking));
+      if (config.chatTemplate === 'paste') {
+        const jinja = (config.customChatTemplate || '').trim();
+        if (!jinja) {
+          triggerToast('Hãy dán chat_template (Jinja) hoặc chọn Tự động', 'error');
+          setIsStarting(false);
+          return;
+        }
+        formData.append('chat_template', 'paste');
+        formData.append('chat_template_jinja', jinja);
+      } else if (config.chatTemplate && config.chatTemplate !== 'auto') {
+        formData.append('chat_template', config.chatTemplate);
+      }
+      formData.append('max_grad_norm', config.maxGradNorm);
+      formData.append('early_stopping_patience', config.earlyStoppingPatience);
+      if (parseFloat(config.neftuneAlpha) > 0) formData.append('neftune_noise_alpha', config.neftuneAlpha);
+      if (parseFloat(config.warmupRatio) > 0) formData.append('warmup_ratio', config.warmupRatio);
+      if (config.evalSteps.trim()) formData.append('eval_steps', config.evalSteps.trim());
+      formData.append('api_key', config.apiKey);
+      formData.append('projectName', config.projectName);
       formData.append('systemPrompt', config.systemPrompt);
       formData.append('columnMapping', config.columnMapping);
-      formData.append('projectName', config.projectName);
-      formData.append('api_key', config.apiKey);
 
       if (previewData.totalRecords) formData.append('totalRecords', String(previewData.totalRecords));
       if (previewData.totalTokens) formData.append('totalTokens', String(previewData.totalTokens));

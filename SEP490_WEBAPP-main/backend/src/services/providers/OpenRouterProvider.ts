@@ -1,9 +1,6 @@
-import { ILlmProvider } from './ILlmProvider';
-const fetch = async (url: any, init?: any) => {
-  const module = await import('node-fetch');
-  return module.default(url, init);
-};
 import dotenv from 'dotenv';
+import { ILlmProvider } from './ILlmProvider';
+import { nodeFetch as fetch } from '../../utils/gpuHttp';
 import { RESEARCH_MODEL_CATALOG } from '../../config/modelCatalog';
 dotenv.config();
 

@@ -16,44 +16,56 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── GPU Service (ĐÃ TẮT - CHẠY TRÊN COLAB) ──────────────────────────────────
-  # gpu-service:
-  #   build:
-  #     context: ./gpu-service
-  #     dockerfile: Dockerfile
-  #   image: hoanglam51/sep490-gpu-service:latest
-  #   container_name: sep490_gpu
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - HOST=0.0.0.0
-  #     - PORT=5000
-  #     - TORCHDYNAMO_DISABLE=1
-  #     - CUDA_LAUNCH_BLOCKING=1
-  #     - BACKEND_URL=http://backend:3000
-  #   # Không expose ra host — backend gọi nội bộ qua http://gpu-service:5000
-  #   expose:
-  #     - "5000"
-  #   volumes:
-  #     - gpu_checkpoints:/tmp/checkpoints_
-  #     - gpu_uploads:/app/dataset_uploads
-  #   networks:
-  #     - app_network
-  #   # Healthcheck: đợi Flask thực sự sẵn sàng trước khi backend kết nối
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5000/api/train/status/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     start_period: 120s   # unsloth + torch load lâu, cho 2 phút
-  #     retries: 5
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: all
-  #             capabilities: [gpu]
+  # ── GPU Service ─────────────────────────────────────────────────────────────
+  # Không chạy ở dev compose (cần GPU). Bản self-hosted GPU nằm ở docker-compose.prod.yml.
+
+  # ── MinIO (S3-compatible object storage) ────────────────────────────────────
+  # Local/dev storage backend for datasets. In production the same S3 API is
+  # reached through the CDN domain (cdn-lab.fpt.edu.vn) via STORAGE_* env vars.
+  minio:
+    image: minio/minio:latest
+    container_name: sep490_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO (S3-compatible object storage) ────────────────────────────────────
+  # Local/dev storage backend for datasets. In production the same S3 API is
+  # reached through the CDN domain (cdn-lab.fpt.edu.vn) via STORAGE_* env vars.
+  minio:
+    image: minio/minio:latest
+    container_name: sep490_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio_data:/data
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ── Backend ────────────────────────────────────────────────────────────────
   backend:
@@ -76,6 +88,13 @@ services:
       # Kết nối nội bộ tới gpu-service — không qua ngrok/IP ngoài
       - GPU_SERVICE_URL=http://gpu-service:5000
       - PORT=3000
+      # ── Object storage (dev → internal MinIO). Production overrides these in .env
+      #    to point at the CDN domain (see .env.example / LLMAware convention).
+      - STORAGE_ENDPOINT=minio:9000
+      - STORAGE_BUCKET=llm_trains
+      - STORAGE_ACCESS_KEY=minioadmin
+      - STORAGE_SECRET_KEY=minioadmin
+      - STORAGE_SECURE=false
     volumes:
       - uploads_data:/app/uploads
       - ./scripts:/app/scripts
@@ -84,6 +103,8 @@ services:
       - app_network
     depends_on:
       mongo:
+        condition: service_healthy
+      minio:
         condition: service_healthy
       # Đã comment để backend không đợi gpu-service local khởi chạy
       # gpu-service:
@@ -121,9 +142,7 @@ volumes:
     driver: local
   uploads_data:
     driver: local
-  gpu_checkpoints:
-    driver: local
-  gpu_uploads:
+  minio_data:
     driver: local
   certbot_certs:
     driver: local

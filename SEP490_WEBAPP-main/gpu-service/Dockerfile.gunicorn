@@ -1,0 +1,4 @@
+# Patch nhanh trên image cu128 đã build — tránh tải lại ~3GB torch wheel.
+FROM viht7/trainner-gpu:latest
+COPY app.py gunicorn.conf.py ./
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]

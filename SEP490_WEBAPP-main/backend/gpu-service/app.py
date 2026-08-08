@@ -1,25 +1,25 @@
-import unsloth
-from unsloth import FastLanguageModel, is_bfloat16_supported
 import os
-import json
 import re
-import threading
+import gc
+import json
 import time
-import datetime
+import uuid
+import hmac
+import torch
 import shutil
+import pynvml
+import unsloth
+import hashlib
+import datetime
+import platform
+import threading
+import traceback
 import contextlib
 import collections
-import gc
-import uuid
-import traceback
-import hashlib
-import urllib.request
 import urllib.error
-import platform
+import urllib.request
 import importlib.metadata
-
-import torch
-import pynvml
+from unsloth import FastLanguageModel, is_bfloat16_supported
 
 # Compatibility patch for peft / torchao LinearActivationQuantizedTensor mismatch
 try:
@@ -33,33 +33,33 @@ try:
 except Exception:
     pass
 import anthropic
-from flask import Flask, request, jsonify, Response
-from werkzeug.utils import secure_filename
 from threading import Thread
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.neighbors import NearestNeighbors
+from werkzeug.utils import secure_filename
 from sklearn.metrics import silhouette_score
+from sklearn.neighbors import NearestNeighbors
+from flask import Flask, request, jsonify, Response
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import DBSCAN, KMeans
 from collections import defaultdict
+from sklearn.cluster import DBSCAN, KMeans
+from sentence_transformers import SentenceTransformer
 
 from locked_eval_protocol import (
+    sha256_text,
+    paired_integrity,
+    stable_json_hash,
     decide_hypotheses,
-    extract_adaptive_metadata,
-    extract_item_metadata,
     normalize_subject,
     operational_summary,
-    paired_adaptive_statistics,
-    paired_integrity,
-    paired_research_statistics,
-    sha256_text,
-    stable_json_hash,
-    validate_adaptive_dataset,
+    extract_item_metadata,
     validate_locked_dataset,
+    extract_adaptive_metadata,
+    validate_adaptive_dataset,
+    paired_adaptive_statistics,
+    paired_research_statistics,
 )
 
 
@@ -104,6 +104,31 @@ os.environ["TORCHDYNAMO_DISABLE"] = "1"
 os.environ.setdefault('CUDA_LAUNCH_BLOCKING', '0')
 
 app = Flask(__name__)
+
+# ======================================================================
+# SHARED-SECRET AUTH
+# The GPU service exposes training/eval/inference endpoints that consume real
+# money (GPU time, judge API keys). When GPU_SERVICE_TOKEN is configured, every
+# request must present a matching X-GPU-Token header. Health checks and CORS
+# preflight are exempt so probes keep working. When the token is unset the guard
+# is a no-op (local dev), but it MUST be set in any exposed deployment.
+# ======================================================================
+GPU_SERVICE_TOKEN = _read_secret("GPU_SERVICE_TOKEN")
+_AUTH_EXEMPT_PATHS = {"/health", "/api/health"}
+
+
+@app.before_request
+def _require_gpu_token():
+    if not GPU_SERVICE_TOKEN:
+        return None
+    if request.method == "OPTIONS" or request.path in _AUTH_EXEMPT_PATHS:
+        return None
+    provided = request.headers.get("X-GPU-Token", "")
+    if not hmac.compare_digest(provided, GPU_SERVICE_TOKEN):
+        return jsonify({"error": "Unauthorized: invalid or missing GPU service token."}), 401
+    return None
+
+
 UPLOAD_FOLDER = './dataset_uploads'
 LOCAL_CHECKPOINT_BASE = "/tmp/checkpoints_"
 EVAL_CHECKPOINT_BASE = os.path.join(LOCAL_CHECKPOINT_BASE, "eval_jobs")

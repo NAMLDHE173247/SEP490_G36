@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from locked_eval_protocol import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # gpu-service root on sys.path
+
+from utils.locked_eval_protocol import (
     decide_hypotheses,
     extract_item_metadata,
     paired_adaptive_statistics,
@@ -158,7 +160,7 @@ class LockedProtocolTests(unittest.TestCase):
         self.assertEqual(audit["rendered_input_hash_mismatches"], ["MATH-001"])
 
     def test_offline_analysis_and_human_audit_pipeline(self):
-        repo_root = Path(__file__).resolve().parents[1]
+        repo_root = Path(__file__).resolve().parents[2]
         judge = "google/gemini-2.5-flash"
 
         def scored_row(item_id, subject, score, condition):

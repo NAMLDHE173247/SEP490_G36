@@ -1,12 +1,12 @@
-import React, { useState, useRef } from 'react';
 import '../styles/dataprep.css';
-import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
+import { apiService } from '../services/api';
+import React, { useState, useRef } from 'react';
 import { Stage1Upload } from './DataPrep/stages/Stage1Upload';
-import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
+import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
 import { Stage3Labeling } from './DataPrep/stages/Stage3Labeling';
 import { Stage4Labeling } from '../components/dataprep/Stage4Labeling';
-import { Stage6Finish } from './DataPrep/stages/Stage6Finish';
-import { apiService } from '../services/api';
+import { DataPrepProvider, useDataPrep } from './DataPrep/DataPrepContext';
+import { Stage2Preprocessing } from './DataPrep/stages/Stage2Preprocessing';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Eye, FileText, HelpCircle, MessageSquare, Plus, RefreshCw, RotateCcw, Scissors, Settings, Sparkles, Upload, X } from 'lucide-react';
 
 const STAGES = [
@@ -336,26 +336,26 @@ function DataPrepInner() {
     { num: 6, label: 'Save & Assign' },
     { num: 7, label: 'Intent-Action' }
   ];
-  const [currentSubStep3, setCurrentSubStep3] = useState(5);
   const [stage3Page, setStage3Page] = useState(1);
-  const [stage3PerPage, setStage3PerPage] = useState(10);
   const [stage3Search, setStage3Search] = useState('');
-  const [customSubjectLabels, setCustomSubjectLabels] = useState<string[]>([]);
-  const [pendingAiLabels, setPendingAiLabels] = useState<string[]>([]);
-  const [showCompareLabels, setShowCompareLabels] = useState(false);
-  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
-  const [iaActiveTab, setIaActiveTab] = useState('assignment');
-  const [showUserGuide, setShowUserGuide] = useState(false);
-  const [selectedGroup3, setSelectedGroup3] = useState(null);
+  const [stage3PerPage, setStage3PerPage] = useState(10);
   const [selectedConv3, setSelectedConv3] = useState(null);
+  const [currentSubStep3, setCurrentSubStep3] = useState(5);
+  const [showUserGuide, setShowUserGuide] = useState(false);
   const [stage3SubGroup, setStage3SubGroup] = useState('A');
+  const [selectedGroup3, setSelectedGroup3] = useState(null);
+  const [iaActiveTab, setIaActiveTab] = useState('assignment');
+  const [showCompareLabels, setShowCompareLabels] = useState(false);
+  const [pendingAiLabels, setPendingAiLabels] = useState<string[]>([]);
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [customSubjectLabels, setCustomSubjectLabels] = useState<string[]>([]);
   /* AI Labeling state */
-  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter' | 'oauth_gateway' | 'gemini' | 'openai'>('deepseek');
-  const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
-  const [isSavingLabels, setIsSavingLabels] = useState(false);
-  const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
+  const [aiProvider, setAiProvider] = useState<'deepseek' | 'groq' | 'openrouter' | 'gemini' | 'openai'>('deepseek');
   const [stage3Convs, setStage3Convs] = useState<any[]>([]);
+  const [isSavingLabels, setIsSavingLabels] = useState(false);
+  const [isLabelingWithAI, setIsLabelingWithAI] = useState(false);
   const [checkedConvIds, setCheckedConvIds] = useState<string[]>([]);
+  const [aiGroupLabels, setAiGroupLabels] = useState<Record<number, string>>({});
 
   React.useEffect(() => {
     if (currentStage === 4) {
@@ -2993,7 +2993,6 @@ function DataPrepInner() {
                       onChange={e => setAiProvider(e.target.value as any)}
                       disabled={isLabelingWithAI}
                     >
-                      <option value="oauth_gateway">OAuth Gateway (tự động fallback)</option>
                       <option value="gemini">Gemini</option>
                       <option value="openai">ChatGPT / OpenAI</option>
                       <option value="deepseek">Deepseek</option>

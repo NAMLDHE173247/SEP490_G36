@@ -346,7 +346,7 @@ export const stage4Api = {
     return res.data;
   },
 
-  suggestRewrite: async (versionId: string, taskId: string, provider = 'oauth_gateway', model?: string): Promise<{ suggestedText: string }> => {
+  suggestRewrite: async (versionId: string, taskId: string, provider = 'gemini', model?: string): Promise<{ suggestedText: string }> => {
     const res = await api.post(`/dataprep/versions/${versionId}/quality/rewrite-assignments/${taskId}/suggest`, { provider, model });
     return res.data;
   },
