@@ -15,10 +15,41 @@ import { configService } from '../services/configService';
 import { TrainingHistory } from '../models/TrainingHistory';
 import { DataPrepProject } from '../models/DataPrepProject';
 import { DatasetSampleAssignment } from '../models/DatasetSampleAssignment';
+import { buildTrainAuditUpdate, toMongoAuditUpdate } from '../utils/trainAudit';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
 import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
 dotenv.config();
+
+/**
+ * Đồng bộ log/audit/effective_config/metrics từ GPU status vào Mongo
+ * (fire-and-forget). Trả về raw update để caller sync bản sao local (SSE giữ
+ * document trong RAM suốt stream).
+ */
+function persistTrainAudit(
+  jobId: string,
+  ownerId: string,
+  data: Record<string, any>,
+  history: {
+    trainLogs?: string[];
+    lastError?: string;
+    progress?: number;
+    lastMetricsAt?: Date;
+  },
+): Record<string, unknown> {
+  const raw = buildTrainAuditUpdate(data, {
+    logs: Array.isArray(history.trainLogs) ? history.trainLogs : [],
+    lastError: history.lastError || '',
+    progress: typeof history.progress === 'number' ? history.progress : undefined,
+    metricsAt: history.lastMetricsAt || null,
+  });
+  const mongo = toMongoAuditUpdate(raw);
+  if (!mongo.$set && !mongo.$push) return raw;
+  TrainingHistory.updateOne({ jobId, ownerId }, mongo).catch((err) =>
+    console.error('[Backend] Failed to persist train audit:', err),
+  );
+  return raw;
+}
 
 class WorkerManager {
   private workers: { url: string; activeJobs: number }[] = [];
@@ -124,42 +155,69 @@ export const startTraining = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Từ điển đầy đủ (kiểu, mặc định, ví dụ từng key):
+    // docs/FINE_TUNING_MODELS_VA_CO.md — mục 3.0 "Request body POST /api/train/start".
     const {
-      model_name,
+      // ── Model & nguồn dữ liệu ──────────────────────────────────────────────
+      model_name,          // HF id model nền, vd "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
+      dataset,             // HF Hub dataset id — chỉ khi KHÔNG upload file
+      cloudLoadedDataset,  // path file backend đã tải sẵn từ cloud storage
+
+      // ── Tham số học (optimizer / schedule) ────────────────────────────────
+      seed,
       epochs,
       batchSize,
-      learningRate,
       blockSize,
+      learningRate,
       modelMaxLength,
-      dataset, // HuggingFace Hub ID string (if no file uploaded)
-      // New parameters
+      optim,
+      warmup_steps,
+      weight_decay,
+      random_state,
+      lr_scheduler_type,
+      gradient_accumulation_steps,
+
+      // ── LoRA ──────────────────────────────────────────────────────────────
       r,
       lora_alpha,
+      use_rslora,
       lora_dropout,
-      random_state,
-      gradient_accumulation_steps,
-      warmup_steps,
-      optim,
-      weight_decay,
-      lr_scheduler_type,
-      seed,
+      lora_target_modules,
+
+      // ── Chất lượng / chống overfit (tuỳ chọn — gpu-service tự áp mặc định) ─
       early_stopping_loss,
       early_stopping_patience,
-      push_to_hub,
-      hf_repo_id,
+      early_stopping_min_delta,
+      eval_steps,
+      save_steps,
+      warmup_ratio,
+      max_grad_norm,
+      group_by_length,
+      neftune_noise_alpha,
+      dataloader_num_workers,
+      auto_tune,           // false = khóa AutoTune, giữ nguyên knob tay
+      enable_thinking,     // train khối reasoning/think (Gemma 4 / Qwen3)
+      chat_template_jinja, // chuỗi Jinja dán tay (đi kèm chat_template=paste)
+      chat_template,       // override template: auto|native|paste|qwen-2.5|...
+
+      // ── Hugging Face Hub ──────────────────────────────────────────────────
       hf_token,
-      // Metadata from frontend to save initial TrainingHistory
+      hf_repo_id,
+      push_to_hub,
+
+      // ── Metadata — chỉ lưu TrainingHistory, không đổi hành vi train ───────
       projectName,
-      datasetSource,
-      columnMapping,
-      column_mapping, // Accept both camelCase and snake_case
-      systemPrompt,
-      systemPromptVersion,
       totalTokens,
+      systemPrompt,
       totalRecords,
-      cloudLoadedDataset,
-      clientTrainingKey,
+      columnMapping,
+      systemPromptVersion,
+      datasetSource,       // 'local' | 'hub' | 'cloud'
+      column_mapping,      // chấp nhận cả camelCase lẫn snake_case
+
+      // ── Chống double-submit (bấm Start 2 lần) ─────────────────────────────
       idempotencyKey,
+      clientTrainingKey,
     } = req.body;
 
     console.log('[Backend] Received columnMapping:', columnMapping);
@@ -313,40 +371,82 @@ export const startTraining = async (req: Request, res: Response) => {
       console.warn(`[Backend] No HF Token provided in request body`);
     }
 
+    // ── Knob tuỳ chọn ────────────────────────────────────────────────────────
+    // Chỉ gửi khi client đặt rõ. Ép giá trị mặc định ở đây (như `|| 0.5` cho
+    // early_stopping_loss trước kia) khiến gpu-service không bao giờ dùng được
+    // mặc định đã hiệu chỉnh của nó.
+    const optionalKnobs: Record<string, unknown> = {};
+    const putNumber = (key: string, raw: unknown) => {
+      if (raw === undefined || raw === null || raw === '') return;
+      const value = Number(raw);
+      if (Number.isFinite(value)) optionalKnobs[key] = value;
+    };
+    const putBoolean = (key: string, raw: unknown) => {
+      if (raw === undefined || raw === null || raw === '') return;
+      optionalKnobs[key] = raw === true || raw === 'true';
+    };
+
+    putBoolean('auto_tune', auto_tune);
+    putNumber('eval_steps', eval_steps);
+    putNumber('save_steps', save_steps);
+    putBoolean('use_rslora', use_rslora);
+    putNumber('warmup_ratio', warmup_ratio);
+    putNumber('max_grad_norm', max_grad_norm);
+    putBoolean('group_by_length', group_by_length);
+    putBoolean('enable_thinking', enable_thinking);
+    putNumber('early_stopping_loss', early_stopping_loss);
+    putNumber('neftune_noise_alpha', neftune_noise_alpha);
+    putNumber('dataloader_num_workers', dataloader_num_workers);
+    putNumber('early_stopping_patience', early_stopping_patience);
+    putNumber('early_stopping_min_delta', early_stopping_min_delta);
+    if (typeof chat_template === 'string' && chat_template.trim()) {
+      optionalKnobs.chat_template = chat_template.trim();
+    }
+    if (typeof chat_template_jinja === 'string' && chat_template_jinja.trim()) {
+      // Giới hạn kích thước — Jinja tokenizer_config thường < 100KB
+      optionalKnobs.chat_template_jinja = chat_template_jinja.trim().slice(0, 200_000);
+    }
+    if (lora_target_modules) {
+      // Chuẩn về chuỗi: vừa hợp schema TrainingHistory, vừa được gpu-service
+      // hiểu (tên preset hoặc danh sách ngăn cách bởi dấu phẩy).
+      optionalKnobs.lora_target_modules = Array.isArray(lora_target_modules)
+        ? lora_target_modules.join(',')
+        : String(lora_target_modules);
+    }
+
     // ── Build JSON config for GPU Service ─────────────────────────────────────
     const config: any = {
       job_id,
       model_name,
+      ...optionalKnobs,
       epochs: epochsNum,
-      batchSize: parseInt(batchSize as string) || 1,
-      learningRate: parseFloat(learningRate as string) || 2e-4,
-      blockSize: parseInt(blockSize as string) || 512,
-      modelMaxLength: parseInt(modelMaxLength as string) || 2048,
-      r: parseInt(r as string) || 16,
-      lora_alpha: parseInt(lora_alpha as string) || 16,
-      lora_dropout: parseFloat(lora_dropout as string) || 0,
-      random_state: parseInt(random_state as string) || 3407,
-      gradient_accumulation_steps: parseInt(gradient_accumulation_steps as string) || 4,
-      warmup_steps: parseInt(warmup_steps as string) || 5,
-      optim: (optim as string) || 'adamw_8bit',
-      weight_decay: parseFloat(weight_decay as string) || 0.01,
-      lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
-      seed: parseInt(seed as string) || 3407,
-      early_stopping_loss: parseFloat(early_stopping_loss as string) || 0.5,
-      early_stopping_patience: parseInt(early_stopping_patience as string) || 100,
-      push_to_hub: push_to_hub === 'true' || push_to_hub === true,
-      hf_repo_id: hf_repo_id || '',
       hf_token: hf_token || '',
-      system_prompt: effectiveSystemPrompt,
-      system_prompt_version: effectiveSystemPromptVersion,
-      // Google Drive for checkpoint saving
-      drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
-      service_account: parsedGoogleCredentials,
-      // Pass column mapping to GPU service in multiple formats to be safe
-      column_mapping: finalColumnMapping,
-      dataset_text_field: finalColumnMapping,
+      hf_repo_id: hf_repo_id || '',
+      r: parseInt(r as string) || 16,
       text_column: finalColumnMapping,
       target_column: finalColumnMapping,
+      column_mapping: finalColumnMapping,
+      system_prompt: effectiveSystemPrompt,
+      // Google Drive for checkpoint saving
+      seed: parseInt(seed as string) || 3407,
+      dataset_text_field: finalColumnMapping,
+      drive_folder_id: GOOGLE_DRIVE_FOLDER_ID,
+      optim: (optim as string) || 'adamw_8bit',
+      service_account: parsedGoogleCredentials,
+      batchSize: parseInt(batchSize as string) || 1,
+      blockSize: parseInt(blockSize as string) || 512,
+      lora_alpha: parseInt(lora_alpha as string) || 16,
+      warmup_steps: parseInt(warmup_steps as string) || 5,
+      system_prompt_version: effectiveSystemPromptVersion,
+      lora_dropout: parseFloat(lora_dropout as string) || 0,
+      random_state: parseInt(random_state as string) || 3407,
+      learningRate: parseFloat(learningRate as string) || 2e-4,
+      weight_decay: parseFloat(weight_decay as string) || 0.01,
+      modelMaxLength: parseInt(modelMaxLength as string) || 2048,
+      push_to_hub: push_to_hub === 'true' || push_to_hub === true,
+      lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
+      // Pass column mapping to GPU service in multiple formats to be safe
+      gradient_accumulation_steps: parseInt(gradient_accumulation_steps as string) || 4,
     };
 
     // If no file uploaded, embed HF Hub ID directly into config
@@ -498,8 +598,7 @@ export const startTraining = async (req: Request, res: Response) => {
           warmup_steps: parseInt(warmup_steps as string) || 5,
           weight_decay: parseFloat(weight_decay as string) || 0.01,
           seed: parseInt(seed as string) || 3407,
-          early_stopping_loss: parseFloat(early_stopping_loss as string) || 0.5,
-          early_stopping_patience: parseInt(early_stopping_patience as string) || 100,
+          ...optionalKnobs,
           optim: (optim as string) || 'adamw_8bit',
           lr_scheduler_type: (lr_scheduler_type as string) || 'linear',
         },
@@ -582,6 +681,125 @@ export const getActiveTrainingJobs = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// GET /api/train/monitor
+// Giám sát job đang chạy: heartbeat, phát hiện treo, tình trạng worker.
+// Đọc Mongo là chính — chỉ ping worker (timeout ngắn) để báo sống/chết.
+// ---------------------------------------------------------------------------
+const STALL_THRESHOLD_MS: Record<string, number> = {
+  TRAINING: 5 * 60 * 1000,
+  RUNNING: 5 * 60 * 1000,
+  // Nạp model / xếp hàng vốn im lặng lâu — ngưỡng rộng hơn để khỏi báo nhầm
+  LOADING_MODEL: 15 * 60 * 1000,
+  QUEUED: 15 * 60 * 1000,
+  PENDING: 15 * 60 * 1000,
+};
+const STALL_RENOTIFY_MS = 10 * 60 * 1000;
+
+async function pingWorker(url: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${url}/api/train/status/__monitor_ping__`, {
+      headers: GPU_TUNNEL_HEADERS,
+      signal: controller.signal as any,
+    });
+    // Kể cả 404/NOT_FOUND vẫn tính là sống — worker đã trả lời.
+    return response.status < 500;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export const getTrainingMonitor = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const activeStatuses = Object.keys(STALL_THRESHOLD_MS);
+    const jobs = await TrainingHistory.find({
+      ownerId,
+      status: { $in: activeStatuses },
+    })
+      .select('jobId projectName baseModel status progress lastLogLine lastError startedAt updatedAt workerUrl lastProgressAt stallNotifiedAt')
+      .sort({ startedAt: -1 })
+      .lean();
+
+    const now = Date.now();
+    const monitored = jobs.map((job: any) => {
+      const heartbeat = job.lastProgressAt || job.updatedAt || job.startedAt;
+      const silentMs = Math.max(0, now - new Date(heartbeat).getTime());
+      const threshold = STALL_THRESHOLD_MS[job.status] ?? STALL_THRESHOLD_MS.TRAINING;
+      const stalled = silentMs > threshold;
+      return {
+        jobId: job.jobId,
+        projectName: job.projectName,
+        baseModel: job.baseModel,
+        status: job.status,
+        progress: job.progress ?? null,
+        lastLogLine: job.lastLogLine || '',
+        lastError: job.lastError || '',
+        startedAt: job.startedAt,
+        lastProgressAt: heartbeat,
+        silentMs,
+        stalled,
+        workerUrl: job.workerUrl || null,
+      };
+    });
+
+    // Ghi audit event STALL (dedupe: chỉ nhắc lại sau STALL_RENOTIFY_MS)
+    for (const job of monitored.filter((j) => j.stalled)) {
+      const raw = jobs.find((j: any) => j.jobId === job.jobId) as any;
+      const lastNotified = raw?.stallNotifiedAt ? new Date(raw.stallNotifiedAt).getTime() : 0;
+      if (now - lastNotified < STALL_RENOTIFY_MS) continue;
+      const minutes = Math.round(job.silentMs / 60000);
+      TrainingHistory.updateOne(
+        { jobId: job.jobId, ownerId },
+        {
+          $set: { stallNotifiedAt: new Date() },
+          $push: {
+            auditEvents: {
+              $each: [{
+                ts: new Date(),
+                level: 'warn',
+                source: 'monitor',
+                code: 'STALL',
+                message: `Không có tiến triển trong ~${minutes} phút (status ${job.status}). Kiểm tra GPU worker hoặc cân nhắc Stop/Resume.`,
+              }],
+              $slice: -500,
+            },
+          },
+        },
+      ).catch((err) => console.error('[Backend] Failed to record stall event:', err));
+    }
+
+    // Ping mỗi worker duy nhất (song song, timeout 3s)
+    const workerUrls = [...new Set(
+      monitored.map((j) => j.workerUrl).filter((u): u is string => !!u)
+    )];
+    const reachability = await Promise.all(workerUrls.map((url) => pingWorker(url)));
+    const workers = workerUrls.map((url, i) => ({ url, reachable: reachability[i] }));
+
+    return res.json({
+      checkedAt: new Date(),
+      jobs: monitored.map((j) => ({
+        ...j,
+        workerReachable: j.workerUrl
+          ? workers.find((w) => w.url === j.workerUrl)?.reachable ?? null
+          : null,
+      })),
+      workers,
+    });
+  } catch (err: any) {
+    console.error('[Backend] getTrainingMonitor error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to get training monitor' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // GET /api/train/status/:jobId
 // Proxy to GPU Service — no changes needed
 // ---------------------------------------------------------------------------
@@ -629,10 +847,12 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
       ).catch(err => console.error('[Backend] Failed to update status in DB during poll:', err));
     }
 
+    persistTrainAudit(jobId, ownerId, data, history);
+
     if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
       const updateFields: any = {};
       if (data.latest_checkpoint) updateFields.latest_checkpoint_file_id = data.latest_checkpoint;
-      
+
       const pushFields: any = {};
       if (data.metrics && typeof data.metrics.loss === 'number') {
         pushFields.lossHistory = { progress: data.progress || 0, loss: data.metrics.loss };
@@ -653,7 +873,7 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     if (['COMPLETED', 'STOPPED', 'FAILED', 'ERROR'].includes(data.status)) {
       const workerMetrics = data.metrics || {};
       let finalLoss = typeof data.loss === 'number' && data.loss > 0 ? data.loss : (typeof workerMetrics.loss === 'number' ? workerMetrics.loss : 0);
-      
+
       if (finalLoss === 0 && history && history.lossHistory && history.lossHistory.length > 0) {
         const lastValid = history.lossHistory.filter(h => h.loss > 0).pop();
         if (lastValid) finalLoss = lastValid.loss;
@@ -679,8 +899,37 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     }
     // --- END DB SYNC ---
 
+    // Khi worker mất job nhưng Mongo còn audit → trả kèm để UI vẫn xem được log
+    if ((!Array.isArray(data.logs) || data.logs.length === 0) && Array.isArray(history.trainLogs) && history.trainLogs.length > 0) {
+      data.logs = history.trainLogs;
+      data.from_mongo_audit = true;
+    }
+    if (!data.effective_config && history.effectiveConfig) {
+      data.effective_config = history.effectiveConfig;
+    }
+    if (!data.error && history.lastError) data.error = history.lastError;
+    if (!data.technical_error && history.technicalError) data.technical_error = history.technicalError;
+
     return res.status(response.status).json(data);
   } catch (err: any) {
+    // Worker unreachable: vẫn cố trả audit đã lưu trên Mongo
+    try {
+      const ownerId = getAuthUserId(req);
+      const { jobId } = req.params;
+      if (ownerId && jobId) {
+        const history = await TrainingHistory.findOne({ jobId, ownerId }).lean();
+        if (history && Array.isArray((history as any).trainLogs) && (history as any).trainLogs.length > 0) {
+          return res.status(200).json({
+            status: (history as any).status || 'ERROR',
+            logs: (history as any).trainLogs,
+            effective_config: (history as any).effectiveConfig,
+            error: (history as any).lastError || err.message,
+            technical_error: (history as any).technicalError,
+            from_mongo_audit: true,
+          });
+        }
+      }
+    } catch { /* ignore fallback errors */ }
     return res.status(500).json({ error: err.message || 'Failed to get training status' });
   }
 };
@@ -726,20 +975,20 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
       let data: any;
       try {
         const response = await fetch(`${workerUrl}/api/train/status/${jobId}`, {
-        headers: GPU_TUNNEL_HEADERS
-      });
-      
-      if (!response.ok && response.status !== 404) {
-         throw new Error(`Worker returned HTTP ${response.status}`);
-      }
-      data = await response.json();
-    } catch (fetchErr: any) {
-      console.warn(`[Backend] Failed to fetch status from worker: ${fetchErr.message}`);
-      data = { status: 'NOT_FOUND', message: 'Worker is unreachable or returned invalid response' };
-    }
+          headers: GPU_TUNNEL_HEADERS
+        });
 
-    if (data.status === 'NOT_FOUND') {
-      const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
+        if (!response.ok && response.status !== 404) {
+          throw new Error(`Worker returned HTTP ${response.status}`);
+        }
+        data = await response.json();
+      } catch (fetchErr: any) {
+        console.warn(`[Backend] Failed to fetch status from worker: ${fetchErr.message}`);
+        data = { status: 'NOT_FOUND', message: 'Worker is unreachable or returned invalid response' };
+      }
+
+      if (data.status === 'NOT_FOUND') {
+        const jobAgeMs = Date.now() - new Date(history.startedAt).getTime();
         if (jobAgeMs > 15000) {
           data.status = 'ERROR';
           data.logs = ['[System] Lỗi: Kết nối huấn luyện bị mất. Trạng thái công việc không tìm thấy trên GPU Worker (có thể Worker đã bị khởi động lại hoặc ngắt kết nối).'];
@@ -755,6 +1004,13 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
           { status: data.status }
         ).catch(err => console.error('[Backend] Failed to update status in DB during stream:', err));
       }
+
+      // Sync bản sao local để lần lặp sau chỉ diff phần mới (stream giữ doc trong RAM).
+      const auditRaw = persistTrainAudit(jobId, ownerId, data, history);
+      if (Array.isArray(auditRaw.trainLogs)) history.trainLogs = auditRaw.trainLogs as string[];
+      if (typeof auditRaw.lastError === 'string') history.lastError = auditRaw.lastError;
+      if (typeof auditRaw.progress === 'number') history.progress = auditRaw.progress;
+      if (auditRaw.lastMetricsAt instanceof Date) history.lastMetricsAt = auditRaw.lastMetricsAt;
 
       // IF latest_checkpoint exists, update the DB so we can resume later
       if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
@@ -1187,8 +1443,8 @@ export const downloadCloudDataset = async (req: Request, res: Response) => {
     // 1. Convert Google Drive link if applicable
     let downloadUrl = url;
     let fileIdMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/) ||
-                      url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
-    
+      url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+
     if (fileIdMatch) {
       const fileId = fileIdMatch[1];
       downloadUrl = `https://docs.google.com/uc?export=download&id=${fileId}`;
@@ -1201,8 +1457,8 @@ export const downloadCloudDataset = async (req: Request, res: Response) => {
     });
 
     if (!downloadRes.ok) {
-      return res.status(400).json({ 
-        error: `Failed to download file: Status ${downloadRes.status} ${downloadRes.statusText}` 
+      return res.status(400).json({
+        error: `Failed to download file: Status ${downloadRes.status} ${downloadRes.statusText}`
       });
     }
 
@@ -1221,7 +1477,7 @@ export const downloadCloudDataset = async (req: Request, res: Response) => {
         if (lastSegment && lastSegment.includes('.')) {
           filename = lastSegment;
         }
-      } catch {}
+      } catch { }
     }
 
     // Ensure uploads/cloud_datasets directory exists
@@ -1278,7 +1534,7 @@ export const downloadCloudDataset = async (req: Request, res: Response) => {
             }
           }
           values.push(currentVal.trim().replace(/^"|"$/g, ''));
-          
+
           const obj: any = {};
           headers.forEach((h, idx) => {
             obj[h] = values[idx] || '';

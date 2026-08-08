@@ -38,7 +38,7 @@ if "locked_eval_protocol" not in _locked_sys.modules:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", type=Path, default=Path("gpu-service/app.py"))
-    parser.add_argument("--protocol", type=Path, default=Path("gpu-service/locked_eval_protocol.py"))
+    parser.add_argument("--protocol", type=Path, default=Path("gpu-service/utils/locked_eval_protocol.py"))
     parser.add_argument(
         "--output",
         type=Path,

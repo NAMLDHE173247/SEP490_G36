@@ -26,24 +26,42 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --- Bước 2: Cài Unsloth (phụ thuộc CUDA, cần cài sau torch) ---
-RUN pip install --no-cache-dir --upgrade torchao
+# --- Bước 1b: PIN torch stack về CUDA 12.8 ---
+# Driver server prod (575.x = CUDA 12.9) KHÔNG chạy được wheel cu130 (torch >= 2.12
+# trên PyPI mặc định build cho CUDA 13.0 → "driver too old, found version 12090").
+# torch 2.11.0 là bản CUỐI CÙNG còn wheel cu128, và nằm đúng range unsloth yêu cầu
+# (>=2.4,<2.12). Cài TRƯỚC unsloth để pip thấy torch đã thỏa mãn → không kéo cu130.
+RUN pip install --no-cache-dir --upgrade \
+    torch==2.11.0 torchvision torchaudio xformers \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# --- Bước 2: torchao từ index cu128 (bản PyPI mặc định build cho cu130) ---
+RUN pip install --no-cache-dir --upgrade torchao \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# --- Bước 2b: Cài Unsloth (torch đã pin đúng version → unsloth không nâng nữa) ---
 RUN pip install --no-cache-dir \
     "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# --- Bước 2b: Sync torchvision với phiên bản torch mà unsloth đã nâng lên ---
-RUN pip install --no-cache-dir --upgrade "torchvision>=0.25.0"
+# --- Bước 2c: bitsandbytes theo range unsloth hỗ trợ ---
+# 0.45.5+ bundle sẵn binary cho cu12x, dùng lib nvidia-* do wheel torch cu128 kéo về
+# (pin cũ 0.43.3 chỉ cần cho base image CUDA 12.1 thuần — giờ không cần nữa)
+RUN pip install --no-cache-dir --upgrade "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0"
 
-# --- Bước 2c: Fix bitsandbytes — pin về 0.43.3 tương thích CUDA 12.1 ---
-# bitsandbytes >= 0.44 yêu cầu libnvJitLink.so.13 (chỉ có từ CUDA 12.3+)
-# Force-reinstall sau unsloth để tránh bị unsloth nâng lên version mới
-RUN pip install --no-cache-dir --force-reinstall "bitsandbytes==0.43.3"
+# --- Bước 2d: GUARD — build FAIL ngay nếu bước nào đó lén nâng torch lên cu13x ---
+RUN python -c "import torch; v = torch.version.cuda or ''; assert v.startswith('12.'), f'torch {torch.__version__} built cho CUDA {v} — driver server chi ho tro 12.x!'; print('OK: torch', torch.__version__, '| CUDA', v)"
 
 # --- Bước 3: Download NLTK data cần thiết ---
 RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('punkt_tab', quiet=True)"
 
 # --- Bước 4: Copy source code ---
-COPY app.py locked_eval_protocol.py ./
+COPY app.py ./
+COPY gunicorn.conf.py ./
+COPY constants ./constants
+COPY core ./core
+COPY pipelines ./pipelines
+COPY services ./services
+COPY utils ./utils
 
 # Tạo thư mục cần thiết
 RUN mkdir -p /app/dataset_uploads /tmp/checkpoints_
@@ -68,4 +86,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]

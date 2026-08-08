@@ -4,31 +4,46 @@
 
 // ── Training Configuration ──
 export interface TrainingConfig {
-  projectName: string;
+  apiKey: string;
   baseModel: string;
-  datasetSource: 'local' | 'hub' | 'cloud';
+  projectName: string;
+  systemPrompt: string;
+  columnMapping: string;
   localFile: File | null;
   selectedHfDataset: string;
   cloudLoadedDataset: string;
-  columnMapping: string;
-  systemPrompt: string;
-  apiKey: string;
+  datasetSource: 'local' | 'hub' | 'cloud';
 
   // Training parameters
-  epochs: string;
-  batchSize: string;
-  learningRate: string;
-  blockSize: string;
-  modelMaxLength: string;
   r: string;
-  loraAlpha: string;
-  loraDropout: string;
-  gradAccum: string;
-  warmupSteps: string;
-  weightDecay: string;
   seed: string;
   optim: string;
+  epochs: string;
+  batchSize: string;
+  blockSize: string;
+  loraAlpha: string;
+  gradAccum: string;
+  loraDropout: string;
+  warmupSteps: string;
+  weightDecay: string;
   lrScheduler: string;
+  learningRate: string;
+  modelMaxLength: string;
+
+  // Quality & regularization (advanced) — bỏ trống để GPU service tự chọn
+  loraTargets: string;
+  useRslora: boolean;
+  neftuneAlpha: string;
+  maxGradNorm: string;
+  warmupRatio: string;
+  groupByLength: boolean;
+  enableThinking: boolean;
+  /** auto | native | paste | gemma-4 | llama-3 | qwen-2.5 | ... */
+  chatTemplate: string;
+  /** Chuỗi Jinja dán tay khi chatTemplate === 'paste' */
+  customChatTemplate: string;
+  earlyStoppingPatience: string;
+  evalSteps: string;
 
   // HF Hub push
   hfRepoId: string;
@@ -36,33 +51,42 @@ export interface TrainingConfig {
 }
 
 export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
+  r: '16',
+  apiKey: '',
+  epochs: '3',
+  hfToken: '',
+  seed: '3407',
+  hfRepoId: '',
+  evalSteps: '',
+  batchSize: '1',
+  gradAccum: '4',
+  localFile: null,
+  loraAlpha: '32',
+  systemPrompt: '',
+  warmupSteps: '5',
+  useRslora: false,
+  maxGradNorm: '1',
+  warmupRatio: '0',
+  blockSize: '1024',
+  neftuneAlpha: '0',
+  loraDropout: '0.05',
+  weightDecay: '0.01',
+  optim: 'adamw_8bit',
+  groupByLength: false,
+  chatTemplate: 'auto',
+  selectedHfDataset: '',
+  columnMapping: 'text',
+  lrScheduler: 'cosine',
+  enableThinking: false,
+  datasetSource: 'local',
+  cloudLoadedDataset: '',
+  modelMaxLength: '1024',
+  customChatTemplate: '',
+  learningRate: '0.00005',
+  loraTargets: 'all-linear',
+  earlyStoppingPatience: '3',
   projectName: 'my-first-lm-project',
   baseModel: 'Qwen/Qwen2.5-7B-Instruct',
-  datasetSource: 'local',
-  localFile: null,
-  selectedHfDataset: '',
-  cloudLoadedDataset: '',
-  columnMapping: 'text',
-  systemPrompt: '',
-  apiKey: '',
-
-  epochs: '3',
-  batchSize: '1',
-  learningRate: '0.00005',
-  blockSize: '1024',
-  modelMaxLength: '1024',
-  r: '16',
-  loraAlpha: '32',
-  loraDropout: '0.05',
-  gradAccum: '4',
-  warmupSteps: '5',
-  weightDecay: '0.01',
-  seed: '3407',
-  optim: 'adamw_8bit',
-  lrScheduler: 'linear',
-
-  hfRepoId: '',
-  hfToken: '',
 };
 
 // ── Dataset Preview ──
@@ -123,6 +147,9 @@ export const BASE_MODEL_GROUPS: ModelGroup[] = [
       { id: "unsloth/Llama-3.2-3B-Instruct-bnb-4bit", name: "Llama 3.2 (3B) — Lightweight English Socratic Tutor" },
       { id: "unsloth/Llama-3.2-1B-Instruct-bnb-4bit", name: "Llama 3.2 (1B) — Fast Edge English Tutor" },
       { id: "google/gemma-3-4b-it", name: "Gemma 3 (4B/12B) — SocraticBench Top Performer" },
+      { id: "unsloth/gemma-4-E4B-it", name: "Gemma 4 E4B (Unsloth) — Text SFT, ~10–17GB VRAM" },
+      { id: "unsloth/gemma-4-E2B-it", name: "Gemma 4 E2B (Unsloth) — Nhẹ nhất, ~8–10GB VRAM" },
+      { id: "unsloth/gemma-4-31B-it", name: "Gemma 4 31B (Unsloth) — QLoRA ~22GB+, template thinking" },
       { id: "unsloth/Mistral-Small-24B-Instruct-2501-bnb-4bit", name: "Mistral-Small 3.1 (24B) — Quản lý hội thoại tinh tế" },
       { id: "unsloth/Qwen2.5-7B-Instruct-bnb-4bit", name: "Qwen 2.5 (7B) — Chẩn đoán ngữ pháp tiếng Anh" }
     ]
@@ -151,36 +178,52 @@ export const SYSTEM_PROMPT_TEMPLATES: PromptTemplate[] = [
 
 // ── Parameter Presets ──
 export interface ParamPreset {
+  r: number;
+  optim: string;
   epochs: number;
   batchSize: number;
-  learningRate: number;
   blockSize: number;
-  modelMaxLength: number;
-  r: number;
   lora_alpha: number;
+  learningRate: number;
   lora_dropout: number;
-  gradient_accumulation_steps: number;
   warmup_steps: number;
   weight_decay: number;
-  optim: string;
+  modelMaxLength: number;
   lr_scheduler_type: string;
+  gradient_accumulation_steps: number;
+  // Knob chất lượng — tuỳ chọn để preset cũ đã lưu trong localStorage vẫn đọc được
+  use_rslora?: boolean;
+  warmup_ratio?: number;
+  max_grad_norm?: number;
+  chat_template?: string;
+  group_by_length?: boolean;
+  enable_thinking?: boolean;
+  lora_target_modules?: string;
+  neftune_noise_alpha?: number;
+  early_stopping_patience?: number;
 }
 
 export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
   "Quick Training (~5 min)": {
     epochs: 1, batchSize: 2, learningRate: 0.0002, blockSize: 512, modelMaxLength: 512,
     r: 4, lora_alpha: 8, lora_dropout: 0.0, gradient_accumulation_steps: 8,
-    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear"
+    warmup_steps: 2, weight_decay: 0.0, optim: "adamw_8bit", lr_scheduler_type: "linear",
+    lora_target_modules: "attention", use_rslora: false, neftune_noise_alpha: 0,
+    max_grad_norm: 1.0, warmup_ratio: 0, group_by_length: false, early_stopping_patience: 2
   },
   "Standard (Recommended ~15 min)": {
     epochs: 3, batchSize: 1, learningRate: 0.00005, blockSize: 1024, modelMaxLength: 1024,
     r: 16, lora_alpha: 32, lora_dropout: 0.05, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "linear"
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine",
+    lora_target_modules: "all-linear", use_rslora: false, neftune_noise_alpha: 5,
+    max_grad_norm: 1.0, warmup_ratio: 0.03, group_by_length: false, early_stopping_patience: 3
   },
   "High Quality (~45 min)": {
     epochs: 5, batchSize: 1, learningRate: 0.0001, blockSize: 1024, modelMaxLength: 1024,
-    r: 32, lora_alpha: 64, lora_dropout: 0.0, gradient_accumulation_steps: 4,
-    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine"
+    r: 32, lora_alpha: 64, lora_dropout: 0.05, gradient_accumulation_steps: 4,
+    warmup_steps: 5, weight_decay: 0.01, optim: "adamw_8bit", lr_scheduler_type: "cosine",
+    lora_target_modules: "all-linear", use_rslora: true, neftune_noise_alpha: 5,
+    max_grad_norm: 1.0, warmup_ratio: 0.05, group_by_length: false, early_stopping_patience: 4
   }
 };
 
@@ -196,18 +239,18 @@ export interface ToastMessage {
 // ── Training Job (from SSE) ──
 export interface TrainingJob {
   id: string;
+  loss?: number;
   status: string;
+  error?: string;
   progress: number;
-  current_epoch?: number;
+  eval_loss?: number;
+  total_steps?: number;
   total_epochs?: number;
   current_step?: number;
-  total_steps?: number;
-  loss?: number;
-  eval_loss?: number;
-  vram_used?: string | number;
-  gpu_util?: string | number;
-  error?: string;
+  current_epoch?: number;
   technical_error?: string;
+  gpu_util?: string | number;
+  vram_used?: string | number;
   metrics?: {
     loss?: number;
     eval_loss?: number;

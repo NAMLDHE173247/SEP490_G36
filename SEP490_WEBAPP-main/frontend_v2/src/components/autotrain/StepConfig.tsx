@@ -149,7 +149,8 @@ const StepConfig: React.FC<StepConfigProps> = ({
         setCustomModelInput('');
         setModelValidationStatus('none');
       } else {
-        onConfigChange({ baseModel: val });
+        // Catalog model: luôn về Tự động — không bắt user chọn template
+        onConfigChange({ baseModel: val, chatTemplate: 'auto' });
         setCustomModelInput('');
         setModelValidationStatus('none');
       }
@@ -158,8 +159,15 @@ const StepConfig: React.FC<StepConfigProps> = ({
   );
 
   const handleParamChange = useCallback(
-    (key: keyof TrainingConfig) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    (key: keyof TrainingConfig) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
       onConfigChange({ [key]: e.target.value } as Partial<TrainingConfig>);
+    },
+    [onConfigChange],
+  );
+
+  const handleToggleChange = useCallback(
+    (key: keyof TrainingConfig) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      onConfigChange({ [key]: e.target.checked } as Partial<TrainingConfig>);
     },
     [onConfigChange],
   );
@@ -656,6 +664,168 @@ const StepConfig: React.FC<StepConfigProps> = ({
                       style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
                     />
                   </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">LoRA Targets <HelpTooltip text="Which layers get an adapter. 'all-linear' (attention + MLP) gives the best quality; 'attention' is lighter on VRAM and enough for very small datasets." /></span>
+                    <select
+                      className="at-select"
+                      value={config.loraTargets}
+                      onChange={handleParamChange('loraTargets')}
+                      style={{ width: 120, padding: '4px 8px' }}
+                    >
+                      <option value="all-linear">all-linear</option>
+                      <option value="attention">attention</option>
+                      <option value="mlp">mlp</option>
+                    </select>
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">rsLoRA <HelpTooltip text="Rank-stabilized LoRA. Keeps the update scale sane when Rank is 32 or higher. Little effect at low rank." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.useRslora}
+                      onChange={handleToggleChange('useRslora')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="at-section-divider-line" style={{ margin: '14px 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Quality &amp; Regularization
+                </div>
+
+                <div className="at-param-rows">
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">NEFTune Alpha <HelpTooltip text="Adds noise to embeddings during training. Usually improves instruction-following quality. 0 = off, 5 is the recommended value." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={config.neftuneAlpha}
+                      onChange={handleParamChange('neftuneAlpha')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Max Grad Norm <HelpTooltip text="Clips gradients to this norm so a single bad batch cannot blow up the run. Default 1.0." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={config.maxGradNorm}
+                      onChange={handleParamChange('maxGradNorm')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Warmup Ratio <HelpTooltip text="Warmup as a fraction of total steps (e.g. 0.03). More stable than a fixed step count when the dataset size changes. 0 = use Warmup Steps instead." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={config.warmupRatio}
+                      onChange={handleParamChange('warmupRatio')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Early Stop Patience <HelpTooltip text="How many validation checks may pass without improvement before training stops. Lower = stops sooner on overfitting." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      value={config.earlyStoppingPatience}
+                      onChange={handleParamChange('earlyStoppingPatience')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Eval Steps <HelpTooltip text="Validate every N optimizer steps. Leave empty to let the service pick a value that gives about 8 validation points across the run." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      placeholder="auto"
+                      value={config.evalSteps}
+                      onChange={handleParamChange('evalSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Group By Length <HelpTooltip text="Batches samples of similar length together to waste less compute on padding. Changes batch order, so leave off when comparing runs." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.groupByLength}
+                      onChange={handleToggleChange('groupByLength')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Train Thinking <HelpTooltip text="Enable reasoning/think blocks while formatting (Gemma 4 / Qwen3). Keep OFF for Socratic tutors. When ON, Unsloth recommends ≥75% of samples contain reasoning traces. Chat serving still filters think tags by default." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.enableThinking}
+                      onChange={handleToggleChange('enableThinking')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+
+                  {/* Chỉ hiện khi dùng model custom — catalog đã auto đúng, khỏi làm rối */}
+                  {isCustomActive && (
+                    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--at-border)', background: 'var(--at-bg-subtle, #f8fafc)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--at-text)', marginBottom: 4 }}>
+                        Model lạ — định dạng hội thoại
+                      </div>
+                      <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--at-text-muted)', lineHeight: 1.45 }}>
+                        Để <b>Tự động</b>. Nếu hỏi người tạo model / copy từ HuggingFace được chuỗi template → chọn <b>Dán template thủ công</b>.
+                      </p>
+                      <select
+                        className="at-select"
+                        value={config.chatTemplate || 'auto'}
+                        onChange={handleParamChange('chatTemplate')}
+                        style={{ width: '100%', padding: '6px 8px' }}
+                      >
+                        <option value="auto">Tự động (khuyến nghị)</option>
+                        <option value="paste">Dán template thủ công…</option>
+                        <option value="native">Giữ template gốc của model</option>
+                        <option value="qwen-2.5">Đây là họ Qwen</option>
+                        <option value="llama-3">Đây là họ Llama 3</option>
+                        <option value="gemma-4">Đây là Gemma 4</option>
+                        <option value="gemma-4-thinking">Gemma 4 + thinking</option>
+                        <option value="gemma3">Đây là Gemma 3</option>
+                        <option value="mistral">Đây là Mistral / Vistral</option>
+                        <option value="phi-4">Đây là Phi-4</option>
+                        <option value="chatml">ChatML (generic)</option>
+                      </select>
+                      {config.chatTemplate === 'paste' && (
+                        <div style={{ marginTop: 8 }}>
+                          <label className="at-label" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                            Dán chat_template (Jinja) từ tokenizer_config.json hoặc người tạo model
+                          </label>
+                          <textarea
+                            className="at-input"
+                            value={config.customChatTemplate || ''}
+                            onChange={handleParamChange('customChatTemplate')}
+                            placeholder={'{% for message in messages %}...{{ message.content }}...{% endfor %}'}
+                            rows={6}
+                            style={{ width: '100%', fontFamily: 'Consolas, monospace', fontSize: 11, resize: 'vertical' }}
+                          />
+                          <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--at-text-muted)' }}>
+                            HF Hub → Files → <code>tokenizer_config.json</code> → copy giá trị field <code>chat_template</code>.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

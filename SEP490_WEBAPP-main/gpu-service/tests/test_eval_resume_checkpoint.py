@@ -7,7 +7,7 @@ import tempfile
 import threading
 import unittest
 
-APP_PATH = os.environ.get("EVAL_APP_PATH") or os.path.join(os.path.dirname(__file__), "app.py")
+APP_PATH = os.environ.get("EVAL_APP_PATH") or os.path.join(os.path.dirname(__file__), "..", "app.py")
 
 
 def secure_filename(value):
