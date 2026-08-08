@@ -88,6 +88,8 @@ def _require_gpu_token():
 
 
 job_manager_last_heartbeat = 0.0
+_job_manager_started = False
+_job_manager_lock = threading.Lock()
 
 # ======================================================================
 
@@ -122,6 +124,33 @@ def job_manager_thread():
             thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
             thread.start()
         time.sleep(3)
+
+
+def _print_startup_banner():
+    port = int(os.environ.get("PORT", 5000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    print("=" * 60)
+    print("🚀 GPU Service đang khởi động...")
+    print(f"   Host : {host}")
+    print(f"   Port : {port}")
+    print(f"   BACKEND_URL      : {_read_secret('BACKEND_URL') or '(chưa set)'}")
+    print(
+        f"   OPENROUTER_API_KEY: {'✅ đã set' if _read_secret('OPENROUTER_API_KEY') else 'ℹ️ nhận theo từng eval job'}"
+    )
+    print("=" * 60)
+
+
+def start_background_services():
+    """Khởi job manager một lần — gọi từ gunicorn post_worker_init hoặc __main__."""
+    global _job_manager_started
+    with _job_manager_lock:
+        if _job_manager_started:
+            return
+        _job_manager_started = True
+        _print_startup_banner()
+        manager_thread = threading.Thread(target=job_manager_thread, daemon=True)
+        manager_thread.start()
+        print("✅ Job Manager đã sẵn sàng.")
 
 
 
@@ -1257,22 +1286,8 @@ def cluster_safe_split():
 # ======================================================================
 
 if __name__ == '__main__':
-    PORT = int(os.environ.get("PORT", 5000))
-    HOST = os.environ.get("HOST", "0.0.0.0")
-
-    print("=" * 60)
-    print("🚀 GPU Service đang khởi động...")
-    print(f"   Host : {HOST}")
-    print(f"   Port : {PORT}")
-    print(f"   BACKEND_URL      : {_read_secret('BACKEND_URL') or '(chưa set)'}")
-    print(f"   OPENROUTER_API_KEY: {'✅ đã set' if _read_secret('OPENROUTER_API_KEY') else 'ℹ️ nhận theo từng eval job'}")
-    print("=" * 60)
-
-    # Chạy Background Job Manager
-    manager_thread = threading.Thread(target=job_manager_thread, daemon=True)
-    manager_thread.start()
-    print("✅ Job Manager đã sẵn sàng.")
-
-    # Chạy Flask Server
-    print(f"🔥 Flask Server đang lắng nghe trên {HOST}:{PORT} ...")
-    app.run(host=HOST, port=PORT, debug=False, use_reloader=False, threaded=True)
+    start_background_services()
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+    print(f"🔥 Flask dev server trên {host}:{port} (local only — prod dùng gunicorn)")
+    app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)

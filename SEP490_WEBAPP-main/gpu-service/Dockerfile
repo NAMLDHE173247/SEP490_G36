@@ -56,6 +56,7 @@ RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('p
 
 # --- Bước 4: Copy source code ---
 COPY app.py ./
+COPY gunicorn.conf.py ./
 COPY constants ./constants
 COPY core ./core
 COPY pipelines ./pipelines
@@ -85,4 +86,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "app:app"]
