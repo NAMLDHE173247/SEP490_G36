@@ -1639,7 +1639,7 @@ function ChatPanel({
                   <button type="button" onClick={() => handleConfirmModel(hfHubId.trim() || BASE_MODEL_OPTIONS[0])} disabled={loading}>
                     Thu lai
                   </button>
-                  {modelLoaded && (provider === "local" || provider === "registry") && (
+                  {(provider === "local" || provider === "registry") && (
                     <button type="button" onClick={() => handleUnloadModel(false)}>
                       Giai phong model
                     </button>
@@ -1718,7 +1718,7 @@ function ChatPanel({
                                   Dung
                                 </button>
                               )}
-                              {modelLoaded && (provider === "local" || provider === "registry") && (
+                              {(provider === "local" || provider === "registry") && (
                                 <button type="button" className="danger" onClick={() => handleUnloadModel(false)}>
                                   Giai phong model
                                 </button>
