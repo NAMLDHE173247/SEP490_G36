@@ -278,13 +278,14 @@ export const listMyHumanAuditAssignments = async (req: Request, res: Response) =
     const evaluation = evalById.get(assignment.modelEvalId);
     if (!evaluation) return [];
     const ownReviews = reviews.filter(item => item.modelEvalId === assignment.modelEvalId);
+    const uniqueConvIndexes = new Set(ownReviews.map(item => Number(item.convIndex)));
     return [{
       modelEvalId: assignment.modelEvalId,
       jobId: evaluation.jobId,
       projectName: projectByJob.get(evaluation.jobId) || evaluation.jobId,
       ftModelRepo: evaluation.ftModelRepo,
       assignedItems: assignment.assignedConvIndexes.length,
-      reviewedItems: ownReviews.length,
+      reviewedItems: uniqueConvIndexes.size,
       status: assignment.status,
       updatedAt: assignment.updatedAt,
     }];
@@ -429,8 +430,8 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
       throw err;
     }
   }
-  const totalReviews = await HumanAuditReview.countDocuments({ modelEvalId, reviewerId: staffId });
-  assignment.status = totalReviews >= assignment.assignedConvIndexes.length ? 'completed' : 'in_progress';
+  const distinctReviewed = await HumanAuditReview.distinct('convIndex', { modelEvalId, reviewerId: staffId });
+  assignment.status = distinctReviewed.length >= assignment.assignedConvIndexes.length ? 'completed' : 'in_progress';
   await assignment.save();
   return res.json({
     message: 'Review saved',
