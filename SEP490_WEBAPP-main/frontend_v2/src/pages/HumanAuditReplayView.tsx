@@ -51,6 +51,7 @@ export default function HumanAuditReplayView() {
   const [reviewNote, setReviewNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [scorePanelOpen, setScorePanelOpen] = useState(false);
+  const [scoringTarget, setScoringTarget] = useState<'ft' | 'base'>('ft');
 
   const loadEvaluation = useCallback(async (requestedId?: string) => {
     const id = String(requestedId || evaluationId).trim();
@@ -114,10 +115,11 @@ export default function HumanAuditReplayView() {
 
   useEffect(() => {
     if (!currentItem) return;
-    setScores({ ...emptyAuditScores(), ...(currentItem.human_review?.human_scores || {}) });
-    setReasons(currentItem.human_review?.human_reasons || {});
-    setReviewNote(currentItem.human_review?.note || '');
-  }, [currentItem]);
+    const source = scoringTarget === 'base' ? currentBaseItem : currentItem;
+    setScores({ ...emptyAuditScores(), ...(source?.human_review?.human_scores || {}) });
+    setReasons(source?.human_review?.human_reasons || {});
+    setReviewNote(source?.human_review?.note || '');
+  }, [currentItem, currentBaseItem, scoringTarget]);
 
   useEffect(() => {
     if (!scorePanelOpen) return undefined;
@@ -143,13 +145,14 @@ export default function HumanAuditReplayView() {
     });
   }, [evaluation, queueFilter, searchTerm]);
 
+  const scoredItem = scoringTarget === 'base' ? (currentBaseItem || currentItem) : currentItem;
   const humanRawS = ['A1', 'A2', 'A3'].every((key) => scores[key] !== null)
     ? (Number(scores.A1) + Number(scores.A2) + Number(scores.A3)) / 3
     : null;
   const humanS = humanRawS === null ? null : Number(scores.A1) <= 1 ? Math.min(humanRawS, 1) : humanRawS;
   const humanK = scores.B1;
-  const auditRevealed = Boolean(currentItem?.human_review);
-  const aiS = cappedSocraticScore(currentItem?.criteria_scores);
+  const auditRevealed = Boolean(scoredItem?.human_review);
+  const aiS = cappedSocraticScore(scoredItem?.criteria_scores);
   const baseReplayTurns = currentBaseItem?.replay_turns || [];
   const ftReplayTurns = currentItem?.replay_turns || [];
   const sharedSystemPrompt = String(evaluation?.systemPrompt || '').trim();
@@ -446,13 +449,34 @@ export default function HumanAuditReplayView() {
               <button type="button" className="ha-drawer-backdrop" aria-label="Đóng bảng chấm điểm" onClick={() => setScorePanelOpen(false)} />
               <aside className="ha-score-panel ha-score-drawer" role="dialog" aria-modal="true" aria-label="Bảng chấm Human">
                 <div className="ha-panel-title sticky">
-                  <div><span>HUMAN RUBRIC · FINE-TUNED</span><h2>Chấm độc lập</h2></div>
+                  <div><span>HUMAN RUBRIC</span><h2>Chấm độc lập</h2></div>
                   <div className="ha-score-drawer-actions">
                     <div className="ha-live-outcomes"><b>Kiến thức {humanK ?? '—'}</b><b>Gợi mở {humanS === null ? '—' : humanS.toFixed(2)}</b></div>
                     <button type="button" className="ha-close-score" onClick={() => setScorePanelOpen(false)} title="Đóng bảng chấm"><X size={18} /></button>
                   </div>
                 </div>
-                <div className="ha-scoring-target"><span>Đang chấm câu trả lời Fine-tuned</span><strong>{currentItem?.item_id || `Conversation ${selectedConvIndex}`}</strong></div>
+                <div className="ha-scoring-target-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 20px', background: scoringTarget === 'base' ? 'rgba(245,158,11,0.08)' : 'rgba(99,102,241,0.08)', borderBottom: '1px solid #e2e8f0' }}>
+                  <label style={{ fontWeight: 600, fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>ĐANG CHẤM MODEL:</label>
+                  <select
+                    value={scoringTarget}
+                    onChange={(e) => {
+                      setScoringTarget(e.target.value as 'ft' | 'base');
+                      // Reset scores to match the newly selected model's saved review
+                      const target = e.target.value === 'base' ? currentBaseItem : currentItem;
+                      setScores({ ...emptyAuditScores(), ...(target?.human_review?.human_scores || {}) });
+                      setReasons(target?.human_review?.human_reasons || {});
+                      setReviewNote(target?.human_review?.note || '');
+                    }}
+                    style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: `2px solid ${scoringTarget === 'base' ? '#f59e0b' : '#6366f1'}`, fontWeight: 600, fontSize: '0.85rem', background: '#fff', color: scoringTarget === 'base' ? '#b45309' : '#4f46e5', cursor: 'pointer' }}
+                  >
+                    <option value="ft">🎯 Fine-tuned Model — {evaluation?.ftModelRepo || evaluation?.jobId || 'FT Model'}</option>
+                    <option value="base">🔲 Base Model — {evaluation?.baseModelRepo || 'Base Model'}</option>
+                  </select>
+                  {scoringTarget === 'base' && !currentBaseItem && (
+                    <span style={{ fontSize: '0.75rem', color: '#dc2626', fontWeight: 600 }}>⚠ Không có dữ liệu Base</span>
+                  )}
+                </div>
+                <div className="ha-scoring-target"><span>Đang chấm câu trả lời {scoringTarget === 'base' ? 'Base Model' : 'Fine-tuned'}</span><strong>{currentItem?.item_id || `Conversation ${selectedConvIndex}`}</strong></div>
                 <div className="ha-blind-notice">
                   <ShieldCheck size={16} />
                   <span><strong>Công thức Socratic: S = mean(A1, A2, A3).</strong> A2 chấm nhận biết học sinh hiểu/chưa hiểu, dẫn dắt và khơi gợi tư duy phản biện; A3 chấm cá nhân hóa/khả năng thích nghi. Nếu A1 ≤ 1 thì S tối đa 1.0.</span>
@@ -494,20 +518,20 @@ export default function HumanAuditReplayView() {
                 </div>
                 {!auditRevealed ? (
                   <div className="ha-blind-notice"><ShieldCheck size={19} /> Điểm và lý giải của AI Judge đang ẩn để bạn chấm độc lập trước.</div>
-                ) : currentItem.human_review?.verdict === 'skip' ? (
+                ) : scoredItem?.human_review?.verdict === 'skip' ? (
                   <div className="ha-blind-notice">Replay này đã bị bỏ qua và không được tính vào agreement.</div>
                 ) : (
                   <section className="ha-ai-comparison">
-                    <div className={`ha-conflict ${currentItem.human_review?.conflict?.severity || 'none'}`}>
-                      {currentItem.human_review?.conflict?.has_conflict ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
-                      <div><strong>{currentItem.human_review?.conflict?.has_conflict ? 'Phát hiện conflict' : 'Human và AI Judge khớp'}</strong><p>{currentItem.human_review?.conflict?.summary}</p></div>
+                    <div className={`ha-conflict ${scoredItem?.human_review?.conflict?.severity || 'none'}`}>
+                      {scoredItem?.human_review?.conflict?.has_conflict ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+                      <div><strong>{scoredItem?.human_review?.conflict?.has_conflict ? 'Phát hiện conflict' : 'Human và AI Judge khớp'}</strong><p>{scoredItem?.human_review?.conflict?.summary}</p></div>
                     </div>
-                    <div className="ha-ai-head"><span>AI Judge: Đúng kiến thức {Number(currentItem.criteria_scores?.B1).toFixed(2)} · Gợi mở Socratic {aiS?.toFixed(2) ?? '—'}</span><small>{currentItem.effective_judge_model || evaluation.judgeModel}</small></div>
+                    <div className="ha-ai-head"><span>AI Judge: Đúng kiến thức {Number(scoredItem?.criteria_scores?.B1).toFixed(2)} · Gợi mở Socratic {aiS?.toFixed(2) ?? '—'}</span><small>{scoredItem?.effective_judge_model || evaluation.judgeModel}</small></div>
                     <div className="ha-ai-grid">
                       {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => (
                         <article key={key}>
-                          <header><strong>{key} · {title}</strong><b>{Number(currentItem.criteria_scores?.[key]).toFixed(1)}</b></header>
-                          <p>{currentItem.criteria_reasons?.[key] || 'Không có lý giải.'}</p>
+                          <header><strong>{key} · {title}</strong><b>{Number(scoredItem?.criteria_scores?.[key]).toFixed(1)}</b></header>
+                          <p>{scoredItem?.criteria_reasons?.[key] || 'Không có lý giải.'}</p>
                         </article>
                       ))}
                     </div>
