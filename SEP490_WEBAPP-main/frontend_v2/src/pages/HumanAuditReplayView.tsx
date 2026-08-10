@@ -113,13 +113,31 @@ export default function HumanAuditReplayView() {
     )) || null;
   }, [evaluation, currentItem]);
 
+  const getReviewForTarget = useCallback((convIndex: number, target: 'ft' | 'base') => {
+    if (!evaluation) return null;
+    const item = (evaluation.results || []).find((r: any) => r.conv_index === convIndex);
+    const baseItem = (evaluation.baseResults || []).find((r: any) => (
+      (item?.item_id && r.item_id === item.item_id) || r.conv_index === convIndex
+    ));
+
+    if (target === 'base') {
+      if (baseItem?.human_review) return baseItem.human_review;
+      const cached = localStorage.getItem(`ha_base_review_${evaluation.modelEvalId}_${convIndex}`);
+      if (cached) {
+        try { return JSON.parse(cached); } catch (e) {}
+      }
+      return item?.human_review || null;
+    }
+    return item?.human_review || null;
+  }, [evaluation]);
+
   useEffect(() => {
-    if (!currentItem) return;
-    const source = scoringTarget === 'base' ? currentBaseItem : currentItem;
-    setScores({ ...emptyAuditScores(), ...(source?.human_review?.human_scores || {}) });
-    setReasons(source?.human_review?.human_reasons || {});
-    setReviewNote(source?.human_review?.note || '');
-  }, [currentItem, currentBaseItem, scoringTarget]);
+    if (selectedConvIndex === null || !currentItem) return;
+    const review = getReviewForTarget(selectedConvIndex, scoringTarget);
+    setScores({ ...emptyAuditScores(), ...(review?.human_scores || {}) });
+    setReasons(review?.human_reasons || {});
+    setReviewNote(review?.note || '');
+  }, [selectedConvIndex, currentItem, scoringTarget, getReviewForTarget]);
 
   useEffect(() => {
     if (!scorePanelOpen) return undefined;
@@ -203,6 +221,14 @@ export default function HumanAuditReplayView() {
           note: reviewNote,
         },
       );
+
+      if (scoringTarget === 'base' && response.review) {
+        localStorage.setItem(
+          `ha_base_review_${evaluation.modelEvalId}_${currentItem.conv_index}`,
+          JSON.stringify(response.review)
+        );
+      }
+
       setEvaluation((previous: any) => {
         const nextVerdict = response.review?.verdict === 'skip' ? 'skip' : 'reviewed';
         let reviewedItems = Number(previous.humanAudit?.reviewed_items || 0);
@@ -230,6 +256,12 @@ export default function HumanAuditReplayView() {
                 effective_judge_model: response.effective_judge_model,
               }
             : item),
+          baseResults: (previous.baseResults || []).map((item: any) => item.conv_index === currentItem.conv_index
+            ? {
+                ...item,
+                human_review: response.review,
+              }
+            : item),
           humanAudit: {
             ...previous.humanAudit,
             reviewed_items: reviewedItems,
@@ -239,7 +271,7 @@ export default function HumanAuditReplayView() {
           },
         };
       });
-      toast.success(skip ? 'Đã bỏ qua replay này' : 'Đã lưu Human Audit');
+      toast.success(skip ? 'Đã bỏ qua replay này' : `Đã lưu Human Audit (${scoringTarget === 'base' ? 'Base Model' : 'Fine-tuned Model'})`);
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Không thể lưu Human Audit');
     } finally {
