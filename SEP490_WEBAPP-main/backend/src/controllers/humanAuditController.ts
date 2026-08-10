@@ -296,7 +296,9 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
   const staffId = getAuthUserId(req);
   if (!staffId) return res.status(401).json({ error: 'Unauthorized' });
   const modelEvalId = String(req.params.evalId || '');
-  const assignment = await HumanAuditAssignment.findOne({ modelEvalId, staffId }).lean();
+  const assignment: any = await HumanAuditAssignment.findOne({ modelEvalId, staffId })
+    .populate('checkerId', 'name')
+    .lean();
   if (!assignment) return res.status(403).json({ error: 'Evaluation này chưa được giao cho tài khoản Staff hiện tại' });
   const [evaluation, reviews] = await Promise.all([
     ModelEvaluation.findOne({ modelEvalId, status: 'COMPLETED' }).lean(),
@@ -350,6 +352,7 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
 
   return res.json({
     ...evaluation,
+    checker_name: assignment.checkerId?.name || 'Chưa phân công',
     results,
     baseResults,
     humanAudit: buildHumanAuditSummary(results as any[]),

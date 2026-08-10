@@ -337,7 +337,8 @@ export default function HumanAuditReplayView() {
               <div><span>Fine-tuned Model</span><strong>{evaluation.ftModelRepo || evaluation.jobId}</strong></div>
               <div><span>AI Judge</span><strong>{evaluation.judgeModel}</strong></div>
               <div><span>Tiến độ</span><strong>{evaluation.humanAudit?.reviewed_items || 0}/{evaluation.results.length}</strong></div>
-              <div><span>Staff theo dõi/chấm</span><strong>👤 {user?.name || 'Staff'} ({user?.email || 'staff'})</strong></div>
+              <div><span>Staff đang chấm</span><strong>👤 {user?.name || 'Staff'} ({user?.email || 'staff'})</strong></div>
+              <div><span>Checker phụ trách</span><strong>⚖️ {evaluation.checker_name || 'Chưa phân công'}</strong></div>
             </div>
             {(!Array.isArray(evaluation.baseResults) || evaluation.baseResults.length === 0) && (
               <div className="ha-load-error"><AlertTriangle size={16} /> Evaluation này là single run hoặc thiếu baseResults. Hãy chọn lần Model Eval paired để xem Base và Fine-tuned cạnh nhau.</div>
