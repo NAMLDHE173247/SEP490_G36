@@ -61,6 +61,7 @@ services:
     environment:
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongo:27017/sep_training
+      - FRONTEND_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8080
       # Kết nối nội bộ tới gpu-service — không qua ngrok/IP ngoài
       - GPU_SERVICE_URL=http://gpu-service:5000
       - PORT=3000

@@ -35,20 +35,16 @@ RUN pip install --no-cache-dir --upgrade \
     torch==2.11.0 torchvision torchaudio xformers \
     --index-url https://download.pytorch.org/whl/cu128
 
-# --- Bước 2: torchao từ index cu128 (bản PyPI mặc định build cho cu130) ---
-RUN pip install --no-cache-dir --upgrade torchao \
-    --index-url https://download.pytorch.org/whl/cu128
-
-# --- Bước 2b: Cài Unsloth (torch đã pin đúng version → unsloth không nâng nữa) ---
+# --- Bước 2: Cài Unsloth (torch đã pin đúng version → unsloth không nâng nữa) ---
 RUN pip install --no-cache-dir \
     "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 
-# --- Bước 2c: bitsandbytes theo range unsloth hỗ trợ ---
+# --- Bước 2b: bitsandbytes theo range unsloth hỗ trợ ---
 # 0.45.5+ bundle sẵn binary cho cu12x, dùng lib nvidia-* do wheel torch cu128 kéo về
 # (pin cũ 0.43.3 chỉ cần cho base image CUDA 12.1 thuần — giờ không cần nữa)
 RUN pip install --no-cache-dir --upgrade "bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0"
 
-# --- Bước 2d: GUARD — build FAIL ngay nếu bước nào đó lén nâng torch lên cu13x ---
+# --- Bước 2c: GUARD — build FAIL ngay nếu bước nào đó lén nâng torch lên cu13x ---
 RUN python -c "import torch; v = torch.version.cuda or ''; assert v.startswith('12.'), f'torch {torch.__version__} built cho CUDA {v} — driver server chi ho tro 12.x!'; print('OK: torch', torch.__version__, '| CUDA', v)"
 
 # --- Bước 3: Download NLTK data cần thiết ---

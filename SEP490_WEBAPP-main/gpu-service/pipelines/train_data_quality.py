@@ -73,6 +73,25 @@ def _looks_like_jinja_template(text: str) -> bool:
     return "{{" in (text or "") or "{%" in (text or "")
 
 
+def get_active_chat_template(tokenizer) -> str:
+    """Return the concrete Jinja template selected by the tokenizer.
+
+    Transformers allows ``tokenizer.chat_template`` to be either a string or
+    a dictionary of named variants. The training log should show the actual
+    template text rather than the dictionary representation.
+    """
+    template = getattr(tokenizer, "chat_template", None)
+    if isinstance(template, dict):
+        preferred_keys = ("default", "default_template", "chat", "inference", "sft")
+        candidates = [template.get(key) for key in preferred_keys]
+        candidates.extend(template.values())
+        for candidate in candidates:
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        return ""
+    return str(template or "").strip()
+
+
 def apply_chat_template(
     tokenizer,
     model_name: str,

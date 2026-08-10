@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import toast from 'react-hot-toast';
 import { Loader2, CheckCircle, ChevronDown, ChevronRight, X, Play, RefreshCw, Eye, ExternalLink, Settings, Download, Trash2, Edit2, Check, ArrowRight, AlertTriangle, User, Bot, Info, FileText, Search, RotateCcw, Inbox, MousePointer2, MessageSquare, Award, BookOpen, Sparkles, BarChart2, Pencil, Ban, Upload, Clock } from 'lucide-react';
 import { useDataPrep } from '../../pages/DataPrep/DataPrepContext';
 import { useStage4Data } from '../../hooks/useStage4Data';
@@ -44,19 +45,8 @@ const TRANSLATED_LABEL_MAP: Record<string, string> = {
   'GEOGRAPHY': 'Địa lý',
   'Geography': 'Địa lý',
   'Dia ly': 'Địa lý',
-  'CODING': 'Tin học',
-  'Coding': 'Tin học',
-  'IT': 'Tin học',
-  'Tin hoc': 'Tin học',
-  'GDCD': 'GDCD',
-  'Civics': 'GDCD',
-  'Lien mon': 'Liên môn',
-  'Multi-subject': 'Liên môn',
-  'Unclear': 'Chưa rõ',
-  'OTHER': 'Khác',
-  'Other': 'Khác',
 
-  // DB Hard Labels (User)
+  // DB Hard Labels (User Intents) – Socratic taxonomy
   'ANSWER_ATTEMPT': 'Học sinh trả lời/thử làm bài',
   'REQUEST_HINT': 'Xin gợi ý',
   'ASK_THEORY': 'Hỏi lý thuyết',
@@ -68,7 +58,7 @@ const TRANSLATED_LABEL_MAP: Record<string, string> = {
   'READY_NEXT': 'Muốn học tiếp/chuyển câu',
   'CONFIRM_UNDERSTANDING': 'Xác nhận đã hiểu',
 
-  // DB Hard Labels (Assistant)
+  // DB Hard Labels (Assistant Actions) – Socratic taxonomy
   'CONFIRM_CORRECT_ANSWER': 'Xác nhận câu trả lời đúng',
   'IDENTIFY_INCORRECT_ANSWER': 'Chỉ ra câu trả lời sai',
   'CORRECT_MISTAKE': 'Sửa lỗi sai',
@@ -189,10 +179,13 @@ export const Stage4Labeling: React.FC = () => {
   const [stage4StaffReady, setStage4StaffReady] = useState(false);
   const [assignmentDashboard, setAssignmentDashboard] = useState<any>(null);
   const [shareUsers, setShareUsers] = useState<any[]>([]);
+  const [rewriteCheckers, setRewriteCheckers] = useState<any[]>([]);
+  const [selectedRewriteCheckerId, setSelectedRewriteCheckerId] = useState('');
   const [conflictThreshold, setConflictThreshold] = useState(2.0);
   const [isAutoAssigningRewrite, setIsAutoAssigningRewrite] = useState(false);
   const [rewriteAssignments, setRewriteAssignments] = useState<any[]>([]);
   const [remindingStaffId, setRemindingStaffId] = useState<string | null>(null);
+  const [remindedStaffIds, setRemindedStaffIds] = useState<Set<string>>(new Set());
   const [reviewingRewriteId, setReviewingRewriteId] = useState<string | null>(null);
   const [sampleComparisons, setSampleComparisons] = useState<Record<string, any>>({});
   const [currentPage, setCurrentPage] = useState(1);
@@ -290,6 +283,12 @@ export const Stage4Labeling: React.FC = () => {
         }));
         setShareUsers(staffArr);
       }).catch(err => { setShareUsers([]); console.error('Failed to fetch available staff:', err); });
+      stage4Api.listActiveRewriteCheckers().then((res) => {
+        if (cancelled) return;
+        const checkers = res.data || [];
+        setRewriteCheckers(checkers);
+        setSelectedRewriteCheckerId((current) => current && checkers.some((checker: any) => checker.id === current) ? current : String(checkers[0]?.id || ''));
+      }).catch(err => { setRewriteCheckers([]); console.error('Failed to fetch active rewrite checkers:', err); });
     };
 
     refreshAssignmentDashboard();
@@ -324,7 +323,7 @@ export const Stage4Labeling: React.FC = () => {
       sampleIds.add(String(reviewDetailModal.sampleObjectId || reviewDetailModal.id));
     }
     if (currentSubStep4 === 10) {
-      const rewriteItems = (qualityResult?.items || []).filter((i: any) => ['Rewrite', 'Reject', 'Bad'].includes(i.bucket));
+      const rewriteItems = (qualityResult?.items || []).filter((i: any) => i.bucket === 'Rewrite');
       const activeItem = rewriteItems[rewriteConvIdx] || rewriteItems[0];
       if (activeItem?._id) sampleIds.add(String(activeItem._id));
     }
@@ -400,6 +399,11 @@ export const Stage4Labeling: React.FC = () => {
     const staff = shareUsers.find(u => u.name === staffName || u.username === staffName || u.email === staffName);
     if (!staff || !activeVersionId) return;
     const staffId = String(staff._id || staff.id);
+    const checkerId = selectedRewriteCheckerId || String(rewriteCheckers[0]?.id || '');
+    if (!checkerId) {
+      alert('Không có Checker active để giao duyệt rewrite.');
+      return;
+    }
 
     const item = (qualityResult?.items || []).find((i: any) => String(i._id || i.id) === String(itemId) || String(i.sampleObjectId) === String(itemId));
     if (!item) return;
@@ -428,6 +432,7 @@ export const Stage4Labeling: React.FC = () => {
         await stage4Api.assignRewrite(activeVersionId, {
           sampleId: String(item.sampleObjectId || item._id || item.id),
           assigneeId: staffId,
+          checkerId,
           convId: String(item.convId || item.sampleId || item.id),
           subject: item.subject || '',
           reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
@@ -464,7 +469,7 @@ export const Stage4Labeling: React.FC = () => {
 
   const mapBackendMessagesToUiMessages = (messages: any[]): any[] => {
     if (!Array.isArray(messages)) return [];
-    return messages.map(msg => ({
+    return messages.filter(msg => !(msg.role === 'assistant' && !String(msg.content || '').trim())).map(msg => ({
       role: msg.role === 'assistant' ? 'assistant' : 'user',
       text: msg.content || ''
     }));
@@ -612,6 +617,9 @@ export const Stage4Labeling: React.FC = () => {
     if (displayLabel) return displayLabel;
     const trimmed = String(raw || '').trim();
     if (!trimmed) return '';
+    // Prefer the canonical Vietnamese translation if available – this prevents
+    // backend codes like WAITING from being reverse-mapped to draft names like "Other".
+    if (TRANSLATED_LABEL_MAP[trimmed]) return TRANSLATED_LABEL_MAP[trimmed];
     if (role === 'user') {
       const mapped = Object.entries(DRAFT_INTENT_MAP).find(([, code]) => code === trimmed);
       if (mapped) return mapped[0];
@@ -631,15 +639,20 @@ export const Stage4Labeling: React.FC = () => {
     return null;
   };
 
-  const getStaffSubjectFromComparison = (comparison: any) => {
-    if (!comparison?.targets) return 'Chưa chốt';
+  const getStaffSubjectFromComparison = (comparison: any, backendSubject?: string) => {
+    // If comparison hasn't loaded yet, use the backend-provided subject instead
+    // of always falling back to 'Chưa chốt'.
+    const fallback = backendSubject && backendSubject !== 'OUT_OF_SCOPE'
+      ? (TRANSLATED_LABEL_MAP[backendSubject] || backendSubject)
+      : 'Chưa chốt';
+    if (!comparison?.targets) return fallback;
     const sampleTarget = comparison.targets.find((t: any) =>
       t.targetScope === 'sample' &&
       Number(t.messageIndex) === 0 &&
       Array.isArray(t.annotators) &&
       t.annotators.some((a: any) => Array.isArray(a.labels) && a.labels.length > 0)
     );
-    if (!sampleTarget) return 'Chưa chốt';
+    if (!sampleTarget) return fallback;
 
     // "Chưa rõ" là một nhãn nghiệp vụ Staff có thể chọn, không phải trạng thái
     // duyệt. Khi các reviewer còn xung đột, Supervisor chỉ được thấy "Chưa chốt".
@@ -663,7 +676,7 @@ export const Stage4Labeling: React.FC = () => {
         return display;
       }
     }
-    return 'Chưa chốt';
+    return fallback;
   };
 
   const getUiMessagesForSample = (sampleId?: string, sampleKey?: string) => {
@@ -971,7 +984,10 @@ export const Stage4Labeling: React.FC = () => {
       id: item._id,
       sampleObjectId: item._id,
       convId: item.sampleId,
-      subject: getStaffSubjectFromComparison(getComparisonForSample(sampleId, String(item.sampleId))),
+      subject: getStaffSubjectFromComparison(
+        getComparisonForSample(sampleId, String(item.sampleId)),
+        item.data?.subject || item.subject,
+      ),
       ...item,
       bucket: combinedBucket,
       combinedScore,
@@ -980,7 +996,14 @@ export const Stage4Labeling: React.FC = () => {
       score: item.score,
       issue: item.conflict ? 'Conflict' : 'None',
       issueKey: item.conflict ? 'conflict' : 'none',
-      reason: item.note || 'Chưa có nhận xét',
+      reason: item.note || (() => {
+        const bucket = combinedBucket;
+        if (bucket === 'Gold') return 'Đạt chuẩn';
+        if (bucket === 'Rewrite') return `Cần viết lại (điểm: ${combinedScore != null ? Number(combinedScore).toFixed(1) : '–'})`;
+        if (bucket === 'Reject' || bucket === 'Bad') return `Chưa đạt (điểm: ${combinedScore != null ? Number(combinedScore).toFixed(1) : '–'})`;
+        if (combinedScore != null) return `Điểm tổng hợp: ${Number(combinedScore).toFixed(1)}`;
+        return 'Chưa có nhận xét';
+      })(),
       errorMessageIndices: item.errorMessageIndices ?? (item.errorMessageIndex != null ? [item.errorMessageIndex] : []),
       errorMessageIndex: item.errorMessageIndex ?? null,
       messages: mapBackendMessagesToUiMessages(item.data?.messages || []),
@@ -1055,7 +1078,12 @@ export const Stage4Labeling: React.FC = () => {
     }
   };
 
-  const getQualityLabel = (item) => sepQualityLabels[item.id] || (item.bucket === 'Reject' ? 'Bad' : item.bucket);
+  const getQualityLabel = (item) => {
+    let bucket = sepQualityLabels[item.id] || item.bucket;
+    if (bucket === 'Reject') return 'Bad';
+    if (bucket === 'Gold' || bucket === 'Rewrite' || bucket === 'Bad') return bucket;
+    return 'Chưa chốt';
+  };
   const qualityClass = (label) => label === 'Bad' ? 'bad' : label.toLowerCase();
 
   const baseSubjects = sepBalanceApplied ? [
@@ -1410,6 +1438,49 @@ export const Stage4Labeling: React.FC = () => {
                               </td>
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                 {pct < 100 && (
+                                  remindedStaffIds.has(String(u.user?.id || u.user?._id || '')) ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '13px', fontWeight: '700', color: '#16a34a' }}>
+                                        <CheckCircle size={14} /> Đã gửi
+                                      </span>
+                                      <button
+                                        disabled={remindingStaffId === String(u.user?.id || u.user?._id || '')}
+                                        onClick={async () => {
+                                          const recipientId = String(u.user?.id || u.user?._id || '');
+                                          if (!activeVersionId || !recipientId) return;
+                                          setRemindingStaffId(recipientId);
+                                          try {
+                                            await stage4Api.createNotification(activeVersionId, { recipientId, type: 'warning', message: `Nhắc việc: task ${mon} vẫn còn ${Math.max(0, total - done)} mẫu chưa hoàn thành.` });
+                                            toast.success(`Đã gửi nhắc việc cho ${staffName}`);
+                                          } catch (error: any) {
+                                            toast.error(error?.response?.data?.error || 'Không thể gửi nhắc việc.');
+                                          } finally { setRemindingStaffId(null); }
+                                        }}
+                                        style={{
+                                          padding: '5px 12px',
+                                          fontSize: '12px',
+                                          fontWeight: '600',
+                                          borderRadius: '6px',
+                                          border: '1px solid #94a3b8',
+                                          background: 'transparent',
+                                          cursor: 'pointer',
+                                          color: '#64748b',
+                                          transition: 'all 0.2s ease',
+                                        }}
+                                        onMouseOver={(e) => {
+                                          e.currentTarget.style.background = '#f1f5f9';
+                                          e.currentTarget.style.color = '#475569';
+                                        }}
+                                        onMouseOut={(e) => {
+                                          e.currentTarget.style.background = 'transparent';
+                                          e.currentTarget.style.color = '#64748b';
+                                        }}
+                                      >
+                                        <RotateCcw size={11} style={{ marginRight: '4px', verticalAlign: '-1px' }} />
+                                        Gửi lại
+                                      </button>
+                                    </div>
+                                  ) : (
                                   <button
                                     disabled={remindingStaffId === String(u.user?.id || u.user?._id || '')}
                                     onClick={async () => {
@@ -1418,9 +1489,10 @@ export const Stage4Labeling: React.FC = () => {
                                       setRemindingStaffId(recipientId);
                                       try {
                                         await stage4Api.createNotification(activeVersionId, { recipientId, type: 'warning', message: `Nhắc việc: task ${mon} vẫn còn ${Math.max(0, total - done)} mẫu chưa hoàn thành.` });
-                                        alert(`Đã gửi nhắc việc cho ${staffName}`);
+                                        toast.success(`Đã gửi nhắc việc cho ${staffName}`);
+                                        setRemindedStaffIds(prev => new Set(prev).add(recipientId));
                                       } catch (error: any) {
-                                        alert(error?.response?.data?.error || 'Không thể gửi nhắc việc.');
+                                        toast.error(error?.response?.data?.error || 'Không thể gửi nhắc việc.');
                                       } finally { setRemindingStaffId(null); }
                                     }}
                                     style={{
@@ -1450,6 +1522,7 @@ export const Stage4Labeling: React.FC = () => {
                                   >
                                     Nhắc việc
                                   </button>
+                                  )
                                 )}
                               </td>
                             </tr>
@@ -1785,8 +1858,8 @@ export const Stage4Labeling: React.FC = () => {
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
                                 <span style={{
                                   padding: '4px 10px', borderRadius: '999px', fontSize: '11px', fontWeight: '700',
-                                  background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2',
-                                  color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626'
+                                  background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : label === 'Bad' ? '#fee2e2' : '#f1f5f9',
+                                  color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : label === 'Bad' ? '#dc2626' : '#64748b'
                                 }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                               </td>
                               <td style={{ padding: '10px 14px', textAlign: 'center' }}>
@@ -1909,7 +1982,10 @@ export const Stage4Labeling: React.FC = () => {
                   const getStaffMessageLabels = (messageIndex: number, role: string) =>
                     buildStaffMessageLabels(messageIndex, role, modalTurnPairs, messageLevelTargets);
 
-                  const staffSubject = getStaffSubjectFromComparison(sampleComparison);
+                  const staffSubject = getStaffSubjectFromComparison(
+                    sampleComparison,
+                    reviewDetailModal.data?.subject || reviewDetailModal.subject || reviewDetailModal.rawItem?.data?.subject,
+                  );
                   return (
                     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
                       onClick={() => setReviewDetailModal(null)}>
@@ -1918,7 +1994,7 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ background: '#1e293b', padding: '20px 24px', borderRadius: '12px 12px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#f8fafc' }}>{reviewDetailModal.convId}</h3>
-                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : '#fee2e2', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : '#dc2626' }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
+                            <span style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: label === 'Gold' ? '#dcfce7' : label === 'Rewrite' ? '#fef3c7' : label === 'Bad' ? '#fee2e2' : '#f1f5f9', color: label === 'Gold' ? '#15803d' : label === 'Rewrite' ? '#92400e' : label === 'Bad' ? '#dc2626' : '#64748b' }}>{TRANSLATED_LABEL_MAP[label] || label}</span>
                             {scores.conflict && <span style={{ padding: '4px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: '700', background: '#fee2e2', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={12} /> CONFLICT</span>}
                           </div>
                           <button onClick={() => setReviewDetailModal(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '22px', cursor: 'pointer' }}>&#x2715;</button>
@@ -2159,7 +2235,7 @@ export const Stage4Labeling: React.FC = () => {
 
           {/* ===== STEP 9: ASSIGN REWRITE (BULK ASSIGN) ===== */}
           {currentSubStep4 === 9 && (() => {
-            const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
+            const rewriteItems = displayQualityItems.filter(i => getQualityLabel(i) === 'Rewrite') as any[];
             const rewriteAssignTotalPages = Math.max(1, Math.ceil(rewriteItems.length / itemsPerPage));
             const rewriteAssignSafePage = Math.min(rewriteAssignPage, rewriteAssignTotalPages);
             const paginatedRewriteItems = rewriteItems.slice((rewriteAssignSafePage - 1) * itemsPerPage, rewriteAssignSafePage * itemsPerPage);
@@ -2230,6 +2306,7 @@ export const Stage4Labeling: React.FC = () => {
               return {
                 sampleId: getRewriteItemKey(item),
                 assigneeId: String(staff._id || staff.id || ''),
+                checkerId: selectedRewriteCheckerId || String(rewriteCheckers[0]?.id || ''),
                 convId: String(item.convId || item.sampleId || item.id),
                 subject: item.subject || '',
                 reason: reason || rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
@@ -2263,6 +2340,12 @@ export const Stage4Labeling: React.FC = () => {
                         <div style={{ fontSize: '10px', fontWeight: '800', color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Assigned</div>
                         <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', lineHeight: 1.2 }}>{assignedCount}</div>
                       </div>
+                      <select value={selectedRewriteCheckerId} onChange={(event) => setSelectedRewriteCheckerId(event.target.value)}
+                        disabled={!rewriteCheckers.length}
+                        style={{ padding: '11px 12px', fontSize: '13px', fontWeight: '700', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', color: '#334155', maxWidth: '210px' }}>
+                        {!rewriteCheckers.length && <option value="">No active Checker</option>}
+                        {rewriteCheckers.map((checker: any) => <option key={checker.id} value={checker.id}>{checker.name || checker.email}</option>)}
+                      </select>
                       <button onClick={() => setShowRewriteStaffPicker(true)}
                         style={{ padding: '12px 18px', fontSize: '13px', fontWeight: '800', borderRadius: '8px', border: '1px solid #c7d2fe', background: '#eef2ff', color: '#3730a3', cursor: 'pointer', whiteSpace: 'nowrap' }}>
                         Chọn Staff ({assignmentStaffPool.length})
@@ -2270,6 +2353,8 @@ export const Stage4Labeling: React.FC = () => {
                       <button disabled={isAutoAssigningRewrite || !rewriteItems.length || !assignmentStaffPool.length} onClick={async () => {
                         if (!activeVersionId) return alert('Missing dataset version.');
                         if (!assignmentStaffPool.length) return alert('Chọn Staff rảnh để chia task rewrite trước.');
+                        const checkerId = selectedRewriteCheckerId || String(rewriteCheckers[0]?.id || '');
+                        if (!checkerId) return alert('Không có Checker active để giao duyệt rewrite.');
                         const groupedItems = rewriteItems.reduce((groups: Record<string, any[]>, item: any) => {
                           const key = getRewriteProjectName(item);
                           if (!groups[key]) groups[key] = [];
@@ -2288,7 +2373,7 @@ export const Stage4Labeling: React.FC = () => {
                           const originalText = targetMessageIndex >= 0 ? String(messages[targetMessageIndex]?.content || '') : '';
                           nextAssignments[item.id] = staffName;
                           return {
-                            sampleId: String(item.sampleObjectId || item._id || item.id), assigneeId: staffId,
+                            sampleId: String(item.sampleObjectId || item._id || item.id), assigneeId: staffId, checkerId,
                             convId: String(item.convId || item.sampleId || item.id), subject: item.subject || '',
                             reason: rewriteReasons[item.id] || item.issue || 'Quality review requires rewrite',
                             originalText, targetMessageIndex: targetMessageIndex >= 0 ? targetMessageIndex : undefined,
@@ -2658,7 +2743,7 @@ export const Stage4Labeling: React.FC = () => {
 
           {/* ===== STEP 10: STAFF SUBMISSION REVIEW (3b) ===== */}
           {currentSubStep4 === 10 && (() => {
-            const rewriteItems = displayQualityItems.filter(i => ['Rewrite', 'Reject', 'Bad'].includes(getQualityLabel(i))) as any[];
+            const rewriteItems = displayQualityItems.filter(i => getQualityLabel(i) === 'Rewrite') as any[];
             const taskBySample = new Map(rewriteAssignments.map((task: any) => [String(task.sampleId), task]));
             const approvedCount = rewriteAssignments.filter((task: any) => task.status === 'approved').length;
             const pendingCount = rewriteAssignments.filter((task: any) => task.status === 'submitted').length;

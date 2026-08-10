@@ -108,6 +108,24 @@ export class QualityController {
     };
   }
 
+  private async resolveActiveCheckerId(requestedCheckerId?: string, fallbackCheckerId?: string) {
+    const candidateId = requestedCheckerId || fallbackCheckerId;
+    if (candidateId && mongoose.Types.ObjectId.isValid(candidateId)) {
+      const checker = await User.findOne({ _id: candidateId, role: 'checker', status: 'active' }).select('_id').lean();
+      if (checker) return String(checker._id);
+    }
+    const defaultChecker = await User.findOne({ role: 'checker', status: 'active' })
+      .sort({ name: 1, _id: 1 })
+      .select('_id')
+      .lean();
+    return defaultChecker ? String(defaultChecker._id) : '';
+  }
+
+  async listActiveCheckers(_req: Request, res: Response): Promise<void> {
+    const checkers = await User.find({ role: 'checker', status: 'active' }).select('_id name email').sort({ name: 1 }).lean();
+    res.json({ data: checkers.map((checker: any) => ({ id: String(checker._id), name: checker.name, email: checker.email, role: 'checker' })) });
+  }
+
   private async notify(params: {
     versionId: string;
     actorId?: string;
@@ -404,7 +422,7 @@ export class QualityController {
         return;
       }
       const { versionId } = req.params;
-      const query: any = { datasetVersionId: new mongoose.Types.ObjectId(versionId) };
+      const query: any = { datasetVersionId: new mongoose.Types.ObjectId(versionId), sourceQualityBucket: 'Rewrite' };
       const role = (req as any).user?.role;
       if (role === 'supervisor' && !(await this.canManageVersion(req, versionId))) {
         res.status(403).json({ error: 'Supervisor can only view rewrite tasks in versions they manage.' });
@@ -503,22 +521,23 @@ export class QualityController {
         return;
       }
       
-      let resolvedCheckerId = actorRole === 'checker' ? actorId : checkerId;
-      if (!resolvedCheckerId) {
-        const origAssignment = await DatasetSampleAssignment.findOne({
-          datasetVersionId: versionId,
-          sampleId,
-          active: true
-        }).select('checkerId').lean();
-        if (origAssignment && origAssignment.checkerId) {
-          resolvedCheckerId = String(origAssignment.checkerId);
-        }
-      }
+      const origAssignment = await DatasetSampleAssignment.findOne({
+        datasetVersionId: versionId,
+        sampleId,
+        active: true
+      }).select('checkerId').lean();
+      const resolvedCheckerId = actorRole === 'checker'
+        ? actorId
+        : await this.resolveActiveCheckerId(checkerId, origAssignment?.checkerId ? String(origAssignment.checkerId) : undefined);
       if (!resolvedCheckerId) {
         res.status(400).json({ error: 'A specific active Checker must be assigned to this rewrite task.' });
         return;
       }
-      const checker = await User.findOne({ _id: resolvedCheckerId, role: 'checker', status: 'active' }).select('_id').lean();
+      const checker = await User.findOne({
+        _id: resolvedCheckerId,
+        role: 'checker',
+        status: 'active',
+      }).select('_id').lean();
       if (!checker) {
         res.status(400).json({ error: 'Assigned Checker is not active or does not have the Checker role.' });
         return;
@@ -536,6 +555,7 @@ export class QualityController {
           subject: subject || (item.data as any)?.subject || '',
           reason: reason || 'None',
           reasonSource: reasonSource || 'Quality Review (system aggregate)',
+          sourceQualityBucket: 'Rewrite',
           originalText: originalText || '',
           targetMessageIndex: targetIndex >= 0 ? targetIndex : null,
           contextMode,
@@ -614,7 +634,10 @@ export class QualityController {
           sampleCheckerMap.set(String(assign.sampleId), String(assign.checkerId));
         }
       });
-      const resolvedCheckerIds = assignments.map((row: any) => String(row.checkerId || sampleCheckerMap.get(String(row.sampleId)) || ''));
+      const resolvedCheckerIds = await Promise.all(assignments.map((row: any) => this.resolveActiveCheckerId(
+        row.checkerId,
+        sampleCheckerMap.get(String(row.sampleId))
+      )));
       if (resolvedCheckerIds.some((id: string) => !mongoose.Types.ObjectId.isValid(id))) {
         res.status(400).json({ error: 'Every rewrite item must have a specific Checker assignment.' });
         return;
@@ -665,6 +688,7 @@ export class QualityController {
           subject: String(row.subject || sample?.data?.subject || ''),
           reason: String(row.reason || 'None'),
           reasonSource: String(row.reasonSource || 'Quality Review (system aggregate)'),
+          sourceQualityBucket: 'Rewrite',
           originalText,
           targetMessageIndex: targetIndex,
           contextMode,
@@ -712,7 +736,7 @@ export class QualityController {
         res.status(401).json({ error: 'Unauthorized' });
         return;
       }
-      const query: any = {};
+      const query: any = { sourceQualityBucket: 'Rewrite' };
       const role = (req as any).user?.role;
       if (role === 'checker') {
         query.checkerId = new mongoose.Types.ObjectId(userId);

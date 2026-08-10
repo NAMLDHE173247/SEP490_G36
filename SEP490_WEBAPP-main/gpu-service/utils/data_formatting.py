@@ -159,6 +159,8 @@ def formatting_prompts_func(
 
 class AssistantOnlyDataCollator:
     FALLBACK_HEADERS = (
+        r"<｜Assistant｜>",
+        r"<\|assistant\|>",
         r"<\|im_start\|>assistant",
         r"<start_of_turn>model",
         # Gemma 4 (Unsloth / HF): <|turn>model … khác Gemma 2/3
@@ -183,9 +185,21 @@ class AssistantOnlyDataCollator:
         self.rows_unmatched = 0
         self.rows_slow_path = 0
 
-        # DYNAMICALLY DETECT THE ASSISTANT HEADER BY FORMATTING A DUMMY MESSAGE
+        # Detect the transition into the assistant turn from a complete
+        # system -> user -> assistant conversation.  Formatting an
+        # assistant-only dummy puts BOS/system material into ``header_str``;
+        # that header then never matches a real training row that already has
+        # a user turn.  The suffix after the user sentinel is the stable
+        # assistant-turn marker for Qwen, Llama, ChatML, Mistral, etc.
         try:
-            dummy = [{"role": "assistant", "content": "MAGICAL_CONTENT_12345"}]
+            system_sentinel = "__CHAT_TEMPLATE_SYSTEM_SENTINEL__"
+            user_sentinel = "__CHAT_TEMPLATE_USER_SENTINEL__"
+            assistant_sentinel = "MAGICAL_CONTENT_12345"
+            dummy = [
+                {"role": "system", "content": system_sentinel},
+                {"role": "user", "content": user_sentinel},
+                {"role": "assistant", "content": assistant_sentinel},
+            ]
             try:
                 formatted = tokenizer.apply_chat_template(
                     dummy,
@@ -197,9 +211,15 @@ class AssistantOnlyDataCollator:
                 formatted = tokenizer.apply_chat_template(
                     dummy, tokenize=False, add_generation_prompt=False,
                 )
-            start_idx = formatted.find("MAGICAL_CONTENT_12345")
-            self.header_str = formatted[:start_idx].strip() # e.g. "<|im_start|>assistant" or "<start_of_turn>model"
-            self.end_str = formatted[start_idx + len("MAGICAL_CONTENT_12345"):].strip() # e.g. "<|im_end|>" or "<end_of_turn>"
+            start_idx = formatted.find(assistant_sentinel)
+            user_idx = formatted.rfind(user_sentinel, 0, start_idx)
+            if start_idx < 0:
+                raise ValueError("assistant sentinel was not rendered")
+
+            header_start = user_idx + len(user_sentinel) if user_idx >= 0 else 0
+            detected_header = formatted[header_start:start_idx]
+            self.header_str = detected_header or formatted[:start_idx]
+            self.end_str = formatted[start_idx + len(assistant_sentinel):].strip()
         except Exception:
             self.header_str = "assistant\n"
             self.end_str = "\n"

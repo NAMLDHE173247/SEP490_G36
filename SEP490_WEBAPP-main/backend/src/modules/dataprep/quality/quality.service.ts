@@ -656,20 +656,42 @@ export class QualityService {
       }
 
       let errorMessageIndex: number | null = null;
-      const mismatchReasons: string[] = [];
+
+      // Group mismatch reasons by type to produce a concise summary instead of
+      // listing every single turn individually (which becomes unreadable when
+      // many turns share the same mismatch pattern).
+      const mismatchGroups: Map<string, number[]> = new Map();
+      const harmfulTurns: number[] = [];
 
       for (const turn of turnPairs) {
         if (!turn.matched) {
-          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Student intent '${turn.userLabels.join(',')}' and Assistant action '${turn.assistantLabels.join(',')}' are mismatched.`);
+          const key = `${turn.userLabels.join(',')}|${turn.assistantLabels.join(',')}`;
+          if (!mismatchGroups.has(key)) mismatchGroups.set(key, []);
+          mismatchGroups.get(key)!.push(turn.assistantMessageIndex + 1);
           if (errorMessageIndex === null) {
             errorMessageIndex = turn.assistantMessageIndex;
           }
         } else if (turn.turnScore < 0) {
-          mismatchReasons.push(`Turn #${turn.assistantMessageIndex + 1}: Harmful action detected.`);
+          harmfulTurns.push(turn.assistantMessageIndex + 1);
           if (errorMessageIndex === null) {
             errorMessageIndex = turn.assistantMessageIndex;
           }
         }
+      }
+
+      const mismatchReasons: string[] = [];
+      for (const [key, turns] of mismatchGroups) {
+        const [intents, actions] = key.split('|');
+        if (turns.length === 1) {
+          mismatchReasons.push(`Turn #${turns[0]}: Intent '${intents}' ↔ Action '${actions}' lệch luật`);
+        } else {
+          mismatchReasons.push(`${turns.length} turns (Turn #${turns[0]}–#${turns[turns.length - 1]}): Intent '${intents}' ↔ Action '${actions}' lệch luật`);
+        }
+      }
+      if (harmfulTurns.length === 1) {
+        mismatchReasons.push(`Turn #${harmfulTurns[0]}: Hành động có hại`);
+      } else if (harmfulTurns.length > 1) {
+        mismatchReasons.push(`${harmfulTurns.length} turns (Turn #${harmfulTurns[0]}–#${harmfulTurns[harmfulTurns.length - 1]}): Hành động có hại`);
       }
 
       if (errorMessageIndex === null) {

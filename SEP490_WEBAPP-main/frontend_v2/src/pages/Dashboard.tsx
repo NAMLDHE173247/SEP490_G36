@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Activity, MessageSquare, Database, Zap, Package, BarChart2,
-  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History, ListChecks
+  ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History, ListChecks,
+  ListTodo, UserCheck, FolderKanban, ClipboardSignature, CheckCircle, FileEdit, Search, GitMerge
 } from 'lucide-react';
 import HomeView from './HomeView';
 import ChatView from './ChatView';
@@ -26,7 +27,6 @@ import CheckerReviewView from './CheckerReviewView';
 import CheckerRewriteView from './CheckerRewriteView';
 import TrainingHistoryView from './TrainingHistoryView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
-import RouterBenchmarkView from './RouterBenchmarkView';
 import HumanAuditReplayView from './HumanAuditReplayView';
 import HumanAuditManagerView from './HumanAuditManagerView';
 
@@ -61,30 +61,54 @@ function Dashboard() {
     }
   };
 
-  const allMenuItems = [
-    { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
-    { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
-    { key: 'Checker Review', label: 'Checker Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
-    { key: 'Checker Rewrite', label: 'Kiểm duyệt Rewrite', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
-    { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Assign Labeling', label: 'Quản lý Task', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Human Audit Manager', label: 'Human Audit Control', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor', 'checker'] },
-    { key: 'Router Benchmark', label: 'Router Benchmark', icon: <GitBranch size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ShieldCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
-    { key: 'My Tasks', label: 'Task của tôi', icon: <ClipboardList size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
-    { key: 'Human Audit', label: 'Human Audit của tôi', icon: <ListChecks size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
-    { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+  const sidebarGroups = [
+    {
+      title: 'General',
+      items: [
+        { key: 'Dashboard', label: 'Dashboard', icon: <Activity size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Chat', label: 'Chat', icon: <MessageSquare size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+      ]
+    },
+    {
+      title: 'Task & Audit',
+      items: [
+        { key: 'My Tasks', label: 'Task của tôi', icon: <ListTodo size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+        { key: 'Human Audit', label: 'Human Audit của tôi', icon: <UserCheck size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+        { key: 'Assign Labeling', label: 'Quản lý Task', icon: <FolderKanban size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Review Queue', label: 'Duyệt nhãn', icon: <ClipboardCheck size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+      ]
+    },
+    {
+      title: 'Review & QA',
+      items: [
+        { key: 'Supervisor Review', label: 'Supervisor Review', icon: <ClipboardSignature size={18} style={{ minWidth: '18px' }} />, roles: ['supervisor', 'admin'] },
+        { key: 'Checker Review', label: 'Checker Review', icon: <CheckCircle size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
+        { key: 'Checker Rewrite', label: 'Kiểm duyệt Rewrite', icon: <FileEdit size={18} style={{ minWidth: '18px' }} />, roles: ['checker', 'admin'] },
+        { key: 'Human Audit Manager', label: 'Human Audit Control', icon: <Search size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor', 'checker'] },
+      ]
+    },
+    {
+      title: 'Data & Model',
+      items: [
+        { key: 'Data Prep', label: 'Data Prep', icon: <Database size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Version Data Prep', label: 'Version Data Prep', icon: <GitMerge size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'AutoTrain', label: 'AutoTrain', icon: <Zap size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Training History', label: 'Lịch sử Huấn luyện', icon: <History size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Model Registry', label: 'Model Registry', icon: <Package size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'Model Eval', label: 'Model Eval', icon: <BarChart2 size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+      ]
+    },
+    {
+      title: 'Management',
+      items: [
+        { key: 'Manager Account', label: 'Manager Account', icon: <Users size={18} style={{ minWidth: '18px' }} />, roles: ['admin'] },
+        { key: 'Staff Stats', label: 'Thống kê Staff', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['admin', 'supervisor'] },
+        { key: 'My Stats', label: 'Thống kê cá nhân', icon: <TrendingUp size={18} style={{ minWidth: '18px' }} />, roles: ['staff'] },
+      ]
+    }
   ];
+
+  const allMenuItems = sidebarGroups.flatMap(group => group.items);
 
   const [activeTab, setActiveTabState] = useState(() => {
     // Restore the last active tab from localStorage on reload
@@ -170,7 +194,10 @@ function Dashboard() {
     return null;
   }
 
-  const menuItems = allMenuItems.filter(item => item.roles.includes(user.role));
+  const visibleGroups = sidebarGroups.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.roles.includes(user.role))
+  })).filter(group => group.items.length > 0);
 
   const handleOpenTask = (task: any) => {
     setSelectedTask(task);
@@ -197,8 +224,6 @@ function Dashboard() {
         return <HumanAuditReplayView />;
       case 'Human Audit Manager':
         return <HumanAuditManagerView />;
-      case 'Router Benchmark':
-        return <RouterBenchmarkView />;
       case 'Version Data Prep':
         return <VersionDataPrepView />;
       case 'Assign Labeling':
@@ -240,27 +265,37 @@ function Dashboard() {
       {/* Sidebar */}
       <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''}`}>
         <div className="sidebar-menu">
-          {menuItems.map((item) => (
-            <p
-              key={item.key}
-              onClick={() => setActiveTab(item.key)}
-              style={{
-                marginBottom: '16px',
-                display: 'flex',
-                gap: '12px',
-                alignItems: 'center',
-                padding: '10px 12px',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
-                ...(activeTab === item.key
-                  ? { color: 'var(--primary)', fontWeight: '500', backgroundColor: '#e0e7ff' }
-                  : {})
-              }}
-              title={item.label}
-            >
-              {item.icon} {!isSidebarCollapsed && item.label}
-            </p>
+          {visibleGroups.map((group, gIndex) => (
+            <div key={gIndex} style={{ marginBottom: '24px' }}>
+              {!isSidebarCollapsed && (
+                <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888', fontWeight: 'bold', margin: '0 12px 12px', letterSpacing: '0.5px' }}>
+                  {group.title}
+                </div>
+              )}
+              {isSidebarCollapsed && <div style={{ height: '12px' }} />}
+              {group.items.map((item) => (
+                <p
+                  key={item.key}
+                  onClick={() => setActiveTab(item.key)}
+                  style={{
+                    marginBottom: '8px',
+                    display: 'flex',
+                    gap: '12px',
+                    alignItems: 'center',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
+                    ...(activeTab === item.key
+                      ? { color: 'var(--primary)', fontWeight: '500', backgroundColor: '#e0e7ff' }
+                      : {})
+                  }}
+                  title={item.label}
+                >
+                  {item.icon} {!isSidebarCollapsed && item.label}
+                </p>
+              ))}
+            </div>
           ))}
         </div>
 

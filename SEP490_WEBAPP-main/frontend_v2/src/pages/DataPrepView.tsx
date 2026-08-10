@@ -675,24 +675,34 @@ function DataPrepInner() {
     }
   ]);
 
-  const getLabelBadgeStyle = (labelName) => {
-    const name = labelName.toUpperCase();
-    if (name === 'SCAF') {
-      return { backgroundColor: '#475569', color: '#ffffff' };
+  const getLabelBadgeStyle = (labelName: string) => {
+    const name = (labelName || '').toUpperCase();
+
+    // Evaluation: Confirm Correct, Answer Attempt, Praise -> Green
+    if (name === 'ANS' || name === 'CONF' || name === 'PR' || name === 'OK' || name.includes('CONFIRM') || name.includes('PRAIS') || name.includes('ANSWER')) {
+      return { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)' };
     }
-    if (name === 'HINT') {
-      return { backgroundColor: '#f97316', color: '#ffffff' };
+    // Wrong / Mistakes -> Red / Rose
+    if (name === 'WRONG' || name === 'FIX' || name.includes('INCORRECT') || name.includes('MISTAKE')) {
+      return { background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(244, 63, 94, 0.25)' };
     }
-    if (name === 'PR') {
-      return { backgroundColor: '#10b981', color: '#ffffff' };
+    // Pedagogy: Scaffolding, Logic -> Indigo/Slate
+    if (name === 'SCAF' || name === 'LOG' || name.includes('SCAFFOLD') || name.includes('LOGIC')) {
+      return { background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)' };
     }
-    if (name === 'OK') {
-      return { backgroundColor: '#16a34a', color: '#ffffff' };
+    // Hinting / Encouragement -> Amber
+    if (name === 'HINT' || name === 'MOT' || name.includes('HINT') || name.includes('MOTIVAT')) {
+      return { background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(245, 158, 11, 0.25)' };
     }
-    if (name === 'THEO') {
-      return { backgroundColor: '#7c3aed', color: '#ffffff' };
+    // Theory & Clarification -> Violet
+    if (name === 'THEO' || name === 'CLR' || name.includes('THEORY') || name.includes('CLARIFY') || name.includes('CONCEPT')) {
+      return { background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(139, 92, 246, 0.25)' };
     }
-    return { backgroundColor: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
+    // Navigation & Waiting -> Teal/Sky
+    if (name === 'WAIT' || name === 'REDIR' || name === 'TRAN' || name.includes('WAIT') || name.includes('REDIRECT') || name.includes('TRANSITION')) {
+      return { background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)', color: '#ffffff', boxShadow: '0 2px 8px rgba(14, 165, 233, 0.25)' };
+    }
+    return { background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' };
   };
 
   const handleToggleLabel = (msgId, groupName, tagName) => {
@@ -4293,12 +4303,15 @@ function DataPrepInner() {
         ))}
       </div>
 
+
       {/* Stage Content */}
       {currentStage === 1 && <Stage1Upload />}
       {currentStage === 2 && <Stage2Preprocessing />}
       {currentStage === 3 && <Stage3Labeling />}
       {currentStage === 4 && <Stage4Labeling />}
       {currentStage === 5 && <Stage6Finish />}
+
+      
 
       {/* Compare Groups Modal */}
 

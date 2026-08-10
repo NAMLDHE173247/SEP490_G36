@@ -27,17 +27,20 @@ import {
   TrendingDown,
   TrendingUp,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
-import { TrainingJob, LossPoint } from './types';
+import { TrainingJob, LossPoint, EvalDetail, TrainDetail, TrainSummary } from './types';
 
 // ── Props ──
 interface TrainingMonitorProps {
   activeJobs: Record<string, TrainingJob>;
   lossHistories: Record<string, LossPoint[]>;
   evalLossHistories: Record<string, LossPoint[]>;
+  jobConfigs: Record<string, any>;
   onStopJob: (jobId: string) => void;
   onDismissJob: (jobId: string) => void;
   onChatTest: (jobId: string) => void;
+  onGenerateSummary: (jobId: string, refresh?: boolean) => Promise<void>;
   completedJobId: string | null;
   onDismissSuccess: () => void;
 }
@@ -95,7 +98,7 @@ function deriveFriendlySummary(
   }
 
   const epochPart =
-    job.current_epoch && job.total_epochs
+    job.current_epoch !== undefined && job.total_epochs !== undefined
       ? `Currently on epoch ${job.current_epoch} of ${job.total_epochs}.`
       : '';
 
@@ -142,7 +145,304 @@ const TONE_PALETTE = {
   bad:  { bg: '#FEF2F2', border: '#FECACA', text: '#991B1B', accent: '#EF4444' },
 };
 
+const displayNumber = (value: unknown, digits = 4): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return value.toFixed(digits);
+};
+
+const displayInteger = (value: unknown): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return String(Math.round(value));
+};
+
+const displayEpoch = (value: unknown): string => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return value.toFixed(2).replace(/\.00$/, '');
+};
+
+/**
+ * Kaggle/Windows log copies can contain UTF-8 decoded as Latin-1/CP1252
+ * (e.g. `ï½œUserï½œ`). Repair only strings with a strong mojibake signal;
+ * proper Vietnamese and native model markers are left untouched.
+ */
+const mojibakeScore = (value: string): number => (
+  value.match(/Ã.|Â.|Ä.|Å.|Æ.|â(?:€|™|œ|š|–|—|¦||…)|ðŸ.|ï½|�/g) || []
+).length;
+
+const repairMojibake = (value: unknown): string => {
+  let current = String(value ?? '');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (mojibakeScore(current) === 0) break;
+    const chars = Array.from(current);
+    if (chars.some(char => char.charCodeAt(0) > 255)) break;
+    try {
+      const bytes = Uint8Array.from(chars, char => char.charCodeAt(0));
+      const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (mojibakeScore(repaired) >= mojibakeScore(current)) break;
+      current = repaired;
+    } catch {
+      break;
+    }
+  }
+  return current;
+};
+
+const ConfigSummary: React.FC<{ job: TrainingJob; jobConfig?: any }> = ({ job, jobConfig }) => {
+  const effective = job.effective_config || {};
+  const requested = job.requested_config || jobConfig?.trainingConfig || {};
+  const schedule = effective.schedule || {};
+  const rows: Array<[string, string]> = [
+    ['Model', String(effective.model_name || requested.baseModel || requested.model_name || jobConfig?.baseModel || '—')],
+    ['Epochs', String(effective.epochs ?? requested.epochs ?? '—')],
+    ['Batch / effective batch', `${effective.batch_size ?? requested.batchSize ?? requested.batch_size ?? '—'} / ${effective.effective_batch_size ?? '—'}`],
+    ['Optimizer', String(effective.optimizer || effective.optim || requested.optim || '—')],
+    ['Learning rate', String(effective.learning_rate ?? requested.learningRate ?? requested.learning_rate ?? '—')],
+    ['Scheduler', String(effective.lr_scheduler_type || requested.lrScheduler || requested.lr_scheduler_type || '—')],
+    ['Max length', String(effective.max_length ?? requested.modelMaxLength ?? requested.model_max_length ?? '—')],
+    ['Grad accumulation', String(effective.gradient_accumulation_steps ?? requested.gradAccum ?? requested.gradient_accumulation_steps ?? '—')],
+    ['Warmup', effective.warmup_ratio ? `${effective.warmup_ratio} ratio` : String(effective.warmup_steps ?? requested.warmupSteps ?? requested.warmup_steps ?? '—')],
+    ['Weight decay', String(effective.weight_decay ?? requested.weightDecay ?? requested.weight_decay ?? '—')],
+    ['LoRA r / alpha', `${effective.lora?.r ?? requested.r ?? '—'} / ${effective.lora?.alpha ?? requested.loraAlpha ?? requested.lora_alpha ?? '—'}`],
+    ['LoRA dropout', String(effective.lora?.dropout ?? requested.loraDropout ?? requested.lora_dropout ?? '—')],
+    ['Steps / epoch', String(schedule.steps_per_epoch ?? job.metrics?.steps_per_epoch ?? '—')],
+    ['Total steps', String(schedule.total_steps ?? job.total_steps ?? '—')],
+    ['Eval / save steps', `${schedule.eval_steps ?? requested.evalSteps ?? requested.eval_steps ?? 'auto'} / ${schedule.save_steps ?? requested.saveSteps ?? requested.save_steps ?? 'auto'}`],
+    ['Logging steps', String(effective.logging_steps ?? requested.loggingSteps ?? requested.logging_steps ?? '—')],
+    ['Auto tune', effective.auto_tune?.enabled !== undefined ? (effective.auto_tune.enabled ? 'On' : 'Off') : ((requested.autoTune ?? requested.auto_tune) ? 'On' : 'Off')],
+    ['Chat template', String(effective.chat_template?.active_kind ?? requested.chatTemplate ?? requested.chat_template ?? 'auto')],
+    ['Gradient checkpointing', effective.gradient_checkpointing !== undefined ? (effective.gradient_checkpointing ? 'On' : 'Off') : ((requested.gradientCheckpointing ?? requested.gradient_checkpointing) ? 'On' : 'Off')],
+  ];
+
+  return (
+    <details style={{ marginTop: 18, border: '1px solid #E2E8F0', borderRadius: 8, background: '#F8FAFC' }}>
+      <summary style={{ cursor: 'pointer', padding: '11px 13px', color: '#334155', fontSize: 12, fontWeight: 700 }}>
+        <Cpu size={13} style={{ verticalAlign: 'middle', marginRight: 5 }} />
+        Training parameters &amp; effective schedule
+      </summary>
+      <div style={{ padding: '0 12px 12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={{ padding: '8px 9px', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6 }}>
+            <span style={{ display: 'block', fontSize: 10, color: '#64748B' }}>{label}</span>
+            <strong style={{ display: 'block', marginTop: 2, fontSize: 11, color: '#1E293B', wordBreak: 'break-word' }}>{value}</strong>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+};
+
+const EvalDetailModal: React.FC<{ job: TrainingJob; onClose: () => void }> = ({ job, onClose }) => {
+  const progress = job.eval_progress || {};
+  const current = job.eval_current || (job.eval_details || []).slice(-1)[0];
+  const details = [...(job.eval_details || [])].reverse();
+  const status = progress.status || job.eval_status || current?.status || 'WAITING';
+
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, 0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="eval-detail-title"
+        onClick={event => event.stopPropagation()}
+        style={{ width: 'min(780px, 100%)', maxHeight: 'min(760px, 92vh)', overflowY: 'auto', background: '#FFFFFF', borderRadius: 12, boxShadow: '0 24px 70px rgba(15, 23, 42, 0.28)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '18px 20px', borderBottom: '1px solid #E2E8F0' }}>
+          <div>
+            <h3 id="eval-detail-title" style={{ margin: 0, fontSize: 16, color: '#0F172A' }}>Eval-loss detail</h3>
+            <p style={{ margin: '5px 0 0', fontSize: 12, color: '#64748B' }}>Mẫu hiện tại và các mẫu gần nhất mà GPU đang chấm.</p>
+          </div>
+          <button type="button" className="at-btn-icon-sm" onClick={onClose} aria-label="Close eval details"><X size={15} /></button>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {[
+              ['Status', status],
+              ['Eval loss', displayNumber(job.eval_loss)],
+              ['Sample', progress.total_samples ? `${(progress.seen_samples ?? 0)}/${progress.total_samples}` : displayInteger(progress.seen_samples)],
+              ['Step / epoch', `${displayInteger(progress.step ?? job.current_step)} / ${displayEpoch(progress.epoch ?? job.current_epoch)}`],
+            ].map(([label, value]) => (
+              <div key={label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 11px' }}>
+                <span style={{ display: 'block', fontSize: 10, color: '#64748B' }}>{label}</span>
+                <strong style={{ display: 'block', marginTop: 3, fontSize: 13, color: '#1E293B' }}>{value}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ border: '1px solid #FECACA', background: '#FFF7F7', borderRadius: 9, padding: 13, marginBottom: 18 }}>
+            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', marginBottom: 6 }}>Current sample</span>
+            {current ? (
+              <>
+                <div style={{ fontSize: 13, lineHeight: 1.55, color: '#1F2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {repairMojibake(current.question || current.text_preview || 'Decoded sample is empty.')}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: '#64748B' }}>
+                  Batch {displayInteger(current.batch_index)} · sample #{displayInteger((current.sample_index ?? 0) + 1)} · {current.status || status}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: '#64748B' }}>Chưa có prediction batch nào được phát ra. Khi eval bắt đầu, câu đang chấm sẽ xuất hiện ở đây.</div>
+            )}
+          </div>
+
+          <div>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Recent eval samples</span>
+            {details.length > 0 ? details.map((detail: EvalDetail, index) => (
+              <div key={`${detail.round ?? 0}-${detail.sample_index ?? index}-${index}`} style={{ padding: '10px 0', borderTop: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11, color: '#64748B', marginBottom: 4 }}>
+                  <span>#{(detail.sample_index ?? 0) + 1} · step {displayInteger(detail.step)} · epoch {displayEpoch(detail.epoch)}</span>
+                  <span>{detail.status || 'evaluating'}{detail.eval_loss != null ? ` · loss ${displayNumber(detail.eval_loss)}` : ''}</span>
+                </div>
+                <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {repairMojibake(detail.question || detail.text_preview || 'Empty sample preview')}
+                </div>
+              </div>
+            )) : (
+              <div style={{ padding: 12, border: '1px dashed #CBD5E1', borderRadius: 7, color: '#64748B', fontSize: 12 }}>
+                Chưa có detail từng câu từ GPU worker.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Console Console Logger (Auto-Scroll) ──
+const TrainDetailModal: React.FC<{
+  job: TrainingJob;
+  history: LossPoint[];
+  onClose: () => void;
+}> = ({ job, history, onClose }) => {
+  const historyDetails: TrainDetail[] = history.map(point => ({
+    step: point.step,
+    epoch: point.epoch,
+    progress: point.progress,
+    loss: point.loss,
+    status: 'training',
+  }));
+  const details = job.train_details?.length ? job.train_details : historyDetails;
+  const current = job.train_current || details[details.length - 1] || null;
+  const recent = [...details].reverse().slice(0, 30);
+
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15, 23, 42, 0.52)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="train-detail-title"
+        onClick={event => event.stopPropagation()}
+        style={{ width: 'min(780px, 100%)', maxHeight: 'min(760px, 92vh)', overflowY: 'auto', background: '#FFFFFF', borderRadius: 12, boxShadow: '0 24px 70px rgba(15, 23, 42, 0.28)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, padding: '18px 20px', borderBottom: '1px solid #E2E8F0' }}>
+          <div>
+            <h3 id="train-detail-title" style={{ margin: 0, fontSize: 16, color: '#0F172A' }}>Train-loss detail</h3>
+            <p style={{ margin: '5px 0 0', fontSize: 12, color: '#64748B' }}>
+              Batch vừa chạy, loss theo optimizer step, epoch và thông số runtime.
+            </p>
+          </div>
+          <button type="button" className="at-btn-icon-sm" onClick={onClose} aria-label="Close train details"><X size={15} /></button>
+        </div>
+
+        <div style={{ padding: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {[
+              ['Status', current?.status || 'WAITING'],
+              ['Train loss', displayNumber(current?.loss)],
+              ['Progress', typeof current?.progress === 'number' ? `${Math.round(current.progress)}%` : '—'],
+              ['Step / epoch', `${displayInteger(current?.step)} / ${displayEpoch(current?.epoch)}`],
+              ['Learning rate', displayNumber(current?.learning_rate, 7)],
+              ['Grad norm', displayNumber(current?.grad_norm)],
+            ].map(([label, value]) => (
+              <div key={label} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '10px 11px' }}>
+                <span style={{ display: 'block', fontSize: 10, color: '#64748B' }}>{label}</span>
+                <strong style={{ display: 'block', marginTop: 3, fontSize: 13, color: '#1E293B' }}>{value}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ border: '1px solid #C7D2FE', background: '#EEF2FF', borderRadius: 9, padding: 13, marginBottom: 18, color: '#3730A3', fontSize: 12, lineHeight: 1.5 }}>
+            Train loss là loss của batch thực tế ngay trước optimizer step. Dataset vẫn có thể shuffle nên đây là preview batch, không phải một `sample_index` cố định.
+          </div>
+
+          <div style={{ border: '1px solid #DDD6FE', background: '#FAF5FF', borderRadius: 9, padding: 13, marginBottom: 18 }}>
+            <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#6D28D9', textTransform: 'uppercase', marginBottom: 6 }}>Current training batch</span>
+            {current?.question || current?.text_preview ? (
+              <>
+                <div style={{ fontSize: 13, lineHeight: 1.55, color: '#1F2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {repairMojibake(current.question || current.text_preview)}
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: '#64748B' }}>
+                  Batch size {displayInteger(current.batch_size)} · {current.status || 'training'}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: '#64748B' }}>GPU worker chưa gửi preview batch cho điểm loss này.</div>
+            )}
+          </div>
+
+          <div>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', marginBottom: 8 }}>Recent train-loss points</span>
+            {recent.length > 0 ? recent.map((detail, index) => (
+              <div key={`${detail.step ?? index}-${detail.epoch ?? index}-${index}`} style={{ padding: '10px 0', borderTop: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 11, color: '#64748B', marginBottom: 4 }}>
+                  <span>step {displayInteger(detail.step)} · epoch {displayEpoch(detail.epoch)} · {typeof detail.progress === 'number' ? `${Math.round(detail.progress)}%` : '—'}</span>
+                  <span>{detail.status || 'training'} · loss {displayNumber(detail.loss)}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#334155' }}>
+                  <span>lr {displayNumber(detail.learning_rate, 7)}</span>
+                  <span>grad norm {displayNumber(detail.grad_norm)}</span>
+                </div>
+                {detail.question && (
+                  <div style={{ marginTop: 5, fontSize: 12, color: '#64748B', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {repairMojibake(detail.question)}
+                  </div>
+                )}
+              </div>
+            )) : (
+              <div style={{ padding: 12, border: '1px dashed #CBD5E1', borderRadius: 7, color: '#64748B', fontSize: 12 }}>
+                Chưa có train-loss detail từ GPU worker.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TechnicalLogLine: React.FC<{ log: string; index: number }> = ({ log, index }) => {
+  const normalized = repairMojibake(log);
+  const templateMatch = normalized.match(
+    /^\[ChatTemplate\]\s+(active_jinja|rendered_probe|rendered_train_sample|rendered_eval_sample)=(?:\n)?([\s\S]*)$/,
+  );
+
+  return (
+    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+      <span style={{ color: '#64748B', marginRight: 8, userSelect: 'none' }}>[{index + 1}]</span>
+      {templateMatch ? (
+        <details style={{ display: 'inline-block', verticalAlign: 'top', maxWidth: 'calc(100% - 42px)' }}>
+          <summary style={{ cursor: 'pointer', color: '#A5B4FC', fontWeight: 700 }}>
+            Chat template · {templateMatch[1].replaceAll('_', ' ')}
+          </summary>
+          <pre style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#E2E8F0', fontFamily: 'inherit' }}>
+            {templateMatch[2] || '(empty)'}
+          </pre>
+        </details>
+      ) : normalized}
+    </div>
+  );
+};
+
 const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -184,12 +484,7 @@ const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
 
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {logs && logs.length > 0 ? (
-          logs.map((log, idx) => (
-            <div key={idx} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-              <span style={{ color: '#64748B', marginRight: 8, userSelect: 'none' }}>[{idx + 1}]</span>
-              {log}
-            </div>
-          ))
+          logs.map((log, idx) => <TechnicalLogLine key={idx} log={log} index={idx} />)
         ) : (
           <div style={{ color: '#64748B', fontStyle: 'italic', textAlign: 'center', marginTop: 80 }}>
             Waiting for training stream output logs...
@@ -236,31 +531,140 @@ const CollapsibleConsole: React.FC<{ logs: string[] }> = ({ logs }) => {
   );
 };
 
+const summaryTone = (verdict?: string) => {
+  if (verdict === 'good') return { bg: '#ECFDF5', border: '#A7F3D0', text: '#047857', label: 'TỐT' };
+  if (verdict === 'acceptable') return { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', label: 'CHẤP NHẬN ĐƯỢC' };
+  return { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C', label: 'CẦN KIỂM TRA' };
+};
+
+const TrainSummaryCard: React.FC<{
+  job: TrainingJob;
+  onGenerateSummary: (jobId: string, refresh?: boolean) => Promise<void>;
+}> = ({ job, onGenerateSummary }) => {
+  const [busy, setBusy] = useState(false);
+  const summary: TrainSummary | null = job.train_summary || null;
+  const tone = summaryTone(summary?.verdict);
+  const ai = summary?.ai_analysis;
+  const modelRecommendation = ai?.model_recommendation;
+  const suggestedModel = modelRecommendation?.model
+    || modelRecommendation?.name
+    || modelRecommendation?.recommended_model;
+  const modelReason = modelRecommendation?.reason
+    || modelRecommendation?.rationale
+    || modelRecommendation?.why;
+  const modelCost = modelRecommendation?.estimated_cost
+    || modelRecommendation?.cost_estimate
+    || modelRecommendation?.estimated_cost_usd;
+
+  const generate = async () => {
+    setBusy(true);
+    try {
+      await onGenerateSummary(job.id, Boolean(summary));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section style={{ marginTop: 18, border: `1px solid ${summary ? tone.border : '#DDD6FE'}`, borderRadius: 10, background: summary ? tone.bg : '#FAF5FF', padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size={16} color={summary ? tone.text : '#7C3AED'} />
+          <strong style={{ color: summary ? tone.text : '#6D28D9', fontSize: 13 }}>AI TRAIN REVIEW</strong>
+          {summary?.source && <span style={{ fontSize: 10, color: '#64748B' }}>({summary.source})</span>}
+        </div>
+        <button
+          type="button"
+          className="at-btn-icon-sm"
+          onClick={() => void generate()}
+          disabled={busy}
+          style={{ width: 'auto', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', gap: 6, color: '#6D28D9', border: '1px solid #C4B5FD', background: '#FFFFFF' }}
+        >
+          <Sparkles size={13} /> {busy ? 'Đang phân tích…' : summary ? 'Phân tích lại' : 'Phân tích kết quả'}
+        </button>
+      </div>
+
+      {!summary ? (
+        <p style={{ margin: '10px 0 0', color: '#6B7280', fontSize: 12, lineHeight: 1.5 }}>
+          Khi job kết thúc, AI sẽ đọc loss, eval loss, log lỗi và chất lượng dữ liệu để đưa ra nhận xét.
+        </p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 11, flexWrap: 'wrap' }}>
+            <span style={{ padding: '4px 9px', borderRadius: 999, background: '#FFFFFF', color: tone.text, fontSize: 11, fontWeight: 800 }}>{tone.label}</span>
+            <span style={{ color: tone.text, fontSize: 13 }}>{ai?.headline || summary.headline || 'Đã có kết quả phân tích.'}</span>
+          </div>
+
+          {(ai?.analysis || (!ai && summary.source === 'rules')) && (
+            <p style={{ margin: '9px 0 0', color: '#334155', fontSize: 12, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+              {ai?.analysis || 'Chưa có OpenRouter key; đang hiển thị kết luận từ bằng chứng runtime, chưa phải phân tích AI.'}
+            </p>
+          )}
+
+          {suggestedModel && (
+            <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: '#FFFFFF', border: '1px solid #DDD6FE' }}>
+              <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700, textTransform: 'uppercase' }}>Model do AI đề xuất</div>
+              <div style={{ marginTop: 4, color: '#312E81', fontSize: 13, fontWeight: 800 }}>{String(suggestedModel)}</div>
+              {modelReason && <div style={{ marginTop: 3, color: '#475569', fontSize: 12, lineHeight: 1.45 }}>{String(modelReason)}</div>}
+              {modelCost !== undefined && modelCost !== null && (
+                <div style={{ marginTop: 4, color: '#64748B', fontSize: 11 }}>
+                  Ước tính chi phí: {typeof modelCost === 'object' ? JSON.stringify(modelCost) : String(modelCost)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {((summary.warnings?.length || 0) > 0 || (summary.recommendations?.length || 0) > 0 || (ai?.data_findings?.length || 0) > 0 || (ai?.recommendations?.length || 0) > 0) && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: 'pointer', color: '#475569', fontSize: 11, fontWeight: 700 }}>Chi tiết cảnh báo và khuyến nghị</summary>
+              <div style={{ marginTop: 7, display: 'grid', gap: 4, color: '#475569', fontSize: 11, lineHeight: 1.45 }}>
+                {[...(summary.warnings || []), ...(summary.recommendations || []), ...(ai?.data_findings || []), ...(ai?.training_findings || []), ...(ai?.recommendations || [])].map((item, index) => (
+                  <div key={`${item}-${index}`}>• {item}</div>
+                ))}
+              </div>
+            </details>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
+
 // ── Component ──
 const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
   activeJobs,
   lossHistories,
   evalLossHistories,
+  jobConfigs,
   onStopJob,
   onDismissJob,
   onChatTest,
+  onGenerateSummary,
   completedJobId,
   onDismissSuccess,
 }) => {
   const jobsList = useMemo(() => Object.values(activeJobs), [activeJobs]);
+  const [selectedEvalJobId, setSelectedEvalJobId] = useState<string | null>(null);
+  const [selectedTrainJobId, setSelectedTrainJobId] = useState<string | null>(null);
+  const selectedEvalJob = selectedEvalJobId ? activeJobs[selectedEvalJobId] : null;
+  const selectedTrainJob = selectedTrainJobId ? activeJobs[selectedTrainJobId] : null;
 
   // Combine train + eval loss data helper
   const getChartData = (id: string) => {
     const train = lossHistories[id] || [];
     const eval_ = evalLossHistories[id] || [];
-    const combined: Record<number, any> = {};
+    const combined: Record<string, any> = {};
     train.forEach((p) => {
-      combined[p.progress] = { progress: p.progress, loss: p.loss };
+      const key = p.step !== undefined ? `step-${p.step}` : `progress-${p.progress}`;
+      combined[key] = { progress: p.progress, step: p.step, epoch: p.epoch, loss: p.loss };
     });
     eval_.forEach((p) => {
-      combined[p.progress] = {
-        ...combined[p.progress],
+      const key = p.step !== undefined ? `step-${p.step}` : `progress-${p.progress}`;
+      combined[key] = {
+        ...combined[key],
         progress: p.progress,
+        step: p.step,
+        epoch: p.epoch,
         evalLoss: p.loss,
       };
     });
@@ -458,42 +862,85 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                   marginBottom: 20,
                 }}
               >
-                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTrainJobId(job.id)}
+                  aria-label="Open train loss details"
+                  style={{ background: '#F5F3FF', border: '1px solid #C4B5FD', padding: '12px', borderRadius: 8, textAlign: 'center', cursor: 'pointer', color: 'inherit' }}
+                >
                   <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>TRAIN LOSS</span>
                   <span style={{ fontSize: '16px', fontWeight: 700, color: '#4F46E5' }}>
-                    {job.loss ? job.loss.toFixed(4) : '—'}
+                    {typeof job.loss === 'number' ? job.loss.toFixed(4) : '—'}
                   </span>
-                </div>
+                  <span style={{ display: 'block', marginTop: 4, fontSize: 10, color: '#5B21B6' }}>Click for step detail</span>
+                </button>
 
-                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedEvalJobId(job.id)}
+                  aria-label="Open eval loss details"
+                  style={{ background: '#FFF7F7', border: '1px solid #FECACA', padding: '12px', borderRadius: 8, textAlign: 'center', cursor: 'pointer', color: 'inherit' }}
+                >
                   <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>EVAL LOSS</span>
                   <span style={{ fontSize: '16px', fontWeight: 700, color: '#DC2626' }}>
-                    {job.eval_loss ? job.eval_loss.toFixed(4) : '—'}
+                    {typeof job.eval_loss === 'number' ? job.eval_loss.toFixed(4) : '—'}
                   </span>
-                </div>
+                  <span style={{ display: 'block', marginTop: 4, fontSize: 10, color: '#B91C1C' }}>Click for sample detail</span>
+                </button>
 
                 <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
                   <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>GPU VRAM</span>
                   <span style={{ fontSize: '16px', fontWeight: 700, color: '#475569' }}>
-                    {job.vram_used || '—'}
+                    {job.vram_used ?? '—'}
                   </span>
                 </div>
 
                 <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
                   <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>GPU UTILIZATION</span>
                   <span style={{ fontSize: '16px', fontWeight: 700, color: '#475569' }}>
-                    {job.gpu_util || '—'}
+                    {job.gpu_util ?? '—'}
                   </span>
                 </div>
 
                 <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
                   <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>EPOCH / STEP</span>
                   <span style={{ fontSize: '14px', fontWeight: 700, color: '#475569', display: 'block', marginTop: 2 }}>
-                    {job.current_epoch && job.total_epochs ? `${job.current_epoch}/${job.total_epochs}` : '—'} /{' '}
-                    {job.current_step && job.total_steps ? `${job.current_step}/${job.total_steps}` : '—'}
+                    {job.current_epoch !== undefined && job.total_epochs !== undefined ? `${displayEpoch(job.current_epoch)}/${displayEpoch(job.total_epochs)}` : '—'} /{' '}
+                    {job.current_step !== undefined && job.total_steps !== undefined ? `${displayInteger(job.current_step)}/${displayInteger(job.total_steps)}` : '—'}
+                  </span>
+                </div>
+
+                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                  <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>LEARNING RATE</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#475569' }}>
+                    {displayNumber(job.metrics?.learning_rate, 7)}
+                  </span>
+                </div>
+
+                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                  <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>GRAD NORM</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#475569' }}>
+                    {displayNumber(job.metrics?.grad_norm, 4)}
+                  </span>
+                </div>
+
+                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                  <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>STEPS / EPOCH</span>
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#475569' }}>
+                    {displayInteger(job.metrics?.steps_per_epoch ?? job.effective_config?.schedule?.steps_per_epoch)}
+                  </span>
+                </div>
+
+                <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', padding: '12px', borderRadius: 8, textAlign: 'center' }}>
+                  <span style={{ display: 'block', fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>EVAL STATUS</span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                    {job.eval_progress?.status || job.eval_status || '—'}
                   </span>
                 </div>
               </div>
+
+              <ConfigSummary job={job} jobConfig={jobConfigs[job.id]} />
+              <TrainSummaryCard job={job} onGenerateSummary={onGenerateSummary} />
 
               {/* Chart & Terminal container */}
               <div
@@ -585,6 +1032,16 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
           </div>
         );
       })}
+      {selectedEvalJob && (
+        <EvalDetailModal job={selectedEvalJob} onClose={() => setSelectedEvalJobId(null)} />
+      )}
+      {selectedTrainJob && (
+        <TrainDetailModal
+          job={selectedTrainJob}
+          history={lossHistories[selectedTrainJob.id] || []}
+          onClose={() => setSelectedTrainJobId(null)}
+        />
+      )}
     </div>
   );
 };

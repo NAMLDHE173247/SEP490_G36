@@ -1662,20 +1662,20 @@ function ChatPanel({
               <div className="empty-state-icon">
                 <Sparkles size={24} color="#64748b" />
               </div>
-              <h3>{modelLoaded ? "AI da san sang" : "Tai model de bat dau chat"}</h3>
+              <h3>{modelLoaded ? "AI đã sẵn sàng" : "Tải model để bắt đầu chat"}</h3>
               <p>
                 {modelLoaded
-                  ? "Nhap cau hoi o thanh ben duoi de bat dau cuoc tro chuyen."
+                  ? "Nhập câu hỏi ở thanh bên dưới để bắt đầu cuộc trò chuyện."
                   : isCompareMode
-                    ? `Chon model cho khung ${instanceId}, tai model, roi bat dau so sanh.`
-                    : "Nguoi dung moi co the bam nut ben duoi, he thong se dung model mac dinh."}
+                    ? `Chọn model cho khung ${instanceId}, tải model, rồi bắt đầu so sánh.`
+                    : "Người dùng mới có thể bấm nút bên dưới, hệ thống sẽ dùng model mặc định."}
               </p>
               {!modelLoaded && (
                 <>
                   <div className="chat-start-steps">
-                    <span>1. Chon model</span>
-                    <span>2. Tai model</span>
-                    <span>3. Dat cau hoi</span>
+                    <span>1. Chọn model</span>
+                    <span>2. Tải model</span>
+                    <span>3. Đặt câu hỏi</span>
                   </div>
                   <button
                     className="chat-empty-cta"
@@ -1683,7 +1683,7 @@ function ChatPanel({
                     disabled={loading || (provider === "registry" && !hfHubId.trim())}
                   >
                     {loading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                    {loading ? "Dang tai model..." : "Tai model va bat dau"}
+                    {loading ? "Đang tải model..." : "Tải model và bắt đầu"}
                   </button>
                 </>
               )}
