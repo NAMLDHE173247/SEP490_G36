@@ -32,6 +32,7 @@ VALID_SCHEDULERS = {
 INT_PARAMS = {
     "epochs": (3, 1, 100),
     "batchSize": (2, 1, 64),
+    "blockSize": (1024, 64, 8192),
     "modelMaxLength": (2048, 128, 32768),
     "r": (16, 1, 256),
     "lora_alpha": (32, 1, 512),

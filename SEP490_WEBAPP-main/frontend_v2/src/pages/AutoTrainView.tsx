@@ -2,7 +2,7 @@
 // AutoTrainView — Main Wizard-based training flow container
 // ============================================================
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Zap,
   History,
@@ -89,6 +89,57 @@ const persistTrainingConfig = (config: TrainingConfig): void => {
   localStorage.setItem(AUTOTRAIN_CONFIG_STORAGE_KEY, JSON.stringify(safeConfig));
 };
 
+const finiteNumber = (...values: unknown[]): number | undefined => {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
+
+const parseTrainingLogState = (logs: string[]) => {
+  let step: number | undefined;
+  let epoch: number | undefined;
+  let totalSteps: number | undefined;
+  let totalEpochs: number | undefined;
+  let stepsPerEpoch: number | undefined;
+  let trainLoss: number | undefined;
+  let evalLoss: number | undefined;
+
+  for (const rawLine of logs || []) {
+    const line = String(rawLine || '');
+    const stepMatch = line.match(/Step\s+(\d+)(?:\/(\d+))?\s*\|\s*Epoch\s+([\d.]+)/i);
+    if (stepMatch) {
+      step = Number(stepMatch[1]);
+      if (stepMatch[2]) totalSteps = Number(stepMatch[2]);
+      epoch = Number(stepMatch[3]);
+    }
+    const configMatch = line.match(/epochs=([\d.]+).*?steps\/epoch=(\d+).*?total_steps=(\d+)/i);
+    if (configMatch) {
+      totalEpochs = Number(configMatch[1]);
+      stepsPerEpoch = Number(configMatch[2]);
+      totalSteps = Number(configMatch[3]);
+    }
+    const lossMatch = line.match(/\bLoss:\s*([\d.]+)/i);
+    if (lossMatch) trainLoss = Number(lossMatch[1]);
+    const evalMatch = line.match(/Eval Loss(?: \(Overfit\))?:\s*([\d.]+)/i);
+    if (evalMatch) evalLoss = Number(evalMatch[1]);
+  }
+
+  return { step, epoch, totalSteps, totalEpochs, stepsPerEpoch, trainLoss, evalLoss };
+};
+
+const safeTrainingConfig = (config: TrainingConfig): Partial<TrainingConfig> => {
+  const { localFile, apiKey, hfToken, ...safe } = config;
+  void localFile;
+  void apiKey;
+  void hfToken;
+  return safe;
+};
+
 interface AutoTrainViewProps {
   setActiveTab: (tab: string) => void;
 }
@@ -126,6 +177,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   const [showStartError, setShowStartError] = useState(false);
   const [completedJobId, setCompletedJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const trainSummaryRequests = useRef(new Set<string>());
 
   // Auto-dismiss toast
   useEffect(() => {
@@ -249,6 +301,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
               datasetSource: job.datasetSource,
               datasetName: job.datasetName,
               columnMapping: job.columnMapping,
+              trainingConfig: job.parameters || {},
             });
           }
         });
@@ -269,6 +322,29 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   const triggerToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
     setToast({ message, type });
   }, []);
+
+  const handleGenerateTrainSummary = useCallback(async (jobId: string, refresh = false) => {
+    try {
+      const response = await api.post(`/train/summary/${jobId}`, { refresh });
+      const summary = response.data?.summary || response.data;
+      if (summary && globalTrainingState.activeJobs[jobId]) {
+        globalTrainingState.activeJobs = {
+          ...globalTrainingState.activeJobs,
+          [jobId]: {
+            ...globalTrainingState.activeJobs[jobId],
+            train_summary: summary,
+          },
+        };
+        globalTrainingState.notify();
+      }
+    } catch (error: any) {
+      console.error('[AutoTrain] Failed to generate train summary:', error);
+      triggerToast(
+        `Không tạo được AI summary: ${error.response?.data?.error || error.message}`,
+        'error',
+      );
+    }
+  }, [triggerToast]);
 
   const handleConfigChange = useCallback((updates: Partial<TrainingConfig>) => {
     setConfig((prev) => ({ ...prev, ...updates }));
@@ -314,6 +390,14 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         earlyStoppingPatience: preset.early_stopping_patience !== undefined
           ? String(preset.early_stopping_patience)
           : prev.earlyStoppingPatience,
+        evalSteps: preset.eval_steps !== undefined ? String(preset.eval_steps) : prev.evalSteps,
+        saveSteps: preset.save_steps !== undefined ? String(preset.save_steps) : prev.saveSteps,
+        loggingSteps: preset.logging_steps !== undefined ? String(preset.logging_steps) : prev.loggingSteps,
+        dataloaderNumWorkers: preset.dataloader_num_workers !== undefined
+          ? String(preset.dataloader_num_workers)
+          : prev.dataloaderNumWorkers,
+        autoTune: preset.auto_tune ?? prev.autoTune,
+        gradientCheckpointing: preset.gradient_checkpointing ?? prev.gradientCheckpointing,
       }));
     },
     [customPresets],
@@ -344,6 +428,12 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         enable_thinking: config.enableThinking,
         chat_template: config.chatTemplate,
         early_stopping_patience: parseInt(config.earlyStoppingPatience) || 3,
+        eval_steps: config.evalSteps.trim() ? parseInt(config.evalSteps) : undefined,
+        save_steps: config.saveSteps.trim() ? parseInt(config.saveSteps) : undefined,
+        logging_steps: parseInt(config.loggingSteps) || 1,
+        dataloader_num_workers: parseInt(config.dataloaderNumWorkers) || 0,
+        auto_tune: config.autoTune,
+        gradient_checkpointing: config.gradientCheckpointing,
       };
 
       const updated = { ...customPresets, [name]: newPreset };
@@ -433,6 +523,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         id: jobId,
         status: 'QUEUED',
         progress: 0,
+        requested_config: jobConfig?.trainingConfig,
         logs: ['Establishing connection to background job...'],
       }
     };
@@ -445,6 +536,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         console.log(`[AutoTrain] poll msg for ${jobId}:`, data);
         const previousLogs = globalTrainingState.activeJobs[jobId]?.logs || [];
         const receivedLogs = Array.isArray(data.logs) ? data.logs : [];
+        const logState = parseTrainingLogState(receivedLogs);
         const fallbackErrorLogs = receivedLogs.length === 0 && data.error
           ? [
               `[ERROR] ${data.error}`,
@@ -454,21 +546,65 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
             ]
           : [];
 
-        // Update Job metrics and status immutably
+        const previousJob = globalTrainingState.activeJobs[jobId];
+        const incomingMetrics = data.metrics && typeof data.metrics === 'object' ? data.metrics : {};
+        const metrics = {
+          ...(previousJob?.metrics || {}),
+          ...incomingMetrics,
+        };
+        let currentStep = finiteNumber(incomingMetrics.current_step, incomingMetrics.step, data.current_step, data.step, logState.step, previousJob?.current_step);
+        let currentEpoch = finiteNumber(incomingMetrics.current_epoch, incomingMetrics.epoch, data.current_epoch, data.epoch, logState.epoch, previousJob?.current_epoch);
+        if (currentStep === undefined && currentEpoch !== undefined) currentStep = 0;
+        if (currentEpoch === undefined && currentStep !== undefined) currentEpoch = 0;
+        const totalSteps = finiteNumber(incomingMetrics.total_steps, data.total_steps, data.effective_config?.schedule?.total_steps, logState.totalSteps, previousJob?.total_steps);
+        const totalEpochs = finiteNumber(incomingMetrics.total_epochs, data.total_epochs, data.effective_config?.epochs, logState.totalEpochs, previousJob?.total_epochs);
+        const derivedProgress = currentStep !== undefined && totalSteps
+          ? (currentStep / totalSteps) * 100
+          : undefined;
+        const explicitProgress = finiteNumber(data.progress);
+        const progress = finiteNumber(
+          explicitProgress !== undefined && explicitProgress > 0 ? explicitProgress : undefined,
+          derivedProgress,
+          explicitProgress,
+          previousJob?.progress,
+        ) ?? 0;
+        if (incomingMetrics.step === undefined && currentStep !== undefined) metrics.step = currentStep;
+        if (incomingMetrics.epoch === undefined && currentEpoch !== undefined) metrics.epoch = currentEpoch;
+        if (incomingMetrics.total_steps === undefined && totalSteps !== undefined) metrics.total_steps = totalSteps;
+        if (incomingMetrics.total_epochs === undefined && totalEpochs !== undefined) metrics.total_epochs = totalEpochs;
+        if (incomingMetrics.steps_per_epoch === undefined && logState.stepsPerEpoch !== undefined) metrics.steps_per_epoch = logState.stepsPerEpoch;
+        if (incomingMetrics.loss === undefined && logState.trainLoss !== undefined) metrics.loss = logState.trainLoss;
+        if (incomingMetrics.eval_loss === undefined && logState.evalLoss !== undefined) metrics.eval_loss = logState.evalLoss;
+
+        // Update Job metrics and status immutably. Keep the last value when a
+        // worker heartbeat only contains GPU resource information.
         globalTrainingState.activeJobs = {
           ...globalTrainingState.activeJobs,
           [jobId]: {
-            ...globalTrainingState.activeJobs[jobId],
+            ...previousJob,
             status: data.status,
-            progress: data.progress || 0,
-            current_epoch: data.metrics?.epoch,
-            total_epochs: data.metrics?.total_epochs,
-            current_step: data.metrics?.step,
-            total_steps: data.metrics?.total_steps,
-            loss: data.metrics?.loss,
-            eval_loss: data.metrics?.eval_loss,
-            vram_used: data.metrics?.vram,
-            gpu_util: data.metrics?.gpu_util ? `${data.metrics.gpu_util}%` : undefined,
+            progress,
+            current_epoch: currentEpoch,
+            total_epochs: totalEpochs,
+            current_step: currentStep,
+            total_steps: totalSteps,
+            step: currentStep,
+            loss: finiteNumber(metrics.loss, data.loss, previousJob?.loss),
+            eval_loss: finiteNumber(metrics.eval_loss, data.eval_loss, logState.evalLoss, previousJob?.eval_loss),
+            vram_used: metrics.vram ?? previousJob?.vram_used,
+            gpu_util: typeof metrics.gpu_util === 'number'
+              ? `${metrics.gpu_util}%`
+              : (metrics.gpu_util ?? previousJob?.gpu_util),
+            metrics,
+            effective_config: data.effective_config || previousJob?.effective_config,
+            requested_config: previousJob?.requested_config || jobConfig?.trainingConfig,
+            eval_status: data.eval_status || (logState.evalLoss !== undefined ? 'COMPLETED' : previousJob?.eval_status),
+            eval_current: data.eval_current ?? previousJob?.eval_current,
+            eval_details: Array.isArray(data.eval_details) ? data.eval_details : previousJob?.eval_details,
+            eval_progress: data.eval_progress || previousJob?.eval_progress,
+            train_current: data.train_current ?? previousJob?.train_current,
+            train_details: Array.isArray(data.train_details) ? data.train_details : previousJob?.train_details,
+            train_summary: data.train_summary ?? previousJob?.train_summary,
             error: data.error,
             technical_error: data.technical_error,
             logs: receivedLogs.length > 0 ? receivedLogs : (fallbackErrorLogs.length > 0 ? fallbackErrorLogs : previousLogs),
@@ -476,23 +612,38 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         };
 
         // Append Train Loss history
-        if (data.metrics && typeof data.metrics.loss === 'number' && data.metrics.loss > 0) {
+        const progressValue = progress;
+        const stepValue = finiteNumber(metrics.step, metrics.current_step, data.step, currentStep);
+        const epochValue = finiteNumber(metrics.epoch, metrics.current_epoch, data.epoch, currentEpoch);
+        if (typeof metrics.loss === 'number' && Number.isFinite(metrics.loss)) {
           const history = globalTrainingState.lossHistories[jobId] || [];
-          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
+          const last = history[history.length - 1];
+          const isNewPoint = !last || (
+            stepValue !== undefined && last.step !== undefined
+              ? last.step !== stepValue
+              : last.progress !== progressValue
+          );
+          if (isNewPoint) {
             globalTrainingState.lossHistories[jobId] = [
               ...history,
-              { progress: data.progress, loss: data.metrics.loss },
+              { progress: progressValue, loss: metrics.loss, step: stepValue, epoch: epochValue, timestamp: Date.now() },
             ];
           }
         }
 
         // Append Eval Loss history
-        if (data.metrics && typeof data.metrics.eval_loss === 'number' && data.metrics.eval_loss > 0) {
+        if (typeof metrics.eval_loss === 'number' && Number.isFinite(metrics.eval_loss)) {
           const history = globalTrainingState.evalLossHistories[jobId] || [];
-          if (history.length === 0 || history[history.length - 1].progress !== data.progress) {
+          const last = history[history.length - 1];
+          const isNewPoint = !last || (
+            stepValue !== undefined && last.step !== undefined
+              ? last.step !== stepValue
+              : last.progress !== progressValue
+          );
+          if (isNewPoint) {
             globalTrainingState.evalLossHistories[jobId] = [
               ...history,
-              { progress: data.progress, loss: data.metrics.eval_loss },
+              { progress: progressValue, loss: metrics.eval_loss, step: stepValue, epoch: epochValue, timestamp: Date.now() },
             ];
           }
         }
@@ -502,6 +653,12 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
           closeTracking(jobId, data.status);
           if (data.status === 'COMPLETED') {
             setCompletedJobId(jobId);
+          }
+          if (!trainSummaryRequests.current.has(jobId)) {
+            trainSummaryRequests.current.add(jobId);
+            // The status endpoint persists the final audit asynchronously;
+            // give Mongo one poll interval before building the summary.
+            window.setTimeout(() => void handleGenerateTrainSummary(jobId), 1200);
           }
         }
 
@@ -609,9 +766,14 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       }
       formData.append('max_grad_norm', config.maxGradNorm);
       formData.append('early_stopping_patience', config.earlyStoppingPatience);
+      formData.append('logging_steps', config.loggingSteps);
+      formData.append('dataloader_num_workers', config.dataloaderNumWorkers);
+      formData.append('auto_tune', String(config.autoTune));
+      formData.append('gradient_checkpointing', String(config.gradientCheckpointing));
       if (parseFloat(config.neftuneAlpha) > 0) formData.append('neftune_noise_alpha', config.neftuneAlpha);
       if (parseFloat(config.warmupRatio) > 0) formData.append('warmup_ratio', config.warmupRatio);
       if (config.evalSteps.trim()) formData.append('eval_steps', config.evalSteps.trim());
+      if (config.saveSteps.trim()) formData.append('save_steps', config.saveSteps.trim());
       formData.append('api_key', config.apiKey);
       formData.append('projectName', config.projectName);
       formData.append('systemPrompt', config.systemPrompt);
@@ -657,6 +819,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
               ? config.selectedHfDataset
               : config.cloudLoadedDataset,
           columnMapping: config.columnMapping,
+          trainingConfig: safeTrainingConfig(config),
         });
 
         // Reset step state back to step 1 for next creation
@@ -738,9 +901,11 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         activeJobs={activeJobs}
         lossHistories={lossHistories}
         evalLossHistories={evalLossHistories}
+        jobConfigs={globalTrainingState.jobConfigs}
         onStopJob={handleStopJob}
         onDismissJob={handleDismissJob}
         onChatTest={handleChatTest}
+        onGenerateSummary={handleGenerateTrainSummary}
         completedJobId={completedJobId}
         onDismissSuccess={() => setCompletedJobId(null)}
       />

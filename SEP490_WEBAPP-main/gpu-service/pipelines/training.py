@@ -6,6 +6,9 @@ import os
 import json
 import time
 import shutil
+import math
+import re
+import hashlib
 import torch
 import traceback
 import numpy as np
@@ -39,7 +42,11 @@ from pipelines.train_data_quality import (
     build_length_report,
     format_length_report,
     estimate_thinking_coverage,
+    get_active_chat_template,
 )
+from pipelines.peft_compat import patch_torchao_lora_constructor
+
+TRAINING_PIPELINE_BUILD = "chat-template-train-loss-20260810-v3"
 
 
 def _append_log(job_id, line):
@@ -58,7 +65,42 @@ def _append_log(job_id, line):
         del logs[:overflow]
 
 
-class FlaskProgressCallback(TrainerCallback):
+def _log_preview(value, limit=2400):
+    """Keep templates and rendered samples readable as one log entry."""
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    if len(text) > limit:
+        return f"{text[:limit]}…[truncated]"
+    return text
+
+
+def _render_chat_template_probe(tokenizer, enable_thinking=False):
+    """Render a neutral conversation so logs expose the model's real markers."""
+    messages = [
+        {"role": "user", "content": "Câu hỏi mẫu"},
+        {
+            "role": "assistant",
+            "content": "<think>Model suy luận mẫu...</think>\nCâu trả lời mẫu",
+        },
+    ]
+    try:
+        try:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+                enable_thinking=bool(enable_thinking),
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+    except Exception as exc:
+        return f"[probe-error] {exc}"
+
+
+class LegacyFlaskProgressCallback(TrainerCallback):
     def __init__(self, job_id):
         self.job_id = job_id
         self.start_time = None
@@ -128,6 +170,507 @@ class FlaskProgressCallback(TrainerCallback):
         # Giữ nguyên phần save checkpoint của bạn
         _append_log(self.job_id, f"💾 Checkpoint saved locally at step {state.global_step}.")
 
+def _finite_float(value, default=None):
+    """Return a JSON-safe finite float, or ``default`` for missing values."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
+def _short_text(value, limit=360):
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(1, limit - 1)].rstrip() + "…"
+
+
+class FlaskProgressCallback(TrainerCallback):
+    """Publish complete training heartbeats and evaluation sample previews.
+
+    ``TrainerState`` is the source of truth for step counters.  Publishing
+    them on every optimizer step keeps the Auto Train monitor working even
+    when ``logging_steps`` is greater than one.
+    """
+
+    MAX_EVAL_DETAILS = 25
+    MAX_TRAIN_DETAILS = 100
+
+    def __init__(self, job_id, tokenizer=None, eval_dataset=None):
+        self.job_id = job_id
+        self.tokenizer = tokenizer
+        self.eval_dataset = eval_dataset
+        self.start_time = None
+        self.last_loss = 0.0
+        self.last_eval_loss = None
+        self.last_learning_rate = None
+        self.last_grad_norm = None
+        self.eval_seen = 0
+        self.eval_batch_index = 0
+        self.eval_step = None
+        self.eval_round = 0
+        self.pending_train_batch = None
+
+    def _schedule(self):
+        entry = jobs_db.get(self.job_id, {})
+        effective = entry.get("effective_config") or {}
+        schedule = effective.get("schedule") if isinstance(effective, dict) else {}
+        return schedule if isinstance(schedule, dict) else {}
+
+    def _snapshot(self, args, state):
+        schedule = self._schedule()
+        step = int(getattr(state, "global_step", 0) or 0)
+        total_steps = int(
+            getattr(state, "max_steps", 0)
+            or schedule.get("total_steps", 0)
+            or 0
+        )
+        total_epochs = _finite_float(
+            getattr(args, "num_train_epochs", None),
+            _finite_float(getattr(state, "num_train_epochs", None), schedule.get("epochs")),
+        ) or 0.0
+        steps_per_epoch = int(
+            schedule.get("steps_per_epoch", 0)
+            or getattr(state, "num_update_steps_per_epoch", 0)
+            or 0
+        )
+        if steps_per_epoch <= 0 and total_steps > 0 and total_epochs > 0:
+            steps_per_epoch = max(1, int(math.ceil(total_steps / total_epochs)))
+        epoch = _finite_float(getattr(state, "epoch", None))
+        if epoch is None and steps_per_epoch > 0:
+            epoch = step / steps_per_epoch
+        epoch = epoch or 0.0
+        progress = step / total_steps * 100 if total_steps > 0 else 0.0
+        return {
+            "step": step,
+            "total_steps": total_steps,
+            "epoch": round(epoch, 4),
+            "total_epochs": round(total_epochs, 4),
+            "steps_per_epoch": steps_per_epoch,
+            "progress": round(max(0.0, min(100.0, progress)), 2),
+        }
+
+    def _publish(self, args, state, logs=None, append_log=False):
+        logs = logs or {}
+        snapshot = self._snapshot(args, state)
+
+        train_loss = _finite_float(logs.get("loss"))
+        if train_loss is None:
+            train_loss = _finite_float(logs.get("train_loss"))
+        if train_loss is not None:
+            self.last_loss = train_loss
+        eval_loss = _finite_float(logs.get("eval_loss"))
+        if eval_loss is not None:
+            self.last_eval_loss = eval_loss
+        learning_rate = _finite_float(logs.get("learning_rate"))
+        if learning_rate is not None:
+            self.last_learning_rate = learning_rate
+        grad_norm = _finite_float(logs.get("grad_norm"))
+        if grad_norm is not None:
+            self.last_grad_norm = grad_norm
+
+        vram_used, _, gpu_util = get_gpu_stats()
+        avg_step_time = 0.0
+        if self.start_time and snapshot["step"] > 0:
+            avg_step_time = (time.time() - self.start_time) / snapshot["step"]
+
+        metrics = {
+            "loss": self.last_loss,
+            "step": snapshot["step"],
+            "current_step": snapshot["step"],
+            "total_steps": snapshot["total_steps"],
+            "epoch": snapshot["epoch"],
+            "current_epoch": snapshot["epoch"],
+            "total_epochs": snapshot["total_epochs"],
+            "steps_per_epoch": snapshot["steps_per_epoch"],
+            "vram": vram_used,
+            "gpu_util": gpu_util,
+            "accuracy": round((_finite_float(logs.get("accuracy"), 0.0) or 0.0) * 100, 2),
+            "avg_step_time": round(avg_step_time, 2),
+        }
+        if self.last_eval_loss is not None:
+            metrics["eval_loss"] = round(self.last_eval_loss, 6)
+        if self.last_learning_rate is not None:
+            metrics["learning_rate"] = self.last_learning_rate
+        if self.last_grad_norm is not None:
+            metrics["grad_norm"] = self.last_grad_norm
+        for key in (
+            "train_runtime", "train_samples_per_second", "train_steps_per_second",
+            "eval_runtime", "eval_samples_per_second", "eval_steps_per_second",
+        ):
+            value = _finite_float(logs.get(key))
+            if value is not None:
+                metrics[key] = value
+
+        payload = {
+            "loss": self.last_loss,
+            "epoch": snapshot["epoch"],
+            "total_epochs": snapshot["total_epochs"],
+            "step": snapshot["step"],
+            "total_steps": snapshot["total_steps"],
+            "progress": snapshot["progress"],
+            "avg_step_time": round(avg_step_time, 2),
+            "total_steps_per_epoch": snapshot["steps_per_epoch"],
+            "metrics": metrics,
+        }
+        if eval_loss is not None:
+            payload["eval_loss"] = round(eval_loss, 6)
+        if self.job_id in jobs_db:
+            jobs_db[self.job_id].update(payload)
+
+        # Keep a compact, structured drill-down for every actual train-loss
+        # point.  The browser can open this just like eval-loss details,
+        # without pretending that a shuffled optimizer batch maps to one
+        # specific dataset sentence.
+        if train_loss is not None and self.job_id in jobs_db:
+            train_detail = {
+                **snapshot,
+                "status": "training",
+                "loss": round(self.last_loss, 6),
+            }
+            if self.pending_train_batch:
+                train_detail.update(self.pending_train_batch)
+            if self.last_learning_rate is not None:
+                train_detail["learning_rate"] = self.last_learning_rate
+            if self.last_grad_norm is not None:
+                train_detail["grad_norm"] = self.last_grad_norm
+
+            entry = jobs_db[self.job_id]
+            details = list(entry.get("train_details") or [])
+            if details and details[-1].get("step") == train_detail["step"]:
+                details[-1] = train_detail
+            else:
+                details.append(train_detail)
+            entry.update({
+                "train_current": train_detail,
+                "train_details": details[-self.MAX_TRAIN_DETAILS:],
+            })
+            self.pending_train_batch = None
+
+        if append_log:
+            line = (
+                f"Step {snapshot['step']}/{snapshot['total_steps']} | "
+                f"Epoch {snapshot['epoch']:.2f}/{snapshot['total_epochs']:.0f} | "
+                f"Loss: {self.last_loss:.4f}"
+            )
+            if eval_loss is not None:
+                line += f" | Eval Loss: {eval_loss:.4f}"
+            _append_log(self.job_id, line)
+
+    def _decode_eval_text(self, input_ids):
+        if self.tokenizer is None:
+            return ""
+        try:
+            if hasattr(input_ids, "detach"):
+                input_ids = input_ids.detach().cpu().tolist()
+            if isinstance(input_ids, list) and input_ids and isinstance(input_ids[0], list):
+                input_ids = input_ids[0]
+            return self.tokenizer.decode(
+                input_ids,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            )
+        except Exception:
+            return ""
+
+    def _capture_train_batch(self, args, state, inputs=None):
+        """Capture a preview of the batch immediately before its train loss."""
+        if self.tokenizer is None or not isinstance(inputs, dict):
+            return
+        input_ids = inputs.get("input_ids")
+        if input_ids is None:
+            return
+        try:
+            batch_size = int(input_ids.shape[0]) if hasattr(input_ids, "shape") and len(input_ids.shape) > 1 else 1
+            row = input_ids[0] if batch_size > 1 else input_ids
+            attention = inputs.get("attention_mask")
+            if attention is not None and hasattr(attention, "shape") and len(attention.shape) > 1:
+                valid_length = int(attention[0].sum().item())
+                row = row[:valid_length]
+            text = self.tokenizer.decode(
+                row.detach().cpu().tolist() if hasattr(row, "detach") else row,
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+        except Exception:
+            return
+
+        self.pending_train_batch = {
+            "batch_size": max(1, batch_size),
+            "question": self._extract_question(text),
+            "text_preview": _short_text(text, 900),
+        }
+
+    def _eval_row_text(self, index):
+        """Read the already-formatted validation row without touching the loader."""
+        if self.eval_dataset is None:
+            return ""
+        try:
+            row = self.eval_dataset[index]
+        except (IndexError, KeyError, TypeError):
+            return ""
+        if isinstance(row, dict):
+            for key in ("text", "question", "prompt", "instruction", "messages"):
+                value = row.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, (list, dict)):
+                    try:
+                        return json.dumps(value, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        continue
+                return str(value)
+        return str(row or "")
+
+    @staticmethod
+    def _extract_question(text):
+        clean = str(text or "").strip()
+        if not clean:
+            return ""
+        patterns = (
+            r"<｜User｜>\s*(.*?)(?=<｜Assistant｜>|<｜end▁of▁sentence｜>|$)",
+            r"<\|start_header_id\|>\s*(?:user|human|student)\s*<\|end_header_id\|>\s*(.*?)(?=<\|start_header_id\|>\s*(?:assistant|system)\s*<\|end_header_id\|>|$)",
+            r"<\|im_start\|>\s*(?:user|human|student)\s*\n?\s*(.*?)(?=<\|im_start\|>\s*(?:assistant|system)|$)",
+            r"\[INST\]\s*(.*?)(?=\[/INST\]|$)",
+            r"(?:^|\n)user\s*[:\n]\s*(.*?)(?=\n(?:assistant|system)\s*[:\n]|$)",
+            r"(?:^|\n)(?:human|student)\s*[:\n]\s*(.*?)(?=\n(?:assistant|tutor|teacher)\s*[:\n]|$)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, clean, flags=re.IGNORECASE | re.DOTALL)
+            if match:
+                return _short_text(match.group(1))
+        return _short_text(clean)
+
+    def _make_eval_detail(
+        self,
+        args,
+        state,
+        sample_index,
+        batch_index=0,
+        batch_size=1,
+        status="evaluating",
+        eval_loss=None,
+        text=None,
+    ):
+        snapshot = self._snapshot(args, state)
+        total_samples = len(self.eval_dataset) if self.eval_dataset is not None else None
+        sample_index = max(0, int(sample_index or 0))
+        batch_size = max(1, int(batch_size or 1))
+        if text is None:
+            text = self._eval_row_text(sample_index)
+        detail = {
+            "round": self.eval_round,
+            "sample_index": sample_index,
+            "batch_index": max(0, int(batch_index or 0)),
+            "batch_size": batch_size,
+            "seen_samples": min(sample_index + batch_size, total_samples) if total_samples else sample_index + batch_size,
+            "total_samples": total_samples,
+            "step": snapshot["step"],
+            "epoch": snapshot["epoch"],
+            "status": status,
+            "question": self._extract_question(text),
+            "text_preview": _short_text(text),
+        }
+        if eval_loss is not None:
+            detail["eval_loss"] = round(eval_loss, 6)
+        return detail
+
+    def _backfill_eval_details(self, args, state, eval_loss=None):
+        """Populate details from the formatted eval dataset when callback inputs are absent."""
+        entry = jobs_db.get(self.job_id)
+        if entry is None or self.eval_dataset is None:
+            return
+        try:
+            total_samples = len(self.eval_dataset)
+        except TypeError:
+            return
+        if total_samples <= 0:
+            return
+
+        existing = {
+            int(item.get("sample_index")): item
+            for item in (entry.get("eval_details") or [])
+            if isinstance(item, dict) and item.get("sample_index") is not None
+        }
+        count = min(total_samples, self.MAX_EVAL_DETAILS)
+        details = []
+        for index in range(count):
+            previous = existing.get(index, {})
+            detail = self._make_eval_detail(
+                args,
+                state,
+                sample_index=index,
+                batch_index=previous.get("batch_index", index),
+                batch_size=previous.get("batch_size", 1),
+                status="evaluated",
+                eval_loss=eval_loss,
+            )
+            # Preserve a richer preview captured during prediction if present.
+            for key in ("question", "text_preview", "round", "step", "epoch"):
+                if previous.get(key):
+                    detail[key] = previous[key]
+            details.append(detail)
+
+        current = dict(entry.get("eval_current") or {})
+        if not current:
+            current = details[-1]
+        else:
+            current_index = current.get("sample_index")
+            if current_index is not None and int(current_index) < len(details):
+                current = details[int(current_index)]
+        if eval_loss is not None:
+            current["eval_loss"] = round(eval_loss, 6)
+        entry.update({
+            "eval_status": "COMPLETED",
+            "eval_current": current,
+            "eval_details": details,
+            "eval_progress": {
+                "status": "COMPLETED",
+                "sample_index": current.get("sample_index"),
+                "seen_samples": total_samples,
+                "total_samples": total_samples,
+                "step": self._snapshot(args, state)["step"],
+                "epoch": self._snapshot(args, state)["epoch"],
+                "eval_loss": round(eval_loss, 6) if eval_loss is not None else None,
+            },
+        })
+        _append_log(
+            self.job_id,
+            f"[Eval] captured {len(details)}/{total_samples} validation sample details "
+            f"after eval (step={self._snapshot(args, state)['step']}).",
+        )
+
+    def _publish_eval_detail(self, args, state, inputs=None, eval_dataloader=None):
+        input_ids = inputs.get("input_ids") if isinstance(inputs, dict) else None
+        snapshot = self._snapshot(args, state)
+        if self.eval_step != snapshot["step"]:
+            self.eval_step = snapshot["step"]
+            self.eval_seen = 0
+            self.eval_batch_index = 0
+            self.eval_round += 1
+        try:
+            batch_size = int(input_ids.shape[0]) if hasattr(input_ids, "shape") else len(input_ids)
+        except (TypeError, ValueError, IndexError):
+            batch_size = int(getattr(eval_dataloader, "batch_size", 1) or 1)
+        batch_size = max(1, batch_size)
+        text = self._decode_eval_text(input_ids) if input_ids is not None else self._eval_row_text(self.eval_seen)
+        detail = self._make_eval_detail(
+            args,
+            state,
+            sample_index=self.eval_seen,
+            batch_index=self.eval_batch_index,
+            batch_size=batch_size,
+            text=text,
+        )
+        self.eval_seen += batch_size
+        self.eval_batch_index += 1
+
+        entry = jobs_db.get(self.job_id)
+        if entry is None:
+            return
+        details = (entry.get("eval_details") or []) + [detail]
+        details = details[-self.MAX_EVAL_DETAILS:]
+        entry.update({
+            "eval_status": "EVALUATING",
+            "eval_current": detail,
+            "eval_details": details,
+            "eval_progress": {
+                "status": "EVALUATING",
+                "sample_index": detail["sample_index"],
+                "seen_samples": detail["seen_samples"],
+                "total_samples": detail["total_samples"],
+                "step": detail["step"],
+                "epoch": detail["epoch"],
+            },
+        })
+        if detail["sample_index"] == 0:
+            _append_log(
+                self.job_id,
+                f"[Eval] prediction batch received: sample #1/{detail['total_samples'] or '?'} "
+                f"at step={detail['step']}",
+            )
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.start_time = time.time()
+        self._publish(args, state)
+
+    def on_step_begin(self, args, state, control, **kwargs):
+        if self.start_time is None:
+            self.start_time = time.time()
+
+    def on_step_end(self, args, state, control, **kwargs):
+        # Heartbeat independent of logging_steps.
+        self._publish(args, state)
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs:
+            self._publish(args, state, logs=logs, append_log=True)
+
+    def on_prediction_step(self, args, state, control, inputs=None, **kwargs):
+        prediction_inputs = inputs if inputs is not None else kwargs.get("inputs")
+        self._publish_eval_detail(
+            args,
+            state,
+            prediction_inputs,
+            eval_dataloader=kwargs.get("eval_dataloader"),
+        )
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        metrics = metrics or {}
+        self._publish(args, state, logs=metrics)
+        entry = jobs_db.get(self.job_id)
+        if entry is None:
+            return
+        eval_loss = _finite_float(metrics.get("eval_loss"), self.last_eval_loss)
+        if eval_loss is not None:
+            self.last_eval_loss = eval_loss
+        # Some Transformers/TRL versions do not expose prediction inputs to
+        # callbacks. Keep the modal useful by deriving sample details from the
+        # already formatted validation dataset after the aggregate eval loss.
+        self._backfill_eval_details(args, state, eval_loss)
+        entry = jobs_db.get(self.job_id)
+        if entry is None:
+            return
+        details = list(entry.get("eval_details") or [])
+        if details:
+            details[-1] = {
+                **details[-1],
+                "status": "evaluated",
+                "eval_loss": round(eval_loss, 6) if eval_loss is not None else None,
+            }
+        current = dict(entry.get("eval_current") or (details[-1] if details else {}))
+        if current:
+            current["status"] = "evaluated"
+            if eval_loss is not None:
+                current["eval_loss"] = round(eval_loss, 6)
+        snapshot = self._snapshot(args, state)
+        entry.update({
+            "eval_status": "COMPLETED",
+            "eval_current": current or None,
+            "eval_details": details[-self.MAX_EVAL_DETAILS:],
+            "eval_progress": {
+                "status": "COMPLETED",
+                "sample_index": current.get("sample_index") if current else None,
+                "seen_samples": self.eval_seen,
+                "total_samples": len(self.eval_dataset) if self.eval_dataset is not None else None,
+                "step": snapshot["step"],
+                "epoch": snapshot["epoch"],
+                "eval_loss": round(eval_loss, 6) if eval_loss is not None else None,
+            },
+        })
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        self._publish(args, state)
+
+    def on_save(self, args, state, control, **kwargs):
+        snapshot = self._snapshot(args, state)
+        _append_log(
+            self.job_id,
+            f"Checkpoint saved locally at step {snapshot['step']}/{snapshot['total_steps']}."
+        )
+
+
 class EnhancedWatchdogCallback(TrainerCallback):
     def __init__(self, job_id):
         self.job_id = job_id
@@ -193,6 +736,9 @@ class AutoTrainEarlyStoppingCallback(TrainerCallback):
 
 def background_train_task(job_id, config, filepath, validation_filepath, hf_token):
     jobs_db[job_id]['status'] = 'TRAINING'
+    build_line = f"[Build] training_pipeline={TRAINING_PIPELINE_BUILD}"
+    print(build_line)
+    _append_log(job_id, build_line)
     local_job_dir = os.path.join(LOCAL_CHECKPOINT_BASE, job_id)
     hf_repo_id = config.get('hf_repo_id')
 
@@ -244,6 +790,15 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             chat_template_jinja=chat_template_jinja,
         )
         ensure_right_padding(tokenizer)
+        raw_chat_template = getattr(tokenizer, "chat_template", None)
+        active_chat_template = get_active_chat_template(tokenizer)
+        template_hash = (
+            hashlib.sha256(active_chat_template.encode("utf-8")).hexdigest()[:16]
+            if active_chat_template else None
+        )
+        template_kind = "variants" if isinstance(raw_chat_template, dict) else (
+            "jinja" if active_chat_template else "missing"
+        )
         template_msg = (
             f"[ChatTemplate] mode={chat_template_info.get('mode')} "
             f"applied={chat_template_info.get('applied')} "
@@ -254,6 +809,25 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         )
         print(template_msg)
         _append_log(job_id, template_msg)
+        template_meta_msg = (
+            f"[ChatTemplate] active_kind={template_kind} "
+            f"active_chars={len(active_chat_template)} "
+            f"active_sha256={template_hash or 'none'}"
+        )
+        print(template_meta_msg)
+        _append_log(job_id, template_meta_msg)
+        if active_chat_template:
+            _append_log(
+                job_id,
+                f"[ChatTemplate] active_jinja=\n{_log_preview(active_chat_template)}",
+            )
+            template_probe = _render_chat_template_probe(tokenizer, enable_thinking)
+            _append_log(
+                job_id,
+                f"[ChatTemplate] rendered_probe=\n{_log_preview(template_probe, 2400)}",
+            )
+        else:
+            _append_log(job_id, "⚠️ [ChatTemplate] tokenizer không có chat_template hoạt động.")
         if chat_template_info.get("error"):
             _append_log(job_id, f"⚠️ [ChatTemplate] {chat_template_info['error']}")
 
@@ -331,6 +905,15 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         lora_targets = config.get('lora_target_modules') or [
             "q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
         ]
+        torchao_compat = patch_torchao_lora_constructor()
+        if torchao_compat.get("patched"):
+            compat_line = (
+                "[Compat] PEFT TorchAO constructor patched: "
+                "get_apply_tensor_subclass omitted by installed dispatcher; "
+                "training can continue without adapter merge."
+            )
+            print(compat_line)
+            _append_log(job_id, compat_line)
         model = FastLanguageModel.get_peft_model(
             model,
             r=config['r'],
@@ -376,9 +959,21 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             )
 
         if len(dataset_train) > 0:
-            print("Sample text:", dataset_train[0]['text'][:200], "...")
+            rendered_train_sample = str(dataset_train[0].get('text') or "")
+            print("Sample text:", rendered_train_sample[:200], "...")
+            _append_log(
+                job_id,
+                f"[ChatTemplate] rendered_train_sample={_log_preview(rendered_train_sample, 1600)}",
+            )
         else:
             print("[Dataset] Warning: dataset_train is empty after mapping.")
+
+        if dataset_eval is not None and len(dataset_eval) > 0:
+            rendered_eval_sample = str(dataset_eval[0].get('text') or "")
+            _append_log(
+                job_id,
+                f"[ChatTemplate] rendered_eval_sample={_log_preview(rendered_eval_sample, 1600)}",
+            )
 
         if "text" not in dataset_train.column_names:
             raise ValueError("Formatted training dataset is missing the required 'text' column.")
@@ -644,8 +1239,28 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             jobs_db[job_id]['effective_config'] = {
                 'model_name': config['model_name'],
                 'epochs': config['epochs'],
+                'batch_size': config['batchSize'],
+                'gradient_accumulation_steps': config['gradient_accumulation_steps'],
+                'effective_batch_size': schedule['effective_batch'],
+                'block_size': config.get('blockSize', config['modelMaxLength']),
+                'max_length': config['modelMaxLength'],
                 'learning_rate': config['learningRate'],
                 'lr_scheduler_type': config['lr_scheduler_type'],
+                'optimizer': config['optim'],
+                'seed': config['seed'],
+                'warmup_steps': config['warmup_steps'],
+                'warmup_ratio': config.get('warmup_ratio', 0),
+                'weight_decay': config['weight_decay'],
+                'max_grad_norm': config.get('max_grad_norm', 1.0),
+                'logging_steps': config.get('logging_steps', 1),
+                'dataloader_num_workers': config.get('dataloader_num_workers', 0),
+                'gradient_checkpointing': config.get('gradient_checkpointing', True),
+                'group_by_length': bool(config.get('group_by_length', False)),
+                'eval_enabled': bool(dataset_eval),
+                'dataset': {
+                    'train_samples': len(dataset_train),
+                    'eval_samples': len(dataset_eval) if dataset_eval is not None else 0,
+                },
                 'lora': {
                     'r': config['r'],
                     'alpha': config['lora_alpha'],
@@ -657,7 +1272,12 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 'schedule': schedule,
                 'mask_preflight': preflight,
                 'system_prompt_version': config.get('system_prompt_version'),
-                'chat_template': chat_template_info,
+                'chat_template': {
+                    **chat_template_info,
+                    'active_kind': template_kind,
+                    'active_chars': len(active_chat_template),
+                    'active_sha256': template_hash,
+                },
                 'enable_thinking': enable_thinking,
                 'auto_tune': {
                     'enabled': bool(config.get('auto_tune', True)),
@@ -738,7 +1358,10 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 f"[Config] TRL đang cài không hỗ trợ: {', '.join(sorted(dropped_kwargs))} — bỏ qua.",
             )
 
-        callbacks = [FlaskProgressCallback(job_id), EnhancedWatchdogCallback(job_id)]
+        callbacks = [
+            FlaskProgressCallback(job_id, tokenizer=tokenizer, eval_dataset=dataset_eval),
+            EnhancedWatchdogCallback(job_id),
+        ]
         if has_eval:
             callbacks.append(AutoTrainEarlyStoppingCallback(
                 job_id=job_id,
@@ -747,7 +1370,34 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 target_loss=config.get('early_stopping_loss'),
             ))
 
-        trainer = SFTTrainer(
+        class TrackingSFTTrainer(SFTTrainer):
+            def training_step(self, model, inputs, *args, **kwargs):
+                for callback in self.callback_handler.callbacks:
+                    if hasattr(callback, "_capture_train_batch"):
+                        callback._capture_train_batch(self.args, self.state, inputs)
+                return super().training_step(model, inputs, *args, **kwargs)
+
+            def prediction_step(self, model, inputs, prediction_loss_only, ignore_keys=None):
+                loss, logits, labels = super().prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+                try:
+                    for callback in self.callback_handler.callbacks:
+                        if hasattr(callback, "_publish_eval_detail"):
+                            # _append_log(callback.job_id, f"[DEBUG] prediction_step CALLED for step {getattr(self.state, 'global_step', -1)}")
+                            callback._publish_eval_detail(
+                                self.args,
+                                self.state,
+                                inputs=inputs,
+                                eval_dataloader=getattr(self, "eval_dataloader", None)
+                            )
+                except Exception as e:
+                    for callback in self.callback_handler.callbacks:
+                        if hasattr(callback, "job_id"):
+                            _append_log(callback.job_id, f"?? [CRASH] _publish_eval_detail error: {e}")
+                            import traceback
+                            _append_log(callback.job_id, f"[CRASH] {traceback.format_exc()}")
+                return loss, logits, labels
+
+        trainer = TrackingSFTTrainer(
             model = model,
             processing_class = tokenizer,
             train_dataset = dataset_train,
@@ -825,5 +1475,3 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         torch.cuda.empty_cache()
 
         _release_gpu_memory()
-
-

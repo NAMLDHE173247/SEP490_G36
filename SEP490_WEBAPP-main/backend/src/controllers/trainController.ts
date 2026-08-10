@@ -19,6 +19,14 @@ import { buildTrainAuditUpdate, toMongoAuditUpdate } from '../utils/trainAudit';
 import { DatasetAssignmentSubmission } from '../models/DatasetAssignmentSubmission';
 import { nodeFetch as fetch, fetchWithForm, GPU_TUNNEL_HEADERS } from '../utils/gpuHttp';
 import { isZipFile, extractForTraining, cleanupTempDir, DatasetMetadata } from '../services/zipService';
+import { apiKeyService } from '../services/apiKeyService';
+import { RESEARCH_MODEL_CATALOG } from '../config/modelCatalog';
+import {
+  buildTrainSummary,
+  buildTrainSummaryPrompt,
+  parseAiTrainSummary,
+  TRAIN_SUMMARY_VERSION,
+} from '../utils/trainSummary';
 dotenv.config();
 
 /**
@@ -195,6 +203,8 @@ export const startTraining = async (req: Request, res: Response) => {
       group_by_length,
       neftune_noise_alpha,
       dataloader_num_workers,
+      logging_steps,
+      gradient_checkpointing,
       auto_tune,           // false = khóa AutoTune, giữ nguyên knob tay
       enable_thinking,     // train khối reasoning/think (Gemma 4 / Qwen3)
       chat_template_jinja, // chuỗi Jinja dán tay (đi kèm chat_template=paste)
@@ -397,6 +407,8 @@ export const startTraining = async (req: Request, res: Response) => {
     putNumber('early_stopping_loss', early_stopping_loss);
     putNumber('neftune_noise_alpha', neftune_noise_alpha);
     putNumber('dataloader_num_workers', dataloader_num_workers);
+    putNumber('logging_steps', logging_steps);
+    putBoolean('gradient_checkpointing', gradient_checkpointing);
     putNumber('early_stopping_patience', early_stopping_patience);
     putNumber('early_stopping_min_delta', early_stopping_min_delta);
     if (typeof chat_template === 'string' && chat_template.trim()) {
@@ -855,10 +867,20 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
 
       const pushFields: any = {};
       if (data.metrics && typeof data.metrics.loss === 'number') {
-        pushFields.lossHistory = { progress: data.progress || 0, loss: data.metrics.loss };
+        pushFields.lossHistory = {
+          progress: typeof data.progress === 'number' ? data.progress : 0,
+          loss: data.metrics.loss,
+          step: typeof data.metrics.step === 'number' ? data.metrics.step : undefined,
+          epoch: typeof data.metrics.epoch === 'number' ? data.metrics.epoch : undefined,
+        };
       }
       if (data.metrics && typeof data.metrics.eval_loss === 'number') {
-        pushFields.evalLossHistory = { progress: data.progress || 0, loss: data.metrics.eval_loss };
+        pushFields.evalLossHistory = {
+          progress: typeof data.progress === 'number' ? data.progress : 0,
+          loss: data.metrics.eval_loss,
+          step: typeof data.metrics.step === 'number' ? data.metrics.step : undefined,
+          epoch: typeof data.metrics.epoch === 'number' ? data.metrics.epoch : undefined,
+        };
       }
 
       TrainingHistory.updateOne(
@@ -907,8 +929,35 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
     if (!data.effective_config && history.effectiveConfig) {
       data.effective_config = history.effectiveConfig;
     }
+    if (!data.eval_details && Array.isArray((history as any).evalDetails)) {
+      data.eval_details = (history as any).evalDetails;
+    }
+    if (!data.eval_current && (history as any).evalCurrent) {
+      data.eval_current = (history as any).evalCurrent;
+    }
+    if (!data.eval_progress && (history as any).evalProgress) {
+      data.eval_progress = (history as any).evalProgress;
+    }
+    if (!data.eval_status && (history as any).evalStatus) {
+      data.eval_status = (history as any).evalStatus;
+    }
+    if (!data.train_details && Array.isArray((history as any).trainDetails)) {
+      data.train_details = (history as any).trainDetails;
+    }
+    if (!data.train_current && (history as any).trainCurrent) {
+      data.train_current = (history as any).trainCurrent;
+    }
+    const auditMetrics = Array.isArray((history as any).metricsHistory)
+      ? (history as any).metricsHistory[(history as any).metricsHistory.length - 1]
+      : null;
+    if (auditMetrics && (!data.metrics || Object.keys(data.metrics).length === 0)) {
+      data.metrics = auditMetrics;
+    }
     if (!data.error && history.lastError) data.error = history.lastError;
     if (!data.technical_error && history.technicalError) data.technical_error = history.technicalError;
+    if (!data.train_summary && (history as any).trainSummary) {
+      data.train_summary = (history as any).trainSummary;
+    }
 
     return res.status(response.status).json(data);
   } catch (err: any) {
@@ -923,6 +972,16 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
             status: (history as any).status || 'ERROR',
             logs: (history as any).trainLogs,
             effective_config: (history as any).effectiveConfig,
+            eval_details: (history as any).evalDetails || [],
+            eval_current: (history as any).evalCurrent || null,
+            eval_progress: (history as any).evalProgress,
+            eval_status: (history as any).evalStatus,
+            train_details: (history as any).trainDetails || [],
+            train_current: (history as any).trainCurrent || null,
+            train_summary: (history as any).trainSummary || null,
+            metrics: Array.isArray((history as any).metricsHistory) && (history as any).metricsHistory.length > 0
+              ? (history as any).metricsHistory[(history as any).metricsHistory.length - 1]
+              : {},
             error: (history as any).lastError || err.message,
             technical_error: (history as any).technicalError,
             from_mongo_audit: true,
@@ -931,6 +990,80 @@ export const getTrainingStatus = async (req: Request, res: Response) => {
       }
     } catch { /* ignore fallback errors */ }
     return res.status(500).json({ error: err.message || 'Failed to get training status' });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/train/summary/:jobId
+// Evidence-based training review with optional OpenRouter explanation.
+// ---------------------------------------------------------------------------
+export const generateTrainingSummary = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+    const { jobId } = req.params;
+    const history = await TrainingHistory.findOne({ jobId, ownerId });
+    if (!history) return res.status(404).json({ error: 'Training job not found' });
+
+    const refresh = req.body?.refresh === true;
+    if (
+      !refresh
+      && (history as any).trainSummary
+      && (history as any).trainSummary.version === TRAIN_SUMMARY_VERSION
+    ) {
+      return res.json({ summary: (history as any).trainSummary, cached: true });
+    }
+
+    const snapshot = typeof (history as any).toObject === 'function'
+      ? (history as any).toObject()
+      : history;
+    let summary: any = buildTrainSummary(snapshot);
+    let source = 'rules';
+
+    const openRouterKey = await apiKeyService
+      .getApiKeyForUser(ownerId, 'openrouter')
+      .catch(() => '');
+    if (openRouterKey) {
+      try {
+        const provider = await apiKeyService.createProvider(
+          ownerId,
+          'openrouter',
+          true,
+          RESEARCH_MODEL_CATALOG.gemini,
+        );
+        const aiRaw = await provider.generateContent(
+          buildTrainSummaryPrompt(summary, snapshot),
+          undefined,
+          'Bạn là chuyên gia MLOps. Chỉ phân tích bằng chứng train được cung cấp, không bịa số liệu.',
+        );
+        const aiSummary = parseAiTrainSummary(aiRaw);
+        if (aiSummary) {
+          const failed = summary?.training_analysis?.failed === true;
+          summary = {
+            ...summary,
+            source: 'ai',
+            // A failed job must stay failed even if an LLM returns an
+            // over-optimistic verdict. The raw error/loss evidence wins.
+            verdict: failed ? 'needs_attention' : (aiSummary.verdict || summary.verdict),
+            headline: failed ? summary.headline : (aiSummary.headline || summary.headline),
+            ai_analysis: aiSummary,
+          };
+          source = 'ai';
+        }
+      } catch (error: any) {
+        console.warn('[TrainSummary] AI explanation unavailable; keeping rules summary:', error?.message || error);
+      }
+    }
+
+    summary.source = source;
+    await TrainingHistory.updateOne(
+      { jobId, ownerId },
+      { $set: { trainSummary: summary } },
+    );
+    return res.json({ summary, cached: false });
+  } catch (error: any) {
+    console.error('[TrainSummary] Failed to generate summary:', error);
+    return res.status(500).json({ error: error?.message || 'Failed to generate training summary' });
   }
 };
 
@@ -1005,12 +1138,61 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
         ).catch(err => console.error('[Backend] Failed to update status in DB during stream:', err));
       }
 
+      if (!data.effective_config && (history as any).effectiveConfig) {
+        data.effective_config = (history as any).effectiveConfig;
+      }
+      if (!data.eval_details && Array.isArray((history as any).evalDetails)) {
+        data.eval_details = (history as any).evalDetails;
+      }
+      if (!data.eval_current && (history as any).evalCurrent) {
+        data.eval_current = (history as any).evalCurrent;
+      }
+      if (!data.eval_progress && (history as any).evalProgress) {
+        data.eval_progress = (history as any).evalProgress;
+      }
+      if (!data.eval_status && (history as any).evalStatus) {
+        data.eval_status = (history as any).evalStatus;
+      }
+      if (!data.train_details && Array.isArray((history as any).trainDetails)) {
+        data.train_details = (history as any).trainDetails;
+      }
+      if (!data.train_current && (history as any).trainCurrent) {
+        data.train_current = (history as any).trainCurrent;
+      }
+      if (!data.train_summary && (history as any).trainSummary) {
+        data.train_summary = (history as any).trainSummary;
+      }
+      const auditMetrics = Array.isArray((history as any).metricsHistory)
+        ? (history as any).metricsHistory[(history as any).metricsHistory.length - 1]
+        : null;
+      if (auditMetrics && (!data.metrics || Object.keys(data.metrics).length === 0)) {
+        data.metrics = auditMetrics;
+      }
+
       // Sync bản sao local để lần lặp sau chỉ diff phần mới (stream giữ doc trong RAM).
       const auditRaw = persistTrainAudit(jobId, ownerId, data, history);
       if (Array.isArray(auditRaw.trainLogs)) history.trainLogs = auditRaw.trainLogs as string[];
       if (typeof auditRaw.lastError === 'string') history.lastError = auditRaw.lastError;
       if (typeof auditRaw.progress === 'number') history.progress = auditRaw.progress;
       if (auditRaw.lastMetricsAt instanceof Date) history.lastMetricsAt = auditRaw.lastMetricsAt;
+      if (Array.isArray((auditRaw as any).evalDetails)) {
+        (history as any).evalDetails = (auditRaw as any).evalDetails;
+      }
+      if ((auditRaw as any).evalCurrent) {
+        (history as any).evalCurrent = (auditRaw as any).evalCurrent;
+      }
+      if ((auditRaw as any).evalProgress) {
+        (history as any).evalProgress = (auditRaw as any).evalProgress;
+      }
+      if ((auditRaw as any).evalStatus) {
+        (history as any).evalStatus = (auditRaw as any).evalStatus;
+      }
+      if (Array.isArray((auditRaw as any).trainDetails)) {
+        (history as any).trainDetails = (auditRaw as any).trainDetails;
+      }
+      if ((auditRaw as any).trainCurrent) {
+        (history as any).trainCurrent = (auditRaw as any).trainCurrent;
+      }
 
       // IF latest_checkpoint exists, update the DB so we can resume later
       if (data.latest_checkpoint || (data.metrics && (typeof data.metrics.loss === 'number' || typeof data.metrics.eval_loss === 'number'))) {
@@ -1021,10 +1203,20 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
 
         const pushFields: any = {};
         if (data.metrics && typeof data.metrics.loss === 'number') {
-          pushFields.lossHistory = { progress: data.progress || 0, loss: data.metrics.loss };
+          pushFields.lossHistory = {
+            progress: typeof data.progress === 'number' ? data.progress : 0,
+            loss: data.metrics.loss,
+            step: typeof data.metrics.step === 'number' ? data.metrics.step : undefined,
+            epoch: typeof data.metrics.epoch === 'number' ? data.metrics.epoch : undefined,
+          };
         }
         if (data.metrics && typeof data.metrics.eval_loss === 'number') {
-          pushFields.evalLossHistory = { progress: data.progress || 0, loss: data.metrics.eval_loss };
+          pushFields.evalLossHistory = {
+            progress: typeof data.progress === 'number' ? data.progress : 0,
+            loss: data.metrics.eval_loss,
+            step: typeof data.metrics.step === 'number' ? data.metrics.step : undefined,
+            epoch: typeof data.metrics.epoch === 'number' ? data.metrics.epoch : undefined,
+          };
         }
 
         TrainingHistory.updateOne(

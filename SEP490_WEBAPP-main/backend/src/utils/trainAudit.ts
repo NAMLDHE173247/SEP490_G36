@@ -33,6 +33,10 @@ export interface TrainMetricsSnapshot {
   vram?: number;
   gpu_util?: number;
   progress?: number;
+  step?: number;
+  epoch?: number;
+  total_steps?: number;
+  total_epochs?: number;
 }
 
 function classifyLogLine(line: string): AuditLevel | null {
@@ -96,6 +100,28 @@ export function buildTrainAuditUpdate(
 
   if (data.effective_config && typeof data.effective_config === 'object') {
     update.effectiveConfig = data.effective_config;
+  }
+
+  // Keep a small drill-down window so eval details remain available after the
+  // GPU worker is restarted. The worker already caps this list; cap again at
+  // the audit boundary to protect Mongo payloads from older workers.
+  if (Array.isArray(data.eval_details)) {
+    update.evalDetails = data.eval_details.slice(-25);
+  }
+  if (data.eval_current && typeof data.eval_current === 'object') {
+    update.evalCurrent = data.eval_current;
+  }
+  if (data.eval_progress && typeof data.eval_progress === 'object') {
+    update.evalProgress = data.eval_progress;
+  }
+  if (typeof data.eval_status === 'string' && data.eval_status) {
+    update.evalStatus = data.eval_status;
+  }
+  if (Array.isArray(data.train_details)) {
+    update.trainDetails = data.train_details.slice(-100);
+  }
+  if (data.train_current && typeof data.train_current === 'object') {
+    update.trainCurrent = data.train_current;
   }
 
   if (typeof data.error === 'string' && data.error.trim()) {
@@ -163,7 +189,7 @@ export function buildTrainAuditUpdate(
     );
     if (hasSignal && now.getTime() - lastAt >= METRICS_SNAPSHOT_INTERVAL_MS) {
       const snapshot: TrainMetricsSnapshot = { ts: now };
-      for (const k of ['loss', 'eval_loss', 'vram', 'gpu_util'] as const) {
+      for (const k of ['loss', 'eval_loss', 'vram', 'gpu_util', 'step', 'epoch', 'total_steps', 'total_epochs'] as const) {
         if (typeof metrics[k] === 'number' && Number.isFinite(metrics[k])) {
           snapshot[k] = metrics[k];
         }

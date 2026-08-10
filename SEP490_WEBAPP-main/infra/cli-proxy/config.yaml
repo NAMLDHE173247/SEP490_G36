@@ -1,0 +1,29 @@
+# Copy this file to config.yaml. config.yaml and auths/ are git-ignored.
+host: "0.0.0.0"
+port: 8317
+
+tls:
+  enable: false
+
+remote-management:
+  # Keep false for the local POC. Management remains localhost-only.
+  allow-remote: true
+  # Replace before enabling OAuth management endpoints.
+  # Empty disables /v0/management entirely.
+  secret-key: "1BfUoCNYzPUesusmHGWycrW4VDw08PMqktg3s8j44nmRirQbfZj_3vHl1Zq44bTW"
+  disable-control-panel: true
+
+auth-dir: "/root/.cli-proxy-api"
+
+# Replace with a long random secret and set the same value as
+# CLIPROXY_API_KEY in backend/.env. Never commit the real value.
+api-keys:
+  - "Z24pfRkTT31LYKOtACjpWI8jTU-v02PNntaLInBCIDCcPZphD4IXHgnPyuSSzS5C"
+
+debug: false
+logging-to-file: true
+usage-statistics-enabled: false
+
+# Require the per-user prefix attached by the application. Unprefixed requests
+# cannot consume another user's OAuth credential.
+force-model-prefix: true

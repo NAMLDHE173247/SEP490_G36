@@ -760,6 +760,64 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Save Steps <HelpTooltip text="Save a checkpoint every N optimizer steps. Leave empty to align it automatically with Eval Steps." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      placeholder="auto"
+                      value={config.saveSteps}
+                      onChange={handleParamChange('saveSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Logging Steps <HelpTooltip text="How often the trainer reports train loss. Step/Epoch progress is still updated every optimizer step." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      value={config.loggingSteps}
+                      onChange={handleParamChange('loggingSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Data Loader Workers <HelpTooltip text="CPU workers that prepare batches. Keep 0 on Kaggle/Windows unless you have verified shared-memory support." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="0"
+                      max="16"
+                      value={config.dataloaderNumWorkers}
+                      onChange={handleParamChange('dataloaderNumWorkers')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Auto Tune <HelpTooltip text="Lets the GPU service cap risky settings for very small datasets to reduce overfitting and unstable runs." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.autoTune}
+                      onChange={handleToggleChange('autoTune')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Gradient Checkpointing <HelpTooltip text="Trades compute for lower VRAM usage. Recommended ON for 7B+ models." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.gradientCheckpointing}
+                      onChange={handleToggleChange('gradientCheckpointing')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
+
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
                     <span className="at-label">Group By Length <HelpTooltip text="Batches samples of similar length together to waste less compute on padding. Changes batch order, so leave off when comparing runs." /></span>
                     <input
                       type="checkbox"

@@ -25,6 +25,7 @@ from pipelines.train_data_quality import (
     filter_training_rows,
     build_length_report,
 )
+from pipelines.peft_compat import patch_torchao_lora_constructor
 
 
 class CharTokenizer:
@@ -94,6 +95,30 @@ class CharTokenizer:
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(attention, dtype=torch.long),
         }
+
+
+class QwenNativeTokenizer(CharTokenizer):
+    """Small native Qwen-style tokenizer fixture for assistant masking."""
+
+    BOS = "<｜begin▁of▁sentence｜>"
+    USER = "<｜User｜>"
+    ASSISTANT = "<｜Assistant｜>"
+    EOS = "<｜end▁of▁sentence｜>"
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=False):
+        rendered = self.BOS
+        for message in messages:
+            role = message["role"]
+            content = message.get("content") or ""
+            if role == "system":
+                rendered += content
+            elif role == "user":
+                rendered += self.USER + content
+            elif role == "assistant":
+                rendered += self.ASSISTANT + content + self.EOS
+        if add_generation_prompt:
+            rendered += self.ASSISTANT
+        return rendered
 
 
 CONVERSATION = [
@@ -171,6 +196,26 @@ def test_preflight_detects_unmatched_format():
     assert report2["ok"] is False, "Dataset sai định dạng phải bị preflight bắt"
 
 
+def test_qwen_native_template_masks_assistant_after_user_turn():
+    messages = [
+        {"role": "system", "content": "Bạn là gia sư."},
+        {"role": "user", "content": "2 + 2 bằng bao nhiêu?"},
+        {"role": "assistant", "content": "Bằng 4."},
+    ]
+    rendered = QwenNativeTokenizer.BOS + "Bạn là gia sư." + QwenNativeTokenizer.USER
+    rendered += "2 + 2 bằng bao nhiêu?" + QwenNativeTokenizer.ASSISTANT
+    rendered += "Bằng 4." + QwenNativeTokenizer.EOS
+    tokenizer = QwenNativeTokenizer(rendered + "MAGICAL_CONTENT_12345")
+    collator = AssistantOnlyDataCollator(tokenizer)
+    collator.padder = tokenizer.pad
+
+    report = preflight_assistant_mask(tokenizer, collator, [rendered], 4096)
+
+    assert collator.header_str == QwenNativeTokenizer.ASSISTANT
+    assert report["ok"] is True
+    assert report["matched"] == 1
+
+
 def test_schedule_scales_with_dataset_size():
     small = resolve_schedule(40, 2, 4, 3, {})
     assert small["steps_per_epoch"] == 5 and small["total_steps"] == 15
@@ -223,6 +268,24 @@ def test_filter_supported_kwargs_drops_unknown():
 
     kept, dropped = filter_supported_kwargs(Fake, {"alpha": 1, "gamma": 3})
     assert kept == {"alpha": 1} and dropped == ["gamma"]
+
+
+def test_torchao_lora_constructor_compat_patch_is_idempotent():
+    class LegacyTorchaoLoraLinear:
+        def __init__(self, *args, get_apply_tensor_subclass, **kwargs):
+            self.callback = get_apply_tensor_subclass
+
+    class FakeTorchaoModule:
+        TorchaoLoraLinear = LegacyTorchaoLoraLinear
+
+    fake = FakeTorchaoModule()
+    first = patch_torchao_lora_constructor(fake)
+    second = patch_torchao_lora_constructor(fake)
+    instance = fake.TorchaoLoraLinear(config=object())
+
+    assert first["patched"] is True
+    assert second["reason"] == "already patched"
+    assert instance.callback is None
 
 
 def test_chat_template_maps_by_family():

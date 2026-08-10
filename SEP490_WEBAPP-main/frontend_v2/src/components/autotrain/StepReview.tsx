@@ -147,6 +147,38 @@ const StepReview: React.FC<StepReviewProps> = ({
             </div>
           </div>
 
+          <div style={{ borderTop: '1px dashed var(--at-border)', paddingTop: 14 }}>
+            <span style={{ display: 'block', fontSize: 10, color: 'var(--at-text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>
+              Train parameters that will be sent to GPU
+            </span>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+              {[
+                ['Epochs', config.epochs],
+                ['Batch size', config.batchSize],
+                ['Learning rate', config.learningRate],
+                ['Max length', config.modelMaxLength],
+                ['Grad accumulation', config.gradAccum],
+                ['Optimizer', config.optim],
+                ['Scheduler', config.lrScheduler],
+                ['Warmup steps', config.warmupSteps],
+                ['Eval steps', config.evalSteps || 'auto'],
+                ['Save steps', config.saveSteps || 'auto'],
+                ['LoRA r / alpha', `${config.r} / ${config.loraAlpha}`],
+                ['LoRA dropout', config.loraDropout],
+                ['Early stop patience', config.earlyStoppingPatience],
+                ['Logging steps', config.loggingSteps],
+                ['Data loader workers', config.dataloaderNumWorkers],
+                ['Auto tune', config.autoTune ? 'On' : 'Off'],
+                ['Grad checkpointing', config.gradientCheckpointing ? 'On' : 'Off'],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 7 }}>
+                  <span style={{ display: 'block', fontSize: 10, color: '#64748B' }}>{label}</span>
+                  <strong style={{ display: 'block', marginTop: 2, fontSize: 12, color: '#1E293B', wordBreak: 'break-word' }}>{value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {config.hfRepoId && (
             <div style={{ padding: 12, background: 'var(--at-accent-light)', border: '1px solid var(--at-border)', borderRadius: 'var(--at-radius)', display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--at-accent)' }}>HUGGINGFACE EXPORT CONFIG</span>

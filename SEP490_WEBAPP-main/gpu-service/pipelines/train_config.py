@@ -114,6 +114,9 @@ def build_train_config(parsed):
         "model_name": str(parsed.get("model_name") or DEFAULT_MODEL_NAME).strip(),
         "epochs": _as_int("epochs", parsed.get("epochs"), warnings),
         "batchSize": _as_int("batchSize", parsed.get("batchSize"), warnings),
+        "blockSize": _as_int(
+            "blockSize", parsed.get("blockSize") or parsed.get("modelMaxLength"), warnings
+        ),
         "learningRate": _as_float("learningRate", parsed.get("learningRate"), warnings),
         "modelMaxLength": _as_int("modelMaxLength", parsed.get("modelMaxLength"), warnings),
         "r": _as_int("r", parsed.get("r"), warnings),
