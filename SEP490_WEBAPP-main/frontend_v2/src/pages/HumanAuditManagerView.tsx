@@ -166,12 +166,16 @@ export default function HumanAuditManagerView() {
         <button type="button" onClick={() => void loadOverview()} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button>
       </header>
 
-      {!isChecker && <section className="ham-assignment-card">
+      <section className="ham-assignment-card">
         <div className="ham-field"><label>Gói audit theo project</label><select value={selectedEvalId} onChange={event => setSelectedEvalId(event.target.value)}><option value="">Chọn project...</option>{evaluations.map(item => <option value={item.modelEvalId} key={item.modelEvalId}>{item.packageLabel || `${item.projectName} · ${item.totalConversations} câu`}</option>)}</select><small>Mỗi project/evaluation là một gói riêng; 2 project × 100 câu sẽ tạo 2 gói 100 câu, không trộn chung.</small></div>
-        <div className="ham-staff-picker"><label>Giao độc lập cho Staff</label><div>{staff.map(person => <button type="button" key={person.id} className={selectedStaffIds.includes(person.id) ? 'selected' : ''} onClick={() => toggleStaff(person.id)}><Users size={14} /><span>{person.name}<small>{person.email}</small></span>{selectedStaffIds.includes(person.id) && <CheckCircle2 size={14} />}</button>)}</div></div>
-        <div className="ham-field"><label>Checker phụ trách gói</label><select value={selectedCheckerId} onChange={event => setSelectedCheckerId(event.target.value)}><option value="">Chọn Checker...</option>{checkers.map(person => <option key={person.id} value={person.id}>{person.name || person.email}</option>)}</select><small>Chỉ Checker được giao mới xem và chốt conflict của gói này.</small></div>
-        <button className="ham-assign" type="button" onClick={assign} disabled={assigning || !selectedStaffIds.length || !selectedCheckerId}>{assigning ? <RefreshCw className="spin" size={16} /> : <ClipboardCheck size={16} />} Giao gói project</button>
-      </section>}
+        {!isChecker && (
+          <>
+            <div className="ham-staff-picker"><label>Giao độc lập cho Staff</label><div>{staff.map(person => <button type="button" key={person.id} className={selectedStaffIds.includes(person.id) ? 'selected' : ''} onClick={() => toggleStaff(person.id)}><Users size={14} /><span>{person.name}<small>{person.email}</small></span>{selectedStaffIds.includes(person.id) && <CheckCircle2 size={14} />}</button>)}</div></div>
+            <div className="ham-field"><label>Checker phụ trách gói</label><select value={selectedCheckerId} onChange={event => setSelectedCheckerId(event.target.value)}><option value="">Chọn Checker...</option>{checkers.map(person => <option key={person.id} value={person.id}>{person.name || person.email}</option>)}</select><small>Chỉ Checker được giao mới xem và chốt conflict của gói này.</small></div>
+            <button className="ham-assign" type="button" onClick={assign} disabled={assigning || !selectedStaffIds.length || !selectedCheckerId}>{assigning ? <RefreshCw className="spin" size={16} /> : <ClipboardCheck size={16} />} Giao gói project</button>
+          </>
+        )}
+      </section>
 
       {selectedEvaluation && (
         <section className="ham-summary-grid">
