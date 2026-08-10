@@ -83,7 +83,7 @@ const HumanAuditReviewSchema = new Schema<IHumanAuditReview>({
   aiScoresSnapshot: { type: Schema.Types.Mixed, default: null },
   aiConflict: { type: Schema.Types.Mixed, default: null },
 }, { timestamps: true });
-HumanAuditReviewSchema.index({ modelEvalId: 1, convIndex: 1, reviewerId: 1 }, { unique: true });
+HumanAuditReviewSchema.index({ modelEvalId: 1, convIndex: 1, reviewerId: 1, targetModel: 1 }, { unique: true });
 
 const HumanAuditAdjudicationSchema = new Schema<IHumanAuditAdjudication>({
   ownerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },

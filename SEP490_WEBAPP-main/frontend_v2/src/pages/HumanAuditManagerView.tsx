@@ -184,7 +184,28 @@ export default function HumanAuditManagerView() {
 
       <section className="ham-review-card">
         <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div></header>
-        <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => <tr key={item.conv_index}><td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td><td>{item.inter_rater.reviewer_count}</td><td>{item.inter_rater.max_delta.toFixed(1)}</td><td>{item.inter_rater.conflict_criteria.join(', ') || '—'}</td><td><span className={`ham-status ${item.inter_rater.status} ${item.inter_rater.severity}`}>{item.inter_rater.status === 'resolved' ? 'Đã chốt' : item.inter_rater.status === 'conflict' ? `${item.inter_rater.severity} conflict` : item.inter_rater.status === 'agreement' ? 'Đồng thuận ≥2 Staff' : item.inter_rater.reviewer_count === 1 ? 'Đã có 1 bản chấm · IAA không áp dụng' : 'Chưa có bản chấm'}</span></td><td><button type="button" onClick={() => openResolution(item)} disabled={!item.reviews?.length}><Scale size={14} /> Xem & xử lý</button></td></tr>)}</tbody></table>{!visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}</div>
+        <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
+          const ftCount = (item.reviews || []).filter((r: any) => (r.targetModel || r.target_model || 'ft') === 'ft').length;
+          const baseCount = (item.reviews || []).filter((r: any) => (r.targetModel || r.target_model) === 'base').length;
+          return (
+            <tr key={item.conv_index}>
+              <td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td>
+              <td>
+                <strong>{item.inter_rater.reviewer_count}</strong>
+                {Boolean(item.reviews?.length) && (
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
+                    {ftCount > 0 && <span style={{ color: '#4f46e5', marginRight: '4px' }}>{ftCount} FT</span>}
+                    {baseCount > 0 && <span style={{ color: '#b45309' }}>{baseCount} Base</span>}
+                  </div>
+                )}
+              </td>
+              <td>{item.inter_rater.max_delta.toFixed(1)}</td>
+              <td>{item.inter_rater.conflict_criteria.join(', ') || '—'}</td>
+              <td><span className={`ham-status ${item.inter_rater.status} ${item.inter_rater.severity}`}>{item.inter_rater.status === 'resolved' ? 'Đã chốt' : item.inter_rater.status === 'conflict' ? `${item.inter_rater.severity} conflict` : item.inter_rater.status === 'agreement' ? 'Đồng thuận ≥2 Staff' : item.inter_rater.reviewer_count === 1 ? 'Đã có bản chấm · IAA không áp dụng' : 'Chưa có bản chấm'}</span></td>
+              <td><button type="button" onClick={() => openResolution(item)} disabled={!item.reviews?.length}><Scale size={14} /> Xem & xử lý</button></td>
+            </tr>
+          );
+        })}</tbody></table>{!visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}</div>
       </section>
 
       {detail?.inter_rater_summary?.reviewer_count >= 2 && (
@@ -197,7 +218,23 @@ export default function HumanAuditManagerView() {
       {selectedItem && (
         <div className="ham-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedItem(null); }}>
           <section className="ham-modal">
-            <header><div><span>UNIFIED ADJUDICATION · {selectedItem.item_id}</span><h2>Đối chiếu AI Judge và tất cả Staff</h2></div><button type="button" onClick={() => setSelectedItem(null)}><X size={18} /></button></header>
+            <header>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.8rem', color: '#6366f1' }}>UNIFIED ADJUDICATION · {selectedItem.item_id}</span>
+                  <span style={{ padding: '2px 8px', borderRadius: '4px', background: '#e0e7ff', color: '#4338ca', fontSize: '0.72rem', fontWeight: 600 }}>
+                    🎯 Fine-tuned: {detail?.evaluation?.ftModelRepo || selectedEvaluation?.ftModelRepo || 'FT Model'}
+                  </span>
+                  {Boolean(detail?.evaluation?.baseModelRepo || selectedEvaluation?.baseModelRepo) && (
+                    <span style={{ padding: '2px 8px', borderRadius: '4px', background: '#fef3c7', color: '#b45309', fontSize: '0.72rem', fontWeight: 600 }}>
+                      🔲 Base: {detail?.evaluation?.baseModelRepo || selectedEvaluation?.baseModelRepo}
+                    </span>
+                  )}
+                </div>
+                <h2>Đối chiếu AI Judge và tất cả Staff</h2>
+              </div>
+              <button type="button" onClick={() => setSelectedItem(null)}><X size={18} /></button>
+            </header>
             <div className="ham-replay">
               <p style={{ fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}><b>Học sinh:</b> {selectedItem.question}</p>
               <div style={{ display: 'grid', gridTemplateColumns: selectedItem.baseAnswer ? '1fr 1fr' : '1fr', gap: '12px', marginTop: '8px' }}>

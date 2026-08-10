@@ -302,10 +302,32 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
     HumanAuditReview.find({ modelEvalId, reviewerId: staffId }).lean(),
   ]);
   if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });
-  const reviewByConv = new Map(reviews.map(review => [review.convIndex, review]));
   const allowed = new Set(assignment.assignedConvIndexes);
+  const ftReviewByConv = new Map<number, any>();
+  const baseReviewByConv = new Map<number, any>();
+  reviews.forEach(review => {
+    if (review.targetModel === 'base') {
+      baseReviewByConv.set(Number(review.convIndex), review);
+    } else {
+      ftReviewByConv.set(Number(review.convIndex), review);
+    }
+  });
+
+  const mapReview = (review: any) => review ? {
+    verdict: review.verdict === 'skip' ? 'skip' : review.aiConflict?.has_conflict ? 'disagree' : 'agree',
+    target_model: review.targetModel || 'ft',
+    note: review.note,
+    reviewer: review.reviewerName,
+    reviewed_at: review.updatedAt,
+    rubric_version: review.rubricVersion,
+    human_scores: review.humanScores,
+    human_reasons: review.humanReasons,
+    human_outcomes: review.humanOutcomes,
+    conflict: review.aiConflict,
+  } : null;
+
   const results = evaluation.results.filter(item => allowed.has(Number(item.conv_index))).map(item => {
-    const review: any = reviewByConv.get(Number(item.conv_index));
+    const review: any = ftReviewByConv.get(Number(item.conv_index));
     const raw: any = { ...item };
     if (!review) {
       delete raw.criteria_scores;
@@ -313,23 +335,22 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
     }
     return {
       ...raw,
-      human_review: review ? {
-        verdict: review.verdict === 'skip' ? 'skip' : review.aiConflict?.has_conflict ? 'disagree' : 'agree',
-        target_model: review.targetModel || 'ft',
-        note: review.note,
-        reviewer: review.reviewerName,
-        reviewed_at: review.updatedAt,
-        rubric_version: review.rubricVersion,
-        human_scores: review.humanScores,
-        human_reasons: review.humanReasons,
-        human_outcomes: review.humanOutcomes,
-        conflict: review.aiConflict,
-      } : null,
+      human_review: mapReview(review),
     };
   });
+
+  const baseResults = (evaluation.baseResults || []).filter(item => allowed.has(Number(item.conv_index))).map(item => {
+    const baseReview: any = baseReviewByConv.get(Number(item.conv_index));
+    return {
+      ...item,
+      human_review: mapReview(baseReview),
+    };
+  });
+
   return res.json({
     ...evaluation,
     results,
+    baseResults,
     humanAudit: buildHumanAuditSummary(results as any[]),
   });
 };
@@ -390,7 +411,7 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     };
   }
   const review = await HumanAuditReview.findOneAndUpdate(
-    { modelEvalId, convIndex, reviewerId: staffId },
+    { modelEvalId, convIndex, reviewerId: staffId, targetModel },
     updateOperation,
     { new: true, upsert: true },
   ).lean();
@@ -449,6 +470,7 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
       jobId: evaluation.jobId,
       projectName: assignments[0]?.projectName || evaluation.jobId,
       ftModelRepo: evaluation.ftModelRepo,
+      baseModelRepo: evaluation.baseModelRepo,
       totalConversations: evaluation.totalConversations,
       checker: assignments[0]?.checkerId || null,
     },
