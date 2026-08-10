@@ -12,6 +12,7 @@ import {
   Search,
   ShieldCheck,
   SkipForward,
+  User,
   X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -284,6 +285,9 @@ export default function HumanAuditReplayView() {
     <div className="ha-page">
       <header className="ha-hero">
         <div className="ha-hero-copy">
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(99,102,241,0.15)', padding: '4px 12px', borderRadius: '16px', color: '#4338ca', fontWeight: 700, fontSize: '0.82rem', marginBottom: '8px' }}>
+            <User size={14} /> Staff đang thực hiện: {user?.name || 'Tài khoản Staff'} ({user?.email || 'Chưa đăng nhập'}) · {String(user?.role || 'staff').toUpperCase()}
+          </div>
           <span className="ha-eyebrow"><ClipboardCheck size={15} /> STAFF · HUMAN AUDIT ĐỘC LẬP</span>
           <h1>Chấm Phát Lại Hội Thoại</h1>
           <p>Bạn chỉ nhìn thấy Evaluation đã được Supervisor giao. Mỗi điểm được lưu theo tài khoản {user?.name || 'Staff'} và không ghi đè bản chấm của Staff khác.</p>
@@ -333,7 +337,7 @@ export default function HumanAuditReplayView() {
               <div><span>Fine-tuned Model</span><strong>{evaluation.ftModelRepo || evaluation.jobId}</strong></div>
               <div><span>AI Judge</span><strong>{evaluation.judgeModel}</strong></div>
               <div><span>Tiến độ</span><strong>{evaluation.humanAudit?.reviewed_items || 0}/{evaluation.results.length}</strong></div>
-              <div><span>Staff đang chấm</span><strong>{user?.name || user?.email || 'Tài khoản hiện tại'}</strong></div>
+              <div><span>Staff theo dõi/chấm</span><strong>👤 {user?.name || 'Staff'} ({user?.email || 'staff'})</strong></div>
             </div>
             {(!Array.isArray(evaluation.baseResults) || evaluation.baseResults.length === 0) && (
               <div className="ha-load-error"><AlertTriangle size={16} /> Evaluation này là single run hoặc thiếu baseResults. Hãy chọn lần Model Eval paired để xem Base và Fine-tuned cạnh nhau.</div>
@@ -482,8 +486,14 @@ export default function HumanAuditReplayView() {
               <button type="button" className="ha-drawer-backdrop" aria-label="Đóng bảng chấm điểm" onClick={() => setScorePanelOpen(false)} />
               <aside className="ha-score-panel ha-score-drawer" role="dialog" aria-modal="true" aria-label="Bảng chấm Human">
                 <div className="ha-panel-title sticky">
-                  <div><span>HUMAN RUBRIC</span><h2>Chấm độc lập</h2></div>
+                  <div>
+                    <span>HUMAN RUBRIC</span>
+                    <h2>Chấm độc lập</h2>
+                  </div>
                   <div className="ha-score-drawer-actions">
+                    <div style={{ background: '#e0e7ff', color: '#3730a3', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <User size={13} /> {user?.name || user?.email || 'Staff'} ({user?.role?.toUpperCase() || 'STAFF'})
+                    </div>
                     <div className="ha-live-outcomes"><b>Kiến thức {humanK ?? '—'}</b><b>Gợi mở {humanS === null ? '—' : humanS.toFixed(2)}</b></div>
                     <button type="button" className="ha-close-score" onClick={() => setScorePanelOpen(false)} title="Đóng bảng chấm"><X size={18} /></button>
                   </div>
