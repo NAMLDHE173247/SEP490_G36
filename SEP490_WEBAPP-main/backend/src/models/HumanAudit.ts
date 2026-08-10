@@ -103,3 +103,5 @@ HumanAuditAdjudicationSchema.index({ modelEvalId: 1, convIndex: 1 }, { unique: t
 export const HumanAuditAssignment = mongoose.model<IHumanAuditAssignment>('HumanAuditAssignment', HumanAuditAssignmentSchema);
 export const HumanAuditReview = mongoose.model<IHumanAuditReview>('HumanAuditReview', HumanAuditReviewSchema);
 export const HumanAuditAdjudication = mongoose.model<IHumanAuditAdjudication>('HumanAuditAdjudication', HumanAuditAdjudicationSchema);
+
+HumanAuditReview.syncIndexes().catch(err => console.warn('[HumanAuditReview] syncIndexes:', err?.message));

@@ -410,11 +410,25 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
       aiConflict: 1,
     };
   }
-  const review = await HumanAuditReview.findOneAndUpdate(
-    { modelEvalId, convIndex, reviewerId: staffId, targetModel },
-    updateOperation,
-    { new: true, upsert: true },
-  ).lean();
+  let review: any;
+  try {
+    review = await HumanAuditReview.findOneAndUpdate(
+      { modelEvalId, convIndex, reviewerId: staffId, targetModel },
+      updateOperation,
+      { new: true, upsert: true },
+    ).lean();
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      await HumanAuditReview.syncIndexes().catch(() => {});
+      review = await HumanAuditReview.findOneAndUpdate(
+        { modelEvalId, convIndex, reviewerId: staffId, targetModel },
+        updateOperation,
+        { new: true, upsert: true },
+      ).lean();
+    } else {
+      throw err;
+    }
+  }
   const totalReviews = await HumanAuditReview.countDocuments({ modelEvalId, reviewerId: staffId });
   assignment.status = totalReviews >= assignment.assignedConvIndexes.length ? 'completed' : 'in_progress';
   await assignment.save();
