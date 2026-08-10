@@ -446,12 +446,33 @@ export const Stage6Finish: React.FC = () => {
       addToMap(trainData, 'train');
       addToMap(valData,   'val');
       addToMap(testData,  'test');
+      const cleanSubjectName = (s: string) => {
+        let cleaned = s;
+        if (cleaned.startsWith('SUBJECT:')) cleaned = cleaned.substring(8);
+        if (cleaned === 'UNKNOWN') cleaned = 'Chưa rõ';
+        return cleaned;
+      };
+
       const subjectRows = Array.isArray(apiResponse.subject_distribution)
-        ? apiResponse.subject_distribution
+        ? apiResponse.subject_distribution.map((row: any) => ({ ...row, subject: cleanSubjectName(row.subject || '') }))
         : Array.from(subjectMap.entries())
-        .map(([subject, counts]) => ({ subject, ...counts, total: counts.train + counts.val + counts.test }))
+        .map(([subject, counts]) => ({ subject: cleanSubjectName(subject), ...counts, total: counts.train + counts.val + counts.test }))
         .sort((a, b) => b.total - a.total);
-      setSplitBySubject(subjectRows);
+      
+      // Combine duplicates if any after cleaning
+      const mergedRows = new Map<string, any>();
+      for (const row of subjectRows) {
+        if (mergedRows.has(row.subject)) {
+          const existing = mergedRows.get(row.subject);
+          existing.train += row.train;
+          existing.val += row.val;
+          existing.test += row.test;
+          existing.total += row.total;
+        } else {
+          mergedRows.set(row.subject, { ...row });
+        }
+      }
+      setSplitBySubject(Array.from(mergedRows.values()).sort((a, b) => b.total - a.total));
 
       alert(`Đã tạo train/val/test split an toàn thành công!\nTrain: ${trainData.length} | Val: ${valData.length} | Test: ${testData.length}`);
     } catch (error: any) {
@@ -818,7 +839,12 @@ export const Stage6Finish: React.FC = () => {
     }
 
     const zip = new JSZip();
-    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const normalize = (value: any) => {
+      let s = String(value || 'UNGROUPED').trim().toUpperCase();
+      if (s.startsWith('SUBJECT:')) s = s.substring(8);
+      if (s === 'UNKNOWN') s = 'CHƯA RÕ';
+      return s;
+    };
     const filePrefix = (subject: string) => {
       const normalized = normalize(subject);
       if (normalized === 'MATH' || normalized === 'MATHEMATICS') return 'math';
@@ -889,7 +915,12 @@ export const Stage6Finish: React.FC = () => {
       return;
     }
 
-    const normalize = (value: any) => String(value || 'UNGROUPED').trim().toUpperCase();
+    const normalize = (value: any) => {
+      let s = String(value || 'UNGROUPED').trim().toUpperCase();
+      if (s.startsWith('SUBJECT:')) s = s.substring(8);
+      if (s === 'UNKNOWN') s = 'CHƯA RÕ';
+      return s;
+    };
     const subject = normalize(requestedSubject);
     const idsFor = (partition: any[]) => new Set(
       partition
