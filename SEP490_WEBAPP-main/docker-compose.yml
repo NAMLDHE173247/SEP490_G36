@@ -43,29 +43,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── MinIO (S3-compatible object storage) ────────────────────────────────────
-  # Local/dev storage backend for datasets. In production the same S3 API is
-  # reached through the CDN domain (cdn-lab.fpt.edu.vn) via STORAGE_* env vars.
-  minio:
-    image: minio/minio:latest
-    container_name: sep490_minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Web console
-    volumes:
-      - minio_data:/data
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # ── Backend ────────────────────────────────────────────────────────────────
   backend:
@@ -85,6 +62,7 @@ services:
     environment:
       - NODE_ENV=production
       - MONGO_URI=mongodb://mongo:27017/sep_training
+      - FRONTEND_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8080
       # Kết nối nội bộ tới gpu-service — không qua ngrok/IP ngoài
       - GPU_SERVICE_URL=http://gpu-service:5000
       - PORT=3000
