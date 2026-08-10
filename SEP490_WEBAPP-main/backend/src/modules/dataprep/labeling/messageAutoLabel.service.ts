@@ -126,39 +126,51 @@ function buildPrompt(messages: MessageAutoLabelInput[]): string {
     .map(([key, desc]) => `${key}: ${desc}`)
     .join('\n');
 
-  return `Bạn là chuyên gia phân tích hội thoại gia sư AI theo mô hình Flipped Classroom và phương pháp Socratic. Nhiệm vụ của bạn là gán nhãn (label) cho từng tin nhắn để đánh giá tính chuẩn xác sư phạm.
+  return `Bạn là chuyên gia phân tích hội thoại gia sư AI theo mô hình Flipped Classroom và phương pháp Socratic. Nhiệm vụ của bạn là bóc tách và gán nhãn (label) đa chiều cho từng tin nhắn để đánh giá tính chuẩn xác sư phạm.
 
 QUAN TRỌNG: CHỈ được dùng đúng các mã nhãn dưới đây, không tự bịa nhãn mới.
 
 NHÃN CHO USER (STUDENT INTENT):
 ${intentDefs}
 
-LƯU Ý: Việc học sinh trả lời đúng hay sai KHÔNG phải là intent. Khi học sinh đưa ra đáp án (dù đúng hay sai) hãy dùng ANSWER_ATTEMPT. Việc đánh giá đúng/sai là hành động của gia sư (assistant).
+LƯU Ý DÀNH CHO USER:
+- Việc học sinh trả lời đúng hay sai KHÔNG phải là intent. Khi học sinh đưa ra đáp án/kết quả (dù đúng hay sai) hãy gán nhãn "ANSWER_ATTEMPT".
+- Đánh giá câu đúng hay sai là hành động của gia sư (assistant).
 
 NHÃN CHO ASSISTANT (TUTOR ACTION):
 ${actionDefs}
+
+LƯU Ý ĐẶC BIỆT CHO ASSISTANT (BẮT BUỘC BÓC TÁCH ĐA NHÃN - MULTI-LABEL):
+Hầu hết câu phản hồi của gia sư AI đều chứa NHIỀU HÀNH ĐỘNG CÙNG LÚC. Bạn BẮT BUỘC phải kiểm tra và đưa tất cả các nhãn phù hợp vào mảng "label":
+1. Đánh giá câu trả lời học sinh:
+   - Nếu khen ngợi/tán thưởng ("Đúng rồi", "Tuyệt vời", "Xuất sắc"): Bắt buộc thêm "PRAISING" và "CONFIRM_CORRECT_ANSWER".
+   - Nếu nhận xét học sinh chưa đúng ("Chưa chính xác", "Không phải đâu", "Gần đúng"): Bắt buộc thêm "IDENTIFY_INCORRECT_ANSWER".
+   - Nếu giải thích lại điểm sai/chỉnh sửa hiểu nhầm: Bắt buộc thêm "CORRECT_MISTAKE".
+2. Phương pháp sư phạm & Dẫn dắt:
+   - Nếu đặt câu hỏi gợi mở, đặt vấn đề cho học sinh tự suy nghĩ mà không cho đáp án: Thêm "SCAFFOLDING".
+   - Nếu đưa ra gợi ý/manh mối nhỏ: Thêm "HINTING".
+   - Nếu giải thích lý thuyết/khái niệm/công thức: Thêm "CONCEPT_CLARIFY".
+   - Nếu phân tích từng bước lập luận/toán học: Thêm "LOGIC_BREAKDOWN".
+   - Nếu lấy ví dụ minh họa hoặc ẩn dụ đơn giản: Thêm "SIMPLIFYING".
+   - Nếu động viên học sinh khi gặp bài khó: Thêm "MOTIVATING".
+3. Kết thúc câu:
+   - Nếu câu kết thúc bằng một câu hỏi mở yêu cầu học sinh làm tiếp: Thêm "WAITING".
+   - Nếu tóm tắt bài và chuyển sang phần mới: Thêm "TRANSITIONING".
 
 DỮ LIỆU HỘI THOẠI:
 ${JSON.stringify(payload)}
 
 YÊU CẦU ĐẦU RA:
+- CHỈ trả về JSON array hợp lệ.
+- Mỗi message phải có đúng 1 object output tương ứng với messageIndex.
+- Trường "label" phải là một MẢNG (ARRAY) chứa TẤT CẢ các nhãn phù hợp (tối thiểu 1-3 nhãn cho Assistant nếu câu có nhiều ý).
+- confidence là số thực từ 0 đến 1.
+- Với message role assistant, thêm "is_correct_logic": true hoặc false.
 
-CHỈ trả về JSON array hợp lệ.
-
-Mỗi message phải có đúng 1 object output tương ứng với messageIndex.
-
-Trường "label" phải là một MẢNG (ARRAY) chứa tất cả các nhãn phù hợp. Nếu tin nhắn chứa nhiều ý định hoặc nhiều hành động, hãy liệt kê tất cả.
-
-confidence là số thực từ 0 đến 1.
-
-Với message role assistant, có thể thêm "is_correct_logic": true hoặc false để audit xem phản hồi có đáp ứng đầy đủ intent của học sinh hay không.
-
-Tuyệt đối không thêm trường "reason" hay bất kỳ văn bản giải thích nào ngoài JSON.
-
-ĐỊNH DẠNG:
+ĐỊNH DẠNG MẪU:
 [
-{ "messageIndex": 0, "role": "user", "label": ["ANSWER_ATTEMPT"], "confidence": 0.9 },
-{ "messageIndex": 1, "role": "assistant", "label": ["CONFIRM_CORRECT_ANSWER", "PRAISING"], "confidence": 0.85, "is_correct_logic": true }
+  { "messageIndex": 0, "role": "user", "label": ["ANSWER_ATTEMPT"], "confidence": 0.95 },
+  { "messageIndex": 1, "role": "assistant", "label": ["CONFIRM_CORRECT_ANSWER", "PRAISING", "SCAFFOLDING", "WAITING"], "confidence": 0.9, "is_correct_logic": true }
 ]`;
 }
 

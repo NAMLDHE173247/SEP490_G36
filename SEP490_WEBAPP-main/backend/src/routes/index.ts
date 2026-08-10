@@ -9,6 +9,7 @@ import {
   startTraining,
   resumeTraining,
   getTrainingStatus,
+  generateTrainingSummary,
   getDashboardStats,
   getSystemResources,
   getTrainingMonitor,
@@ -65,7 +66,7 @@ import dataprepRoutes from './dataprepRoutes';
 import { autoLabelGroups } from '../controllers/autoLabelController';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/authMiddleware';
 import { getGpuConfig, updateGpuConfig, getPersonalApiKeys, updatePersonalApiKeys, getGlobalApiKeys, updateGlobalApiKeys } from '../controllers/configController';
-import { decideRoute, evaluateRouter, getRouterMetrics, runEndToEndRouterEval } from '../controllers/routerController';
+import { decideRoute, getRouterMetrics } from '../controllers/routerController';
 import {
   requireAdmin as rbacRequireAdmin,
   requireStaff as rbacRequireStaff,
@@ -156,8 +157,6 @@ router.get('/infer/logs', authMiddleware, getInferenceLogs);
 router.post('/model/load', authMiddleware, requireManager, loadModel);
 router.post('/infer/stop/:slotId', authMiddleware, stopInference);
 router.post('/router/decide', authMiddleware, decideRoute);
-router.post('/router/evaluate', authMiddleware, requireManager, evaluateRouter);
-router.post('/router/end-to-end', authMiddleware, requireManager, runEndToEndRouterEval);
 router.get('/router/metrics', authMiddleware, requireManager, getRouterMetrics);
 router.post('/model/unload/:slotId', authMiddleware, requireManager, unloadModel);
 router.post('/chat/history', authMiddleware, saveChatHistory);
@@ -228,6 +227,7 @@ router.post('/train/download-cloud', authMiddleware, requireManager, downloadClo
 router.get('/train/active', authMiddleware, getActiveTrainingJobs);
 router.get('/train/monitor', authMiddleware, getTrainingMonitor);
 router.get('/train/status/:jobId', authMiddleware, getTrainingStatus);
+router.post('/train/summary/:jobId', authMiddleware, generateTrainingSummary);
 router.get('/train/stream/:jobId', authMiddleware, streamTrainingStatus);
 router.post('/train/stop/:jobId', authMiddleware, requireManager, stopTraining);
 router.post('/train/resume/:jobId', authMiddleware, requireManager, resumeTraining);

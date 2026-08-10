@@ -13,6 +13,30 @@ import { useDataPrep, SUB_STEPS_STAGE3 } from '../DataPrepContext';
 import { Stage3AiReview } from '../../../components/dataprep/Stage3AiReview';
 import { Tooltip, highlightSearch, truncateText, getConversationTopic, getAssistantSummary, getPageNumbers } from '../utils';
 
+const DISPLAY_LABELS: Record<string, string> = {
+  'Conversation Hard Labels': 'Nhãn Cứng Hội Thoại',
+  'ASSISTANT HARD LABELS': 'Nhãn Cứng Assistant',
+  'DECISION': 'QUYẾT ĐỊNH',
+  'SUBJECT': 'MÔN HỌC',
+  'STATUS': 'TRẠNG THÁI',
+  'QUALITY': 'CHẤT LƯỢNG',
+  'ISSUES': 'VẤN ĐỀ',
+  'Toan': 'Toán', 'Vat ly': 'Vật lý', 'Hoa hoc': 'Hóa học', 'Sinh hoc': 'Sinh học', 'Tieng Anh': 'Tiếng Anh',
+  'Lich su': 'Lịch sử', 'Dia ly': 'Địa lý', 'Tin hoc': 'Tin học', 'Lien mon': 'Liên môn', 'Chua ro': 'Chưa rõ',
+  'Completed': 'Hoàn thành', 'Incomplete': 'Chưa hoàn thành', 'Abandoned': 'Bỏ qua',
+  'Gold': 'Xuất sắc', 'Rewrite': 'Viết lại', 'Bad': 'Tệ',
+  'Factual Error': 'Sai kiến thức', 'Direct Answer': 'Lộ đáp án', 'Language Issue': 'Lỗi ngôn ngữ',
+  'EVALUATION': 'Đánh giá câu trả lời',
+  'NAVIGATION': 'Điều hướng hội thoại',
+  'PEDAGOGY': 'Gợi ý và dẫn dắt',
+  'CLARIFICATION': 'Giải thích và làm rõ',
+  'ENCOURAGEMENT': 'Khen ngợi và động viên',
+  'ANSWER': 'Trả lời',
+  'REQUEST': 'Yêu cầu',
+  'FLOW': 'Luồng hội thoại',
+  'OTHER': 'Khác'
+};
+
 // =====================================================
 // Label Mapping: UI short name <-> Backend HARD_LABELS
 // =====================================================
@@ -38,7 +62,7 @@ const USER_LABEL_MAP: Record<string, string> = {
  * Đồng bộ với bộ nhãn ASSISTANT_ACTIONS mà Staff đang dùng (V2 Socratic taxonomy).
  */
 const ASSISTANT_LABEL_MAP: Record<string, string> = {
-  HINT:  'HINTING',
+  A_HINT:  'HINTING',
   WAIT:  'WAITING',
   PR:    'PRAISING',
   MOT:   'MOTIVATING',
@@ -68,30 +92,34 @@ const DB_TO_UI_ASSISTANT: Record<string, string> = Object.fromEntries(
 const ISSUES_SOFT_LABELS = new Set(['FACT_ERR', 'LANG_ISSUE', 'DIR_ANS']);
 const LABEL_HELP: Record<string, string> = {
   // User (Student Intent)
-  ANS: 'Học sinh đưa ra đáp án (đúng/sai do AI đánh giá)',
-  HINT: 'Yêu cầu gợi ý / than bí',
-  THEO: 'Hỏi lý thuyết, khái niệm, công thức',
-  WHY: 'Yêu cầu giải thích logic',
-  EASY: 'Yêu cầu giải thích đơn giản hơn',
-  SKIP: 'Muốn bỏ qua / đổi bài',
-  DIS: 'Nản lòng, mệt mỏi, mất động lực',
-  OFF: 'Lạc đề, nói chuyện ngoài bài',
-  RDY: 'Sẵn sàng sang phần mới',
-  CFM: 'Xác nhận đã hiểu bài',
+  ANS: 'Học sinh trả lời/thử làm bài',
+  HINT: 'Xin gợi ý',
+  THEO: 'Hỏi lý thuyết',
+  WHY: 'Yêu cầu giải thích',
+  EASY: 'Muốn giải thích đơn giản hơn',
+  SKIP: 'Bỏ qua bài',
+  DIS: 'Chán nản',
+  OFF: 'Ngoài phạm vi',
+  RDY: 'Muốn học tiếp/chuyển câu',
+  CFM: 'Xác nhận đã hiểu',
   // Assistant (Tutor Action)
-  CONF: 'Xác nhận đáp án học sinh đúng',
-  WRONG: 'Chỉ ra đáp án học sinh sai',
-  FIX: 'Sửa lỗi / hiểu lầm cho học sinh',
-  SCAF: 'Dẫn dắt Socratic, không cho đáp án',
-  CLR: 'Làm rõ khái niệm, lý thuyết',
-  LOG: 'Phân tích từng bước logic',
-  SIMP: 'Đơn giản hóa bằng ví dụ, ẩn dụ',
-  PR: 'Khen ngợi nỗ lực / tiến bộ',
-  MOT: 'Động viên học sinh nản lòng',
-  REDIR: 'Đưa học sinh về đúng chủ đề',
-  TRAN: 'Tóm tắt và chuyển phần mới',
+  CONF: 'Xác nhận câu trả lời đúng',
+  WRONG: 'Chỉ ra câu trả lời sai',
+  FIX: 'Sửa lỗi sai',
+  SCAF: 'Dẫn dắt từng bước',
+  A_HINT: 'Đưa gợi ý',
+  CLR: 'Làm rõ khái niệm',
+  LOG: 'Phân tích lập luận',
+  SIMP: 'Diễn giải đơn giản',
+  PR: 'Khen ngợi',
+  MOT: 'Động viên',
+  REDIR: 'Kéo về đúng chủ đề',
+  TRAN: 'Chuyển bước/chủ đề',
   DIR: 'Đưa đáp án trực tiếp',
-  WAIT: 'Đặt câu hỏi mở và chờ phản hồi',
+  WAIT: 'Chờ học sinh phản hồi',
+  // Issues
+  FACT_ERR: 'Sai kiến thức',
+  LANG_ISSUE: 'Lỗi ngôn ngữ',
 };
 
 /** Lấy DB name từ UI tag name và role. Trả về null nếu không map được (ISSUES labels). */
@@ -160,18 +188,22 @@ function buildBaseIaMessages(messages: Array<{ user: string; assistant: string }
         ],
         PEDAGOGY: [
           { name: 'SCAF',  count: 0, icon: '≡',  colorClass: 'blue' },
-          { name: 'HINT',  count: 0, icon: '💡' },
+          { name: 'A_HINT',  count: 0, icon: '💡' },
+          { name: 'WAIT',  count: 0, icon: '⏸' },
+        ],
+        CLARIFICATION: [
           { name: 'CLR',   count: 0, icon: '📖' },
           { name: 'LOG',   count: 0, icon: '≡' },
           { name: 'SIMP',  count: 0, icon: '⤢' },
         ],
-        NAVIGATION: [
+        ENCOURAGEMENT: [
           { name: 'PR',    count: 0, icon: '✧' },
           { name: 'MOT',   count: 0, icon: '♡' },
+        ],
+        NAVIGATION: [
           { name: 'REDIR', count: 0, icon: '⟲' },
           { name: 'TRAN',  count: 0, icon: '→' },
           { name: 'DIR',   count: 0, icon: '➔' },
-          { name: 'WAIT',  count: 0, icon: '⏸' },
         ],
         ISSUES: [
           { name: 'FACT_ERR',  count: 0, icon: 'ⓘ' },
@@ -778,7 +810,7 @@ export const Stage3Labeling: React.FC = () => {
         await loadLabelsForSample(current.sampleId, convIdx);
       }
 
-      alert(`AI gán nhãn xong: ${result.successCount}/${result.processedCount} samples thành công.`);
+      toast(`AI gán nhãn xong: ${result.successCount}/${result.processedCount} samples thành công.`, 'success');
     } catch (err: any) {
       console.error('[handleAutoLabelBatch] error:', err);
       alert(err?.response?.data?.error || err?.message || 'Gán nhãn tự động thất bại.');
@@ -2244,7 +2276,7 @@ export const Stage3Labeling: React.FC = () => {
                                         }}
                                       >
                                         {(lbl === 'ANS' || lbl === 'CONF') && <Check size={10} style={{ marginRight: '2px' }} />}
-                                        {lbl} <X size={10} style={{ marginLeft: '4px' }} />
+                                        {LABEL_HELP[lbl] || lbl} <X size={10} style={{ marginLeft: '4px' }} />
                                       </div>
                                     ))}
                                   </div>
@@ -2280,7 +2312,7 @@ export const Stage3Labeling: React.FC = () => {
                                           handleRemoveLabelWithApi(msg, lbl);
                                         }}
                                       >
-                                        {lbl} <X size={10} style={{ marginLeft: '4px' }} />
+                                        {LABEL_HELP[lbl] || lbl} <X size={10} style={{ marginLeft: '4px' }} />
                                       </div>
                                     ))}
                                   </div>
@@ -2401,7 +2433,7 @@ export const Stage3Labeling: React.FC = () => {
                       <div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                           <h5 className="ia-section-subtitle" style={{ margin: 0, textTransform: 'uppercase', fontSize: '13px', fontWeight: '800' }}>
-                            {selectedMsg.role === 'user' ? 'USER HARD LABELS' : 'ASSISTANT HARD LABELS'}
+                            {selectedMsg.role === 'user' ? 'NHÃN CỨNG USER' : (DISPLAY_LABELS['ASSISTANT HARD LABELS'] || 'ASSISTANT HARD LABELS')}
                           </h5>
                           <span style={{ color: '#7c3aed', fontWeight: 700, fontSize: '13px' }}>
                             Turn {selectedMsg.turn}
@@ -2411,7 +2443,7 @@ export const Stage3Labeling: React.FC = () => {
                         {Object.keys(selectedMsg.labels).map((groupName) => (
                           <div key={groupName} className="ia-hl-group" style={{ marginBottom: '16px' }}>
                             <span className="ia-hl-group-label" style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
-                              {groupName}
+                              {DISPLAY_LABELS[groupName] || groupName}
                             </span>
                             <div className="ia-hl-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                               {selectedMsg.labels[groupName].map((tag) => {
@@ -2517,71 +2549,20 @@ export const Stage3Labeling: React.FC = () => {
 
               {/* Conversation Hard Labels */}
               <div className="ia-section-card conversation-label-editor">
-                <div className="ia-labels-header"><h4>Conversation Hard Labels</h4><span className="ia-label-count">{Object.values(conversationLabels).flat().length}</span></div>
+                <div className="ia-labels-header"><h4>{DISPLAY_LABELS['Conversation Hard Labels'] || 'Conversation Hard Labels'}</h4><span className="ia-label-count">{Object.values(conversationLabels).flat().length}</span></div>
                 {([
-                  ['DECISION', ['REJ']],
                   ['SUBJECT', ['Toan', 'Vat ly', 'Hoa hoc', 'Sinh hoc', 'Tieng Anh', 'Lich su', 'Dia ly', 'GDCD', 'Tin hoc', 'Lien mon', 'Chua ro']],
                   ['STATUS', ['Completed', 'Incomplete', 'Abandoned']],
                   ['QUALITY', ['Gold', 'Rewrite', 'Bad']],
                   ['ISSUES', ['Factual Error', 'Direct Answer', 'Language Issue']],
-                ] as Array<[string, string[]]>).map(([group, labels]) => <div className="ia-hl-group" key={group}><span className="ia-hl-group-label">{group}</span><div className="conversation-label-grid">{labels.map(label => {
+                ] as Array<[string, string[]]>).map(([group, labels]) => <div className="ia-hl-group" key={group}><span className="ia-hl-group-label">{DISPLAY_LABELS[group] || group}</span><div className="conversation-label-grid">{labels.map(label => {
                   const active = conversationLabels[group]?.includes(label);
-                  return <button type="button" key={label} className={`conversation-label-btn ${active ? 'active' : ''}`} onClick={() => toggleConversationLabel(group, label)}><span>{active ? '✓' : '+'}</span>{label}</button>;
+                  return <button type="button" key={label} className={`conversation-label-btn ${active ? 'active' : ''}`} onClick={() => toggleConversationLabel(group, label)}><span>{active ? '✓' : '+'}</span>{DISPLAY_LABELS[label] || label}</button>;
                 })}</div></div>)}
                 <button type="button" className="save-canonical-btn" disabled={isSavingCanonical} onClick={saveCanonicalConversationLabels}>{isSavingCanonical ? 'Đang lưu...' : 'Chốt nhãn của Admin'}</button>
                 <p className="ia-empty-hint" style={{marginTop:8}}>Mỗi nhóm chọn một nhãn; ISSUES có thể chọn nhiều. Nhãn được lưu làm Canonical.</p>
               </div>
-              <div className="ia-section-card">
-                <h5 className="ia-section-subtitle">CONVERSATION HARD LABELS</h5>
 
-                <div className="ia-hl-group">
-                  <span className="ia-hl-group-label">DECISION</span>
-                  <div className="ia-hl-tags">
-                    <span className="ia-hl-tag">✕ REJ 0</span>
-                  </div>
-                </div>
-
-                <div className="ia-hl-group">
-                  <span className="ia-hl-group-label">SUBJECT</span>
-                  <div className="ia-hl-tags">
-                    <span className="ia-hl-tag ia-tag-purple">▦ MATH 0</span>
-                    <span className="ia-hl-tag ia-tag-green">⟡ PHYS 1</span>
-                    <span className="ia-hl-tag ia-tag-red">⟡ CHEM 0</span>
-                    <span className="ia-hl-tag">▭ LIT 0</span>
-                    <span className="ia-hl-tag ia-tag-purple">⊞ BIO 0</span>
-                    <span className="ia-hl-tag">▦ MULTI 0</span>
-                    <span className="ia-hl-tag">◎ UNCLEAR 0</span>
-                    <span className="ia-hl-tag">○ OOS 0</span>
-                  </div>
-                </div>
-
-                <div className="ia-hl-group">
-                  <span className="ia-hl-group-label">STATUS</span>
-                  <div className="ia-hl-tags">
-                    <span className="ia-hl-tag ia-tag-green">✓ COMPLETED 0</span>
-                    <span className="ia-hl-tag ia-tag-orange">◎ INCOMPLETE 0</span>
-                    <span className="ia-hl-tag ia-tag-red">✕ DROPPED 0</span>
-                  </div>
-                </div>
-
-                <div className="ia-hl-group">
-                  <span className="ia-hl-group-label">QUALITY</span>
-                  <div className="ia-hl-tags">
-                    <span className="ia-hl-tag ia-tag-green">✦ GOOD 0</span>
-                    <span className="ia-hl-tag">⊞ MEDIUM 0</span>
-                    <span className="ia-hl-tag ia-tag-red">✕ POOR 0</span>
-                  </div>
-                </div>
-
-                <div className="ia-hl-group">
-                  <span className="ia-hl-group-label">ISSUES</span>
-                  <div className="ia-hl-tags">
-                    <span className="ia-hl-tag">⊙ FACT_ERR 0</span>
-                    <span className="ia-hl-tag">› DIR_ANS 0</span>
-                    <span className="ia-hl-tag">▭ LANG_ISSUE 0</span>
-                  </div>
-                </div>
-              </div>
 
               {/* Soft Label */}
               <div className="ia-section-card">

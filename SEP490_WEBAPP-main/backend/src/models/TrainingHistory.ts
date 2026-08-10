@@ -26,6 +26,9 @@ export interface ITrainingHistory extends Document {
     use_rslora?: boolean;               // Rank-stabilized LoRA
     max_grad_norm?: number;             // Ngưỡng clip gradient
     dataloader_num_workers?: number;    // Số worker nạp dữ liệu
+    logging_steps?: number;
+    gradient_checkpointing?: boolean;
+    auto_tune?: boolean;
     weight_decay: number;               // Weight decay for AdamW
     r: number;                          // LoRA attention dimension
     chat_template_jinja?: string;       // Jinja dán tay (khi paste)
@@ -59,8 +62,42 @@ export interface ITrainingHistory extends Document {
   updatedAt: Date;
   completedAt?: Date;
   trainingDuration: number;    // thời gian thực tế (milliseconds)
-  lossHistory?: { progress: number; loss: number; timestamp?: Date }[];
-  evalLossHistory?: { progress: number; loss: number; timestamp?: Date }[];
+  lossHistory?: { progress: number; loss: number; step?: number; epoch?: number; timestamp?: Date }[];
+  evalLossHistory?: { progress: number; loss: number; step?: number; epoch?: number; timestamp?: Date }[];
+  evalDetails?: {
+    round?: number;
+    sample_index?: number;
+    batch_index?: number;
+    batch_size?: number;
+    seen_samples?: number;
+    total_samples?: number;
+    step?: number;
+    epoch?: number;
+    status?: string;
+    question?: string;
+    text_preview?: string;
+    eval_loss?: number;
+  }[];
+  evalCurrent?: Record<string, any>;
+  evalProgress?: Record<string, any>;
+  evalStatus?: string;
+  trainDetails?: {
+    step?: number;
+    total_steps?: number;
+    epoch?: number;
+    total_epochs?: number;
+    steps_per_epoch?: number;
+    progress?: number;
+    status?: string;
+    batch_size?: number;
+    question?: string;
+    text_preview?: string;
+    loss?: number;
+    learning_rate?: number;
+    grad_norm?: number;
+  }[];
+  trainCurrent?: Record<string, any>;
+  trainSummary?: Record<string, any>;
   lastLogLine?: string;         // e.g. "Epoch 3/3 [Step 150/150] loss: 0.1693 - acc: 94.36%"
 
   // Model Evaluation
@@ -105,6 +142,10 @@ export interface ITrainingHistory extends Document {
     vram?: number;
     gpu_util?: number;
     progress?: number;
+    step?: number;
+    epoch?: number;
+    total_steps?: number;
+    total_epochs?: number;
   }[];
 }
 
@@ -149,6 +190,9 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       neftune_noise_alpha: { type: Number },
       chat_template_jinja: { type: String },
       dataloader_num_workers: { type: Number },
+      logging_steps: { type: Number },
+      gradient_checkpointing: { type: Boolean },
+      auto_tune: { type: Boolean },
       early_stopping_patience: { type: Number },
       early_stopping_min_delta: { type: Number },
       optim: { type: String, default: 'adamw_8bit' },
@@ -173,6 +217,8 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       {
         progress: { type: Number },
         loss: { type: Number },
+        step: { type: Number },
+        epoch: { type: Number },
         timestamp: { type: Date, default: Date.now },
       },
     ],
@@ -180,9 +226,49 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
       {
         progress: { type: Number },
         loss: { type: Number },
+        step: { type: Number },
+        epoch: { type: Number },
         timestamp: { type: Date, default: Date.now },
       },
     ],
+    evalDetails: [
+      {
+        round: { type: Number },
+        sample_index: { type: Number },
+        batch_index: { type: Number },
+        batch_size: { type: Number },
+        seen_samples: { type: Number },
+        total_samples: { type: Number },
+        step: { type: Number },
+        epoch: { type: Number },
+        status: { type: String },
+        question: { type: String },
+        text_preview: { type: String },
+        eval_loss: { type: Number },
+      },
+    ],
+    evalCurrent: { type: Schema.Types.Mixed },
+    evalProgress: { type: Schema.Types.Mixed },
+    evalStatus: { type: String },
+    trainDetails: [
+      {
+        step: { type: Number },
+        total_steps: { type: Number },
+        epoch: { type: Number },
+        total_epochs: { type: Number },
+        steps_per_epoch: { type: Number },
+        progress: { type: Number },
+        status: { type: String },
+        batch_size: { type: Number },
+        question: { type: String },
+        text_preview: { type: String },
+        loss: { type: Number },
+        learning_rate: { type: Number },
+        grad_norm: { type: Number },
+      },
+    ],
+    trainCurrent: { type: Schema.Types.Mixed },
+    trainSummary: { type: Schema.Types.Mixed },
 
     // Model Evaluation
     pinnedEvalId: { type: String, default: null },
@@ -229,6 +315,10 @@ const TrainingHistorySchema = new Schema<ITrainingHistory>(
         vram: { type: Number },
         gpu_util: { type: Number },
         progress: { type: Number },
+        step: { type: Number },
+        epoch: { type: Number },
+        total_steps: { type: Number },
+        total_epochs: { type: Number },
       },
     ],
   },

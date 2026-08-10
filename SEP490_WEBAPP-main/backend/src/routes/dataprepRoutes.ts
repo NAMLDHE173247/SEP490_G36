@@ -16,6 +16,7 @@ const qualityController = new QualityController();
 router.use('/projects', projectRoutes);
 router.use('/versions', versionRoutes);
 router.get('/stage4/rewrite-assignments', (req, res) => qualityController.listMyRewriteAssignments(req, res));
+router.get('/stage4/rewrite-checkers', (req, res) => qualityController.listActiveCheckers(req, res));
 router.get('/stage4/notifications', (req, res) => qualityController.listMyNotifications(req, res));
 router.use('/versions/:versionId/auto-label', autoLabelRoutes);
 router.use('/versions/:versionId/classification', classificationRoutes);

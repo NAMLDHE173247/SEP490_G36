@@ -306,6 +306,11 @@ export const stage4Api = {
     return res.data;
   },
 
+  listActiveRewriteCheckers: async (): Promise<{ data: Array<{ id: string; name: string; email: string; role: 'checker' }> }> => {
+    const res = await api.get('/dataprep/stage4/rewrite-checkers');
+    return res.data;
+  },
+
   assignRewrite: async (versionId: string, payload: {
     sampleId: string;
     assigneeId: string;

@@ -10,6 +10,7 @@ export interface IStage4RewriteAssignment extends Document {
   subject?: string;
   reason: string;
   reasonSource?: string;
+  sourceQualityBucket: 'Rewrite';
   originalText: string;
   targetMessageIndex?: number | null;
   targetMessageIndices?: number[];
@@ -38,6 +39,7 @@ const Stage4RewriteAssignmentSchema = new Schema<IStage4RewriteAssignment>(
     subject: { type: String, default: '' },
     reason: { type: String, default: 'None' },
     reasonSource: { type: String, default: 'Quality Review' },
+    sourceQualityBucket: { type: String, enum: ['Rewrite'], required: true, default: 'Rewrite', index: true },
     originalText: { type: String, default: '' },
     targetMessageIndex: { type: Number, default: null },
     targetMessageIndices: { type: [Number], default: [] },

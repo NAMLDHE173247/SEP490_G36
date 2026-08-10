@@ -5,7 +5,8 @@
 #
 # Lưu ý: unsloth cần cài riêng sau vì phụ thuộc vào CUDA version:
 #   pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-#   pip install --upgrade torchao
+# Không nâng torchao độc lập sau đó: torchao/PEFT/torch phải được resolve
+# cùng một stack. training.py có guard cho image Kaggle còn giữ package cũ.
 # ============================================================
 
 # --- Core ---
@@ -20,7 +21,7 @@ torchaudio
 transformers>=4.40.0
 datasets>=2.18.0
 accelerate>=0.28.0
-peft>=0.10.0
+peft>=0.18.0
 trl>=0.8.0
 huggingface_hub>=0.22.0
 
@@ -28,6 +29,7 @@ huggingface_hub>=0.22.0
 flask>=3.0.0
 werkzeug>=3.0.0
 gunicorn>=21.0.0
+pyngrok>=7.0.0
 
 # --- GPU Monitoring ---
 pynvml>=11.0.0

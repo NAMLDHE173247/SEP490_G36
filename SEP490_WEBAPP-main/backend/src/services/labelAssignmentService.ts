@@ -2107,11 +2107,11 @@ export async function autoResolveSampleIfConsensus(datasetVersionId: string | mo
   const comparison = await buildAssignmentSampleComparison(String(datasetVersionId), String(sampleId));
 
   for (const target of comparison.targets) {
-    if (!target.hasConflict) continue;
-
-    // Filter to only count active staff annotators
+    // Filter to only count active staff annotators. A target is only eligible
+    // for auto-finalization after every assigned staff member has labeled it.
+    // `hasConflict` denotes low agreement and must not exclude consensus.
     const staffAnnotators = target.annotators.filter((a) => !a.isCanonical && !a.isOwner);
-    if (staffAnnotators.length === 0) continue;
+    if (staffAnnotators.length !== totalAssigned) continue;
 
     // Count occurrences of each unique label set
     const labelSetCounts = new Map<string, { count: number; labels: string[] }>();

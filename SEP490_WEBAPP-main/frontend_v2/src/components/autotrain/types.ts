@@ -44,6 +44,11 @@ export interface TrainingConfig {
   customChatTemplate: string;
   earlyStoppingPatience: string;
   evalSteps: string;
+  saveSteps: string;
+  loggingSteps: string;
+  dataloaderNumWorkers: string;
+  autoTune: boolean;
+  gradientCheckpointing: boolean;
 
   // HF Hub push
   hfRepoId: string;
@@ -85,6 +90,11 @@ export const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   learningRate: '0.00005',
   loraTargets: 'all-linear',
   earlyStoppingPatience: '3',
+  saveSteps: '',
+  loggingSteps: '1',
+  dataloaderNumWorkers: '0',
+  autoTune: true,
+  gradientCheckpointing: true,
   projectName: 'my-first-lm-project',
   baseModel: 'Qwen/Qwen2.5-7B-Instruct',
 };
@@ -201,6 +211,12 @@ export interface ParamPreset {
   lora_target_modules?: string;
   neftune_noise_alpha?: number;
   early_stopping_patience?: number;
+  eval_steps?: number;
+  save_steps?: number;
+  logging_steps?: number;
+  dataloader_num_workers?: number;
+  auto_tune?: boolean;
+  gradient_checkpointing?: boolean;
 }
 
 export const DEFAULT_PRESETS: Record<string, ParamPreset> = {
@@ -249,11 +265,34 @@ export interface TrainingJob {
   current_step?: number;
   current_epoch?: number;
   technical_error?: string;
+  step?: number;
+  eval_status?: string;
+  effective_config?: Record<string, any>;
+  requested_config?: Partial<TrainingConfig>;
+  eval_current?: EvalDetail | null;
+  eval_details?: EvalDetail[];
+  eval_progress?: EvalProgress;
+  train_current?: TrainDetail | null;
+  train_details?: TrainDetail[];
+  train_summary?: TrainSummary | null;
   gpu_util?: string | number;
   vram_used?: string | number;
   metrics?: {
     loss?: number;
     eval_loss?: number;
+    step?: number;
+    current_step?: number;
+    total_steps?: number;
+    epoch?: number;
+    current_epoch?: number;
+    total_epochs?: number;
+    steps_per_epoch?: number;
+    learning_rate?: number;
+    grad_norm?: number;
+    avg_step_time?: number;
+    eval_runtime?: number;
+    eval_samples_per_second?: number;
+    eval_steps_per_second?: number;
     vram?: number | string;
     gpu_util?: number | string;
   };
@@ -264,6 +303,72 @@ export interface TrainingJob {
 export interface LossPoint {
   progress: number;
   loss: number;
+  step?: number;
+  epoch?: number;
+  timestamp?: number;
+}
+
+export interface TrainDetail {
+  step?: number;
+  total_steps?: number;
+  epoch?: number;
+  total_epochs?: number;
+  steps_per_epoch?: number;
+  progress?: number;
+  status?: string;
+  batch_size?: number;
+  question?: string;
+  text_preview?: string;
+  loss?: number | null;
+  learning_rate?: number | null;
+  grad_norm?: number | null;
+}
+
+export interface EvalDetail {
+  round?: number;
+  sample_index?: number;
+  batch_index?: number;
+  batch_size?: number;
+  seen_samples?: number;
+  total_samples?: number | null;
+  step?: number;
+  epoch?: number;
+  status?: string;
+  question?: string;
+  text_preview?: string;
+  eval_loss?: number | null;
+}
+
+export interface EvalProgress {
+  status?: string;
+  sample_index?: number;
+  seen_samples?: number;
+  total_samples?: number | null;
+  step?: number;
+  epoch?: number;
+  eval_loss?: number | null;
+}
+
+export interface TrainSummary {
+  version?: number;
+  source?: string;
+  generated_at?: string;
+  verdict?: 'good' | 'acceptable' | 'needs_attention' | string;
+  score?: number;
+  headline?: string;
+  training_analysis?: Record<string, any>;
+  data_analysis?: Record<string, any>;
+  warnings?: string[];
+  recommendations?: string[];
+  ai_analysis?: {
+    verdict?: string;
+    headline?: string;
+    analysis?: string;
+    data_findings?: string[];
+    training_findings?: string[];
+    recommendations?: string[];
+    model_recommendation?: Record<string, any>;
+  };
 }
 
 // ── Helpers ──
