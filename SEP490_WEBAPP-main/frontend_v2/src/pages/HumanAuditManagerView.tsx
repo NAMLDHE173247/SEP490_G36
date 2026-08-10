@@ -198,10 +198,41 @@ export default function HumanAuditManagerView() {
         <div className="ham-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedItem(null); }}>
           <section className="ham-modal">
             <header><div><span>UNIFIED ADJUDICATION · {selectedItem.item_id}</span><h2>Đối chiếu AI Judge và tất cả Staff</h2></div><button type="button" onClick={() => setSelectedItem(null)}><X size={18} /></button></header>
-            <div className="ham-replay"><p><b>Học sinh:</b> {selectedItem.question}</p><p><b>Fine-tuned:</b> {selectedItem.answer}</p></div>
+            <div className="ham-replay">
+              <p style={{ fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}><b>Học sinh:</b> {selectedItem.question}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: selectedItem.baseAnswer ? '1fr 1fr' : '1fr', gap: '12px', marginTop: '8px' }}>
+                <div style={{ background: 'rgba(99,102,241,0.06)', padding: '10px 14px', borderRadius: '8px', border: '1px solid #c7d2fe' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#4f46e5', display: 'block', marginBottom: '4px' }}>🎯 FINE-TUNED MODEL</span>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: '#334155' }}>{selectedItem.answer}</p>
+                </div>
+                {selectedItem.baseAnswer && (
+                  <div style={{ background: 'rgba(245,158,11,0.06)', padding: '10px 14px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#b45309', display: 'block', marginBottom: '4px' }}>🔲 BASE MODEL</span>
+                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#334155' }}>{selectedItem.baseAnswer}</p>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="ham-review-grid">
               <label className={resolution === 'accept_ai' ? 'selected' : ''}><input type="radio" checked={resolution === 'accept_ai'} onChange={() => setResolution('accept_ai')} /><div><strong>AI Judge</strong><small>Đề xuất tự động · cần đối chiếu bằng chứng</small><div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{selectedItem.ai_scores?.[key] ?? '—'}</b></span>)}</div></div></label>
-              {selectedItem.reviews.map((review: any) => <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}><input type="radio" checked={selectedReviewId === review._id && resolution === 'accept_staff'} onChange={() => { setResolution('accept_staff'); setSelectedReviewId(review._id); }} /><div><strong>{review.reviewerName}</strong><small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1} · A1 ${review.humanScores?.A1} · S ${review.humanOutcomes?.socratic_s}`}</small><p>{review.note || 'Không có nhận xét tổng quát.'}</p>{review.humanScores && <div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{review.humanScores[key]}</b></span>)}</div>}</div></label>)}
+              {selectedItem.reviews.map((review: any) => {
+                const targetLabel = (review.targetModel === 'base' || review.target_model === 'base') ? '🔲 Base Model' : '🎯 Fine-tuned';
+                const isBase = review.targetModel === 'base' || review.target_model === 'base';
+                return (
+                  <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}>
+                    <input type="radio" checked={selectedReviewId === review._id && resolution === 'accept_staff'} onChange={() => { setResolution('accept_staff'); setSelectedReviewId(review._id); }} />
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <strong>{review.reviewerName}</strong>
+                        <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: isBase ? '#fef3c7' : '#e0e7ff', color: isBase ? '#b45309' : '#4338ca' }}>{targetLabel}</span>
+                      </div>
+                      <small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1} · A1 ${review.humanScores?.A1} · S ${review.humanOutcomes?.socratic_s}`}</small>
+                      <p>{review.note || 'Không có nhận xét tổng quát.'}</p>
+                      {review.humanScores && <div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{review.humanScores[key]}</b></span>)}</div>}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
             <div className="ham-resolution-tabs"><button type="button" className={resolution === 'accept_ai' ? 'active' : ''} onClick={() => setResolution('accept_ai')}>Chọn AI Judge</button><button type="button" className={resolution === 'accept_staff' ? 'active' : ''} onClick={() => setResolution('accept_staff')}>Chọn bản Staff</button><button type="button" className={resolution === 'manual' ? 'active' : ''} onClick={() => setResolution('manual')}>{isChecker ? 'Checker chấm lại' : 'Chấm lại thủ công'}</button></div>
             {resolution === 'manual' && <div className="ham-manual-grid">{HUMAN_AUDIT_RUBRIC.map(criterion => { const value = finalScores[criterion.key]; const intermediate = [2, 3, 4].includes(Number(value)); return <article key={criterion.key}><header><b>{criterion.key}</b><span>{criterion.title}</span></header><div>{[0,1,2,3,4,5].map(score => <button type="button" className={value === score ? 'active' : ''} key={score} onClick={() => setFinalScores(previous => ({ ...previous, [criterion.key]: score }))}>{score}</button>)}</div>{value !== null && <small>{SCORE_ANCHORS[Number(value)]}</small>}<input value={finalReasons[criterion.key] || ''} onChange={event => setFinalReasons(previous => ({ ...previous, [criterion.key]: event.target.value }))} placeholder={intermediate ? 'Bắt buộc nêu lý do điểm trung gian' : 'Bằng chứng/lý do'} /></article>; })}</div>}

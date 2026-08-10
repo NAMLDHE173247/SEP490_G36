@@ -860,6 +860,7 @@ export const apiService = {
   },
   saveMyHumanAuditReview: async (evalId: string, convIndex: number, review: {
     verdict?: 'skip';
+    target_model?: 'ft' | 'base';
     note?: string;
     human_scores?: Record<string, number>;
     human_reasons?: Record<string, string>;

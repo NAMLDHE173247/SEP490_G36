@@ -21,6 +21,7 @@ export interface IHumanAuditReview extends Document {
   itemId?: string;
   reviewerId: mongoose.Types.ObjectId;
   reviewerName: string;
+  targetModel?: 'ft' | 'base';
   verdict: 'reviewed' | 'skip';
   note?: string;
   rubricVersion: string;
@@ -72,6 +73,7 @@ const HumanAuditReviewSchema = new Schema<IHumanAuditReview>({
   itemId: { type: String, default: '' },
   reviewerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   reviewerName: { type: String, required: true },
+  targetModel: { type: String, enum: ['ft', 'base'], default: 'ft' },
   verdict: { type: String, enum: ['reviewed', 'skip'], required: true },
   note: { type: String, default: '' },
   rubricVersion: { type: String, required: true },

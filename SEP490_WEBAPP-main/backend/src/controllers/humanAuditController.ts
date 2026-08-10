@@ -315,6 +315,7 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
       ...raw,
       human_review: review ? {
         verdict: review.verdict === 'skip' ? 'skip' : review.aiConflict?.has_conflict ? 'disagree' : 'agree',
+        target_model: review.targetModel || 'ft',
         note: review.note,
         reviewer: review.reviewerName,
         reviewed_at: review.updatedAt,
@@ -350,6 +351,7 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
   const convResult: any = evaluation.results.find(item => Number(item.conv_index) === convIndex);
   if (!convResult) return res.status(404).json({ error: 'Conversation not found' });
   const skip = req.body?.verdict === 'skip';
+  const targetModel = String(req.body?.target_model || req.body?.targetModel || 'ft').toLowerCase() === 'base' ? 'base' : 'ft';
   let reviewPayload: any = {
     ownerId: evaluation.ownerId,
     modelEvalId,
@@ -357,6 +359,7 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     itemId: convResult.item_id || '',
     reviewerId: staffId,
     reviewerName: reviewer.name,
+    targetModel,
     verdict: skip ? 'skip' : 'reviewed',
     note: String(req.body?.note || '').trim(),
     rubricVersion: HUMAN_AUDIT_RUBRIC_VERSION,
@@ -398,6 +401,7 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     message: 'Review saved',
     review: {
       verdict: review?.verdict === 'skip' ? 'skip' : review?.aiConflict?.has_conflict ? 'disagree' : 'agree',
+      target_model: review?.targetModel || targetModel,
       note: review?.note,
       reviewer: review?.reviewerName,
       reviewed_at: review?.updatedAt,

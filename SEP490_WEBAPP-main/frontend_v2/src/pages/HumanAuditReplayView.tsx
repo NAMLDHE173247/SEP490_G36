@@ -214,6 +214,7 @@ export default function HumanAuditReplayView() {
         evaluation.modelEvalId,
         currentItem.conv_index,
         {
+          target_model: scoringTarget,
           ...(skip ? { verdict: 'skip' as const } : {
             human_scores: Object.fromEntries(Object.entries(scores).map(([key, value]) => [key, Number(value)])),
             human_reasons: reasons,
