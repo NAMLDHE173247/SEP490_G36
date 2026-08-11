@@ -156,7 +156,13 @@ export default function HumanAuditManagerView() {
     detail.items.forEach((item: any) => {
       const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
       const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-      const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
+      const reviewsToUse = item.adjudication?.finalScores
+        ? [
+            { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+            { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+          ]
+        : (item.reviews || []);
+      const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
       const hasFt = breakdown.ft.maxDelta >= 1.5;
       const hasBase = breakdown.base.maxDelta >= 1.5;
       if (hasFt) ftCount++;
@@ -170,7 +176,13 @@ export default function HumanAuditManagerView() {
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
     const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
     const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-    const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
+    const reviewsToUse = item.adjudication?.finalScores
+      ? [
+          { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+          { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+        ]
+      : (item.reviews || []);
+    const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
     const isFtConflict = breakdown.ft.maxDelta >= 1.5;
     const isBaseConflict = breakdown.base.maxDelta >= 1.5;
     const isAnyConflict = isFtConflict || isBaseConflict;
@@ -307,7 +319,13 @@ export default function HumanAuditManagerView() {
           const uniqueReviews = deduplicateReviews(item.reviews || []);
           const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-          const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
+          const reviewsToUse = item.adjudication?.finalScores
+            ? [
+                { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+                { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+              ]
+            : (item.reviews || []);
+          const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
           const ftCount = breakdown.ft.count;
           const baseCount = breakdown.base.count;
 
@@ -529,7 +547,11 @@ export default function HumanAuditManagerView() {
                             <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>👤 Chọn Staff đối chiếu:</span>
                             <select
                               value={selectedStaffReview?._id || ''}
-                              onChange={(e) => setActiveStaffId(e.target.value)}
+                              onChange={(e) => {
+                                setActiveStaffId(e.target.value);
+                                setResolution('accept_staff');
+                                setSelectedReviewId(e.target.value);
+                              }}
                               style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', background: '#fff', cursor: 'pointer' }}
                             >
                               {sortedReviews.map((r: any) => {
@@ -671,7 +693,7 @@ export default function HumanAuditManagerView() {
                         const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
                         return dateB - dateA;
                       });
-                      return sortedReviews.slice(0, 1).map((review: any) => {
+                      return sortedReviews.map((review: any) => {
                         const isBase = (review.targetModel || review.target_model) === 'base';
                         return (
                           <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}>
