@@ -150,11 +150,34 @@ export default function HumanAuditManagerView() {
   useEffect(() => {
     setSelectedCheckerId(selectedEvaluation?.checkerId || '');
   }, [selectedEvalId, selectedEvaluation?.checkerId]);
+  const conflictSummary = useMemo(() => {
+    if (!detail?.items) return { ftConflicts: 0, baseConflicts: 0, totalConflicts: 0 };
+    let ftCount = 0;
+    let baseCount = 0;
+    let totalCount = 0;
+
+    detail.items.forEach((item: any) => {
+      const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores);
+      const hasFt = breakdown.ft.maxDelta >= 1.5;
+      const hasBase = breakdown.base.maxDelta >= 1.5;
+      if (hasFt) ftCount++;
+      if (hasBase) baseCount++;
+      if (hasFt || hasBase) totalCount++;
+    });
+
+    return { ftConflicts: ftCount, baseConflicts: baseCount, totalConflicts: totalCount };
+  }, [detail]);
+
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
+    const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores);
+    const isFtConflict = breakdown.ft.maxDelta >= 1.5;
+    const isBaseConflict = breakdown.base.maxDelta >= 1.5;
+    const isAnyConflict = isFtConflict || isBaseConflict;
+
     if (filter === 'all') return true;
-    if (filter === 'conflict') return item.inter_rater?.status === 'conflict';
+    if (filter === 'conflict') return isAnyConflict && item.inter_rater?.status !== 'resolved';
     if (filter === 'resolved') return item.inter_rater?.status === 'resolved';
-    return ['insufficient', 'agreement'].includes(item.inter_rater?.status) && !item.adjudication;
+    return !isAnyConflict && !item.adjudication;
   }), [detail, filter]);
 
   const toggleStaff = (id: string) => setSelectedStaffIds(previous => (
@@ -259,10 +282,19 @@ export default function HumanAuditManagerView() {
       </section>
 
       {selectedEvaluation && (
-        <section className="ham-summary-grid">
-          <article><span>Staff được giao</span><strong>{selectedEvaluation.assignedStaff}</strong><small>{selectedEvaluation.assignedStaff >= 2 ? 'Có thể đo đồng thuận' : '1 Staff vẫn audit được; chưa tính IAA'}</small></article>
+        <section className="ham-summary-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+          <article><span>Staff được giao</span><strong>{selectedEvaluation.assignedStaff}</strong><small>{selectedEvaluation.assignedStaff >= 2 ? 'Có thể đo đồng thuận' : '1 Staff vẫn audit được'}</small></article>
           <article><span>Bản chấm đã nộp</span><strong>{selectedEvaluation.submittedReviews}</strong></article>
-          <article className="danger"><span>Replay xung đột</span><strong>{selectedEvaluation.conflictItems}</strong></article>
+          <article className="danger" style={{ borderLeft: '4px solid #6366f1', background: '#f5f3ff' }}>
+            <span style={{ color: '#4338ca', fontWeight: 700 }}>🎯 Xung đột Fine-tuned</span>
+            <strong style={{ color: '#4338ca' }}>{conflictSummary.ftConflicts}</strong>
+            <small style={{ color: '#6366f1' }}>Replay có Δ ≥ 1.5 ở FT</small>
+          </article>
+          <article className="danger" style={{ borderLeft: '4px solid #f59e0b', background: '#fffbeb' }}>
+            <span style={{ color: '#b45309', fontWeight: 700 }}>🔲 Xung đột Base Model</span>
+            <strong style={{ color: '#b45309' }}>{conflictSummary.baseConflicts}</strong>
+            <small style={{ color: '#d97706' }}>Replay có Δ ≥ 1.5 ở Base</small>
+          </article>
           <article className="success"><span>Checker phụ trách</span><strong className="ham-checker-name">{selectedEvaluation.checkerName || 'Chưa giao'}</strong></article>
         </section>
       )}
