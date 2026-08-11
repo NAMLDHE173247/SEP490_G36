@@ -482,16 +482,28 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
     HumanAuditReview.find({ modelEvalId: evaluation.modelEvalId }).sort({ updatedAt: 1 }).lean(),
     HumanAuditAdjudication.find({ modelEvalId: evaluation.modelEvalId }).lean(),
   ]);
+  const baseResultsByConv = new Map<number, any>();
+  (evaluation.baseResults || []).forEach((br: any) => {
+    baseResultsByConv.set(Number(br.conv_index), br);
+  });
+
   const items = evaluation.results.map((result: any) => {
     const itemReviews = reviews.filter(review => review.convIndex === result.conv_index);
     const adjudication = adjudications.find(item => item.convIndex === result.conv_index);
+    const baseResult = baseResultsByConv.get(Number(result.conv_index));
     return {
       conv_index: result.conv_index,
       item_id: result.item_id,
       question: result.replay_turns?.[0]?.user || '',
       answer: result.replay_turns?.[0]?.model || '',
+      criteria_scores: result.criteria_scores,
       ai_scores: result.criteria_scores,
       ai_reasons: result.criteria_reasons,
+      baseItem: baseResult ? {
+        criteria_scores: baseResult.criteria_scores,
+        ai_scores: baseResult.criteria_scores,
+        criteria_reasons: baseResult.criteria_reasons,
+      } : null,
       reviews: itemReviews,
       adjudication,
       inter_rater: computeInterRaterState(itemReviews, adjudication),

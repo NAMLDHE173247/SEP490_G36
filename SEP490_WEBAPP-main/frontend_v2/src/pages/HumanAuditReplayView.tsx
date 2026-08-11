@@ -619,8 +619,8 @@ export default function HumanAuditReplayView() {
                     const intermediate = selected !== null && [2, 3, 4].includes(Number(selected));
                     const targetItem = scoringTarget === 'base' && currentBaseItem ? currentBaseItem : currentItem;
                     const rawAiScore = scoringTarget === 'base'
-                      ? (targetItem?.criteria_scores?.[criterion.key] ?? targetItem?.ai_scores?.[criterion.key] ?? targetItem?.ai_base_scores?.[criterion.key] ?? currentItem?.ai_base_scores?.[criterion.key] ?? null)
-                      : (targetItem?.criteria_scores?.[criterion.key] ?? targetItem?.ai_scores?.[criterion.key] ?? null);
+                      ? (currentBaseItem?.criteria_scores?.[criterion.key] ?? currentBaseItem?.ai_scores?.[criterion.key] ?? currentItem?.ai_base_scores?.[criterion.key] ?? currentItem?.base_ai_scores?.[criterion.key] ?? null)
+                      : (currentItem?.criteria_scores?.[criterion.key] ?? currentItem?.ai_scores?.[criterion.key] ?? currentItem?.ai_ft_scores?.[criterion.key] ?? currentItem?.ft_ai_scores?.[criterion.key] ?? null);
                     const aiScore = rawAiScore !== null && !isNaN(Number(rawAiScore)) ? Number(rawAiScore) : null;
                     const delta = (selected !== null && aiScore !== null) ? Math.abs(Number(selected) - aiScore) : null;
 

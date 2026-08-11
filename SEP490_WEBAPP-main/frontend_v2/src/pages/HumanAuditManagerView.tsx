@@ -154,7 +154,7 @@ export default function HumanAuditManagerView() {
     let totalCount = 0;
 
     detail.items.forEach((item: any) => {
-      const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores || item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.ai_scores;
+      const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
       const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
       const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
       const hasFt = breakdown.ft.maxDelta >= 1.5;
@@ -168,7 +168,7 @@ export default function HumanAuditManagerView() {
   }, [detail]);
 
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
-    const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores || item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.ai_scores;
+    const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
     const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
     const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
     const isFtConflict = breakdown.ft.maxDelta >= 1.5;
@@ -305,7 +305,7 @@ export default function HumanAuditManagerView() {
         <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div></header>
         <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
           const uniqueReviews = deduplicateReviews(item.reviews || []);
-          const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores || item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.ai_scores;
+          const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
           const breakdown = computeModelConflictBreakdown(item.reviews || [], ftAi, baseAi);
           const ftCount = breakdown.ft.count;
@@ -499,7 +499,7 @@ export default function HumanAuditManagerView() {
                       let maxD = 0;
                       HUMAN_AUDIT_RUBRIC.forEach(({ key }) => {
                         const aiVal = isBaseMode
-                          ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.baseItem?.criteria_scores?.[key] ?? selectedItem.base_item?.criteria_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? null)
+                          ? (selectedItem.baseItem?.criteria_scores?.[key] ?? selectedItem.base_item?.criteria_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.base_item?.ai_scores?.[key] ?? selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? null)
                           : (selectedItem.criteria_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key] ?? selectedItem.ft_ai_scores?.[key] ?? null);
                         const val = r.humanScores[key];
                         if (val != null && aiVal != null) {
@@ -580,7 +580,7 @@ export default function HumanAuditManagerView() {
                           <tbody>
                             {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => {
                               const aiVal = isBaseMode
-                                ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.baseItem?.criteria_scores?.[key] ?? selectedItem.base_item?.criteria_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? null)
+                                ? (selectedItem.baseItem?.criteria_scores?.[key] ?? selectedItem.base_item?.criteria_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.base_item?.ai_scores?.[key] ?? selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? null)
                                 : (selectedItem.criteria_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key] ?? selectedItem.ft_ai_scores?.[key] ?? null);
                               const revVals = displayReviews.map((r: any) => r.humanScores?.[key] ?? null);
                               const validVals = [aiVal, ...revVals].filter((v): v is number => typeof v === 'number');
