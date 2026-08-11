@@ -113,14 +113,12 @@ class LegacyFlaskProgressCallback(TrainerCallback):
     def on_log(self, args, state, control, logs=None, **kwargs):
 
         if not logs: return
-        is_final_loss = 'train_loss' in logs
+        # FIX: Chỉ cập nhật last_loss từ loss thực tế của batch (key 'loss').
+        # KHÔNG dùng 'train_loss' vì đó là trung bình toàn cục từ epoch 1→cuối,
+        # sẽ làm biểu đồ vọt lên ở bước cuối cùng.
         if 'loss' in logs:
             self.last_loss = logs['loss']
-        # elif 'train_loss' in logs:
-        elif is_final_loss:
-            self.last_loss = logs['train_loss']
 
-        # --- PHẦN GIỮ NGUYÊN CODE CŨ CỦA BẠN ---
         loss_val = self.last_loss
         if "eval_loss" in logs:
             self.last_eval_loss = logs["eval_loss"]
@@ -152,6 +150,10 @@ class LegacyFlaskProgressCallback(TrainerCallback):
             }
         }
 
+        # Lưu train_loss trung bình toàn cục để tham khảo, nhưng không ghi đè loss_val
+        if 'train_loss' in logs:
+            update_payload['metrics']['train_loss_avg'] = round(logs['train_loss'], 6)
+
         # Nếu có Eval Loss (kết quả thi thử), gửi kèm về để vẽ biểu đồ Overfit
         if self.last_eval_loss is not None:
             update_payload['metrics']['eval_loss'] = round(self.last_eval_loss, 4)
@@ -161,6 +163,8 @@ class LegacyFlaskProgressCallback(TrainerCallback):
 
         # Ghi log dòng Step (Bổ sung hiển thị Eval Loss nếu có)
         log_line = f"Step {state.global_step} | Epoch {epoch_val} | Loss: {loss_val:.4f}"
+        if 'train_loss' in logs:
+            log_line += f" | Avg Train Loss: {logs['train_loss']:.4f}"
         if eval_loss is not None:
             log_line += f" | Eval Loss (Overfit): {eval_loss:.4f}"
 
@@ -255,9 +259,10 @@ class FlaskProgressCallback(TrainerCallback):
         logs = logs or {}
         snapshot = self._snapshot(args, state)
 
+        # FIX: Chỉ dùng key 'loss' (loss thực tế của batch/step hiện tại).
+        # KHÔNG fallback sang 'train_loss' — đó là trung bình toàn cục
+        # (epoch 1→cuối), sẽ kéo giá trị vọt lên ở bước cuối cùng.
         train_loss = _finite_float(logs.get("loss"))
-        if train_loss is None:
-            train_loss = _finite_float(logs.get("train_loss"))
         if train_loss is not None:
             self.last_loss = train_loss
         eval_loss = _finite_float(logs.get("eval_loss"))
