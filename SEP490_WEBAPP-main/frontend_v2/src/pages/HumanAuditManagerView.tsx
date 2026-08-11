@@ -399,12 +399,15 @@ export default function HumanAuditManagerView() {
             : allUniqueReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
           const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-          const reviewsToUse = item.adjudication?.finalScores
+          const rawReviews = item.adjudication?.finalScores
             ? [
                 { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
                 { humanScores: item.adjudication.finalScores, targetModel: 'base' }
               ]
             : (item.reviews || []);
+          const reviewsToUse = filterReviewerId === 'all'
+            ? rawReviews
+            : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
           const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
           const ftCount = breakdown.ft.count;
           const baseCount = breakdown.base.count;
@@ -413,7 +416,7 @@ export default function HumanAuditManagerView() {
             <tr key={item.conv_index}>
               <td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td>
               <td>
-                <strong>{item.inter_rater.reviewer_count}</strong>
+                <strong>{uniqueReviews.length}</strong>
                 {Boolean(uniqueReviews.length) && (
                   <div style={{ fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
                     {ftCount > 0 && <span style={{ color: '#4f46e5', marginRight: '4px' }}>{ftCount} FT</span>}
