@@ -179,6 +179,8 @@ def start_training():
 
     # Ưu tiên token từ request, fallback sang Docker Secret / env HF_TOKEN
     hf_token = parsed_config.get('hf_token') or _read_secret("HF_TOKEN")
+    if hf_token:
+        hf_token = str(hf_token).strip().strip("'\"").encode('ascii', 'ignore').decode('ascii').strip()
 
     # print("HF token:", hf_token)
 

@@ -432,7 +432,7 @@ export const startTraining = async (req: Request, res: Response) => {
       model_name,
       ...optionalKnobs,
       epochs: epochsNum,
-      hf_token: hf_token || '',
+      hf_token: (hf_token && String(hf_token).startsWith('hf_') ? hf_token : process.env.HF_TOKEN) || '',
       hf_repo_id: hf_repo_id || '',
       r: parseInt(r as string) || 16,
       text_column: finalColumnMapping,

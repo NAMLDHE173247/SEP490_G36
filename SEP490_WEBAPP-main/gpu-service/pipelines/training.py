@@ -749,8 +749,13 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
 
     try:
         if hf_token:
-            print(f"🔑 Logging into Hugging Face for job {job_id}...")
-            login(token=hf_token)
+            # Clean up token (remove quotes, non-ASCII hidden characters, and whitespace)
+            hf_token = str(hf_token).strip().strip("'\"").encode('ascii', 'ignore').decode('ascii').strip()
+            if hf_token:
+                print(f"🔑 Logging into Hugging Face for job {job_id}...")
+                login(token=hf_token)
+            else:
+                print(f"⚠️ Warning: hf_token contained non-ASCII characters or was empty after cleaning.")
 
             if hf_repo_id and "/" not in hf_repo_id:
                 api = HfApi()
