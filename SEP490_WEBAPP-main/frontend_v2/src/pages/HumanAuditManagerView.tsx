@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ClipboardCheck,
   RefreshCw,
   Scale,
@@ -232,6 +234,18 @@ export default function HumanAuditManagerView() {
     setResolutionNote('');
   };
 
+  const currentIndex = selectedItem ? visibleItems.findIndex(item => item.conv_index === selectedItem.conv_index) : -1;
+  const handleNext = () => {
+    if (currentIndex >= 0 && currentIndex < visibleItems.length - 1) {
+      openResolution(visibleItems[currentIndex + 1]);
+    }
+  };
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      openResolution(visibleItems[currentIndex - 1]);
+    }
+  };
+
   const adjudicate = async () => {
     if (!selectedItem || !resolutionNote.trim()) {
       toast.error('Supervisor phải ghi lý do chốt');
@@ -254,6 +268,12 @@ export default function HumanAuditManagerView() {
       }
     }
     setSaving(true);
+    
+    let nextItem: any = null;
+    if (currentIndex >= 0 && currentIndex < visibleItems.length - 1) {
+      nextItem = visibleItems[currentIndex + 1];
+    }
+    
     try {
       await apiService.adjudicateHumanAudit(selectedEvalId, selectedItem.conv_index, {
         resolution,
@@ -265,9 +285,21 @@ export default function HumanAuditManagerView() {
         final_reasons: resolution === 'manual' ? finalReasons : undefined,
         note: resolutionNote.trim(),
       });
-      toast.success(`Đã chốt xung đột (${modalTargetFilter === 'base' ? 'Base Model' : 'Fine-tuned Model'}); bản chấm Staff vẫn được giữ nguyên`);
-      setSelectedItem(null);
-      await Promise.all([loadOverview(), loadDetail(selectedEvalId)]);
+      toast.success(`Đã chốt xung đột (${modalTargetFilter === 'base' ? 'Base Model' : 'Fine-tuned Model'})`);
+      
+      if (nextItem) {
+        openResolution(nextItem);
+      } else {
+        setSelectedItem(null);
+      }
+      
+      void loadOverview();
+      loadDetail(selectedEvalId).then((newDetail: any) => {
+        if (nextItem && newDetail?.items) {
+          const freshNextItem = newDetail.items.find((i: any) => i.conv_index === nextItem.conv_index);
+          if (freshNextItem) setSelectedItem(freshNextItem);
+        }
+      });
     } catch (error: any) {
       toast.error(error?.response?.data?.error || 'Không chốt được xung đột');
     } finally {
@@ -319,15 +351,12 @@ export default function HumanAuditManagerView() {
           const uniqueReviews = deduplicateReviews(item.reviews || []);
           const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-          let reviewsToUse = item.reviews || [];
-          if (selectedItem && selectedItem.conv_index === item.conv_index && activeStaffId) {
-            reviewsToUse = item.reviews.filter((r: any) => r._id === activeStaffId);
-          } else if (item.adjudication?.finalScores) {
-            reviewsToUse = [
-              { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
-              { humanScores: item.adjudication.finalScores, targetModel: 'base' }
-            ];
-          }
+          const reviewsToUse = item.adjudication?.finalScores
+            ? [
+                { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+                { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+              ]
+            : (item.reviews || []);
           const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
           const ftCount = breakdown.ft.count;
           const baseCount = breakdown.base.count;
@@ -431,7 +460,21 @@ export default function HumanAuditManagerView() {
                   </div>
                   <h2>Đối chiếu AI Judge và tất cả Staff</h2>
                 </div>
-                <button type="button" onClick={() => setSelectedItem(null)}><X size={18} /></button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <button type="button" onClick={handlePrev} disabled={currentIndex <= 0} title="Replay trước" style={{ padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronLeft size={18} />
+                  </button>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569' }}>
+                    {currentIndex + 1} / {visibleItems.length}
+                  </span>
+                  <button type="button" onClick={handleNext} disabled={currentIndex >= visibleItems.length - 1} title="Replay tiếp" style={{ padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChevronRight size={18} />
+                  </button>
+                  <div style={{ width: '1px', height: '24px', background: '#e2e8f0', margin: '0 4px' }} />
+                  <button type="button" onClick={() => setSelectedItem(null)} title="Đóng">
+                    <X size={18} />
+                  </button>
+                </div>
               </header>
               <div className="ham-replay">
                 <p style={{ fontWeight: 600, color: '#1e293b', marginBottom: '8px' }}><b>Học sinh:</b> {selectedItem.question}</p>
