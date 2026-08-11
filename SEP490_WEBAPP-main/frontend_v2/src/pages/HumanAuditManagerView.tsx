@@ -224,6 +224,7 @@ export default function HumanAuditManagerView() {
   const openResolution = (item: any) => {
     setSelectedItem(item);
     setModalTargetFilter('ft');
+    setActiveStaffId('');
     const unique = deduplicateReviews(item.reviews || []);
     const firstFt = unique.find((review: any) => (review.targetModel || review.target_model || 'ft') === 'ft');
     setResolution('accept_ai');
@@ -582,10 +583,60 @@ export default function HumanAuditManagerView() {
                       return dateB - dateA; // Then newest first
                     });
 
-                    const displayReviews = sortedReviews;
+                    const selectedStaffReview = sortedReviews.find((r: any) => r._id === activeStaffId) || sortedReviews[0];
+                    const displayReviews = selectedStaffReview ? [selectedStaffReview] : [];
 
                     return (
                       <div style={{ overflowX: 'auto' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', marginRight: '4px' }}>👤 Chọn Staff đối chiếu:</span>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {sortedReviews.map((r: any) => {
+                              const d = getReviewMaxDelta(r);
+                              const isSelected = selectedStaffReview?._id === r._id;
+                              const isConflict = d >= 1.5;
+                              return (
+                                <button
+                                  key={r._id}
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveStaffId(r._id);
+                                    setResolution('accept_staff');
+                                    setSelectedReviewId(r._id);
+                                  }}
+                                  style={{
+                                    padding: '6px 14px',
+                                    borderRadius: '8px',
+                                    border: isSelected ? '1px solid #6366f1' : '1px solid #cbd5e1',
+                                    background: isSelected ? '#eef2ff' : '#ffffff',
+                                    color: isSelected ? '#4338ca' : '#475569',
+                                    fontWeight: 700,
+                                    fontSize: '0.8rem',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    boxShadow: isSelected ? '0 1px 3px rgba(99,102,241,0.2)' : 'none',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                >
+                                  {r.reviewerName}
+                                  <span style={{ 
+                                    padding: '2px 6px', 
+                                    borderRadius: '4px', 
+                                    background: isConflict ? '#fee2e2' : '#dcfce3', 
+                                    color: isConflict ? '#b91c1c' : '#15803d',
+                                    fontSize: '0.72rem',
+                                    fontWeight: 800
+                                  }}>
+                                    Δ {d.toFixed(1)}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                           <thead>
                             <tr style={{ background: '#f1f5f9', color: '#475569' }}>
