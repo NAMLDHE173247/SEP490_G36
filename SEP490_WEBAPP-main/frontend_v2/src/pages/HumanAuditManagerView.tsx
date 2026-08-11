@@ -18,6 +18,25 @@ import '../styles/humanauditmanager-agreement.css';
 
 type ManagerFilter = 'all' | 'conflict' | 'resolved' | 'pending';
 
+const deduplicateReviews = (reviews: any[]) => {
+  if (!reviews) return [];
+  const map = new Map<string, any>();
+  reviews.forEach(review => {
+    const targetModel = review.targetModel || review.target_model || 'ft';
+    const key = `${review.reviewerId || review.reviewerName}_${targetModel}`;
+    const existing = map.get(key);
+    if (existing) {
+      const existingDate = existing.updatedAt || existing.createdAt;
+      const currentDate = review.updatedAt || review.createdAt;
+      if (existingDate && currentDate && new Date(currentDate) < new Date(existingDate)) {
+        return; // Keep the existing one because it is newer
+      }
+    }
+    map.set(key, review);
+  });
+  return Array.from(map.values());
+};
+
 export default function HumanAuditManagerView() {
   const { user } = useAuth();
   const isChecker = user?.role === 'checker';
@@ -189,14 +208,15 @@ export default function HumanAuditManagerView() {
       <section className="ham-review-card">
         <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div></header>
         <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
-          const ftCount = (item.reviews || []).filter((r: any) => (r.targetModel || r.target_model || 'ft') === 'ft').length;
-          const baseCount = (item.reviews || []).filter((r: any) => (r.targetModel || r.target_model) === 'base').length;
+          const uniqueReviews = deduplicateReviews(item.reviews || []);
+          const ftCount = uniqueReviews.filter((r: any) => (r.targetModel || r.target_model || 'ft') === 'ft').length;
+          const baseCount = uniqueReviews.filter((r: any) => (r.targetModel || r.target_model) === 'base').length;
           return (
             <tr key={item.conv_index}>
               <td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td>
               <td>
                 <strong>{item.inter_rater.reviewer_count}</strong>
-                {Boolean(item.reviews?.length) && (
+                {Boolean(uniqueReviews.length) && (
                   <div style={{ fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
                     {ftCount > 0 && <span style={{ color: '#4f46e5', marginRight: '4px' }}>{ftCount} FT</span>}
                     {baseCount > 0 && <span style={{ color: '#b45309' }}>{baseCount} Base</span>}
@@ -206,7 +226,7 @@ export default function HumanAuditManagerView() {
               <td>{item.inter_rater.max_delta.toFixed(1)}</td>
               <td>{item.inter_rater.conflict_criteria.join(', ') || '—'}</td>
               <td><span className={`ham-status ${item.inter_rater.status} ${item.inter_rater.severity}`}>{item.inter_rater.status === 'resolved' ? 'Đã chốt' : item.inter_rater.status === 'conflict' ? `${item.inter_rater.severity} conflict` : item.inter_rater.status === 'agreement' ? 'Đồng thuận ≥2 Staff' : item.inter_rater.reviewer_count === 1 ? 'Đã có bản chấm · IAA không áp dụng' : 'Chưa có bản chấm'}</span></td>
-              <td><button type="button" onClick={() => openResolution(item)} disabled={!item.reviews?.length}><Scale size={14} /> Xem & xử lý</button></td>
+              <td><button type="button" onClick={() => openResolution(item)} disabled={!uniqueReviews.length}><Scale size={14} /> Xem & xử lý</button></td>
             </tr>
           );
         })}</tbody></table>{!visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}</div>
@@ -256,7 +276,7 @@ export default function HumanAuditManagerView() {
             </div>
             <div className="ham-review-grid">
               <label className={resolution === 'accept_ai' ? 'selected' : ''}><input type="radio" checked={resolution === 'accept_ai'} onChange={() => setResolution('accept_ai')} /><div><strong>AI Judge</strong><small>Đề xuất tự động · cần đối chiếu bằng chứng</small><div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{selectedItem.ai_scores?.[key] ?? '—'}</b></span>)}</div></div></label>
-              {selectedItem.reviews.map((review: any) => {
+              {deduplicateReviews(selectedItem.reviews).map((review: any) => {
                 const targetLabel = (review.targetModel === 'base' || review.target_model === 'base') ? '🔲 Base Model' : '🎯 Fine-tuned';
                 const isBase = review.targetModel === 'base' || review.target_model === 'base';
                 return (
@@ -267,7 +287,7 @@ export default function HumanAuditManagerView() {
                         <strong>{review.reviewerName}</strong>
                         <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: isBase ? '#fef3c7' : '#e0e7ff', color: isBase ? '#b45309' : '#4338ca' }}>{targetLabel}</span>
                       </div>
-                      <small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1} · A1 ${review.humanScores?.A1} · S ${review.humanOutcomes?.socratic_s}`}</small>
+                      <small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1 || review.humanScores?.K || '—'} · A1 ${review.humanScores?.A1 || '—'} · S ${review.humanOutcomes?.socratic_s || review.humanScores?.S || '—'}`}</small>
                       <p>{review.note || 'Không có nhận xét tổng quát.'}</p>
                       {review.humanScores && <div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{review.humanScores[key]}</b></span>)}</div>}
                     </div>

@@ -134,12 +134,50 @@ export default function HumanAuditReplayView() {
   }, [evaluation]);
 
   useEffect(() => {
-    if (selectedConvIndex === null || !currentItem) return;
+    if (selectedConvIndex === null || !currentItem || !evaluationId) return;
     const review = getReviewForTarget(selectedConvIndex, scoringTarget);
-    setScores({ ...emptyAuditScores(), ...(review?.human_scores || {}) });
-    setReasons(review?.human_reasons || {});
-    setReviewNote(review?.note || '');
-  }, [selectedConvIndex, currentItem, scoringTarget, getReviewForTarget]);
+    const draftKey = `ha_draft_${evaluationId}_${selectedConvIndex}_${scoringTarget}`;
+    
+    let draft = null;
+    try {
+      draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    } catch (e) {}
+
+    if (draft) {
+      setScores({ ...emptyAuditScores(), ...(draft.scores || {}) });
+      setReasons(draft.reasons || {});
+      setReviewNote(draft.note || '');
+    } else {
+      setScores({ ...emptyAuditScores(), ...(review?.human_scores || {}) });
+      setReasons(review?.human_reasons || {});
+      setReviewNote(review?.note || '');
+    }
+  }, [selectedConvIndex, currentItem, scoringTarget, getReviewForTarget, evaluationId]);
+
+  useEffect(() => {
+    if (selectedConvIndex === null || !evaluationId) return;
+    const review = getReviewForTarget(selectedConvIndex, scoringTarget);
+    const draftKey = `ha_draft_${evaluationId}_${selectedConvIndex}_${scoringTarget}`;
+    
+    const isDifferent = () => {
+      if (!review) return true;
+      if (reviewNote !== (review.note || '')) return true;
+      for (const key of Object.keys(emptyAuditScores())) {
+         if (scores[key] !== (review.human_scores?.[key] ?? null)) return true;
+         if ((reasons[key] || '') !== (review.human_reasons?.[key] || '')) return true;
+      }
+      return false;
+    };
+
+    if (isDifferent()) {
+      const hasContent = Object.values(scores).some(v => v !== null) || Object.values(reasons).some(v => String(v).trim() !== '') || reviewNote.trim() !== '';
+      if (hasContent) {
+        localStorage.setItem(draftKey, JSON.stringify({ scores, reasons, note: reviewNote }));
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    }
+  }, [scores, reasons, reviewNote, selectedConvIndex, scoringTarget, evaluationId, getReviewForTarget]);
 
   useEffect(() => {
     if (!scorePanelOpen) return undefined;
@@ -231,6 +269,8 @@ export default function HumanAuditReplayView() {
           JSON.stringify(response.review)
         );
       }
+      
+      localStorage.removeItem(`ha_draft_${evaluation.modelEvalId}_${currentItem.conv_index}_${scoringTarget}`);
 
       setEvaluation((previous: any) => {
         const nextVerdict = response.review?.verdict === 'skip' ? 'skip' : 'reviewed';
