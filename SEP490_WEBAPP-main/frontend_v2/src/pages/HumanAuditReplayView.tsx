@@ -140,7 +140,7 @@ export default function HumanAuditReplayView() {
       if (baseItem?.human_review) return baseItem.human_review;
       const cached = localStorage.getItem(`ha_base_review_${evaluation.modelEvalId}_${convIndex}`);
       if (cached) {
-        try { return JSON.parse(cached); } catch (e) {}
+        try { return JSON.parse(cached); } catch (e) { }
       }
       // Don't fallback to FT review — base should start with empty scores
       return null;
@@ -152,11 +152,11 @@ export default function HumanAuditReplayView() {
     if (selectedConvIndex === null || !currentItem || !evaluationId) return;
     const review = getReviewForTarget(selectedConvIndex, scoringTarget);
     const draftKey = `ha_draft_${evaluationId}_${selectedConvIndex}_${scoringTarget}`;
-    
+
     let draft = null;
     try {
       draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
-    } catch (e) {}
+    } catch (e) { }
 
     if (draft) {
       setScores({ ...emptyAuditScores(), ...(draft.scores || {}) });
@@ -173,13 +173,13 @@ export default function HumanAuditReplayView() {
     if (selectedConvIndex === null || !evaluationId) return;
     const review = getReviewForTarget(selectedConvIndex, scoringTarget);
     const draftKey = `ha_draft_${evaluationId}_${selectedConvIndex}_${scoringTarget}`;
-    
+
     const isDifferent = () => {
       if (!review) return true;
       if (reviewNote !== (review.note || '')) return true;
       for (const key of Object.keys(emptyAuditScores())) {
-         if (scores[key] !== (review.human_scores?.[key] ?? null)) return true;
-         if ((reasons[key] || '') !== (review.human_reasons?.[key] || '')) return true;
+        if (scores[key] !== (review.human_scores?.[key] ?? null)) return true;
+        if ((reasons[key] || '') !== (review.human_reasons?.[key] || '')) return true;
       }
       return false;
     };
@@ -293,7 +293,7 @@ export default function HumanAuditReplayView() {
           JSON.stringify(response.review)
         );
       }
-      
+
       localStorage.removeItem(`ha_draft_${evaluation.modelEvalId}_${currentItem.conv_index}_${scoringTarget}`);
 
       setEvaluation((previous: any) => {
@@ -316,23 +316,23 @@ export default function HumanAuditReplayView() {
         // Only update the correct target: FT results or base results
         const updatedResults = scoringTarget === 'ft'
           ? previous.results.map((item: any) => item.conv_index === currentItem.conv_index
-              ? {
-                  ...item,
-                  human_review: response.review,
-                  criteria_scores: response.criteria_scores,
-                  criteria_reasons: response.criteria_reasons,
-                  effective_judge_model: response.effective_judge_model,
-                }
-              : item)
+            ? {
+              ...item,
+              human_review: response.review,
+              criteria_scores: response.criteria_scores,
+              criteria_reasons: response.criteria_reasons,
+              effective_judge_model: response.effective_judge_model,
+            }
+            : item)
           : previous.results; // Don't touch FT results when saving base
 
         const updatedBaseResults = scoringTarget === 'base'
           ? (previous.baseResults || []).map((item: any) => item.conv_index === currentItem.conv_index
-              ? {
-                  ...item,
-                  human_review: response.review,
-                }
-              : item)
+            ? {
+              ...item,
+              human_review: response.review,
+            }
+            : item)
           : (previous.baseResults || []); // Don't touch base results when saving FT
 
         return {
@@ -382,7 +382,7 @@ export default function HumanAuditReplayView() {
 
       <section className="ha-session-card">
         <div className="ha-session-input">
-            <label>Evaluation ID đã được giao</label>
+          <label>Evaluation ID đã được giao</label>
           <div>
             <input value={evaluationId} onChange={(event) => setEvaluationId(event.target.value)} placeholder="eval_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
             <button type="button" onClick={() => void loadEvaluation()} disabled={loading}>
