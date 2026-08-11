@@ -1242,12 +1242,16 @@ export default function ModelEvalView() {
     try {
       const status = await apiService.getLargeLlmReferenceStatus(referenceJobId);
       setLargeLlmRuns(previous => ({ ...previous, [model]: status }));
-      if (status.status === 'COMPLETED' && status.result) {
-        saveLargeLlmReference(normalizeServerLargeLlmResult(status.result, comparisonRole));
+      const isCompleted = String(status.status).toUpperCase() === 'COMPLETED';
+      const isFailed = String(status.status).toUpperCase() === 'FAILED';
+      const resultPayload = status.result || status.artifact || status.data;
+      
+      if (isCompleted && resultPayload) {
+        saveLargeLlmReference(normalizeServerLargeLlmResult(resultPayload, comparisonRole));
         toast.success(`Đã so sánh xong ${model}`);
         return;
       }
-      if (status.status === 'FAILED') {
+      if (isFailed) {
         toast.error(`${model}: ${status.error || 'Chạy thất bại'}`);
         return;
       }
@@ -1261,12 +1265,16 @@ export default function ModelEvalView() {
     try {
       const status = await apiService.getVersion1SharedReferenceStatus(referenceJobId);
       setLargeLlmRuns(previous => ({ ...previous, [runKey]: status }));
-      if (status.status === 'COMPLETED' && status.result) {
-        saveLargeLlmReference(normalizeVersion1SharedResult(status.result));
+      const isCompleted = String(status.status).toUpperCase() === 'COMPLETED';
+      const isFailed = String(status.status).toUpperCase() === 'FAILED';
+      const resultPayload = status.result || status.artifact || status.data;
+
+      if (isCompleted && resultPayload) {
+        saveLargeLlmReference(normalizeVersion1SharedResult(resultPayload));
         toast.success('Đã so sánh xong Version 1 fine-tune chung ba môn');
         return;
       }
-      if (status.status === 'FAILED') {
+      if (isFailed) {
         toast.error(`Version 1: ${status.error || 'Chạy thất bại'}`);
         return;
       }

@@ -58,53 +58,50 @@ export default function HumanAuditManagerView() {
   const [resolutionNote, setResolutionNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [modalTargetFilter, setModalTargetFilter] = useState<'all' | 'ft' | 'base'>('ft');
+  const [activeStaffId, setActiveStaffId] = useState<string>('');
 
-  const computeModelConflictBreakdown = (reviews: any[], aiScores?: any) => {
+  const computeModelConflictBreakdown = (reviews: any[], aiScores?: any, aiBaseScores?: any) => {
     const unique = deduplicateReviews(reviews);
     const ftReviews = unique.filter((r: any) => (r.targetModel || r.target_model || 'ft') === 'ft');
     const baseReviews = unique.filter((r: any) => (r.targetModel || r.target_model) === 'base');
 
-    const calcStats = (revs: any[]) => {
-      if (!revs.length) return { count: 0, maxDelta: 0, conflicts: [] as string[] };
+    const calcStats = (revs: any[], targetAiScores?: any) => {
+      if (!revs.length) return { count: 0, maxDelta: 0, conflicts: [] as string[], primaryReviewer: null };
+
+      let bestRev = revs[0];
       let maxD = 0;
-      const conflictSet = new Set<string>();
+      let primaryConflicts: string[] = [];
 
       revs.forEach((r: any) => {
-        if (r.humanScores && aiScores) {
-          Object.entries(r.humanScores).forEach(([k, v]) => {
-            if (v !== null && v !== undefined && aiScores[k] !== undefined && aiScores[k] !== null) {
-              const delta = Math.abs(Number(v) - Number(aiScores[k]));
-              if (delta > maxD) maxD = delta;
-              if (delta >= 1.5) conflictSet.add(k);
-            }
-          });
+        if (!r.humanScores || !targetAiScores) return;
+        let rMaxD = 0;
+        const rConflicts: string[] = [];
+        Object.entries(r.humanScores).forEach(([k, v]) => {
+          const aiVal = targetAiScores[k];
+          if (v !== null && v !== undefined && aiVal !== undefined && aiVal !== null) {
+            const delta = Math.abs(Number(v) - Number(aiVal));
+            if (delta > rMaxD) rMaxD = delta;
+            if (delta >= 1.5) rConflicts.push(k);
+          }
+        });
+        if (rMaxD >= maxD) {
+          maxD = rMaxD;
+          bestRev = r;
+          primaryConflicts = rConflicts;
         }
       });
-
-      for (let i = 0; i < revs.length; i++) {
-        for (let j = i + 1; j < revs.length; j++) {
-          const s1 = revs[i].humanScores || {};
-          const s2 = revs[j].humanScores || {};
-          Object.keys(s1).forEach(k => {
-            if (s1[k] != null && s2[k] != null) {
-              const delta = Math.abs(Number(s1[k]) - Number(s2[k]));
-              if (delta > maxD) maxD = delta;
-              if (delta >= 1.5) conflictSet.add(k);
-            }
-          });
-        }
-      }
 
       return {
         count: revs.length,
         maxDelta: maxD,
-        conflicts: Array.from(conflictSet),
+        conflicts: primaryConflicts,
+        primaryReviewer: bestRev?.reviewerName || null,
       };
     };
 
     return {
-      ft: calcStats(ftReviews),
-      base: calcStats(baseReviews),
+      ft: calcStats(ftReviews, aiScores),
+      base: calcStats(baseReviews, aiBaseScores || aiScores),
     };
   };
 
@@ -157,7 +154,8 @@ export default function HumanAuditManagerView() {
     let totalCount = 0;
 
     detail.items.forEach((item: any) => {
-      const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores);
+      const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores;
+      const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores, baseAi);
       const hasFt = breakdown.ft.maxDelta >= 1.5;
       const hasBase = breakdown.base.maxDelta >= 1.5;
       if (hasFt) ftCount++;
@@ -169,7 +167,8 @@ export default function HumanAuditManagerView() {
   }, [detail]);
 
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
-    const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores);
+    const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores;
+    const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores, baseAi);
     const isFtConflict = breakdown.ft.maxDelta >= 1.5;
     const isBaseConflict = breakdown.base.maxDelta >= 1.5;
     const isAnyConflict = isFtConflict || isBaseConflict;
@@ -209,6 +208,7 @@ export default function HumanAuditManagerView() {
   const openResolution = (item: any) => {
     setSelectedItem(item);
     setModalTargetFilter('ft');
+    setActiveStaffId('');
     const unique = deduplicateReviews(item.reviews || []);
     const firstFt = unique.find((review: any) => (review.targetModel || review.target_model || 'ft') === 'ft');
     setResolution('accept_ai');
@@ -303,7 +303,8 @@ export default function HumanAuditManagerView() {
         <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div></header>
         <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
           const uniqueReviews = deduplicateReviews(item.reviews || []);
-          const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores);
+          const baseAi = item.ai_base_scores || item.base_ai_scores || item.baseItem?.ai_scores;
+          const breakdown = computeModelConflictBreakdown(item.reviews || [], item.ai_scores, baseAi);
           const ftCount = breakdown.ft.count;
           const baseCount = breakdown.base.count;
 
@@ -488,16 +489,61 @@ export default function HumanAuditManagerView() {
 
                   {(() => {
                     const fullReviews = modalTargetFilter === 'base' ? baseReviews : ftReviews;
+                    const isBaseMode = modalTargetFilter === 'base';
+
+                    const getReviewMaxDelta = (r: any) => {
+                      if (!r?.humanScores) return 0;
+                      let maxD = 0;
+                      HUMAN_AUDIT_RUBRIC.forEach(({ key }) => {
+                        const aiVal = isBaseMode
+                          ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.ai_scores?.[key])
+                          : (selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key]);
+                        const val = r.humanScores[key];
+                        if (val != null && aiVal != null) {
+                          const d = Math.abs(Number(val) - Number(aiVal));
+                          if (d > maxD) maxD = d;
+                        }
+                      });
+                      return maxD;
+                    };
+
                     const sortedReviews = [...fullReviews].sort((a: any, b: any) => {
+                      const deltaA = getReviewMaxDelta(a);
+                      const deltaB = getReviewMaxDelta(b);
+                      if (deltaB !== deltaA) return deltaB - deltaA; // Highest conflict first!
                       const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
                       const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
-                      return dateB - dateA; // Newest first
+                      return dateB - dateA; // Then newest first
                     });
-                    const displayReviews = sortedReviews.slice(0, 1);
-                    const isBaseMode = modalTargetFilter === 'base';
+
+                    const selectedStaffReview = sortedReviews.find((r: any) => r._id === activeStaffId) || sortedReviews[0];
+                    const displayReviews = selectedStaffReview ? [selectedStaffReview] : [];
 
                     return (
                       <div style={{ overflowX: 'auto' }}>
+                        {sortedReviews.length > 1 && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>👤 Chọn Staff đối chiếu:</span>
+                            <select
+                              value={selectedStaffReview?._id || ''}
+                              onChange={(e) => setActiveStaffId(e.target.value)}
+                              style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', background: '#fff', cursor: 'pointer' }}
+                            >
+                              {sortedReviews.map((r: any) => {
+                                const d = getReviewMaxDelta(r);
+                                return (
+                                  <option key={r._id} value={r._id}>
+                                    👤 {r.reviewerName} (Δ {d.toFixed(1)} {d >= 1.5 ? '· 🔴 Xung đột' : '· 🟢 Khớp'})
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <small style={{ color: '#64748b', fontSize: '0.73rem' }}>
+                              (Mặc định tự động chọn Staff có độ lệch lớn nhất với AI)
+                            </small>
+                          </div>
+                        )}
+
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                           <thead>
                             <tr style={{ background: '#f1f5f9', color: '#475569' }}>

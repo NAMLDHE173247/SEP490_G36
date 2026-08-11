@@ -617,13 +617,22 @@ export default function HumanAuditReplayView() {
                   {HUMAN_AUDIT_RUBRIC.map((criterion) => {
                     const selected = scores[criterion.key];
                     const intermediate = selected !== null && [2, 3, 4].includes(Number(selected));
-                    const aiScore = Number(currentItem?.criteria_scores?.[criterion.key]);
-                    const delta = selected === null ? null : Math.abs(Number(selected) - aiScore);
+                    const targetItem = scoringTarget === 'base' && currentBaseItem ? currentBaseItem : currentItem;
+                    const rawAiScore = scoringTarget === 'base'
+                      ? (targetItem?.criteria_scores?.[criterion.key] ?? targetItem?.ai_scores?.[criterion.key] ?? targetItem?.ai_base_scores?.[criterion.key] ?? currentItem?.ai_base_scores?.[criterion.key] ?? null)
+                      : (targetItem?.criteria_scores?.[criterion.key] ?? targetItem?.ai_scores?.[criterion.key] ?? null);
+                    const aiScore = rawAiScore !== null && !isNaN(Number(rawAiScore)) ? Number(rawAiScore) : null;
+                    const delta = (selected !== null && aiScore !== null) ? Math.abs(Number(selected) - aiScore) : null;
+
                     return (
                       <article className="ha-rubric-card" key={criterion.key}>
                         <header>
                           <div><span>{criterion.key}</span><strong>{criterion.title}</strong></div>
-                          {auditRevealed && selected !== null && <small className={Number(delta) >= 2 ? 'major' : Number(delta) >= 1 ? 'minor' : ''}>AI {aiScore.toFixed(1)} · Δ {delta?.toFixed(1)}</small>}
+                          {auditRevealed && selected !== null && aiScore !== null && delta !== null && (
+                            <small className={delta >= 2 ? 'major' : delta >= 1 ? 'minor' : ''}>
+                              AI {aiScore.toFixed(1)} · Δ {delta.toFixed(1)}
+                            </small>
+                          )}
                         </header>
                         <p>{criterion.description}</p>
                         <div className="ha-score-buttons">
