@@ -28,6 +28,8 @@ import {
   TrendingUp,
   Loader2,
   Sparkles,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { TrainingJob, LossPoint, EvalDetail, TrainDetail, TrainSummary } from './types';
 
@@ -432,7 +434,7 @@ const TechnicalLogLine: React.FC<{ log: string; index: number }> = ({ log, index
       {templateMatch ? (
         <details style={{ display: 'inline-block', verticalAlign: 'top', maxWidth: 'calc(100% - 42px)' }}>
           <summary style={{ cursor: 'pointer', color: '#A5B4FC', fontWeight: 700 }}>
-            Chat template · {templateMatch[1].replaceAll('_', ' ')}
+            Chat template · {templateMatch[1].replace(/_/g, ' ')}
           </summary>
           <pre style={{ margin: '8px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#E2E8F0', fontFamily: 'inherit' }}>
             {templateMatch[2] || '(empty)'}
@@ -443,7 +445,7 @@ const TechnicalLogLine: React.FC<{ log: string; index: number }> = ({ log, index
   );
 };
 
-const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
+const ConsoleTerminal: React.FC<{ logs: string[]; height?: number }> = ({ logs, height = 280 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -462,7 +464,7 @@ const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         padding: '16px',
         borderRadius: '8px',
-        height: '280px',
+        height: `${height}px`,
         overflowY: 'auto',
         fontSize: '12px',
         lineHeight: '1.6',
@@ -495,38 +497,205 @@ const ConsoleTerminal: React.FC<{ logs: string[] }> = ({ logs }) => {
   );
 };
 
+// ── Fullscreen Log Modal ──
+const LogFullscreenModal: React.FC<{ logs: string[]; onClose: () => void }> = ({ logs, onClose }) => {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(2,6,23,0.88)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Full log view"
+        onClick={e => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: 1100, display: 'flex', flexDirection: 'column', background: '#0F172A', borderRadius: 14, border: '1px solid #1E293B', overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,0.7)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #1E293B', flexShrink: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Terminal size={13} /> TERMINAL LOGS — FULL VIEW
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close full log"
+            style={{ width: 28, height: 28, border: '1px solid #334155', borderRadius: 6, background: '#1E293B', color: '#94A3B8', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <ConsoleTerminal logs={logs} height={9999} />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Fullscreen Chart Modal ──
+const ChartFullscreenModal: React.FC<{ chartData: any[]; onClose: () => void }> = ({ chartData, onClose }) => {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      role="presentation"
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(15,23,42,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Full chart view"
+        onClick={e => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: 1100, height: 'min(700px, 90vh)', display: 'flex', flexDirection: 'column', background: '#FFFFFF', borderRadius: 14, border: '1px solid #E5E7EB', overflow: 'hidden', boxShadow: '0 30px 80px rgba(15,23,42,0.35)' }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #E5E7EB', flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Activity size={14} /> REAL-TIME LOSS CURVE
+          </span>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#4F46E5' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#4F46E5', display: 'inline-block' }} /> Train Loss
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, color: '#DC2626' }}>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#DC2626', display: 'inline-block' }} /> Eval Loss
+            </span>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chart"
+              style={{ width: 30, height: 30, border: '1px solid #E2E8F0', borderRadius: 7, background: '#F8FAFC', color: '#64748B', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+        <div style={{ flex: 1, padding: '16px 20px 20px', minHeight: 0 }}>
+          {chartData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid stroke="#F3F4F6" strokeDasharray="3 3" />
+                <XAxis dataKey="progress" tickFormatter={(v) => `${Math.round(v)}%`} stroke="#9CA3AF" fontSize={11} />
+                <YAxis stroke="#9CA3AF" fontSize={11} domain={['auto', 'auto']} />
+                <Tooltip
+                  contentStyle={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: 8, fontSize: '12px', color: '#1F2937' }}
+                  labelFormatter={(v) => `Progress: ${Math.round(Number(v))}%`}
+                />
+                <Line type="monotone" dataKey="loss" name="Train Loss" stroke="#4F46E5" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="evalLoss" name="Eval Loss" stroke="#DC2626" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13, fontStyle: 'italic' }}>
+              Waiting for loss metrics points...
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Collapsible wrapper around ConsoleTerminal ──
 // Hides the dev-style log behind a toggle so non-technical users aren't
 // confronted with a Hacker-News-style terminal by default.
 const CollapsibleConsole: React.FC<{ logs: string[] }> = ({ logs }) => {
   const [open, setOpen] = useState(false);
+  const [logHeight, setLogHeight] = useState(280);
+  const [logFullscreen, setLogFullscreen] = useState(false);
+  const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+
+  const onDragStart = (e: React.MouseEvent) => {
+    dragRef.current = { startY: e.clientY, startH: logHeight };
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      const delta = ev.clientY - dragRef.current.startY;
+      const next = Math.min(800, Math.max(200, dragRef.current.startH + delta));
+      setLogHeight(next);
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   return (
     <div>
-      <button
-        type="button"
-        className="at-btn-icon-sm"
-        onClick={() => setOpen(o => !o)}
-        aria-expanded={open}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 10px',
-          fontSize: 12,
-          fontWeight: 600,
-          color: '#475569',
-          background: '#F1F5F9',
-          border: '1px solid #E2E8F0',
-          borderRadius: 6,
-          marginBottom: open ? 10 : 0,
-          width: 'auto',
-        }}
-      >
-        <Terminal size={12} />
-        {open ? 'Hide technical log' : `Show technical log${logs.length ? ` (${logs.length} lines)` : ''}`}
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-      </button>
-      {open && <ConsoleTerminal logs={logs} />}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: open ? 8 : 0 }}>
+        <button
+          type="button"
+          className="at-btn-icon-sm"
+          onClick={() => setOpen(o => !o)}
+          aria-expanded={open}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            fontWeight: 600,
+            color: '#475569',
+            background: '#F1F5F9',
+            border: '1px solid #E2E8F0',
+            borderRadius: 6,
+            flex: 1,
+            width: 'auto',
+          }}
+        >
+          <Terminal size={12} />
+          {open ? 'Hide technical log' : `Show technical log${logs.length ? ` (${logs.length} lines)` : ''}`}
+          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+        {open && (
+          <button
+            type="button"
+            onClick={() => setLogFullscreen(true)}
+            title="Phóng to log"
+            aria-label="Phóng to log"
+            style={{ width: 30, height: 30, display: 'grid', placeItems: 'center', border: '1px solid #E2E8F0', borderRadius: 6, background: '#F8FAFC', color: '#475569', cursor: 'pointer', flexShrink: 0 }}
+          >
+            <Maximize2 size={13} />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div style={{ position: 'relative' }}>
+          <ConsoleTerminal logs={logs} height={logHeight} />
+          {/* Drag resize handle */}
+          <div
+            onMouseDown={onDragStart}
+            title="Kéo để thay đổi chiều cao log"
+            style={{
+              height: 8,
+              background: 'linear-gradient(180deg, #1E293B 0%, #0F172A 100%)',
+              borderRadius: '0 0 8px 8px',
+              cursor: 'ns-resize',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none',
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ width: 36, height: 3, borderRadius: 99, background: 'rgba(148,163,184,0.4)' }} />
+          </div>
+        </div>
+      )}
+      {logFullscreen && <LogFullscreenModal logs={logs} onClose={() => setLogFullscreen(false)} />}
     </div>
   );
 };
@@ -646,6 +815,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
   const jobsList = useMemo(() => Object.values(activeJobs), [activeJobs]);
   const [selectedEvalJobId, setSelectedEvalJobId] = useState<string | null>(null);
   const [selectedTrainJobId, setSelectedTrainJobId] = useState<string | null>(null);
+  const [chartFullscreenJobId, setChartFullscreenJobId] = useState<string | null>(null);
   const selectedEvalJob = selectedEvalJobId ? activeJobs[selectedEvalJobId] : null;
   const selectedTrainJob = selectedTrainJobId ? activeJobs[selectedTrainJobId] : null;
 
@@ -966,7 +1136,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                     <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Activity size={12} /> REAL-TIME LOSS CURVE
                     </span>
-                    <div style={{ display: 'flex', gap: 12, fontSize: '11px', fontWeight: 600 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: '11px', fontWeight: 600 }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#4F46E5' }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#4F46E5', display: 'inline-block' }}></span>
                         Train Loss
@@ -975,6 +1145,16 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#DC2626', display: 'inline-block' }}></span>
                         Eval Loss
                       </span>
+                      {/* Expand chart button */}
+                      <button
+                        type="button"
+                        onClick={() => setChartFullscreenJobId(job.id)}
+                        title="Phóng to biểu đồ"
+                        aria-label="Phóng to biểu đồ"
+                        style={{ width: 26, height: 26, marginLeft: 4, display: 'grid', placeItems: 'center', border: '1px solid #E2E8F0', borderRadius: 6, background: '#F8FAFC', color: '#475569', cursor: 'pointer', flexShrink: 0 }}
+                      >
+                        <Maximize2 size={12} />
+                      </button>
                     </div>
                   </div>
 
@@ -1027,6 +1207,10 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                   <CollapsibleConsole logs={job.logs || []} />
                 </div>
               </div>
+              {/* Chart fullscreen modal for this job */}
+              {chartFullscreenJobId === job.id && (
+                <ChartFullscreenModal chartData={chartData} onClose={() => setChartFullscreenJobId(null)} />
+              )}
 
             </div>
           </div>

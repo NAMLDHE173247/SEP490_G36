@@ -890,6 +890,7 @@ export const apiService = {
   },
   adjudicateHumanAudit: async (evalId: string, convIndex: number, payload: {
     resolution: 'accept_ai' | 'accept_staff' | 'manual';
+    target_model?: 'ft' | 'base';
     selected_review_id?: string;
     final_scores?: Record<string, number>;
     final_reasons?: Record<string, string>;
