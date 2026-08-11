@@ -61,6 +61,7 @@ export default function HumanAuditManagerView() {
   const [saving, setSaving] = useState(false);
   const [modalTargetFilter, setModalTargetFilter] = useState<'all' | 'ft' | 'base'>('ft');
   const [activeStaffId, setActiveStaffId] = useState<string>('');
+  const [filterReviewerId, setFilterReviewerId] = useState<string>('all');
 
   const computeModelConflictBreakdown = (reviews: any[], aiScores?: any, aiBaseScores?: any) => {
     const unique = deduplicateReviews(reviews);
@@ -145,6 +146,24 @@ export default function HumanAuditManagerView() {
   useEffect(() => { void loadOverview(); }, []);
   useEffect(() => { if (selectedEvalId) void loadDetail(selectedEvalId); }, [selectedEvalId, loadDetail]);
 
+  // Reset reviewer filter when switching eval
+  useEffect(() => { setFilterReviewerId('all'); }, [selectedEvalId]);
+
+  // Collect unique reviewers from current detail for the dropdown
+  const reviewersInDetail = useMemo(() => {
+    if (!detail?.items) return [];
+    const map = new Map<string, { id: string; name: string }>();
+    detail.items.forEach((item: any) => {
+      (item.reviews || []).forEach((r: any) => {
+        const id = String(r.reviewerId || r.reviewer_id || '');
+        if (id && !map.has(id)) {
+          map.set(id, { id, name: r.reviewerName || r.reviewer_name || id });
+        }
+      });
+    });
+    return Array.from(map.values());
+  }, [detail]);
+
   const selectedEvaluation = evaluations.find(item => item.modelEvalId === selectedEvalId);
   useEffect(() => {
     setSelectedCheckerId(selectedEvaluation?.checkerId || '');
@@ -158,12 +177,15 @@ export default function HumanAuditManagerView() {
     detail.items.forEach((item: any) => {
       const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
       const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-      const reviewsToUse = item.adjudication?.finalScores
+      const rawReviews = item.adjudication?.finalScores
         ? [
             { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
             { humanScores: item.adjudication.finalScores, targetModel: 'base' }
           ]
         : (item.reviews || []);
+      const reviewsToUse = filterReviewerId === 'all'
+        ? rawReviews
+        : rawReviews.filter((r: any) => String(r.reviewerId || r.reviewer_id || '') === filterReviewerId);
       const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
       const hasFt = breakdown.ft.maxDelta >= 1.5;
       const hasBase = breakdown.base.maxDelta >= 1.5;
@@ -173,17 +195,20 @@ export default function HumanAuditManagerView() {
     });
 
     return { ftConflicts: ftCount, baseConflicts: baseCount, totalConflicts: totalCount };
-  }, [detail]);
+  }, [detail, filterReviewerId]);
 
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
     const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
     const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-    const reviewsToUse = item.adjudication?.finalScores
+    const rawReviews = item.adjudication?.finalScores
       ? [
           { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
           { humanScores: item.adjudication.finalScores, targetModel: 'base' }
         ]
       : (item.reviews || []);
+    const reviewsToUse = filterReviewerId === 'all'
+      ? rawReviews
+      : rawReviews.filter((r: any) => String(r.reviewerId || r.reviewer_id || '') === filterReviewerId);
     const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
     const isFtConflict = breakdown.ft.maxDelta >= 1.5;
     const isBaseConflict = breakdown.base.maxDelta >= 1.5;
@@ -193,7 +218,7 @@ export default function HumanAuditManagerView() {
     if (filter === 'conflict') return isAnyConflict && item.inter_rater?.status !== 'resolved';
     if (filter === 'resolved') return item.inter_rater?.status === 'resolved';
     return !isAnyConflict && !item.adjudication;
-  }), [detail, filter]);
+  }), [detail, filter, filterReviewerId]);
 
   const toggleStaff = (id: string) => setSelectedStaffIds(previous => (
     previous.includes(id) ? previous.filter(item => item !== id) : [...previous, id]
@@ -346,9 +371,12 @@ export default function HumanAuditManagerView() {
       )}
 
       <section className="ham-review-card">
-        <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div></header>
+        <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div>{reviewersInDetail.length >= 2 && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Users size={14} style={{ color: '#6366f1', flexShrink: 0 }} /><select value={filterReviewerId} onChange={e => setFilterReviewerId(e.target.value)} style={{ fontSize: '0.82rem', padding: '4px 10px', borderRadius: '8px', border: '1px solid #c7d2fe', background: filterReviewerId !== 'all' ? '#eef2ff' : '#ffffff', color: filterReviewerId !== 'all' ? '#4338ca' : '#475569', fontWeight: filterReviewerId !== 'all' ? 700 : 400, cursor: 'pointer' }}><option value="all">Tất cả Staff</option>{reviewersInDetail.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>{filterReviewerId !== 'all' && (<span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px', background: '#fee2e2', color: '#b91c1c', fontWeight: 700 }}>Đang lọc 1 Staff</span>)}</div>)}</div></header>
         <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
-          const uniqueReviews = deduplicateReviews(item.reviews || []);
+          const allUniqueReviews = deduplicateReviews(item.reviews || []);
+          const uniqueReviews = filterReviewerId === 'all'
+            ? allUniqueReviews
+            : allUniqueReviews.filter((r: any) => String(r.reviewerId || r.reviewer_id || '') === filterReviewerId);
           const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
           const reviewsToUse = item.adjudication?.finalScores
