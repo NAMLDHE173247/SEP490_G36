@@ -28,10 +28,25 @@ import '../styles/humanaudit.css';
 
 type QueueFilter = 'all' | 'pending' | 'reviewed' | 'conflict';
 
-const reviewStatus = (item: any) => {
-  if (!item?.human_review) return 'pending';
-  if (item.human_review.verdict === 'skip') return 'skipped';
-  if (item.human_review.conflict?.has_conflict) return 'conflict';
+const reviewStatus = (item: any, baseItem?: any) => {
+  const ftReview = item?.human_review;
+  const baseReview = baseItem?.human_review;
+  // Consider reviewed if either FT or base has been reviewed
+  const ftDone = ftReview && ftReview.verdict !== 'pending';
+  const baseDone = baseReview && baseReview.verdict !== 'pending';
+  if (!ftDone && !baseDone) return 'pending';
+  // Check for conflict in either
+  if (ftReview?.conflict?.has_conflict || baseReview?.conflict?.has_conflict) return 'conflict';
+  // Check for skip (only if both are skip or one is skip and other is not done)
+  if (ftReview?.verdict === 'skip' && (!baseDone || baseReview?.verdict === 'skip')) return 'skipped';
+  if (baseDone && baseReview?.verdict === 'skip' && !ftDone) return 'skipped';
+  return 'reviewed';
+};
+
+const singleReviewStatus = (review: any) => {
+  if (!review) return 'pending';
+  if (review.verdict === 'skip') return 'skipped';
+  if (review.conflict?.has_conflict) return 'conflict';
   return 'reviewed';
 };
 
@@ -188,10 +203,19 @@ export default function HumanAuditReplayView() {
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [scorePanelOpen]);
 
+  const getBaseItemForConv = useCallback((convIndex: number) => {
+    if (!evaluation) return null;
+    const item = (evaluation.results || []).find((r: any) => r.conv_index === convIndex);
+    return (evaluation.baseResults || []).find((r: any) => (
+      (item?.item_id && r.item_id === item.item_id) || r.conv_index === convIndex
+    )) || null;
+  }, [evaluation]);
+
   const filteredQueue = useMemo(() => {
     const normalized = searchTerm.trim().toLowerCase();
     return (evaluation?.results || []).filter((item: any) => {
-      const status = reviewStatus(item);
+      const baseItem = getBaseItemForConv(item.conv_index);
+      const status = reviewStatus(item, baseItem);
       const matchesFilter = queueFilter === 'all'
         || (queueFilter === 'pending' && status === 'pending')
         || (queueFilter === 'reviewed' && ['reviewed', 'skipped'].includes(status))
@@ -201,7 +225,7 @@ export default function HumanAuditReplayView() {
         || firstQuestion(item).toLowerCase().includes(normalized);
       return matchesFilter && matchesSearch;
     });
-  }, [evaluation, queueFilter, searchTerm]);
+  }, [evaluation, queueFilter, searchTerm, getBaseItemForConv]);
 
   const scoredItem = scoringTarget === 'base' ? (currentBaseItem || currentItem) : currentItem;
   const humanRawS = ['A1', 'A2', 'A3'].every((key) => scores[key] !== null)
@@ -288,23 +312,33 @@ export default function HumanAuditReplayView() {
         }
         const completedItems = reviewedItems + skippedItems;
         const totalItems = Math.max(1, Number(previous.humanAudit?.total_items || previous.results.length));
+
+        // Only update the correct target: FT results or base results
+        const updatedResults = scoringTarget === 'ft'
+          ? previous.results.map((item: any) => item.conv_index === currentItem.conv_index
+              ? {
+                  ...item,
+                  human_review: response.review,
+                  criteria_scores: response.criteria_scores,
+                  criteria_reasons: response.criteria_reasons,
+                  effective_judge_model: response.effective_judge_model,
+                }
+              : item)
+          : previous.results; // Don't touch FT results when saving base
+
+        const updatedBaseResults = scoringTarget === 'base'
+          ? (previous.baseResults || []).map((item: any) => item.conv_index === currentItem.conv_index
+              ? {
+                  ...item,
+                  human_review: response.review,
+                }
+              : item)
+          : (previous.baseResults || []); // Don't touch base results when saving FT
+
         return {
           ...previous,
-          results: previous.results.map((item: any) => item.conv_index === currentItem.conv_index
-            ? {
-                ...item,
-                human_review: response.review,
-                criteria_scores: response.criteria_scores,
-                criteria_reasons: response.criteria_reasons,
-                effective_judge_model: response.effective_judge_model,
-              }
-            : item),
-          baseResults: (previous.baseResults || []).map((item: any) => item.conv_index === currentItem.conv_index
-            ? {
-                ...item,
-                human_review: response.review,
-              }
-            : item),
+          results: updatedResults,
+          baseResults: updatedBaseResults,
           humanAudit: {
             ...previous.humanAudit,
             reviewed_items: reviewedItems,
@@ -442,12 +476,19 @@ export default function HumanAuditReplayView() {
             </div>
             <div className="ha-queue-list">
               {filteredQueue.map((item: any, index: number) => {
-                const status = reviewStatus(item);
+                const baseItem = getBaseItemForConv(item.conv_index);
+                const combinedStatus = reviewStatus(item, baseItem);
+                const ftStatus = singleReviewStatus(item.human_review);
+                const baseStatus = singleReviewStatus(baseItem?.human_review);
+                const hasBase = Boolean(baseItem);
                 return (
                   <button type="button" key={item.item_id || item.conv_index} className={`ha-queue-item ${selectedConvIndex === item.conv_index ? 'active' : ''}`} onClick={() => selectItem(item)}>
                     <span className="ha-queue-number">{String(index + 1).padStart(2, '0')}</span>
                     <span className="ha-queue-copy"><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{firstQuestion(item)}</small></span>
-                    <span className={`ha-status-dot ${status}`} title={status} />
+                    <span className="ha-queue-dots">
+                      <span className={`ha-status-dot ${ftStatus}`} title={`FT: ${ftStatus}`} />
+                      {hasBase && <span className={`ha-status-dot base ${baseStatus}`} title={`Base: ${baseStatus}`} />}
+                    </span>
                   </button>
                 );
               })}
