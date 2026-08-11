@@ -456,7 +456,12 @@ export default function HumanAuditManagerView() {
 
                   {(() => {
                     const fullReviews = modalTargetFilter === 'base' ? baseReviews : ftReviews;
-                    const displayReviews = fullReviews.slice(0, 1);
+                    const sortedReviews = [...fullReviews].sort((a: any, b: any) => {
+                      const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+                      const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+                      return dateB - dateA; // Newest first
+                    });
+                    const displayReviews = sortedReviews.slice(0, 1);
                     const isBaseMode = modalTargetFilter === 'base';
 
                     return (
@@ -494,8 +499,8 @@ export default function HumanAuditManagerView() {
                           <tbody>
                             {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => {
                               const aiVal = isBaseMode
-                                ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? null)
-                                : (selectedItem.ai_scores?.[key] ?? null);
+                                ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.base_item?.ai_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? null)
+                                : (selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key] ?? selectedItem.ft_ai_scores?.[key] ?? null);
                               const revVals = displayReviews.map((r: any) => r.humanScores?.[key] ?? null);
                               const validVals = [aiVal, ...revVals].filter((v): v is number => typeof v === 'number');
                               const minV = validVals.length ? Math.min(...validVals) : 0;
@@ -569,39 +574,47 @@ export default function HumanAuditManagerView() {
                         <div className="ham-score-strip" style={{ marginTop: '8px' }}>
                           {HUMAN_AUDIT_RUBRIC.map(({ key }) => {
                             const val = modalTargetFilter === 'base'
-                              ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.ai_scores?.[key])
-                              : selectedItem.ai_scores?.[key];
+                              ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.ai_scores?.[key])
+                              : (selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key]);
                             return <span key={key}>{key}<b>{val ?? '—'}</b></span>;
                           })}
                         </div>
                       </div>
                     </label>
 
-                    {/* Candidate Options: Staff Review (1 Staff) */}
-                    {(modalTargetFilter === 'base' ? baseReviews : ftReviews).slice(0, 1).map((review: any) => {
-                      const isBase = (review.targetModel || review.target_model) === 'base';
-                      return (
-                        <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}>
-                          <input
-                            type="radio"
-                            name="adjudication_candidate"
-                            checked={selectedReviewId === review._id && resolution === 'accept_staff'}
-                            onChange={() => { setResolution('accept_staff'); setSelectedReviewId(review._id); }}
-                          />
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                              <strong>{review.reviewerName}</strong>
-                              <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: isBase ? '#fef3c7' : '#e0e7ff', color: isBase ? '#b45309' : '#4338ca' }}>
-                                {isBase ? '🔲 Base Model' : '🎯 Fine-tuned'}
-                              </span>
+                    {/* Candidate Options: Staff Review (1 Staff - Mới nhất) */}
+                    {(() => {
+                      const fullReviews = modalTargetFilter === 'base' ? baseReviews : ftReviews;
+                      const sortedReviews = [...fullReviews].sort((a: any, b: any) => {
+                        const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+                        const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+                        return dateB - dateA;
+                      });
+                      return sortedReviews.slice(0, 1).map((review: any) => {
+                        const isBase = (review.targetModel || review.target_model) === 'base';
+                        return (
+                          <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}>
+                            <input
+                              type="radio"
+                              name="adjudication_candidate"
+                              checked={selectedReviewId === review._id && resolution === 'accept_staff'}
+                              onChange={() => { setResolution('accept_staff'); setSelectedReviewId(review._id); }}
+                            />
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <strong>{review.reviewerName}</strong>
+                                <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: isBase ? '#fef3c7' : '#e0e7ff', color: isBase ? '#b45309' : '#4338ca' }}>
+                                  {isBase ? '🔲 Base Model' : '🎯 Fine-tuned'}
+                                </span>
+                              </div>
+                              <small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1 || review.humanScores?.K || '—'} · A1 ${review.humanScores?.A1 || '—'} · S ${review.humanOutcomes?.socratic_s || review.humanScores?.S || '—'}`}</small>
+                              <p>{review.note || 'Không có nhận xét tổng quát.'}</p>
+                              {review.humanScores && <div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{review.humanScores[key]}</b></span>)}</div>}
                             </div>
-                            <small>{review.verdict === 'skip' ? 'Đã bỏ qua' : `K ${review.humanScores?.B1 || review.humanScores?.K || '—'} · A1 ${review.humanScores?.A1 || '—'} · S ${review.humanOutcomes?.socratic_s || review.humanScores?.S || '—'}`}</small>
-                            <p>{review.note || 'Không có nhận xét tổng quát.'}</p>
-                            {review.humanScores && <div className="ham-score-strip">{HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{review.humanScores[key]}</b></span>)}</div>}
-                          </div>
-                        </label>
-                      );
-                    })}
+                          </label>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
