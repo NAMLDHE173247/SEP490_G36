@@ -319,12 +319,15 @@ export default function HumanAuditManagerView() {
           const uniqueReviews = deduplicateReviews(item.reviews || []);
           const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
           const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-          const reviewsToUse = item.adjudication?.finalScores
-            ? [
-                { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
-                { humanScores: item.adjudication.finalScores, targetModel: 'base' }
-              ]
-            : (item.reviews || []);
+          let reviewsToUse = item.reviews || [];
+          if (selectedItem && selectedItem.conv_index === item.conv_index && activeStaffId) {
+            reviewsToUse = item.reviews.filter((r: any) => r._id === activeStaffId);
+          } else if (item.adjudication?.finalScores) {
+            reviewsToUse = [
+              { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+              { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+            ];
+          }
           const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
           const ftCount = breakdown.ft.count;
           const baseCount = breakdown.base.count;
