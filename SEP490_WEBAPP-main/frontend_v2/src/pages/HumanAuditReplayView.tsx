@@ -372,8 +372,8 @@ export default function HumanAuditReplayView() {
             <button type="button" className={scorePanelOpen ? 'active' : ''} onClick={() => setScorePanelOpen((open) => !open)} title="Mở bảng chấm Human">
               <PanelRightOpen size={18} /> Chấm replay
             </button>
-            <div className="ha-progress-ring" style={{ '--progress': `${Math.round((evaluation.humanAudit?.completion_rate || 0) * 100)}%` } as React.CSSProperties}>
-              <div><strong>{evaluation.humanAudit?.reviewed_items || 0}</strong><span>/ {evaluation.results.length}</span></div>
+            <div className="ha-progress-ring" style={{ '--progress': `${evaluation.results.length > 0 ? Math.min(100, Math.round((Math.min(evaluation.results.length, (evaluation.results.filter((item: any) => Boolean(item.human_review)).length || evaluation.humanAudit?.reviewed_items || 0)) / evaluation.results.length) * 100)) : 0}%` } as React.CSSProperties}>
+              <div><strong>{Math.min(evaluation.results.length, (evaluation.results.filter((item: any) => Boolean(item.human_review)).length || evaluation.humanAudit?.reviewed_items || 0))}</strong><span>/ {evaluation.results.length}</span></div>
               <small>đã chấm</small>
             </div>
           </div>
@@ -411,7 +411,7 @@ export default function HumanAuditReplayView() {
               <div><span>Base Model</span><strong>{evaluation.baseModelRepo || 'Không có Base trong run này'}</strong></div>
               <div><span>Fine-tuned Model</span><strong>{evaluation.ftModelRepo || evaluation.jobId}</strong></div>
               <div><span>AI Judge</span><strong>{evaluation.judgeModel}</strong></div>
-              <div><span>Tiến độ</span><strong>{evaluation.humanAudit?.reviewed_items || 0}/{evaluation.results.length}</strong></div>
+              <div><span>Tiến độ</span><strong>{Math.min(evaluation.results.length, (evaluation.results.filter((item: any) => Boolean(item.human_review)).length || evaluation.humanAudit?.reviewed_items || 0))}/{evaluation.results.length}</strong></div>
               <div><span>Staff đang chấm</span><strong>👤 {user?.name || 'Staff'} ({user?.email || 'staff'})</strong></div>
               <div><span>Checker phụ trách</span><strong>⚖️ {evaluation.checker_name || 'Chưa phân công'}</strong></div>
             </div>

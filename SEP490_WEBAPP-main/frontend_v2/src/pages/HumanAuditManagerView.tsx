@@ -37,193 +37,6 @@ const deduplicateReviews = (reviews: any[]) => {
   return Array.from(map.values());
 };
 
-const MOCK_EVALUATIONS = [
-  {
-    modelEvalId: 'eval_demo_vistral_7b',
-    projectName: 'Demo Project: Vistral-7B Math & Socratic Audit',
-    packageLabel: '🎯 Vistral-7B vs Base (Demo Package) · 50 Replays',
-    totalConversations: 50,
-    assignedStaff: 3,
-    submittedReviews: 8,
-    conflictItems: 2,
-    checkerName: 'Phạm Minh (Checker Trưởng)',
-    checkerId: 'checker_demo_1',
-    ftModelRepo: 'namld/vistral-7b-socratic-v2',
-    baseModelRepo: 'VietAI/vistral-7b-chat',
-  },
-  {
-    modelEvalId: 'eval_demo_physics_v1',
-    projectName: 'Demo Project: Physics Socratic Tutor',
-    packageLabel: '🎯 Physics Tutor v1 · 30 Replays',
-    totalConversations: 30,
-    assignedStaff: 2,
-    submittedReviews: 4,
-    conflictItems: 1,
-    checkerName: 'Lê Văn Hoàng',
-    checkerId: 'checker_demo_2',
-    ftModelRepo: 'namld/physics-socratic-lora',
-    baseModelRepo: 'unsloth/mistral-7b-instruct-v0.2',
-  },
-];
-
-const MOCK_STAFF = [
-  { id: 'staff_demo_1', name: 'Lê Nam', email: 'nam.le@example.com' },
-  { id: 'staff_demo_2', name: 'Trần Dũng', email: 'dung.tran@example.com' },
-  { id: 'staff_demo_3', name: 'Nguyễn Thị An', email: 'an.nguyen@example.com' },
-];
-
-const MOCK_CHECKERS = [
-  { id: 'checker_demo_1', name: 'Phạm Minh (Checker Trưởng)', email: 'minh.pham@example.com' },
-  { id: 'checker_demo_2', name: 'Lê Văn Hoàng', email: 'hoang.le@example.com' },
-];
-
-const MOCK_DETAILS: Record<string, any> = {
-  eval_demo_vistral_7b: {
-    evaluation: {
-      modelEvalId: 'eval_demo_vistral_7b',
-      ftModelRepo: 'namld/vistral-7b-socratic-v2',
-      baseModelRepo: 'VietAI/vistral-7b-chat',
-    },
-    inter_rater_summary: {
-      reviewer_count: 3,
-      reviewed_item_count: 5,
-      criteria: {
-        A1: { pair_count: 6, exact_agreement_rate: 0.667, within_one_agreement_rate: 0.833, mean_absolute_difference: 0.5, quadratic_weighted_kappa: 0.72 },
-        A2: { pair_count: 6, exact_agreement_rate: 0.5, within_one_agreement_rate: 0.833, mean_absolute_difference: 0.83, quadratic_weighted_kappa: 0.65 },
-        A3: { pair_count: 6, exact_agreement_rate: 0.5, within_one_agreement_rate: 0.667, mean_absolute_difference: 1.0, quadratic_weighted_kappa: 0.58 },
-        B1: { pair_count: 6, exact_agreement_rate: 0.833, within_one_agreement_rate: 1.0, mean_absolute_difference: 0.17, quadratic_weighted_kappa: 0.89 },
-        B2: { pair_count: 6, exact_agreement_rate: 0.667, within_one_agreement_rate: 0.833, mean_absolute_difference: 0.33, quadratic_weighted_kappa: 0.78 },
-        C1: { pair_count: 6, exact_agreement_rate: 0.5, within_one_agreement_rate: 0.833, mean_absolute_difference: 0.67, quadratic_weighted_kappa: 0.61 },
-        C2: { pair_count: 6, exact_agreement_rate: 0.667, within_one_agreement_rate: 0.833, mean_absolute_difference: 0.5, quadratic_weighted_kappa: 0.70 },
-        C3: { pair_count: 6, exact_agreement_rate: 0.833, within_one_agreement_rate: 1.0, mean_absolute_difference: 0.17, quadratic_weighted_kappa: 0.85 },
-      },
-    },
-    items: [
-      {
-        conv_index: 0,
-        item_id: 'test-en-001',
-        question: 'Thưa thầy, làm thế nào để xác định thì hoàn thành trong ngữ pháp tiếng Anh ạ?',
-        answer: 'Thầy chào em! Để nhận biết các thì hoàn thành (Perfect Tenses), em hãy chú ý đến cấu trúc dùng trợ động từ HAVE/HAS/HAD kết hợp với Quá khứ phân tử (V3/ed). Em thử cho thầy một ví dụ về một hành động đã xảy ra trong quá khứ và vừa mới kết thúc xem nào?',
-        baseAnswer: 'Thì hoàn thành dùng have/has + V3. Ví dụ: I have eaten breakfast. Thì quá khứ hoàn thành dùng had + V3.',
-        ai_scores: { A1: 5, A2: 2, A3: 2, B1: 5, B2: 5, C1: 4, C2: 3, C3: 4, D1: 5 },
-        inter_rater: {
-          reviewer_count: 3,
-          max_delta: 5.0,
-          conflict_criteria: ['A1', 'A2', 'A3', 'B1', 'B2'],
-          status: 'conflict',
-          severity: 'critical',
-        },
-        reviews: [
-          {
-            _id: 'rev_01',
-            reviewerId: 'staff_demo_1',
-            reviewerName: 'Lê Nam',
-            targetModel: 'ft',
-            humanScores: { A1: 5, A2: 5, A3: 5, B1: 5, B2: 5, C1: 5, C2: 5, C3: 5, D1: 5 },
-            humanOutcomes: { socratic_s: 5.0 },
-            note: 'Phản hồi Fine-tuned khơi gợi tư duy Socratic rất chuẩn, hỏi lại học sinh để học sinh tự đưa ví dụ.',
-            createdAt: '2026-08-11T04:00:00Z',
-          },
-          {
-            _id: 'rev_02',
-            reviewerId: 'staff_demo_1',
-            reviewerName: 'Lê Nam',
-            targetModel: 'base',
-            humanScores: { A1: 5, A2: 5, A3: 5, B1: 5, B2: 5, C1: 5, C2: 5, C3: 5, D1: 5 },
-            humanOutcomes: { socratic_s: 5.0 },
-            note: 'Base trả lời trực tiếp nhưng ngắn gọn, chấp nhận được.',
-            createdAt: '2026-08-11T04:05:00Z',
-          },
-          {
-            _id: 'rev_03',
-            reviewerId: 'staff_demo_2',
-            reviewerName: 'Trần Dũng',
-            targetModel: 'base',
-            humanScores: { A1: 0, A2: 0, A3: 1, B1: 2, B2: 3, C1: 2, C2: 1, C3: 3, D1: 5 },
-            humanOutcomes: { socratic_s: 0.333 },
-            note: 'Base không có câu hỏi gợi mở nào, bị trừ điểm Socratic A1/A2.',
-            createdAt: '2026-08-11T04:10:00Z',
-          },
-        ],
-      },
-      {
-        conv_index: 1,
-        item_id: 'test-math-002',
-        question: 'Cho phương trình x² - 5x + 6 = 0, làm sao để tìm 2 nghiệm mà không dùng công thức Δ?',
-        answer: 'Chào em! Em có nhớ Định lý Viète về tổng và tích của 2 nghiệm x1 + x2 và x1 * x2 không? Em hãy thử tìm 2 số nào có tổng bằng 5 và tích bằng 6 xem nào?',
-        baseAnswer: 'Tách x² - 5x + 6 thành (x - 2)(x - 3) = 0 => x = 2 hoặc x = 3.',
-        ai_scores: { A1: 5, A2: 5, A3: 4, B1: 5, B2: 5, C1: 5, C2: 5, C3: 5, D1: 5 },
-        inter_rater: {
-          reviewer_count: 2,
-          max_delta: 1.0,
-          conflict_criteria: [],
-          status: 'agreement',
-          severity: 'minor',
-        },
-        reviews: [
-          {
-            _id: 'rev_04',
-            reviewerId: 'staff_demo_1',
-            reviewerName: 'Lê Nam',
-            targetModel: 'ft',
-            humanScores: { A1: 5, A2: 5, A3: 4, B1: 5, B2: 5, C1: 5, C2: 5, C3: 5, D1: 5 },
-            humanOutcomes: { socratic_s: 4.67 },
-            note: 'Gợi ý Viète rất vừa sức với học sinh lớp 9.',
-            createdAt: '2026-08-11T04:20:00Z',
-          },
-          {
-            _id: 'rev_05',
-            reviewerId: 'staff_demo_3',
-            reviewerName: 'Nguyễn Thị An',
-            targetModel: 'ft',
-            humanScores: { A1: 5, A2: 4, A3: 4, B1: 5, B2: 5, C1: 4, C2: 5, C3: 5, D1: 5 },
-            humanOutcomes: { socratic_s: 4.33 },
-            note: 'Chất lượng gợi mở tốt, chính xác.',
-            createdAt: '2026-08-11T04:25:00Z',
-          },
-        ],
-      },
-      {
-        conv_index: 2,
-        item_id: 'test-phys-003',
-        question: 'Tại sao khi nhảy từ trên cao xuống người ta phải nhún chân?',
-        answer: 'Một câu hỏi thực tế rất hay! Khi nhún chân, thời gian va chạm Δt tăng lên hay giảm đi em nhỉ? Từ công thức xung lực F * Δt = Δp, điều đó ảnh hưởng thế nào đến lực tác dụng F vào chân?',
-        baseAnswer: 'Nhún chân để làm tăng thời gian va chạm, giảm lực tác dụng lên chân tránh bị gãy xương.',
-        ai_scores: { A1: 5, A2: 3, A3: 3, B1: 5, B2: 4, C1: 4, C2: 4, C3: 4, D1: 5 },
-        inter_rater: {
-          reviewer_count: 2,
-          max_delta: 2.5,
-          conflict_criteria: ['A2', 'A3'],
-          status: 'conflict',
-          severity: 'major',
-        },
-        reviews: [
-          {
-            _id: 'rev_06',
-            reviewerId: 'staff_demo_2',
-            reviewerName: 'Trần Dũng',
-            targetModel: 'ft',
-            humanScores: { A1: 5, A2: 5, A3: 5, B1: 5, B2: 5, C1: 5, C2: 4, C3: 5, D1: 5 },
-            humanOutcomes: { socratic_s: 5.0 },
-            note: 'Gợi mở chính xác lý thuyết Vật lý 10.',
-            createdAt: '2026-08-11T04:30:00Z',
-          },
-          {
-            _id: 'rev_07',
-            reviewerId: 'staff_demo_3',
-            reviewerName: 'Nguyễn Thị An',
-            targetModel: 'ft',
-            humanScores: { A1: 3, A2: 2, A3: 3, B1: 5, B2: 4, C1: 3, C2: 4, C3: 4, D1: 5 },
-            humanOutcomes: { socratic_s: 2.67 },
-            note: 'Câu hỏi hơi mang tính đánh đố công thức trực tiếp.',
-            createdAt: '2026-08-11T04:35:00Z',
-          },
-        ],
-      },
-    ],
-  },
-};
-
 export default function HumanAuditManagerView() {
   const { user } = useAuth();
   const isChecker = user?.role === 'checker';
@@ -244,8 +57,7 @@ export default function HumanAuditManagerView() {
   const [finalReasons, setFinalReasons] = useState<Record<string, string>>({});
   const [resolutionNote, setResolutionNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [modalTargetFilter, setModalTargetFilter] = useState<'all' | 'ft' | 'base'>('all');
-  const [useMock, setUseMock] = useState(false);
+  const [modalTargetFilter, setModalTargetFilter] = useState<'all' | 'ft' | 'base'>('ft');
 
   const computeModelConflictBreakdown = (reviews: any[], aiScores?: any) => {
     const unique = deduplicateReviews(reviews);
@@ -297,14 +109,6 @@ export default function HumanAuditManagerView() {
   };
 
   const loadOverview = useCallback(async () => {
-    if (useMock) {
-      setEvaluations(MOCK_EVALUATIONS);
-      setStaff(MOCK_STAFF);
-      setCheckers(MOCK_CHECKERS);
-      if (!selectedEvalId) setSelectedEvalId(MOCK_EVALUATIONS[0].modelEvalId);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
       const [evaluationRows, staffRows, checkerRows] = await Promise.all([
@@ -313,44 +117,34 @@ export default function HumanAuditManagerView() {
         isChecker ? Promise.resolve([]) : apiService.getHumanAuditCheckers(),
       ]);
       const validEvals = Array.isArray(evaluationRows) ? evaluationRows : [];
-      if (validEvals.length === 0) {
-        // Automatically switch to mock if no real evals found from API
-        setEvaluations(MOCK_EVALUATIONS);
-        setStaff(MOCK_STAFF);
-        setCheckers(MOCK_CHECKERS);
-        if (!selectedEvalId) setSelectedEvalId(MOCK_EVALUATIONS[0].modelEvalId);
-      } else {
-        setEvaluations(validEvals);
-        setStaff(Array.isArray(staffRows) ? staffRows : []);
-        setCheckers(Array.isArray(checkerRows) ? checkerRows : []);
-        if (!selectedEvalId && validEvals[0]?.modelEvalId) setSelectedEvalId(validEvals[0].modelEvalId);
+      setEvaluations(validEvals);
+      setStaff(Array.isArray(staffRows) ? staffRows : []);
+      setCheckers(Array.isArray(checkerRows) ? checkerRows : []);
+      if (!selectedEvalId && validEvals[0]?.modelEvalId) {
+        setSelectedEvalId(validEvals[0].modelEvalId);
       }
     } catch (error: any) {
-      toast.error('Không kết nối được backend API, đang tải dữ liệu Demo!');
-      setEvaluations(MOCK_EVALUATIONS);
-      setStaff(MOCK_STAFF);
-      setCheckers(MOCK_CHECKERS);
-      if (!selectedEvalId) setSelectedEvalId(MOCK_EVALUATIONS[0].modelEvalId);
+      toast.error('Lỗi khi tải danh sách Human Audit');
+      setEvaluations([]);
+      setStaff([]);
+      setCheckers([]);
     } finally {
       setLoading(false);
     }
-  }, [selectedEvalId, isChecker, useMock]);
+  }, [selectedEvalId, isChecker]);
 
   const loadDetail = useCallback(async (evalId: string) => {
     if (!evalId) return;
-    if (useMock || MOCK_DETAILS[evalId]) {
-      setDetail(MOCK_DETAILS[evalId] || MOCK_DETAILS.eval_demo_vistral_7b);
-      return;
-    }
     try {
       setDetail(await apiService.getManagedHumanAuditDetail(evalId));
     } catch (error: any) {
-      setDetail(MOCK_DETAILS.eval_demo_vistral_7b);
+      toast.error('Lỗi khi tải chi tiết dự án Human Audit');
+      setDetail(null);
     }
-  }, [useMock]);
+  }, []);
 
-  useEffect(() => { void loadOverview(); }, [useMock]);
-  useEffect(() => { if (selectedEvalId) void loadDetail(selectedEvalId); }, [selectedEvalId, loadDetail, useMock]);
+  useEffect(() => { void loadOverview(); }, []);
+  useEffect(() => { if (selectedEvalId) void loadDetail(selectedEvalId); }, [selectedEvalId, loadDetail]);
 
   const selectedEvaluation = evaluations.find(item => item.modelEvalId === selectedEvalId);
   useEffect(() => {
@@ -449,16 +243,6 @@ export default function HumanAuditManagerView() {
       <header className="ham-hero">
         <div><span><ShieldCheck size={15} /> {isChecker ? 'CHECKER ADJUDICATION' : 'SUPERVISOR CONTROL'}</span><h1>{isChecker ? 'Xử lý Human Audit Conflict' : 'Quản lý Human Audit'}</h1><p>AI Judge và tất cả bản chấm Staff được đối chiếu đồng thời trong một hồ sơ conflict có lưu vết.</p></div>
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={() => {
-              setUseMock(m => !m);
-              toast.success(!useMock ? 'Đã bật dữ liệu Mẫu Demo (Fake Data)!' : 'Đã chuyển sang kết nối Backend thực tế.');
-            }}
-            style={{ background: useMock ? '#6366f1' : '#ffffff', color: useMock ? '#ffffff' : '#312e81', border: '1px solid #c7d2fe' }}
-          >
-            {useMock ? '✓ Đang bật Fake Data' : '🎭 Demo / Fake Data'}
-          </button>
           <button type="button" onClick={() => void loadOverview()} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Làm mới</button>
         </div>
       </header>
@@ -621,7 +405,7 @@ export default function HumanAuditManagerView() {
                       </small>
                     </div>
 
-                    {/* Model Switcher for Comparison Matrix Table */}
+                    {/* Model Switcher for Comparison Matrix Table (Strict FT vs Base Mode) */}
                     <div style={{ display: 'flex', gap: '6px', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
                       <button
                         type="button"
@@ -631,9 +415,9 @@ export default function HumanAuditManagerView() {
                           if (ftReviews[0]) setSelectedReviewId(ftReviews[0]._id);
                         }}
                         style={{
-                          padding: '5px 12px',
+                          padding: '6px 14px',
                           borderRadius: '6px',
-                          fontSize: '0.78rem',
+                          fontSize: '0.8rem',
                           fontWeight: 800,
                           border: 0,
                           background: modalTargetFilter === 'ft' ? '#4f46e5' : 'transparent',
@@ -653,9 +437,9 @@ export default function HumanAuditManagerView() {
                             if (baseReviews[0]) setSelectedReviewId(baseReviews[0]._id);
                           }}
                           style={{
-                            padding: '5px 12px',
+                            padding: '6px 14px',
                             borderRadius: '6px',
-                            fontSize: '0.78rem',
+                            fontSize: '0.8rem',
                             fontWeight: 800,
                             border: 0,
                             background: modalTargetFilter === 'base' ? '#b45309' : 'transparent',
@@ -667,34 +451,13 @@ export default function HumanAuditManagerView() {
                           🔲 Base Model ({baseReviews.length} Staff)
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => setModalTargetFilter('all')}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: '6px',
-                          fontSize: '0.75rem',
-                          fontWeight: 700,
-                          border: 0,
-                          background: modalTargetFilter === 'all' ? '#1e293b' : 'transparent',
-                          color: modalTargetFilter === 'all' ? '#ffffff' : '#64748b',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ⚡ Tất cả
-                      </button>
                     </div>
                   </div>
 
                   {(() => {
-                    // Filter table columns based on selected modalTargetFilter
-                    const displayReviews = modalTargetFilter === 'ft'
-                      ? ftReviews
-                      : modalTargetFilter === 'base'
-                        ? baseReviews
-                        : allUniqueReviews;
-
-                    const includeAi = modalTargetFilter === 'ft' || modalTargetFilter === 'all';
+                    const fullReviews = modalTargetFilter === 'base' ? baseReviews : ftReviews;
+                    const displayReviews = fullReviews.slice(0, 1);
+                    const isBaseMode = modalTargetFilter === 'base';
 
                     return (
                       <div style={{ overflowX: 'auto' }}>
@@ -702,11 +465,9 @@ export default function HumanAuditManagerView() {
                           <thead>
                             <tr style={{ background: '#f1f5f9', color: '#475569' }}>
                               <th style={{ padding: '10px 12px', textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>Tiêu chí</th>
-                              {includeAi && (
-                                <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '1px solid #e2e8f0', background: '#e0e7ff', color: '#3730a3' }}>
-                                  🤖 AI Judge<br /><small style={{ fontWeight: 500 }}>(Fine-tuned)</small>
-                                </th>
-                              )}
+                              <th style={{ padding: '10px 12px', textAlign: 'center', borderBottom: '1px solid #e2e8f0', background: isBaseMode ? '#fffbeb' : '#e0e7ff', color: isBaseMode ? '#b45309' : '#3730a3' }}>
+                                🤖 AI Judge<br /><small style={{ fontWeight: 600 }}>({isBaseMode ? 'Base Model' : 'Fine-tuned'})</small>
+                              </th>
                               {displayReviews.map((rev: any) => {
                                 const isBase = (rev.targetModel || rev.target_model) === 'base';
                                 return (
@@ -732,7 +493,9 @@ export default function HumanAuditManagerView() {
                           </thead>
                           <tbody>
                             {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => {
-                              const aiVal = includeAi ? (selectedItem.ai_scores?.[key] ?? null) : null;
+                              const aiVal = isBaseMode
+                                ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.ai_scores?.[key] ?? null)
+                                : (selectedItem.ai_scores?.[key] ?? null);
                               const revVals = displayReviews.map((r: any) => r.humanScores?.[key] ?? null);
                               const validVals = [aiVal, ...revVals].filter((v): v is number => typeof v === 'number');
                               const minV = validVals.length ? Math.min(...validVals) : 0;
@@ -746,15 +509,12 @@ export default function HumanAuditManagerView() {
                                     <span style={{ padding: '2px 6px', borderRadius: '4px', background: '#e2e8f0', fontSize: '0.75rem', marginRight: '6px' }}>{key}</span>
                                     {title}
                                   </td>
-                                  {includeAi && (
-                                    <td style={{ padding: '9px 12px', textAlign: 'center', fontWeight: 700, color: '#3730a3' }}>
-                                      {aiVal ?? '—'}
-                                    </td>
-                                  )}
+                                  <td style={{ padding: '9px 12px', textAlign: 'center', fontWeight: 700, color: isBaseMode ? '#b45309' : '#3730a3' }}>
+                                    {aiVal ?? '—'}
+                                  </td>
                                   {displayReviews.map((rev: any) => {
                                     const val = rev.humanScores?.[key] ?? null;
-                                    const baselineVal = includeAi ? aiVal : (revVals[0] ?? null);
-                                    const isDiff = baselineVal !== null && val !== null && Math.abs(val - baselineVal) >= 1.5;
+                                    const isDiff = aiVal !== null && val !== null && Math.abs(val - aiVal) >= 1.5;
                                     return (
                                       <td
                                         key={rev._id}
@@ -783,39 +543,42 @@ export default function HumanAuditManagerView() {
                   })()}
                 </div>
 
-                {/* SECTION: CANDIDATE SELECTION (Chỉ chọn trường hợp 2+ người cùng chấm hoặc chọn AI/Staff) */}
+                {/* SECTION: CANDIDATE SELECTION */}
                 <div style={{ border: '1px solid #c7d2fe', borderRadius: '12px', background: '#f8fafc', padding: '16px' }}>
                   <div style={{ marginBottom: '12px' }}>
                     <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#312e81', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                      ⚖️ CHỌN BẢN CHẤM CHÍNH THỨC ĐỂ CHỐT XUNG ĐỘT
+                      ⚖️ CHỌN BẢN CHẤM CHÍNH THỨC ĐỂ CHỐT XUNG ĐỘT ({modalTargetFilter === 'base' ? 'BASE MODEL' : 'FINE-TUNED MODEL'})
                     </span>
                     <small style={{ display: 'block', color: '#64748b', fontSize: '0.75rem', marginTop: '2px' }}>
-                      {ftReviews.length >= 2 || baseReviews.length >= 2
-                        ? `Phát hiện có ${ftReviews.length >= 2 ? `${ftReviews.length} Staff cùng chấm Fine-tuned` : ''} ${baseReviews.length >= 2 ? `${baseReviews.length} Staff cùng chấm Base Model` : ''}. Hãy chọn 1 bản chấm hợp lý nhất.`
-                        : 'Chọn giữa kết quả AI Judge và bản chấm của Staff.'}
+                      Chọn điểm chính thức giữa AI Judge ({modalTargetFilter === 'base' ? 'Base Model' : 'Fine-tuned'}) và bản chấm của Staff.
                     </small>
                   </div>
 
                   <div className="ham-review-grid" style={{ padding: 0 }}>
-                    {/* Candidate Option: AI Judge (Only when FT or All is selected) */}
-                    {(modalTargetFilter === 'ft' || modalTargetFilter === 'all') && (
-                      <label className={resolution === 'accept_ai' ? 'selected' : ''}>
-                        <input type="radio" name="adjudication_candidate" checked={resolution === 'accept_ai'} onChange={() => setResolution('accept_ai')} />
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <strong>AI Judge</strong>
-                            <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: '#e0e7ff', color: '#4338ca' }}>🎯 Fine-tuned</span>
-                          </div>
-                          <small>Đề xuất tự động từ AI Judge · cần đối chiếu bằng chứng</small>
-                          <div className="ham-score-strip" style={{ marginTop: '8px' }}>
-                            {HUMAN_AUDIT_RUBRIC.map(({ key }) => <span key={key}>{key}<b>{selectedItem.ai_scores?.[key] ?? '—'}</b></span>)}
-                          </div>
+                    {/* Candidate Option: AI Judge */}
+                    <label className={resolution === 'accept_ai' ? 'selected' : ''}>
+                      <input type="radio" name="adjudication_candidate" checked={resolution === 'accept_ai'} onChange={() => setResolution('accept_ai')} />
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <strong>AI Judge</strong>
+                          <span style={{ padding: '2px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, background: modalTargetFilter === 'base' ? '#fef3c7' : '#e0e7ff', color: modalTargetFilter === 'base' ? '#b45309' : '#4338ca' }}>
+                            {modalTargetFilter === 'base' ? '🔲 Base Model' : '🎯 Fine-tuned'}
+                          </span>
                         </div>
-                      </label>
-                    )}
+                        <small>Đề xuất tự động từ AI Judge · cần đối chiếu bằng chứng</small>
+                        <div className="ham-score-strip" style={{ marginTop: '8px' }}>
+                          {HUMAN_AUDIT_RUBRIC.map(({ key }) => {
+                            const val = modalTargetFilter === 'base'
+                              ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.ai_scores?.[key])
+                              : selectedItem.ai_scores?.[key];
+                            return <span key={key}>{key}<b>{val ?? '—'}</b></span>;
+                          })}
+                        </div>
+                      </div>
+                    </label>
 
-                    {/* Candidate Options: Filtered Staff Reviews based on active modalTargetFilter */}
-                    {(modalTargetFilter === 'ft' ? ftReviews : modalTargetFilter === 'base' ? baseReviews : allUniqueReviews).map((review: any) => {
+                    {/* Candidate Options: Staff Review (1 Staff) */}
+                    {(modalTargetFilter === 'base' ? baseReviews : ftReviews).slice(0, 1).map((review: any) => {
                       const isBase = (review.targetModel || review.target_model) === 'base';
                       return (
                         <label key={review._id} className={selectedReviewId === review._id && resolution === 'accept_staff' ? 'selected' : ''}>
