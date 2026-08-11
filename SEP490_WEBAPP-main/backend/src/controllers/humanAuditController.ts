@@ -377,6 +377,21 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
   if (!convResult) return res.status(404).json({ error: 'Conversation not found' });
   const skip = req.body?.verdict === 'skip';
   const targetModel = String(req.body?.target_model || req.body?.targetModel || 'ft').toLowerCase() === 'base' ? 'base' : 'ft';
+
+  // When scoring base model, use base AI scores for conflict detection
+  const baseConvResult: any = targetModel === 'base'
+    ? (evaluation.baseResults || []).find((item: any) => Number(item.conv_index) === convIndex)
+    : null;
+  const targetAiScores = targetModel === 'base' && baseConvResult
+    ? (baseConvResult.criteria_scores || {})
+    : (convResult.criteria_scores || {});
+  const targetAiReasons = targetModel === 'base' && baseConvResult
+    ? (baseConvResult.criteria_reasons || {})
+    : (convResult.criteria_reasons || {});
+  const targetJudgeModel = targetModel === 'base' && baseConvResult
+    ? (baseConvResult.effective_judge_model || convResult.effective_judge_model)
+    : convResult.effective_judge_model;
+
   let reviewPayload: any = {
     ownerId: evaluation.ownerId,
     modelEvalId,
@@ -397,8 +412,8 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
         humanScores: validated.scores,
         humanReasons: validated.reasons,
         humanOutcomes: computeHumanOutcomes(validated.scores),
-        aiScoresSnapshot: { ...(convResult.criteria_scores || {}) },
-        aiConflict: deriveHumanAiConflict(convResult.criteria_scores || {}, validated.scores),
+        aiScoresSnapshot: { ...targetAiScores },
+        aiConflict: deriveHumanAiConflict(targetAiScores, validated.scores),
       };
     } catch (error: any) {
       return res.status(400).json({ error: error.message || 'Điểm Human Audit không hợp lệ' });
@@ -450,9 +465,9 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
       human_outcomes: review?.humanOutcomes,
       conflict: review?.aiConflict,
     },
-    criteria_scores: convResult.criteria_scores,
-    criteria_reasons: convResult.criteria_reasons,
-    effective_judge_model: convResult.effective_judge_model,
+    criteria_scores: targetAiScores,
+    criteria_reasons: targetAiReasons,
+    effective_judge_model: targetJudgeModel,
   });
 };
 

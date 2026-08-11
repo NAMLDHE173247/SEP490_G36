@@ -127,7 +127,8 @@ export default function HumanAuditReplayView() {
       if (cached) {
         try { return JSON.parse(cached); } catch (e) {}
       }
-      return item?.human_review || null;
+      // Don't fallback to FT review — base should start with empty scores
+      return null;
     }
     return item?.human_review || null;
   }, [evaluation]);
@@ -504,12 +505,15 @@ export default function HumanAuditReplayView() {
                   <select
                     value={scoringTarget}
                     onChange={(e) => {
-                      setScoringTarget(e.target.value as 'ft' | 'base');
-                      // Reset scores to match the newly selected model's saved review
-                      const target = e.target.value === 'base' ? currentBaseItem : currentItem;
-                      setScores({ ...emptyAuditScores(), ...(target?.human_review?.human_scores || {}) });
-                      setReasons(target?.human_review?.human_reasons || {});
-                      setReviewNote(target?.human_review?.note || '');
+                      const newTarget = e.target.value as 'ft' | 'base';
+                      setScoringTarget(newTarget);
+                      // Use getReviewForTarget for consistent base/ft review lookup
+                      if (selectedConvIndex !== null) {
+                        const review = getReviewForTarget(selectedConvIndex, newTarget);
+                        setScores({ ...emptyAuditScores(), ...(review?.human_scores || {}) });
+                        setReasons(review?.human_reasons || {});
+                        setReviewNote(review?.note || '');
+                      }
                     }}
                     style={{ flex: 1, padding: '6px 10px', borderRadius: '8px', border: `2px solid ${scoringTarget === 'base' ? '#f59e0b' : '#6366f1'}`, fontWeight: 600, fontSize: '0.85rem', background: '#fff', color: scoringTarget === 'base' ? '#b45309' : '#4f46e5', cursor: 'pointer' }}
                   >
