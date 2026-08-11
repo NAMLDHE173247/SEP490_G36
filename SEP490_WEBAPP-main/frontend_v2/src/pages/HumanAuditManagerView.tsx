@@ -224,7 +224,6 @@ export default function HumanAuditManagerView() {
   const openResolution = (item: any) => {
     setSelectedItem(item);
     setModalTargetFilter('ft');
-    setActiveStaffId('');
     const unique = deduplicateReviews(item.reviews || []);
     const firstFt = unique.find((review: any) => (review.targetModel || review.target_model || 'ft') === 'ft');
     setResolution('accept_ai');
@@ -583,38 +582,10 @@ export default function HumanAuditManagerView() {
                       return dateB - dateA; // Then newest first
                     });
 
-                    const selectedStaffReview = sortedReviews.find((r: any) => r._id === activeStaffId) || sortedReviews[0];
-                    const displayReviews = selectedStaffReview ? [selectedStaffReview] : [];
+                    const displayReviews = sortedReviews;
 
                     return (
                       <div style={{ overflowX: 'auto' }}>
-                        {sortedReviews.length > 1 && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>👤 Chọn Staff đối chiếu:</span>
-                            <select
-                              value={selectedStaffReview?._id || ''}
-                              onChange={(e) => {
-                                setActiveStaffId(e.target.value);
-                                setResolution('accept_staff');
-                                setSelectedReviewId(e.target.value);
-                              }}
-                              style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.78rem', fontWeight: 700, color: '#1e293b', background: '#fff', cursor: 'pointer' }}
-                            >
-                              {sortedReviews.map((r: any) => {
-                                const d = getReviewMaxDelta(r);
-                                return (
-                                  <option key={r._id} value={r._id}>
-                                    👤 {r.reviewerName} (Δ {d.toFixed(1)} {d >= 1.5 ? '· 🔴 Xung đột' : '· 🟢 Khớp'})
-                                  </option>
-                                );
-                              })}
-                            </select>
-                            <small style={{ color: '#64748b', fontSize: '0.73rem' }}>
-                              (Mặc định tự động chọn Staff có độ lệch lớn nhất với AI)
-                            </small>
-                          </div>
-                        )}
-
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                           <thead>
                             <tr style={{ background: '#f1f5f9', color: '#475569' }}>
