@@ -39,7 +39,7 @@ export const Stage5Evaluation: React.FC = () => {
       models: [
         { name: 'GEMINI 2.5 FLASH', rec: 'Reject', score: 4.0, color: 'rose' },
         { name: 'DEEPSEEK V4 FLASH', rec: 'Pass', score: 7.8, color: 'emerald' },
-        { name: 'CHATGPT GPT-4', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
+        { name: 'GPT 5.6 LUNA', rec: 'Need Rewrite', score: 6.2, color: 'amber' },
       ],
     },
     {
@@ -62,7 +62,7 @@ export const Stage5Evaluation: React.FC = () => {
   const modelLabels: Record<string, string> = {
     gemini: 'GEMINI 2.5 FLASH',
     deepseek: 'DEEPSEEK V4 FLASH',
-    openai: 'CHATGPT GPT-4',
+    openai: 'GPT 5.6 LUNA',
   };
   const evalItems = results.length > 0 ? results.map((result: any) => ({
     id: String(result.sampleIdRef?.sampleId || result.sampleIdRef?._id || result.sampleId || result._id),
@@ -101,7 +101,7 @@ export const Stage5Evaluation: React.FC = () => {
             {[
               ['gemini', 'Gemini 2.5 Flash', 'Fast education-quality judge'],
               ['deepseek', 'DeepSeek V4 Flash', 'Advanced logic and factuality judge'],
-              ['openai', 'ChatGPT GPT-4', 'Independent high-precision verification'],
+              ['openai', 'GPT 5.6 Luna', 'Independent high-precision verification'],
             ].map(([key, label, desc]) => (
               <label key={key} className={judgeModels[key] ? 'active' : ''}>
                 <input

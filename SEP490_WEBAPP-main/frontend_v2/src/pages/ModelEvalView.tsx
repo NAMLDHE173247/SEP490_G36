@@ -161,7 +161,7 @@ export default function ModelEvalView() {
 
   // Run form fields
   const [selectedJobId, setSelectedJobId] = useState('');
-  const [judgeModel, setJudgeModel] = useState('google/gemini-2.5-flash');
+  const [judgeModel, setJudgeModel] = useState('openai/gpt-5.6-luna');
   const [baseModelHfRepo, setBaseModelHfRepo] = useState('');
   const [datasetSource, setDatasetSource] = useState<'version' | 'file'>('version');
   const [selectedVersionId, setSelectedVersionId] = useState('');
@@ -1687,7 +1687,7 @@ export default function ModelEvalView() {
               >
                 <option value="">Tất cả Judge Models</option>
                 <option value="claude">Claude Judge</option>
-                <option value="gpt">GPT Judge</option>
+                <option value="luna">GPT 5.6 Luna</option>
                 <option value="gemini">Gemini Judge</option>
               </select>
               <button 
@@ -2928,7 +2928,8 @@ export default function ModelEvalView() {
                       value={judgeModel}
                       onChange={(e) => setJudgeModel(e.target.value)}
                     >
-                      <option value="google/gemini-2.5-flash">Gemini 2.5 Flash · OpenRouter (Fixed Judge)</option>
+                      <option value="openai/gpt-5.6-luna">GPT 5.6 Luna · OpenRouter (Default Judge)</option>
+                      <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite · OpenRouter</option>
                     </select>
                   </div>
 

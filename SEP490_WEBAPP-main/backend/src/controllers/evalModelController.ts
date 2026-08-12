@@ -579,7 +579,7 @@ export const runEvaluation = async (req: Request, res: Response) => {
       hf_repo_id: history.hfRepoId,
       hf_token: history.hfToken || '',
       model_max_length: history.parameters?.modelMaxLength || 2048,
-      judge_model: RESEARCH_MODEL_CATALOG.judge,
+      judge_model: String(req.body.judge_model || req.body.judgeModel || RESEARCH_MODEL_CATALOG.judge).trim(),
       judge_provider: 'openrouter',
       judge_api_key: judgeApiKey,
       base_model_hf_repo: baseModelRepo,

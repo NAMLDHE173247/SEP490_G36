@@ -9,7 +9,7 @@ type Props = { versionId: string | null; samples: any[]; dashboard: any; onRefre
 const MODEL_LABELS: Record<string, string> = {
   gemini: 'Gemini 2.5 Flash',
   deepseek: 'DeepSeek V4 Flash',
-  openai: 'ChatGPT GPT-4',
+  openai: 'GPT 5.6 Luna',
 };
 
 const resultKey = (result: any) => String(result?.sampleIdRef?._id || result?.sampleId || '');
