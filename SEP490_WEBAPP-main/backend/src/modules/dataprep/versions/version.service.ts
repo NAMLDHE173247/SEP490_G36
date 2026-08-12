@@ -130,7 +130,7 @@ export class VersionService {
     const datasetVersion = await DatasetVersion.create({
       projectId: project._id,
       ownerId: new mongoose.Types.ObjectId(params.ownerId),
-      projectName: normalizedProjectName,
+      projectName: (project && (project as any).name) ? (project as any).name : normalizedProjectName,
       parentVersionId: toObjectId(params.parentVersionId),
       createdFromVersionId: toObjectId(params.createdFromVersionId || params.parentVersionId),
       versionNo: nextVersionNo,

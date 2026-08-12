@@ -3038,7 +3038,7 @@ function DataPrepInner() {
                           // Nếu chưa có versionId, tự động tạo Dataset Version mới để lưu vào DB
                           if (!versionId) {
                             const payload = {
-                              projectName: 'Auto-Label Dataset',
+                              projectName: projectName || 'Auto-Label Dataset',
                               projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                               operationType: 'labeling_base' as const,
                               similarityThreshold: 0.85,

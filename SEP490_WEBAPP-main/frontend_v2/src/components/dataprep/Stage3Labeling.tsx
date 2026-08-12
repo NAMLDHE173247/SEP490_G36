@@ -781,7 +781,7 @@ export const Stage3Labeling = (dataPrep: any) => {
                             // Nß║┐u ch╞░a c├│ versionId, tß╗▒ ─æß╗Öng tß║ío Dataset Version mß╗¢i ─æß╗â l╞░u v├áo DB
                             if (!versionId) {
                               const payload = {
-                                projectName: 'Auto-Label Dataset',
+                                projectName: (dataPrep as any)?.projectName || 'Auto-Label Dataset',
                                 projectId: (localStorage.getItem('current_project_id') || undefined) as any,
                                 operationType: 'labeling_base' as const,
                                 similarityThreshold: 0.85,
