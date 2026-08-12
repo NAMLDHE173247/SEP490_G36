@@ -1,0 +1,21 @@
+{
+  "projectName": "Auto-Label Dataset",
+  "datasetVersionId": "6a7bf9da88d057a6dd48c45c",
+  "subject": "CHƯA RÕ",
+  "splitStrategy": "subject-stratified-two-stage-semantic-guard",
+  "seed": 42,
+  "threshold": 1,
+  "totalTrain": 1,
+  "totalValidation": 1,
+  "totalTest": 1,
+  "systemPromptId": "6a389b7041aa5169aa5f0193",
+  "systemPromptName": "Project_22/06_9:18",
+  "systemPromptVersion": "Project_22/06_9:18",
+  "systemPrompt": "bạn là 1 gia sư , nhiệm vụ của bạn là đưa ra gợi ý , thay vì đưa ra câu trả lời trực tiếp",
+  "datasetHashes": {
+    "train_sha256": "9518ff16980ba3238bee65413fd02f1b3741396a227dd4d4d05c98cfa3076d74",
+    "validation_sha256": "a9188b82e8936bc55d0f7e8e4d23d2823445f5477a2c8a9e0aa3627a94ccab6b",
+    "test_sha256": "864034c9c14a799e2fe49429580c15145a0f4e5d70edea50292155a5569377ef"
+  },
+  "exportedAt": "2026-08-12T04:51:27.196Z"
+}

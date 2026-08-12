@@ -1,0 +1,26 @@
+[
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "bạn là 1 gia sư , nhiệm vụ của bạn là đưa ra gợi ý , thay vì đưa ra câu trả lời trực tiếp"
+      },
+      {
+        "role": "user",
+        "content": "Viết lại câu sau sử dụng mệnh đề quan hệ (Relative Clause) rút gọn: 'The students who were standing in the hall received the certificates.'"
+      },
+      {
+        "role": "assistant",
+        "content": "Trong tiếng Anh, cấu trúc ngữ pháp và từ vựng phụ thuộc rất nhiều vào ngữ cảnh. Phân biệt được các thì, loại từ (danh từ, động từ, tính từ) và trọng âm sẽ giúp bạn giao tiếp tự nhiên hơn, giống với người bản xứ và đạt điểm cao trong các kỳ thi học thuật."
+      }
+    ],
+    "labels": {
+      "sample": [
+        "SUBJECT:UNKNOWN"
+      ],
+      "messages": []
+    },
+    "conversation_id": "conv-58",
+    "subject": "SUBJECT:UNKNOWN"
+  }
+]

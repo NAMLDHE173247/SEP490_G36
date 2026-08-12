@@ -603,26 +603,44 @@ export const Stage6Finish: React.FC = () => {
         { role: 'system', content: lockedSystemPrompt },
       ];
 
+      // Also collect per-message embedded labels (backend attaches these to each
+      // message object when canonical labels exist).  Used as fallback below when
+      // conv.labels.messages is empty but labels are embedded in the messages.
+      const perMsgEmbeddedLabels: { v2Index: number; role: string; labels: string[] }[] = [];
+      let nonSystemIdx = 0; // 0-based count of non-system source messages seen so far
+
       if (Array.isArray(conv.messages)) {
         for (const m of conv.messages) {
           if (m.role && typeof m.content === 'string') {
             if (m.role !== 'system') {
               messages.push({ role: m.role, content: m.content });
+              // Collect any labels embedded by the backend (messages[i].labels)
+              if (Array.isArray(m.labels) && m.labels.length > 0) {
+                perMsgEmbeddedLabels.push({
+                  v2Index: nonSystemIdx + 1, // +1 because system is at position 0 in V2
+                  role: m.role,
+                  labels: m.labels.map(normalizeV2LabelName),
+                });
+              }
+              nonSystemIdx++;
             }
           } else if (m.user !== undefined || m.assistant !== undefined) {
             // Convert {user, assistant} pair format
-            if (m.user) messages.push({ role: 'user', content: m.user });
-            if (m.assistant) messages.push({ role: 'assistant', content: m.assistant });
+            if (m.user) { messages.push({ role: 'user', content: m.user }); nonSystemIdx++; }
+            if (m.assistant) { messages.push({ role: 'assistant', content: m.assistant }); nonSystemIdx++; }
           }
         }
       }
 
       // --- Rebuild labels to match V2 format ---
-      const subjectVal: string =
+      // Strip "SUBJECT:" prefix that Stage3 adds when storing conversation labels
+      // (e.g. "SUBJECT:MATH" → "MATH", "SUBJECT:UNKNOWN" → "UNKNOWN").
+      const rawSubject: string =
         conv.subject ||
         conv.subjectLabelWithHuman ||
         conv.subjectLabelWithAI ||
         'UNGROUPED';
+      const subjectVal = rawSubject.replace(/^SUBJECT:\s*/i, '').trim() || 'UNGROUPED';
 
       const sourceLabels = conv.labels;
       let labelsMessages: any[] = [];
@@ -638,13 +656,24 @@ export const Stage6Finish: React.FC = () => {
             ? entry.labels.map(normalizeV2LabelName)
             : [],
         }));
+      } else if (perMsgEmbeddedLabels.length > 0) {
+        // Fallback: recover labels that the backend embedded directly in each
+        // message object (messages[i].labels). This happens when canonical labels
+        // exist at sample-level only (e.g. SUBJECT) and the admin assigned
+        // message-level intents in Step 7 without running the full canonicalize
+        // flow.  In this case conv.labels.messages is empty but the backend still
+        // attaches the labels via the LabelAssignment supplemental query.
+        labelsMessages = perMsgEmbeddedLabels;
       }
 
-      // labels.sample should be an array of the subject string (matching V2 pattern)
+      // labels.sample — strip "SUBJECT:" prefix from every entry
       let labelsSample: string[] = [];
       if (sourceLabels && Array.isArray(sourceLabels.sample) && sourceLabels.sample.length > 0) {
-        labelsSample = sourceLabels.sample;
-      } else if (subjectVal && subjectVal !== 'UNGROUPED') {
+        labelsSample = sourceLabels.sample
+          .map((s: string) => String(s).replace(/^SUBJECT:\s*/i, '').trim())
+          .filter(Boolean);
+      }
+      if (labelsSample.length === 0 && subjectVal && subjectVal !== 'UNGROUPED') {
         labelsSample = [subjectVal];
       }
 

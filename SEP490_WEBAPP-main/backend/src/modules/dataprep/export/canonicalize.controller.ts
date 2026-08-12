@@ -75,6 +75,33 @@ export class CanonicalizeController {
         rows.push(label);
         labelsBySample.set(key, rows);
       }
+
+      // Supplement with message-level LabelAssignment labels when canonical labels
+      // exist only at sample-level (e.g. SUBJECT labels after canonicalize) but the
+      // admin assigned message intents via Step 7 that were never promoted to
+      // DatasetCanonicalLabel.  This ensures intent labels always appear in the export.
+      const hasCanonicalMessageLabels = activeCanonical.some(
+        (l: any) => l.targetScope === 'message' && l.messageIndex != null
+      );
+      if (!hasCanonicalMessageLabels) {
+        const msgHardLabels = await LabelAssignment.find({
+          sampleId: { $in: itemIds },
+          targetScope: 'message',
+          type: 'hard',
+        }).lean();
+        for (const hl of msgHardLabels) {
+          const key = String(hl.sampleId);
+          const rows = labelsBySample.get(key) || [];
+          rows.push({
+            sampleId: hl.sampleId,
+            targetScope: 'message',
+            messageIndex: hl.messageIndex ?? null,
+            messageRole: hl.messageRole ?? null,
+            labels: hl.name ? [hl.name] : [],
+          });
+          labelsBySample.set(key, rows);
+        }
+      }
       const rewritesBySample = new Map<string, Map<number, string>>();
       for (const rewrite of rewrites) {
         const key = String(rewrite.sampleId);

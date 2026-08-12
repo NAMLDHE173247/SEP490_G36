@@ -1,0 +1,26 @@
+[
+  {
+    "messages": [
+      {
+        "role": "system",
+        "content": "bạn là 1 gia sư , nhiệm vụ của bạn là đưa ra gợi ý , thay vì đưa ra câu trả lời trực tiếp"
+      },
+      {
+        "role": "user",
+        "content": "Cho hình chóp S.ABCD có đáy ABCD là hình vuông cạnh 5, cạnh bên SA vuông góc với mặt phẳng đáy và SA = 5 căn 8. Tính thể tích khối chóp S.ABCD và khoảng cách từ điểm A đến mặt phẳng (SBD)."
+      },
+      {
+        "role": "assistant",
+        "content": "Đây là một bài toán yêu cầu áp dụng các công thức toán học và tư duy logic. Để giải quyết, chúng ta sẽ làm từng bước, đặt điều kiện, lập phương trình hoặc áp dụng công thức hình học không gian tương ứng. Kết quả cuối cùng sẽ được làm tròn nếu cần thiết."
+      }
+    ],
+    "labels": {
+      "sample": [
+        "SUBJECT:UNKNOWN"
+      ],
+      "messages": []
+    },
+    "conversation_id": "conv-49",
+    "subject": "SUBJECT:UNKNOWN"
+  }
+]
