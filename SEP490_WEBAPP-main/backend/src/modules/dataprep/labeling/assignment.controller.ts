@@ -1967,7 +1967,10 @@ export class AssignmentController {
         if (item) {
           const itemData = item.data || {};
           const currentClass = (itemData.subject_classification || {}) as any;
-          const finalSubject = Array.isArray(labels) && labels.length > 0 ? labels[0] : 'Unclear';
+          const subjectLabel = Array.isArray(labels)
+            ? labels.find((label: any) => String(label || '').toUpperCase().startsWith('SUBJECT:')) || labels[0]
+            : '';
+          const finalSubject = String(subjectLabel || 'Unclear').replace(/^SUBJECT:\s*/i, '').trim() || 'Unclear';
 
           const isCorrected = currentClass.subject_ai && currentClass.subject_ai !== finalSubject;
 

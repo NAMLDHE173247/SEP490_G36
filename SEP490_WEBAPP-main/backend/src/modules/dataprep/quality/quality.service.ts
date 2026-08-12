@@ -29,6 +29,11 @@ const INTENTS = [
 ] as const;
 
 const INTENT_INDEX = new Map(INTENTS.map((intent, index) => [intent, index]));
+
+function normalizeSubjectName(value: unknown): string {
+  const normalized = String(value || '').replace(/^SUBJECT:\s*/i, '').trim();
+  return normalized || 'Unknown';
+}
 const CRITICAL_INTENTS = new Set(['INCORRECT', 'REQUEST_HINT'] as const);
 
 export const VALID_ACTIONS: Record<string, ReadonlySet<string>> = {
@@ -1299,14 +1304,16 @@ export class QualityService {
 
       const itemData = (item.data || {}) as any;
       const subClass = (itemData.subject_classification || {}) as any;
-      const subject = subClass.subject_final ||
-                      itemData.subject ||
-                      itemData.subjectLabel ||
-                      itemData.subject_label ||
-                      itemData.groupLabel ||
-                      itemData.group_label ||
-                      (itemData.meta?.subject) ||
-                      'Ungrouped';
+      const subject = normalizeSubjectName(
+        subClass.subject_final ||
+        itemData.subject ||
+        itemData.subjectLabel ||
+        itemData.subject_label ||
+        itemData.groupLabel ||
+        itemData.group_label ||
+        (itemData.meta?.subject) ||
+        'Ungrouped'
+      );
 
       if (!subjectStats[subject]) {
         subjectStats[subject] = {

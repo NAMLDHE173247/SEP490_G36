@@ -328,15 +328,19 @@ export const Stage3Labeling: React.FC = () => {
     const versionId = localStorage.getItem('current_version_id');
     const sample = step7Samples[step7SampleIndex];
     if (!versionId || !sample?.sampleId) return toast('Không tìm thấy hội thoại hiện tại.', 'error');
-    const labels = Object.entries(conversationLabels).flatMap(([group, values]) => values.map(value => `${group}:${value}`));
+    const normalizedConversationLabels = {
+      ...conversationLabels,
+      SUBJECT: (conversationLabels.SUBJECT || []).map((value) => String(value).replace(/^SUBJECT:\s*/i, '').trim()).filter(Boolean),
+    };
+    const labels = Object.entries(normalizedConversationLabels).flatMap(([group, values]) => values.map(value => `${group}:${value}`));
     if (!labels.length) return toast('Hãy chọn ít nhất một nhãn hội thoại.', 'warning');
     setIsSavingCanonical(true);
     try {
-      await apiService.setDatasetSampleCanonicalLabels({ versionId, sampleId: sample.sampleId, labels, targetTextSnapshot: JSON.stringify(conversationLabels) });
+      await apiService.setDatasetSampleCanonicalLabels({ versionId, sampleId: sample.sampleId, labels, targetTextSnapshot: JSON.stringify(normalizedConversationLabels) });
       toast('Đã chốt nhãn hội thoại của Admin.', 'success');
       
       // Cập nhật lại stage3Convs để ghi nhớ môn học vừa chốt
-      const finalSubject = conversationLabels['SUBJECT']?.[0];
+      const finalSubject = normalizedConversationLabels['SUBJECT']?.[0];
       if (finalSubject) {
         const convIdx = (sample.sampleIndex ?? step7SampleIndex + 1) - 1;
         setStage3Convs(prev => {
@@ -819,6 +823,51 @@ export const Stage3Labeling: React.FC = () => {
       );
     },
     [handleRemoveMessageSingleLabel, step7Samples, step7SampleIndex]
+  );
+
+  const handleToggleLabelMultiWithApi = React.useCallback(
+    (msg: any, groupName: string, tagName: string) => {
+      const currentTag = (msg.labels[groupName] || []).find((tag: any) => tag.name === tagName);
+      const wasActive = Boolean(currentTag?.active);
+      setIaMessages((prev: any[]) => setMessageTagActive(prev, msg.id, tagName, !wasActive));
+
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      if (!sampleId) return;
+
+      const dbName = getDbLabelName(tagName, msg.role);
+      if (!dbName) return;
+      const isHard = !ISSUES_SOFT_LABELS.has(tagName);
+      const labelType: 'hard' | 'soft' = isHard ? 'hard' : 'soft';
+      const cacheKey = `${sampleId}:${msg.messageIndex}:${msg.role}`;
+
+      if (!wasActive) {
+        setLocalMessageLabelCache((prev) => ({
+          ...prev,
+          [cacheKey]: Array.from(new Set([...(prev[cacheKey] || []), tagName])),
+        }));
+        apiService.addSampleLabel(sampleId, {
+          name: dbName,
+          type: labelType,
+          targetScope: 'message',
+          messageIndex: msg.messageIndex,
+          messageRole: msg.role,
+          targetTextSnapshot: msg.text?.slice(0, 200),
+        }).catch((err: any) => console.error('[handleToggleLabelMultiWithApi] addSampleLabel failed:', err));
+      } else {
+        setLocalMessageLabelCache((prev) => ({
+          ...prev,
+          [cacheKey]: (prev[cacheKey] || []).filter((name) => name !== tagName),
+        }));
+        apiService.removeSampleLabel(sampleId, {
+          name: dbName,
+          type: labelType,
+          targetScope: 'message',
+          messageIndex: msg.messageIndex,
+          messageRole: msg.role,
+        }).catch((err: any) => console.error('[handleToggleLabelMultiWithApi] removeSampleLabel failed:', err));
+      }
+    },
+    [setIaMessages, step7Samples, step7SampleIndex]
   );
 
   // =====================================================
@@ -2568,7 +2617,7 @@ export const Stage3Labeling: React.FC = () => {
                                   <div
                                     key={tag.name}
                                     style={tagStyle}
-                                    onClick={() => handleToggleLabelWithApi(selectedMsg, groupName, tag.name)}
+                                    onClick={() => handleToggleLabelMultiWithApi(selectedMsg, groupName, tag.name)}
                                     className="ia-hl-tag-interactive"
                                   >
                                     <span style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
@@ -2600,7 +2649,7 @@ export const Stage3Labeling: React.FC = () => {
               <div className="ia-section-card conversation-label-editor">
                 <div className="ia-labels-header"><h4>{DISPLAY_LABELS['Conversation Hard Labels'] || 'Conversation Hard Labels'}</h4><span className="ia-label-count">{Object.values(conversationLabels).flat().length}</span></div>
                 {([
-                  ['SUBJECT', ['MATH', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'ENGLISH', 'HISTORY', 'GEOGRAPHY', 'CIVICS', 'IT', 'CROSS_CURRICULAR', 'UNKNOWN']],
+                  ['SUBJECT', ['MATH', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'ENGLISH', 'LITERATURE', 'HISTORY', 'GEOGRAPHY', 'CIVICS', 'IT', 'CROSS_CURRICULAR', 'UNKNOWN']],
                   ['STATUS', ['Completed', 'Incomplete', 'Abandoned']],
                   ['QUALITY', ['Gold', 'Rewrite', 'Bad']],
                   ['ISSUES', ['Factual Error', 'Direct Answer', 'Language Issue']],

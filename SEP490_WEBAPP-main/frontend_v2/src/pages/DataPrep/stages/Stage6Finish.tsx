@@ -24,9 +24,10 @@ const sha256Json = async (value: unknown): Promise<string> => {
 };
 
 const normalizeEvaluationSubject = (value: any): string => {
-  const normalized = String(value || '').trim().toUpperCase();
+  const normalized = String(value || '').replace(/^SUBJECT:\s*/i, '').trim().toUpperCase();
   if (['MATH', 'MATHEMATICS'].includes(normalized)) return 'MATH';
   if (['ENGLISH', 'EN'].includes(normalized)) return 'ENGLISH';
+  if (['LITERATURE', 'LITERATURES', 'VAN', 'VAN_HOC', 'NGU_VAN'].includes(normalized)) return 'LITERATURE';
   if (['HISTORY', 'HIST'].includes(normalized)) return 'HISTORY';
   if (['PHYSICS', 'PHYSICAL'].includes(normalized)) return 'PHYSICS';
   if (['CHEMISTRY', 'CHEM'].includes(normalized)) return 'CHEMISTRY';
@@ -166,6 +167,15 @@ export const Stage6Finish: React.FC = () => {
   const [splitBySubject, setSplitBySubject] = useState<Array<{
     subject: string; train: number; val: number; test: number; total: number;
   }>>([]);
+
+  const getSliderStyle = (value: number, min: number, max: number, color: string): React.CSSProperties => {
+    const safeMax = Math.max(min, max);
+    const progress = safeMax === min ? 0 : ((value - min) / (safeMax - min)) * 100;
+    return {
+      '--sg-progress': `${Math.max(0, Math.min(100, progress))}%`,
+      '--sg-slider-color': color,
+    } as React.CSSProperties;
+  };
 
   // Hugging Face states
   const [hfToken, setHfToken] = useState('');
@@ -316,12 +326,13 @@ export const Stage6Finish: React.FC = () => {
 
       const formattedData = splitSource.map((c: any) => ({
         conversation_id: c.conversation_id || c.id,
-        subject:
+        subject: normalizeEvaluationSubject(
           c.subject ||
           c.subjectLabelWithHuman ||
           c.subjectLabelWithAI ||
           c.subjectLabelDefault ||
-          'UNGROUPED',
+          'UNGROUPED'
+        ),
         messages: (c.messages || []).flatMap((m: any) => {
           if (m.role && typeof m.content === 'string') {
             return [{ role: m.role, content: m.content }];
@@ -1548,6 +1559,7 @@ export const Stage6Finish: React.FC = () => {
                 value={splitTestPercentage}
                 onChange={e => setSplitTestPercentage(Number(e.target.value))}
                 className="sg-slider sg-slider-purple"
+                style={getSliderStyle(splitTestPercentage, 5, Math.max(5, 90 - splitValPercentage), '#7c3aed')}
               />
             </div>
             <div className="sg-config-card">
@@ -1562,7 +1574,7 @@ export const Stage6Finish: React.FC = () => {
                 value={splitValPercentage}
                 onChange={e => setSplitValPercentage(Number(e.target.value))}
                 className="sg-slider"
-                style={{ accentColor: '#10b981' }}
+                style={getSliderStyle(splitValPercentage, 5, Math.max(5, 90 - splitTestPercentage), '#10b981')}
               />
             </div>
             <div className="sg-config-card">
@@ -1588,6 +1600,7 @@ export const Stage6Finish: React.FC = () => {
                 value={Math.round(splitThreshold * 100)}
                 onChange={e => setSplitThreshold(Number(e.target.value) / 100)}
                 className="sg-slider sg-slider-purple"
+                style={getSliderStyle(Math.round(splitThreshold * 100), 50, 100, '#7c3aed')}
               />
             </div>
           </div>

@@ -3,6 +3,10 @@ import { DatasetVersion } from '../../../models/DatasetVersion';
 import { DatasetAssignmentSubmission } from '../../../models/DatasetAssignmentSubmission';
 import { LabelAssignment } from '../../../models/LabelAssignment';
 import { DatasetCanonicalLabel } from '../../../models/DatasetCanonicalLabel';
+
+function normalizeSubjectName(value: unknown): string {
+  return String(value || '').replace(/^SUBJECT:\s*/i, '').trim();
+}
 import { LabelSnapshot } from '../../../models/LabelSnapshot';
 import { ProcessedDatasetItem } from '../../../models/ProcessedDatasetItem';
 import { ConversationRewriteHistory } from '../../../models/ConversationRewriteHistory';
@@ -144,7 +148,7 @@ export class CanonicalizeController {
         // === Plan B: Đọc môn học theo thứ tự ưu tiên ===
         const itemDataAny = (item.data || {}) as any;
         const subClass = (itemDataAny.subject_classification || {}) as any;
-        const subject: string =
+        const subject: string = normalizeSubjectName(
           subClass.subject_final ||
           subClass.subject_ai ||
           itemDataAny.subject ||
@@ -153,7 +157,8 @@ export class CanonicalizeController {
           itemDataAny.groupLabel ||
           itemDataAny.group_label ||
           itemDataAny.meta?.subject ||
-          'Ungrouped';
+          'Ungrouped'
+        ) || 'Ungrouped';
 
         return {
           id: String(item.sampleId || item._id),
