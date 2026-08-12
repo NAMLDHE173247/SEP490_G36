@@ -111,18 +111,66 @@ _service = ClusteringService()  # clustering singleton dung boi cac route datapr
 # ======================================================================
 # 2. LÕI HUẤN LUYỆN (CORE TRAINING)
 # ======================================================================
+_STALE_JOB_TIMEOUT = 7200  # 2 hours — if a job stays "active" but has terminal status, auto-cleanup
+_TERMINAL_STATUSES = {'ERROR', 'COMPLETED', 'STOPPED', 'FAILED'}
+_job_start_times = {}  # job_id -> timestamp when added to active_training_jobs
+
 def job_manager_thread():
     global job_manager_last_heartbeat
+    _log_cycle = 0
     while True:
-        job_manager_last_heartbeat = time.time()
-        if job_queue and len(active_training_jobs) < MAX_CONCURRENT_JOBS:
-            job_id, config, file_path, validation_file_path, hf_token = job_queue.popleft()
-            if job_id in active_training_jobs: continue
-            active_training_jobs.add(job_id)
-            jobs_db[job_id] = {'status': 'PENDING', 'progress': 0, 'logs': []}
-            print(f"[INFO] Bắt đầu Train Job {job_id}.")
-            thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
-            thread.start()
+        try:
+            job_manager_last_heartbeat = time.time()
+            _log_cycle += 1
+
+            # ── Zombie cleanup: remove stale jobs from active_training_jobs ──
+            stale_ids = []
+            for active_id in list(active_training_jobs):
+                job_info = jobs_db.get(active_id, {})
+                status = job_info.get('status', '')
+                started = _job_start_times.get(active_id, 0)
+                age = time.time() - started if started else 0
+                # If status is terminal but job still in active set → zombie
+                if status in _TERMINAL_STATUSES:
+                    stale_ids.append(active_id)
+                # If job has been active > 2h with no progress → likely stuck
+                elif age > _STALE_JOB_TIMEOUT and status not in ('TRAINING', 'LOADING_MODEL'):
+                    stale_ids.append(active_id)
+            for sid in stale_ids:
+                active_training_jobs.discard(sid)
+                _job_start_times.pop(sid, None)
+                print(f"[JobManager] 🧹 Cleaned up stale/zombie job {sid} (status={jobs_db.get(sid, {}).get('status','?')})")
+
+            # ── Periodic diagnostic log (every ~30s = 10 cycles × 3s sleep) ──
+            if _log_cycle % 10 == 0:
+                print(
+                    f"[JobManager] ♻️ heartbeat | queue={len(job_queue)} "
+                    f"active={len(active_training_jobs)}/{MAX_CONCURRENT_JOBS} "
+                    f"active_ids={list(active_training_jobs)} "
+                    f"queued_ids={[item[0] for item in list(job_queue)[:5]]}"
+                )
+
+            # ── Dispatch next job ──
+            if job_queue and len(active_training_jobs) < MAX_CONCURRENT_JOBS:
+                job_id, config, file_path, validation_file_path, hf_token = job_queue.popleft()
+                if job_id in active_training_jobs:
+                    print(f"[JobManager] ⚠️ Job {job_id} already active, skipping duplicate.")
+                elif jobs_db.get(job_id, {}).get('status') == 'STOPPED':
+                    print(f"[JobManager] ⏹️ Job {job_id} was stopped while in queue. Skipping.")
+                else:
+                    active_training_jobs.add(job_id)
+                    _job_start_times[job_id] = time.time()
+                    jobs_db[job_id] = {'status': 'PENDING', 'progress': 0, 'logs': []}
+                    print(f"[JobManager] 🚀 Dispatching Train Job {job_id}.")
+                    thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
+                    thread.start()
+
+        except Exception as exc:
+            # CRITICAL: job_manager_thread must NEVER die — otherwise all queued jobs freeze forever
+            print(f"[JobManager] ❌ Exception in manager loop (will retry): {exc}")
+            import traceback
+            traceback.print_exc()
+
         time.sleep(3)
 
 
@@ -270,7 +318,7 @@ def get_local_checkpoint(job_id):
 
 @app.route('/api/train/queue-status')
 def get_train_queue_status():
-    """Lightweight debug endpoint for AutoTrain queue visibility."""
+    """Diagnostic endpoint for queue visibility — shows why jobs may be stuck."""
     queued_jobs = []
     for item in list(job_queue):
         try:
@@ -278,13 +326,33 @@ def get_train_queue_status():
         except Exception:
             pass
 
+    active_details = []
+    for aid in list(active_training_jobs):
+        info = jobs_db.get(aid, {})
+        started = _job_start_times.get(aid)
+        active_details.append({
+            "job_id": aid,
+            "status": info.get('status', 'UNKNOWN'),
+            "progress": info.get('progress', 0),
+            "age_sec": round(time.time() - started, 1) if started else None,
+        })
+
+    heartbeat_age = round(time.time() - job_manager_last_heartbeat, 2) if job_manager_last_heartbeat else None
+
     return jsonify({
         "queued_count": len(job_queue),
         "queued_jobs": queued_jobs,
         "active_count": len(active_training_jobs),
         "active_jobs": list(active_training_jobs),
+        "active_details": active_details,
         "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
-        "manager_heartbeat_age_sec": round(time.time() - job_manager_last_heartbeat, 2) if job_manager_last_heartbeat else None,
+        "manager_heartbeat_age_sec": heartbeat_age,
+        "manager_alive": heartbeat_age is not None and heartbeat_age < 10,
+        "blocked_reason": (
+            "manager_thread_dead" if heartbeat_age is not None and heartbeat_age > 10
+            else "max_concurrent_reached" if len(active_training_jobs) >= MAX_CONCURRENT_JOBS
+            else None
+        ),
     }), 200
     
 @app.route('/api/system/resources')
@@ -300,12 +368,15 @@ def get_system_resources():
 
 @app.route('/api/train/stop/<job_id>', methods=['POST'])
 def stop_training(job_id):
-    # This is a bit tricky since trainer.train() is blocking in the thread.
-    # However, we have WatchdogCallback and we can manually set a flag if needed.
-    # For now, let's just update the status so the user knows we acknowledged it.
-    if job_id in jobs_db:
-        jobs_db[job_id]['status'] = 'STOPPED'
-        jobs_db[job_id]['logs'].append("🛑 Stop request received. Training will halt at the next step.")
+    if job_id in jobs_db or any(item[0] == job_id for item in job_queue):
+        if job_id not in jobs_db:
+            jobs_db[job_id] = {'status': 'STOPPED', 'progress': 0, 'logs': []}
+        else:
+            jobs_db[job_id]['status'] = 'STOPPED'
+        jobs_db[job_id]['logs'].append("🛑 Stop request received. Training halted or cancelled from queue.")
+        # Clear from queue if present
+        global job_queue
+        job_queue = deque([item for item in job_queue if item[0] != job_id])
         return jsonify({"message": "Stop signal sent"}), 200
     return jsonify({"error": "Job not found"}), 404
 
