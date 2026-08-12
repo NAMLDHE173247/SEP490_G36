@@ -1,5 +1,4 @@
 import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   GitBranch,
   Eye,
@@ -128,8 +127,12 @@ function shortId(id: string) {
 /* ────────────────────────────────────────────────────────────────
    Main component
 ──────────────────────────────────────────────────────────────── */
+/* Helper: switch to a Dashboard tab via the event bus */
+const navigateToTab = (tab: string) => {
+  window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: tab }));
+};
+
 function VersionDataPrepView() {
-  const navigate = useNavigate();
   const [versions, setVersions] = useState<VersionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -256,7 +259,10 @@ function VersionDataPrepView() {
 
   /* ── Resume pipeline ── */
   const handleResumePipeline = (v: VersionItem) => {
-    navigate(`/dataprep?resumeVersionId=${v.id}`);
+    // Set 'current_version_id' — DataPrepContext reads this key on mount
+    // and automatically calls openWorkflowVersion() to hydrate the workflow.
+    localStorage.setItem('current_version_id', v.id);
+    navigateToTab('Data Prep');
   };
 
   /* ── Select / compare ── */
@@ -363,7 +369,7 @@ function VersionDataPrepView() {
           </button>
           <button
             className="vdp-btn vdp-btn-primary"
-            onClick={() => navigate('/dataprep')}
+            onClick={() => navigateToTab('Data Prep')}
           >
             <Plus size={16} />
             New Version
