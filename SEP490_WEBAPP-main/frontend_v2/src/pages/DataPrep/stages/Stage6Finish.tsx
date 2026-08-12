@@ -943,8 +943,8 @@ export const Stage6Finish: React.FC = () => {
       return;
     }
     if (testData.length !== 50) {
-      alert(`Locked RP5 requires exactly 50 held-out test items for ${subject}; found ${testData.length}.`);
-      return;
+      const proceed = window.confirm(`Locked RP5 requires exactly 50 held-out test items for ${subject}; found ${testData.length}.\nTiếp tục tải xuống (dạng exploratory)?`);
+      if (!proceed) return;
     }
 
     const trainExport = toChatML(trainData);

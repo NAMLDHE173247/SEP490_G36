@@ -1790,9 +1790,7 @@ export default function ModelEvalView() {
                           </div>
                           <div className="model-meta">
                             <span className="version-tag">{row.modelEvalId?.slice(0, 12)}</span>
-                             {row.flags.map(f => (
-                               <span key={f} className="flag-tag danger" title="Cờ cảnh báo chất lượng">{f}</span>
-                             ))}
+
                             {newestAttemptFailed && (
                               <span className="flag-tag danger" title={row.latestAttemptError || 'Lần eval mới nhất thất bại'}>Lần mới nhất FAILED</span>
                             )}
@@ -1875,7 +1873,7 @@ export default function ModelEvalView() {
             </button>
             <div className="detail-header-actions">
               <button className="btn-outline-eval" onClick={handleExportArtifact} disabled={!evaluationDetail}>
-                <Download size={14} /> Táº£i artifact RP5 (JSON)
+                <Download size={14} /> Tải artifact RP5 (JSON)
               </button>
               <button className="btn-outline-eval" onClick={fetchLeaderboard}>
                 <RefreshCw size={14} /> Tải lại dữ liệu
