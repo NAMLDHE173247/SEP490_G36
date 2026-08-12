@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   GitBranch,
   Eye,
@@ -29,14 +30,18 @@ import '../styles/versiondataprep.css';
 import { api } from '../services/api';
 
 
-const STATUS_CONFIG = {
+const STATUS_CONFIG: Record<string, { label: string; icon: JSX.Element; className: string }> = {
   'completed': { label: 'Completed', icon: <CheckCircle size={14} />, className: 'status-completed' },
+  'ready': { label: 'Completed', icon: <CheckCircle size={14} />, className: 'status-completed' },
   'in-progress': { label: 'In Progress', icon: <AlertCircle size={14} />, className: 'status-in-progress' },
+  'in_progress': { label: 'In Progress', icon: <AlertCircle size={14} />, className: 'status-in-progress' },
+  'active': { label: 'In Progress', icon: <AlertCircle size={14} />, className: 'status-in-progress' },
   'archived': { label: 'Archived', icon: <XCircle size={14} />, className: 'status-archived' },
   'failed': { label: 'Failed', icon: <XCircle size={14} />, className: 'status-failed' },
 };
 
 function VersionDataPrepView() {
+  const navigate = useNavigate();
   const [VERSIONS, setVersions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -75,12 +80,34 @@ function VersionDataPrepView() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const downloadBlob = async (url: string, defaultFilename: string) => {
+    try {
+      const res = await api.get(url, { responseType: 'blob' });
+      const disposition = res.headers['content-disposition'];
+      let filename = defaultFilename;
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename=["']?([^"';]+)["']?/);
+        if (match && match[1]) filename = match[1];
+      }
+      const blobUrl = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Tải file thất bại.');
+    }
+  };
+
   const handleExportOriginal = (id: string) => {
-    window.open(`${api.defaults.baseURL}/dataprep/versions/${id}/export-original`, '_blank');
+    downloadBlob(`/dataprep/versions/${id}/export-original`, `version_${id}_original.json`);
   };
 
   const handleExportLabeled = (id: string) => {
-    window.open(`${api.defaults.baseURL}/dataprep/versions/${id}/export-labeled`, '_blank');
+    downloadBlob(`/dataprep/versions/${id}/export-labeled`, `version_${id}_labeled.json`);
   };
 
   const handleExportJSONL = async (id: string) => {
@@ -97,7 +124,7 @@ function VersionDataPrepView() {
       await api.post(`/dataprep/export/${id}/snapshot`);
       // Step 3: Download JSONL
       setToastMessage('Đang tải file JSONL...');
-      window.open(`${api.defaults.baseURL}/dataprep/export/${id}/jsonl`, '_blank');
+      await downloadBlob(`/dataprep/export/${id}/jsonl`, `version_${id}_labeled.jsonl`);
       setToastMessage('✅ Xuất JSONL thành công!');
       setTimeout(() => setToastMessage(null), 3000);
     } catch (error: any) {
@@ -108,12 +135,23 @@ function VersionDataPrepView() {
 
   /* Filter & Sort */
   let filtered = VERSIONS.filter(v => {
-    const matchSearch = searchQuery.trim() === '' ||
-      v.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.projectName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      v.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchStatus = statusFilter === 'all' || v.status === statusFilter;
+    const q = searchQuery.trim().toLowerCase();
+    const matchSearch = q === '' ||
+      String(v.id || '').toLowerCase().includes(q) ||
+      String(v.projectName || '').toLowerCase().includes(q) ||
+      String(v.description || '').toLowerCase().includes(q) ||
+      (Array.isArray(v.tags) && v.tags.some(t => String(t || '').toLowerCase().includes(q)));
+
+    const statusStr = String(v.status || '').toLowerCase();
+    const isCompleted = statusStr === 'completed' || statusStr === 'ready';
+    const isInProgress = statusStr === 'in-progress' || statusStr === 'in_progress' || statusStr === 'active';
+    const isArchived = statusStr === 'archived';
+
+    const matchStatus = statusFilter === 'all' ||
+      (statusFilter === 'completed' && isCompleted) ||
+      (statusFilter === 'in-progress' && isInProgress) ||
+      (statusFilter === 'archived' && isArchived);
+
     return matchSearch && matchStatus;
   });
 
@@ -121,7 +159,7 @@ function VersionDataPrepView() {
     switch (sortBy) {
       case 'date-asc': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
       case 'date-desc': return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      case 'name': return a.projectName.localeCompare(b.projectName);
+      case 'name': return String(a.projectName || '').localeCompare(String(b.projectName || ''));
       case 'accuracy': return (b.accuracy || 0) - (a.accuracy || 0);
       default: return 0;
     }
@@ -130,7 +168,7 @@ function VersionDataPrepView() {
   const totalPages = Math.ceil(filtered.length / perPage);
   const pageVersions = filtered.slice((currentPage - 1) * perPage, currentPage * perPage);
 
-  const toggleSelect = (id) => {
+  const toggleSelect = (id: string) => {
     setSelectedVersions(prev =>
       prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
     );
@@ -138,9 +176,15 @@ function VersionDataPrepView() {
 
   const statusCounts = {
     all: VERSIONS.length,
-    completed: VERSIONS.filter(v => v.status === 'completed').length,
-    'in-progress': VERSIONS.filter(v => v.status === 'in-progress').length,
-    archived: VERSIONS.filter(v => v.status === 'archived').length,
+    completed: VERSIONS.filter(v => {
+      const s = String(v.status || '').toLowerCase();
+      return s === 'completed' || s === 'ready';
+    }).length,
+    'in-progress': VERSIONS.filter(v => {
+      const s = String(v.status || '').toLowerCase();
+      return s === 'in-progress' || s === 'in_progress' || s === 'active';
+    }).length,
+    archived: VERSIONS.filter(v => String(v.status || '').toLowerCase() === 'archived').length,
   };
 
   return (
@@ -168,7 +212,7 @@ function VersionDataPrepView() {
             <GitCompare size={16} />
             Compare ({selectedVersions.length}/2)
           </button>
-          <button className="vdp-btn vdp-btn-primary">
+          <button className="vdp-btn vdp-btn-primary" onClick={() => navigate('/dataprep')}>
             <Plus size={16} />
             New Version
           </button>
