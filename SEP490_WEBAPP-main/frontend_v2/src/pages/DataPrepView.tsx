@@ -2943,18 +2943,17 @@ function DataPrepInner() {
                               ));
                             }}
                           >
-                            <option value="">-- Select --</option>
-                            <option value="MATH">MATH</option>
-                            <option value="CODING">CODING</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                            <option value="PHYSICS">PHYSICS</option>
-                            <option value="CHEMISTRY">CHEMISTRY</option>
-                            <option value="BIOLOGY">BIOLOGY</option>
-                            <option value="HISTORY">HISTORY</option>
-                            <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                            <option value="OTHER">OTHER</option>
-                            <option value="NOISE">NOISE</option>
+                            <option value="">-- Chọn --</option>
+                            <option value="MATH">Toán</option>
+                            <option value="CODING">Lập trình</option>
+                            <option value="ENGLISH">Tiếng Anh</option>
+                            <option value="PHYSICS">Vật lý</option>
+                            <option value="CHEMISTRY">Hóa học</option>
+                            <option value="BIOLOGY">Sinh học</option>
+                            <option value="HISTORY">Lịch sử</option>
+                            <option value="LITERATURE">Ngữ văn</option>
+                            <option value="OTHER">Khác</option>
+                            <option value="NOISE">Nhiễu</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
                             {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                           </select>
@@ -2966,7 +2965,7 @@ function DataPrepInner() {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                    ))} 
                   </tbody>
                 </table>
               </div>
@@ -3187,19 +3186,17 @@ function DataPrepInner() {
                                 ));
                               }}
                             >
-                              <option value="">-- Select --</option>
-                              <option value="MATH">MATH</option>
-                              <option value="CODING">CODING</option>
-                              <option value="ENGLISH">ENGLISH</option>
-                              <option value="PHYSICS">PHYSICS</option>
-                              <option value="PHYSICAL">PHYSICAL</option>
-                              <option value="CHEMISTRY">CHEMISTRY</option>
-                              <option value="BIOLOGY">BIOLOGY</option>
-                              <option value="HISTORY">HISTORY</option>
-                              <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                              <option value="OTHER">OTHER</option>
-                              <option value="NOISE">NOISE</option>
+                              <option value="">-- Chọn --</option>
+                              <option value="MATH">Toán</option>
+                              <option value="CODING">Lập trình</option>
+                              <option value="ENGLISH">Tiếng Anh</option>
+                              <option value="PHYSICS">Vật lý</option>
+                              <option value="CHEMISTRY">Hóa học</option>
+                              <option value="BIOLOGY">Sinh học</option>
+                              <option value="HISTORY">Lịch sử</option>
+                              <option value="LITERATURE">Ngữ văn</option>
+                              <option value="OTHER">Khác</option>
+                              <option value="NOISE">Nhiễu</option>
                               {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
                               {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                             </select>

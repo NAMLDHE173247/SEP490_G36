@@ -22,7 +22,7 @@ const DISPLAY_LABELS: Record<string, string> = {
   'QUALITY': 'CHẤT LƯỢNG',
   'ISSUES': 'VẤN ĐỀ',
   'MATH': 'Toán', 'PHYSICS': 'Vật lý', 'CHEMISTRY': 'Hóa học', 'BIOLOGY': 'Sinh học', 'ENGLISH': 'Tiếng Anh',
-  'HISTORY': 'Lịch sử', 'GEOGRAPHY': 'Địa lý', 'CIVICS': 'GDCD', 'IT': 'Tin học', 'CROSS_CURRICULAR': 'Liên môn', 'UNKNOWN': 'Chưa rõ',
+  'LITERATURE': 'Ngữ văn', 'HISTORY': 'Lịch sử', 'GEOGRAPHY': 'Địa lý', 'CIVICS': 'GDCD', 'IT': 'Tin học', 'CROSS_CURRICULAR': 'Liên môn', 'UNKNOWN': 'Chưa rõ',
   'Completed': 'Hoàn thành', 'Incomplete': 'Chưa hoàn thành', 'Abandoned': 'Bỏ qua',
   'Gold': 'Xuất sắc', 'Rewrite': 'Viết lại', 'Bad': 'Tệ',
   'Factual Error': 'Sai kiến thức', 'Direct Answer': 'Lộ đáp án', 'Language Issue': 'Lỗi ngôn ngữ',
@@ -1614,18 +1614,17 @@ export const Stage3Labeling: React.FC = () => {
                             }
                           }}
                         >
-                          <option value="">-- Select --</option>
-                          <option value="MATH">MATH</option>
-                          <option value="CODING">CODING</option>
-                          <option value="ENGLISH">ENGLISH</option>
-                          <option value="PHYSICS">PHYSICS</option>
-                          <option value="CHEMISTRY">CHEMISTRY</option>
-                          <option value="BIOLOGY">BIOLOGY</option>
-                          <option value="HISTORY">HISTORY</option>
-                          <option value="LITERATURE">LITERATURE</option>
-                          <option value="ENGLISH">ENGLISH</option>
-                          <option value="OTHER">OTHER</option>
-                          <option value="NOISE">NOISE</option>
+                          <option value="">-- Chọn --</option>
+                          <option value="MATH">Toán</option>
+                          <option value="CODING">Lập trình</option>
+                          <option value="ENGLISH">Tiếng Anh</option>
+                          <option value="PHYSICS">Vật lý</option>
+                          <option value="CHEMISTRY">Hóa học</option>
+                          <option value="BIOLOGY">Sinh học</option>
+                          <option value="HISTORY">Lịch sử</option>
+                          <option value="LITERATURE">Ngữ văn</option>
+                          <option value="OTHER">Khác</option>
+                          <option value="NOISE">Nhiễu</option>
                           {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
                           {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                         </select>
@@ -1897,19 +1896,16 @@ export const Stage3Labeling: React.FC = () => {
                               ));
                             }}
                           >
-                            <option value="">-- Select --</option>
-                            <option value="MATH">MATH</option>
-                            <option value="CODING">CODING</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                            <option value="PHYSICS">PHYSICS</option>
-                            <option value="PHYSICAL">PHYSICAL</option>
-                            <option value="CHEMISTRY">CHEMISTRY</option>
-                            <option value="BIOLOGY">BIOLOGY</option>
-                            <option value="HISTORY">HISTORY</option>
-                            <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                            <option value="OTHER">OTHER</option>
-                            <option value="NOISE">NOISE</option>
+                            <option value="">-- Chọn --</option>
+                            <option value="MATH">Toán</option>
+                            <option value="ENGLISH">Tiếng Anh</option>
+                            <option value="PHYSICS">Vật lý</option>
+                            <option value="CHEMISTRY">Hóa học</option>
+                            <option value="BIOLOGY">Sinh học</option>
+                            <option value="HISTORY">Lịch sử</option>
+                            <option value="LITERATURE">Ngữ văn</option>
+                            <option value="OTHER">Khác</option>
+                            <option value="NOISE">Nhiễu</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
                             {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                           </select>

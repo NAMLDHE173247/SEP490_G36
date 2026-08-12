@@ -391,18 +391,15 @@ export const Stage3Labeling = (dataPrep: any) => {
                   onChange={e => setBulkSubject(e.target.value)}
                 >
                   <option value="">-- Select Subject --</option>
-                  <option value="MATH">MATH</option>
-                  <option value="CODING">CODING</option>
-                  <option value="PHYSICS">PHYSICS</option>
-                  <option value="PHYSICAL">PHYSICAL</option>
-                  <option value="CHEMISTRY">CHEMISTRY</option>
-                  <option value="BIOLOGY">BIOLOGY</option>
-                  <option value="HISTORY">HISTORY</option>
-                  <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                  <option value="GEOGRAPHY">GEOGRAPHY</option>
-                  <option value="OTHER">OTHER</option>
-                  <option value="NOISE">NOISE</option>
+                  <option value="MATH">TOÁN</option>
+                  <option value="PHYSICS">VẬT LÝ</option>
+                  <option value="CHEMISTRY">HÓA HỌC</option>
+                  <option value="BIOLOGY">SINH HỌC</option>
+                  <option value="HISTORY">LỊCH SỬ</option>
+                  <option value="LITERATURE">NGỮ VĂN</option>
+                  <option value="ENGLISH">TIẾNG ANH</option>
+                  <option value="GEOGRAPHY">ĐỊA LÝ</option>
+                  <option value="OTHER">KHÁC</option>
                   {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
                   {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mß╗¢i)</option>)}
                 </select>
@@ -675,19 +672,19 @@ export const Stage3Labeling = (dataPrep: any) => {
                               }
                             }}
                           >
-                            <option value="">-- Select --</option>
-                            <option value="MATH">MATH</option>
-                            <option value="CODING">CODING</option>
-                            <option value="PHYSICS">PHYSICS</option>
-                            <option value="CHEMISTRY">CHEMISTRY</option>
-                            <option value="BIOLOGY">BIOLOGY</option>
-                            <option value="HISTORY">HISTORY</option>
-                            <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                            <option value="OTHER">OTHER</option>
-                            <option value="NOISE">NOISE</option>
+                            <option value="">-- Chọn --</option>
+                            <option value="MATH">Toán</option>
+                            <option value="CODING">Lập trình</option>
+                            <option value="ENGLISH">Tiếng Anh</option>
+                            <option value="PHYSICS">Vật lý</option>
+                            <option value="CHEMISTRY">Hóa học</option>
+                            <option value="BIOLOGY">Sinh học</option>
+                            <option value="HISTORY">Lịch sử</option>
+                            <option value="LITERATURE">Ngữ văn</option>
+                            <option value="OTHER">Khác</option>
+                            <option value="NOISE">Nhiễu</option>
                             {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
-                            {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mß╗¢i)</option>)}
+                            {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                           </select>
                         </td>
                         <td className="col-action-cell" style={{ verticalAlign: 'middle' }}>
@@ -982,20 +979,19 @@ export const Stage3Labeling = (dataPrep: any) => {
                                 ));
                               }}
                             >
-                              <option value="">-- Select --</option>
-                              <option value="MATH">MATH</option>
-                              <option value="CODING">CODING</option>
-                              <option value="PHYSICS">PHYSICS</option>
-                              <option value="PHYSICAL">PHYSICAL</option>
-                              <option value="CHEMISTRY">CHEMISTRY</option>
-                              <option value="BIOLOGY">BIOLOGY</option>
-                              <option value="HISTORY">HISTORY</option>
-                              <option value="LITERATURE">LITERATURE</option>
-                            <option value="ENGLISH">ENGLISH</option>
-                              <option value="OTHER">OTHER</option>
-                              <option value="NOISE">NOISE</option>
+                              <option value="">-- Chọn --</option>
+                              <option value="MATH">Toán</option>
+                              <option value="CODING">Lập trình</option>
+                              <option value="ENGLISH">Tiếng Anh</option>
+                              <option value="PHYSICS">Vật lý</option>
+                              <option value="CHEMISTRY">Hóa học</option>
+                              <option value="BIOLOGY">Sinh học</option>
+                              <option value="HISTORY">Lịch sử</option>
+                              <option value="LITERATURE">Ngữ văn</option>
+                              <option value="OTHER">Khác</option>
+                              <option value="NOISE">Nhiễu</option>
                               {customSubjectLabels.map(lbl => <option key={lbl} value={lbl}>{lbl}</option>)}
-                              {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mß╗¢i)</option>)}
+                              {pendingAiLabels.map(lbl => <option key={lbl} value={lbl}>{lbl} (Mới)</option>)}
                             </select>
                           </div>
                         </div>
