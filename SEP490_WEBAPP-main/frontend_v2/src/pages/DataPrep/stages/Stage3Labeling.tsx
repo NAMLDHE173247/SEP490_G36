@@ -144,6 +144,32 @@ function getUiTagName(dbName: string, role: 'user' | 'assistant'): string | null
   return role === 'user' ? (DB_TO_UI_USER[dbName] ?? null) : (DB_TO_UI_ASSISTANT[dbName] ?? null);
 }
 
+/** Helper: Set một tag's active state cho một message cụ thể. */
+function setMessageTagActive(messages: any[], msgId: number, tagName: string, isActive: boolean): any[] {
+  return messages.map(msg => {
+    if (msg.id !== msgId) return msg;
+
+    const newLabels: Record<string, any[]> = {};
+    Object.entries(msg.labels).forEach(([groupName, tags]: [string, any]) => {
+      newLabels[groupName] = tags.map((tag: any) => {
+        if (tag.name === tagName) {
+          return {
+            ...tag,
+            active: isActive,
+            count: isActive ? tag.count + 1 : Math.max(0, tag.count - 1)
+          };
+        }
+        return tag;
+      });
+    });
+
+    return {
+      ...msg,
+      labels: newLabels
+    };
+  });
+}
+
 /** Tạo cấu trúc iaMessages trống từ mảng messages của conv (stage3Convs item). */
 function buildBaseIaMessages(messages: Array<{ user: string; assistant: string }>): any[] {
   const result: any[] = [];
@@ -242,15 +268,12 @@ function activateLabelsInMessages(baseMessages: any[], dbLabels: any[]): any[] {
 
   return baseMessages.map((msg) => {
     const active = activationMap[msg.messageIndex];
-    if (!active || active.size === 0) return msg;
-
+    
     const newLabels: Record<string, any[]> = {};
     Object.entries(msg.labels).forEach(([groupName, tags]: [string, any]) => {
       newLabels[groupName] = tags.map((tag: any) => {
-        if (active.has(tag.name)) {
-          return { ...tag, active: true, count: 1 };
-        }
-        return tag;
+        const isActive = active && active.has(tag.name);
+        return { ...tag, active: isActive, count: isActive ? 1 : 0 };
       });
     });
     return { ...msg, labels: newLabels };
@@ -328,6 +351,17 @@ export const Stage3Labeling: React.FC = () => {
     const versionId = localStorage.getItem('current_version_id');
     const sample = step7Samples[step7SampleIndex];
     if (!versionId || !sample?.sampleId) return toast('Không tìm thấy hội thoại hiện tại.', 'error');
+    
+    // Kiểm tra xem có pending labels không (chưa save)
+    const sampleId = sample.sampleId;
+    const hasPendingLabels = Object.keys(localMessageLabelCache).some(
+      (key) => key.startsWith(`${sampleId}:`) && (localMessageLabelCache[key] || []).length > 0
+    );
+    if (hasPendingLabels) {
+      toast('Vui lòng chờ toàn bộ nhãn message được lưu trước khi chốt.', 'warning');
+      return;
+    }
+    
     const normalizedConversationLabels = {
       ...conversationLabels,
       SUBJECT: (conversationLabels.SUBJECT || []).map((value) => String(value).replace(/^SUBJECT:\s*/i, '').trim()).filter(Boolean),
@@ -338,6 +372,15 @@ export const Stage3Labeling: React.FC = () => {
     try {
       await apiService.setDatasetSampleCanonicalLabels({ versionId, sampleId: sample.sampleId, labels, targetTextSnapshot: JSON.stringify(normalizedConversationLabels) });
       toast('Đã chốt nhãn hội thoại của Admin.', 'success');
+      
+      // Clear cache cho sample này
+      setLocalMessageLabelCache((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((key) => {
+          if (key.startsWith(`${sampleId}:`)) delete next[key];
+        });
+        return next;
+      });
       
       // Cập nhật lại stage3Convs để ghi nhớ môn học vừa chốt
       const finalSubject = normalizedConversationLabels['SUBJECT']?.[0];
@@ -453,6 +496,8 @@ export const Stage3Labeling: React.FC = () => {
   const [isAutoLabelingBatch, setIsAutoLabelingBatch] = React.useState(false);
   /** AI đã gán nhãn xong (dùng để isStepCompleted(6) trả true) */
   const [aiLabelingDone, setAiLabelingDone] = React.useState(false);
+  /** Local cache của message-level labels chưa được lưu vào DB (key: sampleId:messageIndex:role) */
+  const [localMessageLabelCache, setLocalMessageLabelCache] = React.useState<Record<string, string[]>>({});
   /** Số batch count cho auto-label (controlled input) */
   const [batchCount, setBatchCount] = React.useState(1);
   /** Provider cho auto-label batch */
@@ -645,7 +690,26 @@ export const Stage3Labeling: React.FC = () => {
       try {
         const { labels } = await apiService.getSampleLabels(sampleId, { scope: 'all' });
         if (!cancelled) {
-          setIaMessages(activateLabelsInMessages(baseMessages, labels));
+          // Merge local cache với labels từ DB
+          const mergedLabels = [...(labels || [])];
+          baseMessages.forEach(msg => {
+            const cacheKey = `${sampleId}:${msg.messageIndex}:${msg.role}`;
+            const cachedTags = localMessageLabelCache[cacheKey] || [];
+            cachedTags.forEach(tagName => {
+              const dbName = getDbLabelName(tagName, msg.role);
+              if (dbName && !mergedLabels.some(l => l.messageIndex === msg.messageIndex && l.messageRole === msg.role && l.name === dbName)) {
+                mergedLabels.push({
+                  name: dbName,
+                  type: ISSUES_SOFT_LABELS.has(tagName) ? 'soft' : 'hard',
+                  targetScope: 'message',
+                  messageIndex: msg.messageIndex,
+                  messageRole: msg.role,
+                });
+              }
+            });
+          });
+
+          setIaMessages(activateLabelsInMessages(baseMessages, mergedLabels));
 
           // Khôi phục Nhãn Cứng Hội Thoại
           const newConvLabels: Record<string, string[]> = { DECISION: [], SUBJECT: [], STATUS: [], QUALITY: [], ISSUES: [] };
@@ -682,7 +746,7 @@ export const Stage3Labeling: React.FC = () => {
         if (!cancelled) setIsFetchingLabels(false);
       }
     },
-    [stage3Convs, setIaMessages]
+    [stage3Convs, setIaMessages, localMessageLabelCache]
   );
 
   /** Di chuyển đến sample thứ idx (0-based) trong step 7. */
@@ -852,7 +916,15 @@ export const Stage3Labeling: React.FC = () => {
           messageIndex: msg.messageIndex,
           messageRole: msg.role,
           targetTextSnapshot: msg.text?.slice(0, 200),
-        }).catch((err: any) => console.error('[handleToggleLabelMultiWithApi] addSampleLabel failed:', err));
+        })
+          .then(() => {
+            // Clear cache sau khi save success
+            setLocalMessageLabelCache((prev) => ({
+              ...prev,
+              [cacheKey]: (prev[cacheKey] || []).filter((name) => name !== tagName),
+            }));
+          })
+          .catch((err: any) => console.error('[handleToggleLabelMultiWithApi] addSampleLabel failed:', err));
       } else {
         setLocalMessageLabelCache((prev) => ({
           ...prev,
@@ -864,7 +936,11 @@ export const Stage3Labeling: React.FC = () => {
           targetScope: 'message',
           messageIndex: msg.messageIndex,
           messageRole: msg.role,
-        }).catch((err: any) => console.error('[handleToggleLabelMultiWithApi] removeSampleLabel failed:', err));
+        })
+          .then(() => {
+            // API success, no need to update cache further
+          })
+          .catch((err: any) => console.error('[handleToggleLabelMultiWithApi] removeSampleLabel failed:', err));
       }
     },
     [setIaMessages, step7Samples, step7SampleIndex]
