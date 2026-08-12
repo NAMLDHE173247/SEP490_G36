@@ -1375,6 +1375,47 @@ export const getSystemResources = async (_req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// GET /api/train/queue-status
+// Proxy to GPU Service queue-status endpoint for queue diagnostics
+// ---------------------------------------------------------------------------
+export const getTrainQueueStatus = async (_req: Request, res: Response) => {
+  try {
+    const urls = workerManager.getUrls();
+    const queuePromises = urls.map(async (url) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(`${url}/api/train/queue-status`, {
+          headers: GPU_TUNNEL_HEADERS,
+          signal: controller.signal as any,
+        });
+        const text = await response.text();
+        let data: any;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          return { url, error: 'Worker returned non-JSON response' };
+        }
+        return { url, status: 'online', ...data };
+      } catch (err: any) {
+        return { url, error: 'Worker unreachable', details: err.message };
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    });
+
+    const results = await Promise.all(queuePromises);
+    const primary = results[0] || {};
+    return res.json({
+      workers: results,
+      ...primary,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: error.message || 'Failed to get queue status' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/train/resume/:jobId
 // ---------------------------------------------------------------------------
 export const resumeTraining = async (req: Request, res: Response) => {
