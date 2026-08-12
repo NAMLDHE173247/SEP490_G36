@@ -576,38 +576,86 @@ export const Stage6Finish: React.FC = () => {
     ];
   };
 
+  /**
+   * Map old Stage3 DB label names → V2-compatible canonical names.
+   * Required because Stage3 previously stored labels with different naming
+   * (e.g. HINTING instead of HINT, CONFIRM_CORRECT_ANSWER instead of CONFIRM).
+   * Both old records (legacy) and new records (already using V2 names) are handled.
+   */
+  const normalizeV2LabelName = (label: string): string => {
+    const legacyToV2: Record<string, string> = {
+      // Assistant labels renamed in the Stage3 → V2 migration
+      'HINTING':                  'HINT',
+      'CORRECT_MISTAKE':          'CORRECTION_VIA_QUESTION',
+      'CONCEPT_CLARIFY':          'ELABORATION',
+      'CONFIRM_CORRECT_ANSWER':   'CONFIRM',
+    };
+    return legacyToV2[label] ?? label;
+  };
+
   const toChatML = (data: any[]): any[] => {
     const lockedSystemPrompt = getLockedSystemPrompt();
     return data.map((conv: any) => {
+      // --- Rebuild messages list ---
+      // Always start with the locked system prompt; skip any system message
+      // from the source to avoid duplicates.
       const messages: { role: string; content: string }[] = [
         { role: 'system', content: lockedSystemPrompt },
       ];
 
-      // 2. Convert conversation messages
       if (Array.isArray(conv.messages)) {
         for (const m of conv.messages) {
           if (m.role && typeof m.content === 'string') {
-            // Already in {role, content} format
-            if (m.role !== 'system') { // avoid duplicate system
+            if (m.role !== 'system') {
               messages.push({ role: m.role, content: m.content });
             }
           } else if (m.user !== undefined || m.assistant !== undefined) {
             // Convert {user, assistant} pair format
-            if (m.user) {
-              messages.push({ role: 'user', content: m.user });
-            }
-            if (m.assistant) {
-              messages.push({ role: 'assistant', content: m.assistant });
-            }
+            if (m.user) messages.push({ role: 'user', content: m.user });
+            if (m.assistant) messages.push({ role: 'assistant', content: m.assistant });
           }
         }
       }
 
+      // --- Rebuild labels to match V2 format ---
+      const subjectVal: string =
+        conv.subject ||
+        conv.subjectLabelWithHuman ||
+        conv.subjectLabelWithAI ||
+        'UNGROUPED';
+
+      const sourceLabels = conv.labels;
+      let labelsMessages: any[] = [];
+      if (sourceLabels && Array.isArray(sourceLabels.messages) && sourceLabels.messages.length > 0) {
+        labelsMessages = sourceLabels.messages.map((entry: any) => ({
+          // +1: Stage3 DB uses 0-based messageIndex for the messages array
+          // that has NO system message. After injecting system at position 0,
+          // V2 expects 1-based sequential indexes (system occupies index 0).
+          messageIndex: (Number.isInteger(entry.messageIndex) ? entry.messageIndex : 0) + 1,
+          role: entry.role,
+          // Normalize old Stage3 label names to V2-compatible canonical names.
+          labels: Array.isArray(entry.labels)
+            ? entry.labels.map(normalizeV2LabelName)
+            : [],
+        }));
+      }
+
+      // labels.sample should be an array of the subject string (matching V2 pattern)
+      let labelsSample: string[] = [];
+      if (sourceLabels && Array.isArray(sourceLabels.sample) && sourceLabels.sample.length > 0) {
+        labelsSample = sourceLabels.sample;
+      } else if (subjectVal && subjectVal !== 'UNGROUPED') {
+        labelsSample = [subjectVal];
+      }
+
+      const labels = { sample: labelsSample, messages: labelsMessages };
+
+      // --- Return with V2-matching field order ---
       return {
-        messages,
-        labels: conv.labels || { sample: [], messages: [] },
         conversation_id: conv.conversation_id || conv.id,
-        subject: conv.subject || conv.subjectLabelWithHuman || conv.subjectLabelWithAI || 'UNGROUPED',
+        subject: subjectVal,
+        messages,
+        labels,
       };
     }).filter(item => item.messages.some(message => message.role === 'user'));
   };
@@ -873,7 +921,7 @@ export const Stage6Finish: React.FC = () => {
       const testData = select(splitResult.test || [], row.subject);
       if (trainData.length) zip.file(`${prefix}.train.json`, JSON.stringify(toChatML(trainData), null, 2));
       if (valData.length) zip.file(`${prefix}.validation.json`, JSON.stringify(toChatML(valData), null, 2));
-      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toLockedEvaluation(testData), null, 2));
+      if (testData.length) zip.file(`${prefix}.test.json`, JSON.stringify(toChatML(testData), null, 2));
       exportedSubjects.push({
         subject: normalize(row.subject),
         prefix,
@@ -949,7 +997,7 @@ export const Stage6Finish: React.FC = () => {
 
     const trainExport = toChatML(trainData);
     const validationExport = toChatML(valData);
-    const testExport = toLockedEvaluation(testData);
+    const testExport = toChatML(testData);
     const [trainHash, validationHash, testHash] = await Promise.all([
       sha256Json(trainExport),
       sha256Json(validationExport),
@@ -1035,7 +1083,7 @@ export const Stage6Finish: React.FC = () => {
       zip.file('validation_dataset.json', JSON.stringify(toChatML(valData), null, 2));
     }
     if (testData.length > 0) {
-      zip.file('test_dataset.json', JSON.stringify(toLockedEvaluation(testData), null, 2));
+      zip.file('test_dataset.json', JSON.stringify(toChatML(testData), null, 2));
     }
 
     const content = await zip.generateAsync({ type: "blob" });

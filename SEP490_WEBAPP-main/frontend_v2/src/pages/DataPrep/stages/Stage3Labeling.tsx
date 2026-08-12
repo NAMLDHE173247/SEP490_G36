@@ -60,21 +60,22 @@ const USER_LABEL_MAP: Record<string, string> = {
 /**
  * Map UI tag name → backend DB name cho role 'assistant'.
  * Đồng bộ với bộ nhãn ASSISTANT_ACTIONS mà Staff đang dùng (V2 Socratic taxonomy).
+ * DB names phải khớp với taxonomy V2 để file download có format giống V2.
  */
 const ASSISTANT_LABEL_MAP: Record<string, string> = {
-  A_HINT: 'HINTING',
+  A_HINT: 'HINT',                         // V2: HINT (trước: HINTING)
   WAIT: 'WAITING',
   PR: 'PRAISING',
   MOT: 'MOTIVATING',
-  SCAF: 'SCAFFOLDING',
+  SCAF: 'SCAFFOLDING',                    // V2: SCAFFOLDING (giữ nguyên)
   SIMP: 'SIMPLIFYING',
   REDIR: 'REDIRECTING',
   TRAN: 'TRANSITIONING',
   DIR: 'DIRECT_ANSWER',
-  FIX: 'CORRECT_MISTAKE',
-  CLR: 'CONCEPT_CLARIFY',
-  LOG: 'LOGIC_BREAKDOWN',
-  CONF: 'CONFIRM_CORRECT_ANSWER',
+  FIX: 'CORRECTION_VIA_QUESTION',         // V2: CORRECTION_VIA_QUESTION (trước: CORRECT_MISTAKE)
+  CLR: 'ELABORATION',                     // V2: ELABORATION (trước: CONCEPT_CLARIFY)
+  LOG: 'LOGIC_BREAKDOWN',                 // V2: LOGIC_BREAKDOWN (giữ nguyên)
+  CONF: 'CONFIRM',                        // V2: CONFIRM (trước: CONFIRM_CORRECT_ANSWER)
   WRONG: 'IDENTIFY_INCORRECT_ANSWER',
 };
 
@@ -83,10 +84,19 @@ const DB_TO_UI_USER: Record<string, string> = Object.fromEntries(
   Object.entries(USER_LABEL_MAP).map(([ui, db]) => [db, ui])
 );
 
-/** Reverse map: DB name → UI tag name cho assistant */
-const DB_TO_UI_ASSISTANT: Record<string, string> = Object.fromEntries(
-  Object.entries(ASSISTANT_LABEL_MAP).map(([ui, db]) => [db, ui])
-);
+/**
+ * Reverse map: DB name → UI tag name cho assistant.
+ * Bao gồm cả các tên DB cũ (legacy) để đảm bảo backward compatibility
+ * với records đã lưu trước khi đổi sang V2 naming.
+ */
+const DB_TO_UI_ASSISTANT: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(ASSISTANT_LABEL_MAP).map(([ui, db]) => [db, ui])),
+  // Legacy DB names (lưu bởi phiên bản cũ) → vẫn hiển thị đúng UI tag
+  'HINTING':                 'A_HINT',
+  'CORRECT_MISTAKE':         'FIX',
+  'CONCEPT_CLARIFY':         'CLR',
+  'CONFIRM_CORRECT_ANSWER':  'CONF',
+};
 
 /** ISSUES labels không có trong HARD_LABELS → lưu dưới dạng 'soft' */
 const ISSUES_SOFT_LABELS = new Set(['FACT_ERR', 'LANG_ISSUE', 'DIR_ANS']);
