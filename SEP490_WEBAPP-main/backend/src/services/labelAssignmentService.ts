@@ -51,6 +51,11 @@ export const HARD_LABELS = [
   'TRANSITIONING',
   'WAITING',
   'DIRECT_ANSWER',
+  // V2 new names (từ đợt refactor)
+  'CONFIRM',
+  'CORRECTION_VIA_QUESTION',
+  'ELABORATION',
+  'HINT',
 ] as const;
 
 export type LabelScope = 'sample' | 'message';
@@ -58,6 +63,7 @@ export type LabelQueryScope = 'sample' | 'message' | 'all';
 export type LabelRole = 'user' | 'assistant';
 export type LabelType = 'hard' | 'soft';
 export type LabelSource = 'ai' | 'human' | 'default' | 'system';
+
 
 export type LabelAssignmentAggregate = {
   _id: string;
