@@ -203,7 +203,12 @@ function VersionDataPrepView() {
             <BarChart2 size={20} />
           </div>
           <div className="vdp-stat-info">
-            <span className="vdp-stat-value">{Math.max(...VERSIONS.filter(v => v.accuracy).map(v => v.accuracy))}%</span>
+            <span className="vdp-stat-value">
+              {(() => {
+                const validAcc = VERSIONS.map(v => v.accuracy).filter((acc): acc is number => typeof acc === 'number' && !isNaN(acc));
+                return validAcc.length > 0 ? `${Math.max(...validAcc)}%` : 'N/A';
+              })()}
+            </span>
             <span className="vdp-stat-label">Best Accuracy</span>
           </div>
         </div>
