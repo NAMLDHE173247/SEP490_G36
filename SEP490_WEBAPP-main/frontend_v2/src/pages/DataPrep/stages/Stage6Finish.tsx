@@ -613,11 +613,7 @@ export const Stage6Finish: React.FC = () => {
         for (const m of conv.messages) {
           if (m.role && typeof m.content === 'string') {
             if (m.role !== 'system') {
-              // Strip inline intent tags prepended by the labeling system
-              // e.g. "[REQUEST_EXPLANATION] Em muốn..." → "Em muốn..."
-              // These tags must appear only in labels.messages, never in content.
-              const cleanContent = m.content.replace(/^\[[A-Z0-9_]+\]\s*/u, '').trim() || m.content;
-              messages.push({ role: m.role, content: cleanContent });
+              messages.push({ role: m.role, content: m.content });
               // Collect any labels embedded by the backend (messages[i].labels)
               if (Array.isArray(m.labels) && m.labels.length > 0) {
                 perMsgEmbeddedLabels.push({
