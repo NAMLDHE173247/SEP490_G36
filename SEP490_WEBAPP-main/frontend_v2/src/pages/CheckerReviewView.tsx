@@ -330,7 +330,7 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
       const pGroups = Array.from(sampleMap.values()).sort((a, b) => a.sampleIndex - b.sampleIndex);
 
       p.quickReviews = pGroups.filter(g => g.rows.length === 1 && !g.conflictItem && g.rows[0]?.reviewStatus === 'submitted');
-      p.overlapReviews = pGroups.filter(g => !!g.conflictItem && g.rows.length >= 2);
+      p.overlapReviews = pGroups.filter(g => !!g.conflictItem);
     });
 
     return Array.from(map.values())

@@ -1478,10 +1478,35 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         };
       });
 
+      const sampleObjectIds = samples.map((s) => s._id);
+      const allSampleLabels = await LabelAssignment.find({
+        sampleId: { $in: sampleObjectIds },
+        type: 'hard',
+      }).lean();
+      const labelsBySample = new Map<string, any[]>();
+      allSampleLabels.forEach((label: any) => {
+        const sId = String(label.sampleId);
+        if (!labelsBySample.has(sId)) {
+          labelsBySample.set(sId, []);
+        }
+        labelsBySample.get(sId)!.push(label);
+      });
+
+      const canonicalLabels = await DatasetCanonicalLabel.find({
+        datasetVersionId: version._id,
+        sampleId: { $in: sampleObjectIds },
+        targetScope: 'sample',
+      }).lean();
+      const canonicalBySample = new Map<string, any>();
+      canonicalLabels.forEach((cl: any) => {
+        canonicalBySample.set(String(cl.sampleId), cl);
+      });
+
       const sampleRows: any[] = [];
       for (let index = 0; index < samples.length; index++) {
         const sample = samples[index];
-        const itemAssignments = assignmentsBySampleId.get(String(sample._id)) || [];
+        const sId = String(sample._id);
+        const itemAssignments = assignmentsBySampleId.get(sId) || [];
         const assignees = itemAssignments
           .map((a) => {
             const u = userMap.get(String(a.assigneeId));
@@ -1504,6 +1529,37 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           }
         }
 
+        let subjectLabelWithHuman = null;
+        const canonical = canonicalBySample.get(sId);
+        if (canonical && Array.isArray(canonical.labels)) {
+          const cLabel = canonical.labels.find((l: string) => l.startsWith('SUBJECT:'));
+          if (cLabel) {
+            subjectLabelWithHuman = cLabel.split(':')[1];
+          } else if (canonical.labels.length > 0) {
+             const cParsed = canonical.labels[0].match(/SUBJECT:(.*)/) || canonical.labels[0].match(/(MATH|PHYSICAL|CHEMISTRY|LITERATURE|BIOLOGY|HISTORY|GEOGRAPHY|ENGLISH|CODING)/i);
+             if (cParsed && cParsed[1]) subjectLabelWithHuman = cParsed[1].toUpperCase();
+          }
+        }
+
+        if (!subjectLabelWithHuman) {
+          const hasConflict = Boolean(comparison?.hasConflict);
+          if (!hasConflict) {
+            const sLabels = labelsBySample.get(sId) || [];
+            const subjectLabels = sLabels.filter((l: any) => 
+              l.name?.startsWith('SUBJECT:') || 
+              ['MATH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'HISTORY', 'GEOGRAPHY', 'ENGLISH', 'CODING'].includes(l.name?.toUpperCase())
+            );
+            if (subjectLabels.length > 0) {
+              const uniqueSubjects = new Set(subjectLabels.map((l: any) => {
+                if (l.name.startsWith('SUBJECT:')) return l.name.split(':')[1].toUpperCase();
+                return l.name.toUpperCase();
+              }));
+              if (uniqueSubjects.size === 1) {
+                subjectLabelWithHuman = Array.from(uniqueSubjects)[0];
+              }
+            }
+          }
+        }
         sampleRows.push({
           sampleId: String(sample._id),
           sampleKey: String(sample.sampleId),
@@ -1513,6 +1569,7 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
           hasConflict: Boolean(comparison?.hasConflict),
           lowestAgreementScore: comparison?.agreementScore ?? null,
           pendingAdjudicationCount: comparison?.pendingAdjudicationCount ?? 0,
+          subjectLabelWithHuman,
           // Legacy field for back-compat if needed, taking the first one
           assignee: assignees[0] || null,
         });

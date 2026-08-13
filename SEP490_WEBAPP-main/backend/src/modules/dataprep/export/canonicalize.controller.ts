@@ -13,6 +13,7 @@ import { ConversationRewriteHistory } from '../../../models/ConversationRewriteH
 import { PromptLibraryItem } from '../../../models/PromptLibraryItem';
 import { getAuthUserId } from '../../../utils/auth';
 import { buildAssignmentConflictList } from '../../../services/labelAssignmentService';
+import { User } from '../../../models/User';
 
 export class CanonicalizeController {
   async getTrainingData(req: Request, res: Response): Promise<void> {
@@ -84,16 +85,26 @@ export class CanonicalizeController {
       // exist only at sample-level (e.g. SUBJECT labels after canonicalize) but the
       // admin assigned message intents via Step 7 that were never promoted to
       // DatasetCanonicalLabel.  This ensures intent labels always appear in the export.
+
       const hasCanonicalMessageLabels = activeCanonical.some(
         (l: any) => l.targetScope === 'message' && l.messageIndex != null
       );
-      if (!hasCanonicalMessageLabels) {
-        const msgHardLabels = await LabelAssignment.find({
-          sampleId: { $in: itemIds },
-          targetScope: 'message',
-          type: 'hard',
-        }).lean();
-        for (const hl of msgHardLabels) {
+      
+      const msgHardLabels = await LabelAssignment.find({
+        sampleId: { $in: itemIds },
+        targetScope: 'message',
+        type: 'hard',
+      }).lean();
+
+      const ROUTER_INTENTS = new Set([
+        'solve_problem', 'explain_concept', 'give_hint', 'check_answer',
+        'diagnose_error', 'ask_follow_up', 'ask_clarification'
+      ]);
+
+      for (const hl of msgHardLabels) {
+        // Always include intents, because admins assign intents in Step 7 which might not be canonicalized.
+        // If not an intent, only include if there are no canonical message labels to avoid resurrecting rejected staff labels.
+        if (!hasCanonicalMessageLabels || ROUTER_INTENTS.has(String(hl.name || ''))) {
           const key = String(hl.sampleId);
           const rows = labelsBySample.get(key) || [];
           rows.push({
@@ -218,11 +229,11 @@ export class CanonicalizeController {
         return;
       }
 
-      // 1. Kiểm tra tất cả submissions đã approved
-      const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: versionId });
+      // 1. Kiểm tra tất cả submissions đã approved (bỏ qua các submission đã bị revoked/inactive)
+      const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: versionId, active: { $ne: false } });
       if (submissions.length === 0) {
-        res.status(400).json({ success: false, error: 'Không có submission nào cho version này' });
-        return;
+        // Có thể admin tự gán nhãn mà không qua task assignment
+        // Không return lỗi ở đây nữa, chỉ tiếp tục.
       }
 
       const notApproved = submissions.filter(s => s.status !== 'approved');
@@ -241,11 +252,17 @@ export class CanonicalizeController {
 
       // 2. Gom hard labels
       const assigneeIds = submissions.map(s => s.assigneeId);
+      
+      // Cho phép admin và supervisor tự gán nhãn
+      const privilegedUsers = await User.find({ role: { $in: ['admin', 'supervisor'] } }).select('_id').lean();
+      const privilegedIds = privilegedUsers.map(u => u._id);
+      const allowedIds = [...assigneeIds, ...privilegedIds];
+
       const versionItems = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).select('_id').lean();
       const versionItemIds = versionItems.map(item => item._id);
       const hardLabels = await LabelAssignment.find({
         sampleId: { $in: versionItemIds },
-        createdBy: { $in: assigneeIds },
+        createdBy: { $in: allowedIds },
         type: 'hard',
       }).lean();
 
@@ -431,13 +448,18 @@ export class CanonicalizeController {
       }
 
       // Lấy toàn bộ labels cho version
-      const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: versionId }).lean();
+      const submissions = await DatasetAssignmentSubmission.find({ datasetVersionId: versionId, active: { $ne: false } }).lean();
       const assigneeIds = submissions.map(s => s.assigneeId);
+      
+      const privilegedUsers = await User.find({ role: { $in: ['admin', 'supervisor'] } }).select('_id').lean();
+      const privilegedIds = privilegedUsers.map(u => u._id);
+      const allowedIds = [...assigneeIds, ...privilegedIds];
+
       const versionItems = await ProcessedDatasetItem.find({ datasetVersionId: versionId }).select('_id').lean();
 
       const allLabels = await LabelAssignment.find({
         sampleId: { $in: versionItems.map(item => item._id) },
-        createdBy: { $in: assigneeIds },
+        createdBy: { $in: allowedIds },
       }).lean();
 
       const snapshot = await LabelSnapshot.create({

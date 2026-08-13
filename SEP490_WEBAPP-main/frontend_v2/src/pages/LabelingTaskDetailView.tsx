@@ -137,9 +137,23 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
     };
     fetchDetail();
 
-    // Auto-refresh mỗi 10 giây để manager thấy tiến độ real-time
-    const interval = setInterval(() => refreshTaskDetail(true), 10000);
-    return () => clearInterval(interval);
+    // Auto-refresh mỗi 3 giây để manager thấy tiến độ real-time
+    const interval = setInterval(() => {
+      refreshTaskDetail(true);
+    }, 3000);
+
+    // Lắng nghe sự kiện từ Checker (qua BroadcastChannel) để realtime ngay lập tức
+    const bc = new BroadcastChannel('dataprep_sync');
+    bc.onmessage = (event) => {
+      if (event.data === 'refresh_conflicts') {
+        refreshTaskDetail(true);
+      }
+    };
+
+    return () => {
+      clearInterval(interval);
+      bc.close();
+    };
   }, [task]);
 
   if (!task) return null;
@@ -698,7 +712,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                   .map((st: any) => { const lo = s.staffLabels?.[st.id]; return typeof lo === 'object' ? lo?.raw : lo; })
                   .filter(Boolean);
                 const uniq = new Set(done);
-                if (done.length > 1 && uniq.size === 1) agreed++;
+                if (s.isResolved) agreed++;
+                else if (done.length > 1 && uniq.size === 1) agreed++;
                 else if (done.length > 1 && uniq.size > 1) conflict++;
                 else waiting++;
               });
@@ -769,8 +784,9 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                           // Check if all done labels agree
                           const doneLabels = allLabels.filter(l => l.label);
                           const uniqueLabels = new Set(doneLabels.map(l => l.label));
-                          const isAgreed = doneLabels.length > 1 && uniqueLabels.size === 1;
-                          const isConflict = doneLabels.length > 1 && uniqueLabels.size > 1;
+                          const isResolved = s.isResolved;
+                          const isAgreed = isResolved || (doneLabels.length > 1 && uniqueLabels.size === 1);
+                          const isConflict = !isResolved && doneLabels.length > 1 && uniqueLabels.size > 1;
 
                           return (
                             <tr key={s.id} style={{
@@ -800,10 +816,10 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                                     background: '#ecfdf5', color: '#059669', padding: '2px 8px',
                                     borderRadius: '6px', fontSize: '11px', fontWeight: 600, border: '1px solid #a7f3d0'
                                   }}>
-                                    ✅ Đồng ý
+                                    {isResolved ? '✅ Đã phân xử' : '🤝 Đồng ý'}
                                   </span>
                                 )}
-                                {!isConflict && !isAgreed && doneLabels.length <= 1 && (
+                                {!isConflict && !isAgreed && (
                                   <span style={{
                                     display: 'inline-flex', alignItems: 'center', gap: '3px',
                                     background: '#f8fafc', color: '#94a3b8', padding: '2px 8px',
@@ -1172,7 +1188,7 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               <label style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Chọn nhân viên:</label>
               <select value={pickStaffId} onChange={e => setPickStaffId(e.target.value)} style={{ display: 'block', width: '100%', marginTop: 6, padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13 }}>
                 <option value="">-- Chọn nhân viên --</option>
-                {availStaff.map((s: any) => <option key={s._id} value={s._id}>{s.name || s.email}</option>)}
+                {availStaff.map((s: any) => <option key={s.id} value={s.id}>{s.name || s.email}</option>)}
               </select>
             </div>
             <div style={{ marginTop: 12 }}>

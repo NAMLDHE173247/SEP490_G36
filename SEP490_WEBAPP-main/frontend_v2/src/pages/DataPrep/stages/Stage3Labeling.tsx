@@ -726,11 +726,14 @@ export const Stage3Labeling: React.FC = () => {
             }
           });
 
-          // Pre-select AI Subject if NO manual SUBJECT is saved yet
+          // Pre-select AI Subject or human consensus if NO manual SUBJECT is saved yet
           if (newConvLabels['SUBJECT'].length === 0) {
+            const currentSample = step7Samples.find((s) => s.sampleId === sampleId);
+            const humanSubject = currentSample?.subjectLabelWithHuman;
             const aiSubject = conv.groupLabel || conv.subject || conv.cluster;
-            if (aiSubject && aiSubject !== 'NOISE') {
-              newConvLabels['SUBJECT'].push(aiSubject);
+            const finalSubject = humanSubject || (aiSubject && aiSubject !== 'NOISE' ? aiSubject : null);
+            if (finalSubject) {
+              newConvLabels['SUBJECT'].push(finalSubject);
             }
           }
 
@@ -2729,13 +2732,15 @@ export const Stage3Labeling: React.FC = () => {
                   const currentSample = step7Samples[step7SampleIndex];
                   const currentConv = stage3Convs[(currentSample?.sampleIndex ?? 1) - 1];
                   const aiSubject = currentConv?.groupLabel || currentConv?.subject || currentConv?.cluster || currentSample?.subject || 'UNKNOWN';
+                  const humanSubject = currentSample?.subjectLabelWithHuman;
+                  const finalSubject = conversationLabels['SUBJECT']?.[0] || humanSubject || aiSubject;
                   return (
                     <div className="ia-hl-group" key={group}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                         <span className="ia-hl-group-label" style={{ marginBottom: 0 }}>{DISPLAY_LABELS[group] || group}</span>
                         {group === 'SUBJECT' && (
                           <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, backgroundColor: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' }} title="Môn học đang được chọn">
-                            Môn : <strong style={{ color: '#3b82f6' }}>{DISPLAY_LABELS[conversationLabels['SUBJECT']?.[0] || aiSubject] || (conversationLabels['SUBJECT']?.[0] || aiSubject)}</strong>
+                            Môn : <strong style={{ color: '#3b82f6' }}>{DISPLAY_LABELS[finalSubject] || finalSubject}</strong>
                           </span>
                         )}
                       </div>

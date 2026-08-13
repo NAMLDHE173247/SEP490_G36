@@ -1778,7 +1778,7 @@ export async function publishAssignmentAdjudication(params: {
     query,
     {
       $set: {
-        datasetVersionId: sample.datasetVersionId,
+        datasetVersionId: new mongoose.Types.ObjectId(params.datasetVersionId),
         sampleId: sample._id,
         targetScope: params.targetScope,
         messageIndex: params.messageIndex ?? null,

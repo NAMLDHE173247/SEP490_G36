@@ -433,20 +433,20 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
     // Nếu không còn mục nào cần quyết định (ví dụ user sửa target đã publish)
     const targetsToSubmit = pendingTargets.length > 0 ? pendingTargets : (target ? [target] : []);
 
-    for (const t of targetsToSubmit) {
-      const draft = drafts[t.targetKey];
-      if (!draft || !draft.labels.length) {
-        setError(`Mục "${t.targetScope === 'sample' ? 'Hội thoại tổng' : 'Tin nhắn ' + (Number(t.messageIndex) + 1)}" chưa có nhãn cuối cùng. Hãy kiểm tra lại.`);
-        setActiveKey(t.targetKey);
-        return;
-      }
+    const readyTargets = targetsToSubmit.filter(t => drafts[t.targetKey] && drafts[t.targetKey].labels.length > 0);
+    const notReadyTargets = targetsToSubmit.filter(t => !drafts[t.targetKey] || !drafts[t.targetKey].labels.length);
+
+    if (readyTargets.length === 0 && notReadyTargets.length > 0) {
+      setError(`Vui lòng chọn nhãn cho mục "${notReadyTargets[0].targetScope === 'sample' ? 'Hội thoại tổng' : 'Tin nhắn ' + (Number(notReadyTargets[0].messageIndex) + 1)}" trước khi chốt.`);
+      setActiveKey(notReadyTargets[0].targetKey);
+      return;
     }
 
     setSaving(true);
     setError('');
 
     try {
-      const promises = targetsToSubmit.map(async (t) => {
+      const promises = readyTargets.map(async (t) => {
         const draft = drafts[t.targetKey];
         if (!draft) return;
         const payload:any = { targetScope: t.targetScope, finalLabels: draft.labels, note: draft.note?.trim() || '' };
@@ -463,6 +463,18 @@ export default function CheckerConflictDialog({item,onClose,onCompleted}:Props){
         }
       });
       await Promise.all(promises);
+      
+      if (notReadyTargets.length > 0) {
+        await load();
+        setActiveKey(notReadyTargets[0].targetKey);
+        setError(`Đã lưu thành công. Vui lòng tiếp tục phân xử mục "${notReadyTargets[0].targetScope === 'sample' ? 'Hội thoại tổng' : 'Tin nhắn ' + (Number(notReadyTargets[0].messageIndex) + 1)}".`);
+        return;
+      }
+
+      const bc = new BroadcastChannel('dataprep_sync');
+      bc.postMessage('refresh_conflicts');
+      bc.close();
+
       if (publish) {
         onClose();
         onCompleted();

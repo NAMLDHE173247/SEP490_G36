@@ -1197,7 +1197,7 @@ export class AssignmentController {
         baseName = parts.slice(1).join('_');
       }
 
-      const query: any = { datasetVersionId: versionId };
+      const query: any = { datasetVersionId: versionId, active: { $ne: false } };
       if (baseName && baseName !== 'Default Task') {
         query.name = new RegExp('^' + baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
       } else if (baseName === 'Default Task') {
@@ -1375,7 +1375,17 @@ export class AssignmentController {
 
       const sampleIdArray = Object.keys(sampleIdMap);
       const sampleObjectIdArray = sampleIdArray.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
-      const labels = await LabelAssignment.find({ sampleId: { $in: sampleObjectIdArray } });
+      const labels = await LabelAssignment.find({ 
+        sampleId: { $in: sampleObjectIdArray },
+        targetScope: 'sample'
+      });
+
+      const canonicalLabels = await DatasetCanonicalLabel.find({ 
+        sampleId: { $in: sampleObjectIdArray },
+        targetScope: 'sample' 
+      }).select('sampleId labels targetTextSnapshot').lean();
+      const canonicalMap = new Map(canonicalLabels.map((c: any) => [String(c.sampleId), c]));
+      const resolvedSampleIds = new Set(canonicalLabels.map((c: any) => String(c.sampleId)));
 
       const conflictMap: { [key: number]: any } = {};
 
@@ -1406,9 +1416,9 @@ export class AssignmentController {
             isDraft: !isComplete,
             raw: parsed?.subject || label.name,
           };
-          if (parsed?.subject) {
-            samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
-          }
+          const sampleObjId = samplesMap[sIndex].sampleObjectId;
+          samplesMap[sIndex].isResolved = resolvedSampleIds.has(String(sampleObjId));
+
           if (!conflictMap[sIndex]) conflictMap[sIndex] = [];
           conflictMap[sIndex].push(label);
         }
@@ -1444,11 +1454,35 @@ export class AssignmentController {
       for (const sIndexStr of Object.keys(conflictMap)) {
         const sIndex = Number(sIndexStr);
         const sLabels = conflictMap[sIndex];
+        const sampleObjId = samplesMap[sIndex].sampleObjectId;
+        
+        if (samplesMap[sIndex].isResolved) {
+          samplesMap[sIndex].conflict = false;
+          const canonical = canonicalMap.get(String(sampleObjId));
+          if (canonical) {
+             const cParsed = parseSavedLabel(canonical.targetTextSnapshot);
+             if (cParsed && cParsed.subject) {
+                samplesMap[sIndex].subjectLabelWithHuman = cParsed.subject;
+             } else if (canonical.labels && canonical.labels.length > 0) {
+                samplesMap[sIndex].subjectLabelWithHuman = canonical.labels[0];
+             }
+          }
+          continue;
+        }
+
+        // Gather all subjects from annotators
+        const uniqueSubjects = new Set();
+        for (const l of sLabels) {
+           const parsed = parseSavedLabel(l.targetTextSnapshot);
+           if (parsed?.subject) uniqueSubjects.add(parsed.subject);
+        }
+
         if (sLabels.length > 1) {
           const firstLabelName = sLabels[0].name;
-          const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName);
-          if (hasConflict || true) { // Always show as conflict for now if > 1 label for demo purposes
+          const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName) || uniqueSubjects.size > 1;
+          if (hasConflict) {
             samplesMap[sIndex].conflict = true;
+            samplesMap[sIndex].subjectLabelWithHuman = null; // Hide human label if conflict
             const annotatorLabels = sLabels.map(buildAnnotatorLabel);
             conflicts.push({
               sampleId: sIndex,
@@ -1464,7 +1498,23 @@ export class AssignmentController {
               labelA: annotatorLabels[0],
               labelB: annotatorLabels[1],
             });
+          } else {
+            // Consensus reached
+            const parsed = parseSavedLabel(sLabels[0].targetTextSnapshot);
+            if (parsed?.subject) {
+               samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
+            } else {
+               samplesMap[sIndex].subjectLabelWithHuman = sLabels[0].name;
+            }
           }
+        } else if (sLabels.length === 1) {
+           // Single annotator
+           const parsed = parseSavedLabel(sLabels[0].targetTextSnapshot);
+           if (parsed?.subject) {
+              samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
+           } else {
+              samplesMap[sIndex].subjectLabelWithHuman = sLabels[0].name;
+           }
         }
       }
 
@@ -1559,6 +1609,13 @@ export class AssignmentController {
         targetScope: 'sample'
       });
 
+      // Fetch canonical subject labels (from Admin/Supervisor Stage 3 classification)
+      const canonicalLabels = await DatasetCanonicalLabel.find({
+        datasetVersionId: submission.datasetVersionId,
+        sampleId: { $in: sampleAssigns.map(sa => sa.sampleId) },
+        targetScope: 'sample'
+      }).lean();
+
       // Map labels to samples
       samples.forEach(s => {
         const sa = sampleAssigns.find(a => a.sampleIndex === s.id);
@@ -1566,7 +1623,26 @@ export class AssignmentController {
           const l = labels.find(lb => lb.sampleId.toString() === sa.sampleId.toString());
           if (l) {
             // Mock reconstruct the label format
-            s.savedLabel = l.targetTextSnapshot ? JSON.parse(l.targetTextSnapshot) : null;
+            s.savedLabel = l.targetTextSnapshot ? JSON.parse(l.targetTextSnapshot) : {};
+          } else {
+            s.savedLabel = {};
+          }
+
+          // Merge canonical subject if missing from staff's saved label
+          const cl = canonicalLabels.find(lb => lb.sampleId.toString() === sa.sampleId.toString());
+          if (cl && cl.labels && cl.labels.length > 0) {
+            const subjectLabel = cl.labels.find(label => label.startsWith('SUBJECT:'));
+            if (subjectLabel && !s.savedLabel.subject) {
+              const subjectValue = subjectLabel.split(':')[1];
+              if (subjectValue) {
+                s.savedLabel.subject = subjectValue.trim();
+              }
+            }
+          }
+
+          // If no labels exist and no canonical subject, keep it null for clean initial state
+          if (Object.keys(s.savedLabel).length === 0) {
+            s.savedLabel = null;
           }
         }
       });

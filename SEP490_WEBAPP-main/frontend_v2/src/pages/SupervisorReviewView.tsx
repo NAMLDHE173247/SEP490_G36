@@ -289,7 +289,7 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
 
       const pGroups = Array.from(sampleMap.values()).sort((a, b) => a.sampleIndex - b.sampleIndex);
 
-      p.quickReviews = pGroups.filter(g => g.rows.length === 1 && !g.conflictItem && g.rows[0]?.reviewStatus === 'submitted');
+      p.quickReviews = pGroups.filter(g => (g.rows.length === 1 && !g.conflictItem && g.rows[0]?.reviewStatus === 'submitted') || !!g.conflictItem);
       p.overlapReviews = [];
     });
 
