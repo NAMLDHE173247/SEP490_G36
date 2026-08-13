@@ -28,6 +28,7 @@ import {
   publishAssignmentAdjudication,
   resolveAssignmentAdjudication,
 } from '../services/labelAssignmentService';
+import { broadcastAssignmentUpdate } from '../modules/dataprep/labeling/assignment.events';
 
 type EvaluationScorePayload = {
   accuracy?: number | null;
@@ -1984,6 +1985,9 @@ Lời khuyên của bạn (giải thích ngắn gọn và kết luận nên gi�
         messageRole,
         details: `Đã chốt nhãn: [${adjudication?.finalLabels?.join(', ') || ''}] cho mẫu ${sampleIndexStr}${scopeText}`,
       });
+
+      // Broadcast SSE update for realtime synchronization
+      broadcastAssignmentUpdate({ type: 'assignment_updated', versionId: id, action: 'adjudicate', sampleId });
 
       res.json({
         message: 'Đã publish final labels.',

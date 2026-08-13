@@ -12,7 +12,7 @@ import { Stage4Notification } from '../../../models/Stage4Notification';
 import mongoose from 'mongoose';
 import { USER_MESSAGE_LABELS, ASSISTANT_MESSAGE_LABELS } from './messageAutoLabel.service';
 import { broadcastAssignmentUpdate } from './assignment.events';
-import { buildAssignmentConflictList, buildAssignmentSampleComparison, autoResolveSampleIfConsensus } from '../../../services/labelAssignmentService';
+import { buildAssignmentConflictList, buildAssignmentSampleComparison, autoResolveSampleIfConsensus, SUBJECT_CANONICAL_MAP, COMPLETION_CANONICAL_MAP, QUALITY_CANONICAL_MAP } from '../../../services/labelAssignmentService';
 
 function isCompleteStaffLabel(label: any): boolean {
   if (!label || typeof label !== 'object') return false;
@@ -34,6 +34,101 @@ function parseSavedLabel(snapshot?: string): any {
   } catch {
     return null;
   }
+}
+
+export function checkSampleHasConflict(sLabels: any[]): boolean {
+  if (!sLabels || sLabels.length < 2) return false;
+
+  const parsedList = sLabels.map(l => ({
+    label: l,
+    parsed: parseSavedLabel(l.targetTextSnapshot) || {}
+  }));
+
+  // 1. Check legacy hard label name mismatch
+  const firstLabelName = sLabels[0].name;
+  if (sLabels.some((l: any) => l.name !== firstLabelName && l.name !== 'Label')) {
+    return true;
+  }
+
+  // Helper to normalize subject
+  const normSubject = (val: any) => {
+    const raw = String(val || '').trim().toUpperCase();
+    return SUBJECT_CANONICAL_MAP[raw]?.code || raw;
+  };
+
+  // Helper to normalize completion
+  const normCompletion = (val: any) => {
+    const raw = String(val || '').trim().toUpperCase();
+    return COMPLETION_CANONICAL_MAP[raw]?.code || raw;
+  };
+
+  // Helper to normalize quality
+  const normQuality = (val: any) => {
+    const raw = String(val || '').trim().toUpperCase();
+    return QUALITY_CANONICAL_MAP[raw]?.code || raw;
+  };
+
+  // 2. Check subject mismatch
+  const subjects = new Set<string>();
+  parsedList.forEach(item => {
+    if (item.parsed.subject) subjects.add(normSubject(item.parsed.subject));
+  });
+  if (subjects.size > 1) return true;
+
+  // 3. Check quality mismatch
+  const qualities = new Set<string>();
+  parsedList.forEach(item => {
+    if (item.parsed.quality) qualities.add(normQuality(item.parsed.quality));
+  });
+  if (qualities.size > 1) return true;
+
+  // 4. Check completion mismatch
+  const completions = new Set<string>();
+  parsedList.forEach(item => {
+    if (item.parsed.completion) completions.add(normCompletion(item.parsed.completion));
+  });
+  if (completions.size > 1) return true;
+
+  // 5. Check message-level intents / actions mismatch
+  const allMsgIndices = new Set<string>();
+  parsedList.forEach(item => {
+    if (item.parsed.messages && typeof item.parsed.messages === 'object') {
+      Object.keys(item.parsed.messages).forEach(idx => allMsgIndices.add(idx));
+    }
+  });
+
+  for (const idx of allMsgIndices) {
+    const intentKeys = new Set<string>();
+    const actionKeys = new Set<string>();
+
+    parsedList.forEach(item => {
+      const msgObj = item.parsed.messages?.[idx];
+      if (msgObj) {
+        const rawIntent = msgObj.intent;
+        const intents = (Array.isArray(rawIntent) ? rawIntent : rawIntent ? [rawIntent] : [])
+          .map((i: any) => String(i).trim().toUpperCase())
+          .filter(Boolean)
+          .sort();
+        if (intents.length > 0) {
+          intentKeys.add(intents.join('|||'));
+        }
+
+        const rawAction = msgObj.action;
+        const actions = (Array.isArray(rawAction) ? rawAction : rawAction ? [rawAction] : [])
+          .map((a: any) => String(a).trim().toUpperCase())
+          .filter(Boolean)
+          .sort();
+        if (actions.length > 0) {
+          actionKeys.add(actions.join('|||'));
+        }
+      }
+    });
+
+    if (intentKeys.size > 1) return true;
+    if (actionKeys.size > 1) return true;
+  }
+
+  return false;
 }
 
 function resolveAssignmentSupervisor(req: Request, supervisorId?: string): string | undefined {
@@ -1229,7 +1324,6 @@ export class AssignmentController {
       const validAssigneeIds = assigneeIds.filter(id => mongoose.Types.ObjectId.isValid(id));
       const users = await User.find({ _id: { $in: validAssigneeIds } });
       const userMap = new Map(users.map(u => [String(u._id), u.email || u.name || String(u._id)]));
-      const userEmailMap = new Map(users.map(u => [String(u._id), u.email || null]));
 
       subs.forEach(sub => {
         const assigneeIdStr = String(sub.assigneeId);
@@ -1426,95 +1520,84 @@ export class AssignmentController {
 
       const samples = Object.values(samplesMap);
 
-      // Chuẩn hoá nhãn của 1 annotator để hiển thị đầy đủ khi phân xử
-      const buildAnnotatorLabel = (l: any) => {
-        const parsed = parseSavedLabel(l.targetTextSnapshot) || {};
-        const u = staffMap[String(l.createdBy)] || {};
-        return {
-          annotatorId: String(l.createdBy),
-          annotatorName: u.name || String(l.createdBy),
-          annotatorEmail: userEmailMap.get(String(l.createdBy)) || null,
-          // Giữ tương thích ngược: subject = tên annotator, quality = tên nhãn
-          subject: u.name || u.email || String(l.createdBy),
-          quality: l.name,
-          labelName: l.name,
-          // Chi tiết nhãn thật mà annotator đã gán
-          detail: {
-            subject: parsed.subject || null,
-            quality: parsed.quality || null,
-            completion: parsed.completion || null,
-            note: parsed.note || parsed.reason || null,
-          },
-          isComplete: isCompleteStaffLabel(parsed),
-          updatedAt: l.updatedAt || l.createdAt || null,
-        };
-      };
-
       const conflicts = [];
-      for (const sIndexStr of Object.keys(conflictMap)) {
+      for (const sIndexStr of Object.keys(samplesMap)) {
         const sIndex = Number(sIndexStr);
-        const sLabels = conflictMap[sIndex];
         const sampleObjId = samplesMap[sIndex].sampleObjectId;
         
-        if (samplesMap[sIndex].isResolved) {
+        let comp: any = null;
+        try {
+          comp = await buildAssignmentSampleComparison(versionId, String(sampleObjId));
+        } catch (e) {
+          console.error(`[getTaskDetail] Comparison error for sample ${sIndex}:`, e);
+        }
+
+        const pendingConflict = comp?.hasConflict && comp?.targets?.some((t: any) => t.hasConflict && (!t.adjudication || t.adjudication.status !== 'published'));
+
+        if (pendingConflict) {
+          samplesMap[sIndex].conflict = true;
+          samplesMap[sIndex].isResolved = false;
+          samplesMap[sIndex].subjectLabelWithHuman = null; // Hide human label if conflict
+
+          const conflictTarget = comp?.targets?.find((t: any) => t.hasConflict && (!t.adjudication || t.adjudication.status !== 'published')) || comp?.targets?.[0];
+          const targetAnnotators = conflictTarget?.annotators || [];
+
+          const annotatorLabels = targetAnnotators.map((a: any) => {
+            const rawLabel = (a.displayLabels || a.labels || [])[0] || 'Label';
+            return {
+              annotatorId: String(a.annotator?.id || ''),
+              annotatorName: a.annotator?.name || a.annotator?.email || 'Reviewer',
+              annotatorEmail: a.annotator?.email || null,
+              subject: a.annotator?.name || a.annotator?.email || 'Reviewer',
+              quality: (a.displayLabels || a.labels || []).join(', ') || 'Chưa gán',
+              labelName: rawLabel,
+              detail: null,
+              isComplete: true,
+            };
+          });
+
+          const reviewerRows = (Object.values(staffMap)).map((u: any) => {
+            const labelObj = samplesMap[sIndex].staffLabels?.[u.id];
+            return {
+              assigneeId: u.id,
+              assigneeName: u.name || u.id,
+              reviewStatus: 'submitted',
+              label: typeof labelObj === 'object' ? labelObj : {},
+            };
+          });
+
+          const labelA = annotatorLabels[0] || { subject: 'Staff 1', quality: 'Pending' };
+          const labelB = annotatorLabels[1] || { subject: 'Staff 2', quality: 'Pending' };
+
+          conflicts.push({
+            sampleId: sIndex,
+            sampleObjectId: String(sampleObjId),
+            key: samplesMap[sIndex].key,
+            annotators: targetAnnotators.length || 2,
+            iaa: comp?.agreementScore ?? 0.45,
+            status: 'pending' as const,
+            preview: samplesMap[sIndex].preview || '',
+            messages: samplesMap[sIndex].messages || [],
+            annotatorLabels,
+            reviewerRows,
+            labelA,
+            labelB,
+          });
+        } else {
           samplesMap[sIndex].conflict = false;
-          const canonical = canonicalMap.get(String(sampleObjId));
-          if (canonical) {
-             const cParsed = parseSavedLabel(canonical.targetTextSnapshot);
-             if (cParsed && cParsed.subject) {
+          const isCheckerPublished = comp?.targets?.some((t: any) => t.adjudication?.status === 'published') || resolvedSampleIds.has(String(sampleObjId));
+          if (isCheckerPublished) {
+            samplesMap[sIndex].isResolved = true;
+            const canonical = canonicalMap.get(String(sampleObjId));
+            if (canonical) {
+              const cParsed = parseSavedLabel(canonical.targetTextSnapshot);
+              if (cParsed && cParsed.subject) {
                 samplesMap[sIndex].subjectLabelWithHuman = cParsed.subject;
-             } else if (canonical.labels && canonical.labels.length > 0) {
+              } else if (canonical.labels && canonical.labels.length > 0) {
                 samplesMap[sIndex].subjectLabelWithHuman = canonical.labels[0];
-             }
-          }
-          continue;
-        }
-
-        // Gather all subjects from annotators
-        const uniqueSubjects = new Set();
-        for (const l of sLabels) {
-           const parsed = parseSavedLabel(l.targetTextSnapshot);
-           if (parsed?.subject) uniqueSubjects.add(parsed.subject);
-        }
-
-        if (sLabels.length > 1) {
-          const firstLabelName = sLabels[0].name;
-          const hasConflict = sLabels.some((l: any) => l.name !== firstLabelName) || uniqueSubjects.size > 1;
-          if (hasConflict) {
-            samplesMap[sIndex].conflict = true;
-            samplesMap[sIndex].subjectLabelWithHuman = null; // Hide human label if conflict
-            const annotatorLabels = sLabels.map(buildAnnotatorLabel);
-            conflicts.push({
-              sampleId: sIndex,
-              key: samplesMap[sIndex].key,
-              annotators: sLabels.length,
-              iaa: 0.45,
-              status: 'pending' as const,
-              // Nội dung sample để người phân xử đọc và đối chiếu
-              preview: samplesMap[sIndex].preview || '',
-              messages: samplesMap[sIndex].messages || [],
-              // Danh sách nhãn đầy đủ của tất cả annotator (hỗ trợ >2 người)
-              annotatorLabels,
-              labelA: annotatorLabels[0],
-              labelB: annotatorLabels[1],
-            });
-          } else {
-            // Consensus reached
-            const parsed = parseSavedLabel(sLabels[0].targetTextSnapshot);
-            if (parsed?.subject) {
-               samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
-            } else {
-               samplesMap[sIndex].subjectLabelWithHuman = sLabels[0].name;
+              }
             }
           }
-        } else if (sLabels.length === 1) {
-           // Single annotator
-           const parsed = parseSavedLabel(sLabels[0].targetTextSnapshot);
-           if (parsed?.subject) {
-              samplesMap[sIndex].subjectLabelWithHuman = parsed.subject;
-           } else {
-              samplesMap[sIndex].subjectLabelWithHuman = sLabels[0].name;
-           }
         }
       }
 
@@ -1594,7 +1677,7 @@ export class AssignmentController {
         return {
           id: sa.sampleIndex, // use index as ID for frontend
           messages: messages,
-          savedLabel: null,
+          savedLabel: null as any,
           reviewStatus: (sa as any).reviewStatus || 'labeling',
           rejectReason: (sa as any).rejectReason || '',
           _dbId: sa._id // keep db id
@@ -1632,7 +1715,7 @@ export class AssignmentController {
           const cl = canonicalLabels.find(lb => lb.sampleId.toString() === sa.sampleId.toString());
           if (cl && cl.labels && cl.labels.length > 0) {
             const subjectLabel = cl.labels.find(label => label.startsWith('SUBJECT:'));
-            if (subjectLabel && !s.savedLabel.subject) {
+            if (subjectLabel && s.savedLabel && !s.savedLabel.subject) {
               const subjectValue = subjectLabel.split(':')[1];
               if (subjectValue) {
                 s.savedLabel.subject = subjectValue.trim();
@@ -1641,7 +1724,7 @@ export class AssignmentController {
           }
 
           // If no labels exist and no canonical subject, keep it null for clean initial state
-          if (Object.keys(s.savedLabel).length === 0) {
+          if (s.savedLabel && Object.keys(s.savedLabel).length === 0) {
             s.savedLabel = null;
           }
         }
@@ -2141,6 +2224,18 @@ export class AssignmentController {
       const wasSubmitted = submission.status === 'submitted';
       submission.status = 'submitted';
       submission.submittedAt = new Date();
+
+      await DatasetSampleAssignment.updateMany(
+        {
+          datasetVersionId: submission.datasetVersionId,
+          assigneeId: submission.assigneeId,
+          sampleIndex: { $gte: submission.batchStart, $lt: submission.batchStart + submission.batchCount },
+          active: { $ne: false }
+        },
+        {
+          $set: { reviewStatus: 'submitted', submittedAt: new Date() }
+        }
+      );
 
       const { hardLabels, messagesBySample } = await promoteSubmissionLabels(submission);
 

@@ -374,9 +374,10 @@ def stop_training(job_id):
         else:
             jobs_db[job_id]['status'] = 'STOPPED'
         jobs_db[job_id]['logs'].append("🛑 Stop request received. Training halted or cancelled from queue.")
-        # Clear from queue if present
-        global job_queue
-        job_queue = deque([item for item in job_queue if item[0] != job_id])
+        # Clear from queue if present in-place
+        retained = [item for item in job_queue if item[0] != job_id]
+        job_queue.clear()
+        job_queue.extend(retained)
         return jsonify({"message": "Stop signal sent"}), 200
     return jsonify({"error": "Job not found"}), 404
 

@@ -70,8 +70,10 @@ async function assertLabelAccessBySampleId(sampleId: string, userId: string, req
   }
 
   const isOwner = access.ownerId === String(userId);
+  const userRole = String((req as any).user?.role || '').toLowerCase();
+  const isPrivileged = ['admin', 'supervisor', 'checker'].includes(userRole);
   const hasAssignedAccess = await access.isAssignedToUser(userId);
-  const lockedSubmission = !isOwner && hasAssignedAccess
+  const lockedSubmission = !isOwner && !isPrivileged && hasAssignedAccess
     ? await DatasetAssignmentSubmission.findOne({
         datasetVersionId: new mongoose.Types.ObjectId(access.datasetVersionId),
         assigneeId: new mongoose.Types.ObjectId(userId),
@@ -80,12 +82,12 @@ async function assertLabelAccessBySampleId(sampleId: string, userId: string, req
     : null;
 
   if (isCommunityHubRequest(req)) {
-    if (!isOwner && !access.isPublic && !hasAssignedAccess) {
+    if (!isOwner && !isPrivileged && !access.isPublic && !hasAssignedAccess) {
       const error = new Error('Dataset version is not public and this account is not assigned.');
       (error as any).statusCode = 403;
       throw error;
     }
-    if (!isOwner && access.hasAssignments && !hasAssignedAccess) {
+    if (!isOwner && !isPrivileged && access.hasAssignments && !hasAssignedAccess) {
       const error = new Error('Sample is not assigned to this account.');
       (error as any).statusCode = 403;
       throw error;
@@ -98,14 +100,14 @@ async function assertLabelAccessBySampleId(sampleId: string, userId: string, req
     return;
   }
 
-  if (!isOwner) {
-    const error = new Error('Forbidden: only the dataset owner can label from the internal workflow.');
+  if (!isOwner && !isPrivileged && !hasAssignedAccess) {
+    const error = new Error('Forbidden: only dataset owners, privileged roles (admin/supervisor/checker), or assigned staff can label from the internal workflow.');
     (error as any).statusCode = 403;
     throw error;
   }
 }
 
-async function getSampleAccessForRead(sampleId: string, userId: string): Promise<SampleAccess> {
+async function getSampleAccessForRead(sampleId: string, userId: string, req?: Request): Promise<SampleAccess> {
   const access = await getSampleAccessBySampleId(sampleId);
   if (!access) {
     const error = new Error('Sample not found');
@@ -114,13 +116,15 @@ async function getSampleAccessForRead(sampleId: string, userId: string): Promise
   }
 
   const isOwner = access.ownerId === String(userId);
+  const userRole = String((req as any)?.user?.role || '').toLowerCase();
+  const isPrivileged = ['admin', 'supervisor', 'checker'].includes(userRole);
   const hasAssignedAccess = await access.isAssignedToUser(userId);
-  if (!isOwner && !access.isPublic && !hasAssignedAccess) {
+  if (!isOwner && !isPrivileged && !access.isPublic && !hasAssignedAccess) {
     const error = new Error('Forbidden: you do not have access to this sample labels.');
     (error as any).statusCode = 403;
     throw error;
   }
-  if (!isOwner && access.hasAssignments && !hasAssignedAccess) {
+  if (!isOwner && !isPrivileged && access.hasAssignments && !hasAssignedAccess) {
     const error = new Error('Sample is not assigned to this account.');
     (error as any).statusCode = 403;
     throw error;
@@ -175,7 +179,7 @@ export const getLabelsBySample = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    const access = await getSampleAccessForRead(sampleId, userId);
+    const access = await getSampleAccessForRead(sampleId, userId, req);
     const isOwner = access.ownerId === String(userId);
 
     const scope = normalizeQueryScope(req.query.scope);

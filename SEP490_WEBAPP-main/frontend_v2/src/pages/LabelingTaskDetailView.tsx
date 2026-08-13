@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import SplitViewModal from '../components/dataprep/SplitViewModal';
+import SupervisorConflictDialog from '../components/SupervisorConflictDialog';
 import '../styles/taskdetail.css';
 
 export default function LabelingTaskDetailView({ onBack, task, initialBatchId }) {
@@ -150,9 +151,26 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
       }
     };
 
+    // Lắng nghe sự kiện SSE từ backend để realtime tức thì
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const sseUrl = `${api.defaults.baseURL}/dataprep/assignments/events${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(sseUrl);
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'assignment_updated') {
+            refreshTaskDetail(true);
+          }
+        } catch { /* ignore */ }
+      };
+    } catch { /* ignore */ }
+
     return () => {
       clearInterval(interval);
       bc.close();
+      if (eventSource) eventSource.close();
     };
   }, [task]);
 
@@ -708,13 +726,12 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
               // Thống kê tổng quan để hiển thị chip
               let agreed = 0, conflict = 0, waiting = 0;
               samples.forEach((s: any) => {
-                const done = staffList
-                  .map((st: any) => { const lo = s.staffLabels?.[st.id]; return typeof lo === 'object' ? lo?.raw : lo; })
+                const doneLabels = staffList
+                  .map((st: any) => s.staffLabels?.[st.id])
                   .filter(Boolean);
-                const uniq = new Set(done);
-                if (s.isResolved) agreed++;
-                else if (done.length > 1 && uniq.size === 1) agreed++;
-                else if (done.length > 1 && uniq.size > 1) conflict++;
+                if (!s.isResolved && s.conflict) conflict++;
+                else if (s.isResolved) agreed++;
+                else if (doneLabels.length > 1) agreed++;
                 else waiting++;
               });
               const chip = (bg: string, color: string, label: string, val: number) => (
@@ -767,7 +784,6 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                       {samples
                         .slice((comparePage - 1) * comparePageSize, comparePage * comparePageSize)
                         .map((s: any) => {
-                          const hasConflict = s.conflict;
                           const allLabels = staffList.map((staff: any) => {
                             const labelObj = s.staffLabels?.[staff.id];
                             const labelRaw = typeof labelObj === 'object' ? labelObj?.raw : labelObj;
@@ -785,8 +801,8 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
                           const doneLabels = allLabels.filter(l => l.label);
                           const uniqueLabels = new Set(doneLabels.map(l => l.label));
                           const isResolved = s.isResolved;
-                          const isAgreed = isResolved || (doneLabels.length > 1 && uniqueLabels.size === 1);
-                          const isConflict = !isResolved && doneLabels.length > 1 && uniqueLabels.size > 1;
+                          const isConflict = !isResolved && (s.conflict || (doneLabels.length > 1 && uniqueLabels.size > 1));
+                          const isAgreed = !isConflict && (isResolved || doneLabels.length > 1);
 
                           return (
                             <tr key={s.id} style={{
@@ -1205,6 +1221,24 @@ export default function LabelingTaskDetailView({ onBack, task, initialBatchId })
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===== MODAL PHÂN XỬ CONFLICT ===== */}
+      {showConflictModal && (
+        <SupervisorConflictDialog
+          item={{
+            ...showConflictModal,
+            sampleId: String(showConflictModal.sampleObjectId || showConflictModal.sampleId || ''),
+            versionId: String(task?.id || '').split('_')[0],
+            taskName: taskDetail.name || task?.name || 'Task',
+            datasetName: taskDetail.dataset || task?.dataset || 'Dataset',
+          }}
+          onClose={() => setShowConflictModal(null)}
+          onCompleted={() => {
+            setShowConflictModal(null);
+            refreshTaskDetail();
+          }}
+        />
       )}
     </div>
     </>

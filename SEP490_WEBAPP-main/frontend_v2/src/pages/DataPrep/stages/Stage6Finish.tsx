@@ -617,7 +617,7 @@ export const Stage6Finish: React.FC = () => {
       // Also collect per-message embedded labels (backend attaches these to each
       // message object when canonical labels exist).  Used as fallback below when
       // conv.labels.messages is empty but labels are embedded in the messages.
-      const perMsgEmbeddedLabels: { v2Index: number; role: string; labels: string[] }[] = [];
+      const perMsgEmbeddedLabels: { messageIndex: number; role: string; labels: string[] }[] = [];
       let nonSystemIdx = 0; // 0-based count of non-system source messages seen so far
 
       if (Array.isArray(conv.messages)) {
@@ -628,7 +628,7 @@ export const Stage6Finish: React.FC = () => {
               // Collect any labels embedded by the backend (messages[i].labels)
               if (Array.isArray(m.labels) && m.labels.length > 0) {
                 perMsgEmbeddedLabels.push({
-                  v2Index: nonSystemIdx + 1, // +1 because system is at position 0 in V2
+                  messageIndex: nonSystemIdx + 1, // +1 because system is at position 0 in V2
                   role: m.role,
                   labels: m.labels.map(normalizeV2LabelName),
                 });

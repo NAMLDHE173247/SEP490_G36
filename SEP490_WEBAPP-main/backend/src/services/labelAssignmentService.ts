@@ -206,10 +206,25 @@ export async function ensureLabelAssignmentsForSamples(sampleIds: Array<string |
   await ensureLabelAssignmentsForSampleObjectIds(validIds);
 }
 
-async function resolveSample(sampleId: string) {
-  const sample = await ProcessedDatasetItem.findById(sampleId).select('_id datasetVersionId sampleId').lean();
+async function resolveSample(sampleId: string, datasetVersionId?: string) {
+  if (mongoose.Types.ObjectId.isValid(sampleId)) {
+    const sample = await ProcessedDatasetItem.findById(sampleId).select('_id datasetVersionId sampleId').lean();
+    if (sample) return sample;
+  }
+
+  const query: any = {
+    $or: [
+      { sampleId: sampleId },
+      { sampleId: `sample_${String(sampleId).padStart(3, '0')}` },
+      { sampleId: `sample_${sampleId}` },
+    ]
+  };
+  if (datasetVersionId && mongoose.Types.ObjectId.isValid(datasetVersionId)) {
+    query.datasetVersionId = new mongoose.Types.ObjectId(datasetVersionId);
+  }
+  const sample = await ProcessedDatasetItem.findOne(query).select('_id datasetVersionId sampleId').lean();
   if (!sample) {
-    const error = new Error('Sample not found');
+    const error = new Error(`Sample not found: ${sampleId}`);
     (error as any).statusCode = 404;
     throw error;
   }
@@ -416,28 +431,30 @@ export async function getAggregatedLabelsForSample(
     .sort({ createdAt: -1 })
     .lean();
 
+  const viewerUser = await User.findById(viewerId).select('role').lean();
+  const viewerRole = String(viewerUser?.role || '').toLowerCase();
+  const isPrivilegedViewer = ['admin', 'supervisor', 'checker'].includes(viewerRole) || String(viewerId) === ownerId;
+
   let visibleDocs = docs;
   if (visibilityMode === 'default' && docs.length) {
-    if (String(viewerId) === ownerId) {
+    if (isPrivilegedViewer) {
+      const privilegedUsers = await User.find({ role: { $in: ['admin', 'supervisor', 'checker'] } }).select('_id').lean();
+      const privilegedIds = new Set<string>(privilegedUsers.map((u: any) => String(u._id)));
+      if (ownerId) privilegedIds.add(String(ownerId));
+
       visibleDocs = docs.filter((doc: any) => {
         const contributorId = String(doc.createdBy?._id || doc.createdBy || '');
-        if (!contributorId) {
-          return false;
-        }
-        return contributorId === ownerId;
+        return contributorId ? privilegedIds.has(contributorId) : false;
       });
     } else {
       visibleDocs = docs.filter((doc: any) => {
         const contributorId = String(doc.createdBy?._id || doc.createdBy || '');
-        if (!contributorId) {
-          return false;
-        }
         return contributorId === String(viewerId);
       });
     }
   }
 
-  const canonicalRows = String(viewerId) === ownerId
+  const canonicalRows = isPrivilegedViewer
     ? await getCanonicalLabelsForSample(sample, scope, options.messageIndex)
     : [];
   if (canonicalRows.length) {
@@ -1067,6 +1084,121 @@ const SUBJECT_CODE_SET = new Set([
   'OTHER',
 ]);
 
+export const SUBJECT_CANONICAL_MAP: Record<string, { code: string; display: string }> = {
+  'MATH': { code: 'MATH', display: 'Toán' },
+  'TOAN': { code: 'MATH', display: 'Toán' },
+  'TOÁN': { code: 'MATH', display: 'Toán' },
+  'PHYSICS': { code: 'PHYSICS', display: 'Vật lý' },
+  'PHYSICAL': { code: 'PHYSICS', display: 'Vật lý' },
+  'VAT LY': { code: 'PHYSICS', display: 'Vật lý' },
+  'VẬT LÝ': { code: 'PHYSICS', display: 'Vật lý' },
+  'CHEMISTRY': { code: 'CHEMISTRY', display: 'Hóa học' },
+  'HOA HOC': { code: 'CHEMISTRY', display: 'Hóa học' },
+  'HÓA HỌC': { code: 'CHEMISTRY', display: 'Hóa học' },
+  'BIOLOGY': { code: 'BIOLOGY', display: 'Sinh học' },
+  'SINH HOC': { code: 'BIOLOGY', display: 'Sinh học' },
+  'SINH HỌC': { code: 'BIOLOGY', display: 'Sinh học' },
+  'LITERATURE': { code: 'LITERATURE', display: 'Ngữ văn' },
+  'VAN HOC': { code: 'LITERATURE', display: 'Ngữ văn' },
+  'VĂN HỌC': { code: 'LITERATURE', display: 'Ngữ văn' },
+  'NGU VAN': { code: 'LITERATURE', display: 'Ngữ văn' },
+  'NGỮ VĂN': { code: 'LITERATURE', display: 'Ngữ văn' },
+  'ENGLISH': { code: 'ENGLISH', display: 'Tiếng Anh' },
+  'TIENG ANH': { code: 'ENGLISH', display: 'Tiếng Anh' },
+  'TIẾNG ANH': { code: 'ENGLISH', display: 'Tiếng Anh' },
+  'HISTORY': { code: 'HISTORY', display: 'Lịch sử' },
+  'LICH SU': { code: 'HISTORY', display: 'Lịch sử' },
+  'LỊCH SỬ': { code: 'HISTORY', display: 'Lịch sử' },
+  'GEOGRAPHY': { code: 'GEOGRAPHY', display: 'Địa lý' },
+  'DIA LY': { code: 'GEOGRAPHY', display: 'Địa lý' },
+  'ĐỊA LÝ': { code: 'GEOGRAPHY', display: 'Địa lý' },
+  'CODING': { code: 'CODING', display: 'Tin học' },
+  'IT': { code: 'CODING', display: 'Tin học' },
+  'TIN HOC': { code: 'CODING', display: 'Tin học' },
+  'TIN HỌC': { code: 'CODING', display: 'Tin học' },
+  'CIVICS': { code: 'CIVICS', display: 'GDCD' },
+  'GDCD': { code: 'CIVICS', display: 'GDCD' },
+  'MULTI': { code: 'MULTI', display: 'Liên môn' },
+  'MULTI-SUBJECT': { code: 'MULTI', display: 'Liên môn' },
+  'LIEN MON': { code: 'MULTI', display: 'Liên môn' },
+  'LIÊN MÔN': { code: 'MULTI', display: 'Liên môn' },
+  'OTHER': { code: 'OTHER', display: 'Chưa rõ' },
+  'UNCLEAR': { code: 'OTHER', display: 'Chưa rõ' },
+  'CHUA RO': { code: 'OTHER', display: 'Chưa rõ' },
+  'CHƯA RÕ': { code: 'OTHER', display: 'Chưa rõ' },
+};
+
+export const COMPLETION_CANONICAL_MAP: Record<string, { code: string; display: string }> = {
+  'COMPLETED': { code: 'COMPLETED', display: 'Hoàn thành' },
+  'HOÀN THÀNH': { code: 'COMPLETED', display: 'Hoàn thành' },
+  'HOAN THANH': { code: 'COMPLETED', display: 'Hoàn thành' },
+  'INCOMPLETE': { code: 'INCOMPLETE', display: 'Chưa hoàn thành' },
+  'CHƯA HOÀN THÀNH': { code: 'INCOMPLETE', display: 'Chưa hoàn thành' },
+  'CHUA HOAN THANH': { code: 'INCOMPLETE', display: 'Chưa hoàn thành' },
+  'ABANDONED': { code: 'ABANDONED', display: 'Bỏ dở' },
+  'BỎ DỞ': { code: 'ABANDONED', display: 'Bỏ dở' },
+  'BO DO': { code: 'ABANDONED', display: 'Bỏ dở' },
+};
+
+export const QUALITY_CANONICAL_MAP: Record<string, { code: string; display: string }> = {
+  'GOLD': { code: 'GOLD', display: 'Gold' },
+  'GOOD': { code: 'GOLD', display: 'Gold' },
+  'TỐT': { code: 'GOLD', display: 'Gold' },
+  'TOT': { code: 'GOLD', display: 'Gold' },
+  'REWRITE': { code: 'REWRITE', display: 'Rewrite' },
+  'MEDIUM': { code: 'REWRITE', display: 'Rewrite' },
+  'CẦN VIẾT LẠI': { code: 'REWRITE', display: 'Rewrite' },
+  'CAN VIET LAI': { code: 'REWRITE', display: 'Rewrite' },
+  'BAD': { code: 'BAD', display: 'Bad' },
+  'POOR': { code: 'BAD', display: 'Bad' },
+  'CHƯA ĐẠT': { code: 'BAD', display: 'Bad' },
+  'CHUA DAT': { code: 'BAD', display: 'Bad' },
+};
+
+const VIETNAMESE_INTENT_MAP: Record<string, string> = {
+  'HỌC SINH TRẢ LỜI/THỬ LÀM BÀI': 'ANSWER_ATTEMPT',
+  'HỌC SINH TRẢ LỜI': 'ANSWER_ATTEMPT',
+  'THỬ LÀM BÀI': 'ANSWER_ATTEMPT',
+  'XIN GỢI Ý': 'REQUEST_HINT',
+  'GỢI Ý': 'REQUEST_HINT',
+  'HỎI LÝ THUYẾT': 'ASK_THEORY',
+  'LÝ THUYẾT': 'ASK_THEORY',
+  'YÊU CẦU GIẢI THÍCH': 'REQUEST_EXPLANATION',
+  'GIẢI THÍCH': 'REQUEST_EXPLANATION',
+  'MUỐN GIẢI THÍCH ĐƠN GIẢN HƠN': 'REQUEST_SIMPLER',
+  'ĐƠN GIẢN HƠN': 'REQUEST_SIMPLER',
+  'BỎ QUA BÀI': 'SKIP_EXERCISE',
+  'BỎ QUA': 'SKIP_EXERCISE',
+  'CHÁN NẢN': 'DISCOURAGED',
+  'NGOÀI PHẠM VI': 'OFF_TOPIC',
+  'MUỐN HỌC TIẾP/CHUYỂN CÂU': 'READY_NEXT',
+  'CHUYỂN CÂU': 'READY_NEXT',
+  'HỌC TIẾP': 'READY_NEXT',
+  'XÁC NHẬN ĐÃ HIỂU': 'CONFIRM_UNDERSTANDING',
+  'ĐÃ HIỂU': 'CONFIRM_UNDERSTANDING',
+};
+
+const VIETNAMESE_ACTION_MAP: Record<string, string> = {
+  'XÁC NHẬN CÂU TRẢ LỜI ĐÚNG': 'CONFIRM_CORRECT_ANSWER',
+  'XÁC NHẬN ĐÚNG': 'CONFIRM_CORRECT_ANSWER',
+  'CHỈ RA CÂU TRẢ LỜI SAI': 'IDENTIFY_INCORRECT_ANSWER',
+  'CHỈ RA SAI': 'IDENTIFY_INCORRECT_ANSWER',
+  'SỬA LỖI SAI': 'CORRECT_MISTAKE',
+  'SỬA LỖI': 'CORRECT_MISTAKE',
+  'KHEN NGỢI': 'PRAISING',
+  'DẪN DẮT TỪNG BƯỚC': 'SCAFFOLDING',
+  'DẪN DẮT': 'SCAFFOLDING',
+  'ĐƯA GỢI Ý': 'HINTING',
+  'LÀM RÕ KHÁI NIỆM': 'CONCEPT_CLARIFY',
+  'PHÂN TÍCH LẬP LUẬN': 'LOGIC_BREAKDOWN',
+  'DIỄN GIẢI ĐƠN GIẢN': 'SIMPLIFYING',
+  'ĐỘNG VIÊN': 'MOTIVATING',
+  'KÉO VỀ ĐÚNG CHỦ ĐỀ': 'REDIRECTING',
+  'CHUYỂN BƯỚC/CHỦ ĐỀ': 'TRANSITIONING',
+  'ĐƯA ĐÁP ÁN TRỰC TIẾP': 'DIRECT_ANSWER',
+  'CHỜ HỌC SINH PHẢN HỒI': 'WAITING',
+};
+
 function resolveStaffLabelName(
   raw: string,
   role: LabelRole | null,
@@ -1077,10 +1209,13 @@ function resolveStaffLabelName(
 
   if (targetScope === 'sample') {
     const upper = trimmed.toUpperCase();
+    if (SUBJECT_CANONICAL_MAP[upper]) return SUBJECT_CANONICAL_MAP[upper];
+    if (COMPLETION_CANONICAL_MAP[upper]) return COMPLETION_CANONICAL_MAP[upper];
+    if (QUALITY_CANONICAL_MAP[upper]) return QUALITY_CANONICAL_MAP[upper];
     if (SUBJECT_CODE_SET.has(upper)) {
       return { code: upper, display: trimmed };
     }
-    return { code: trimmed, display: trimmed };
+    return { code: upper, display: trimmed };
   }
 
   if (role === 'user') {
@@ -1088,6 +1223,9 @@ function resolveStaffLabelName(
       return { code: DRAFT_INTENT_MAP[trimmed], display: trimmed };
     }
     const upper = trimmed.toUpperCase();
+    if (VIETNAMESE_INTENT_MAP[upper]) {
+      return { code: VIETNAMESE_INTENT_MAP[upper], display: trimmed };
+    }
     if (USER_INTENT_SET.has(upper)) {
       return { code: upper, display: trimmed };
     }
@@ -1099,6 +1237,9 @@ function resolveStaffLabelName(
       return { code: DRAFT_ACTION_MAP[trimmed], display: trimmed };
     }
     const upper = trimmed.toUpperCase();
+    if (VIETNAMESE_ACTION_MAP[upper]) {
+      return { code: VIETNAMESE_ACTION_MAP[upper], display: trimmed };
+    }
     if (ASSISTANT_ACTION_SET.has(upper)) {
       return { code: upper, display: trimmed };
     }
@@ -1370,16 +1511,42 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     sampleId: sampleOid,
   }).lean();
 
-  const assigneeIds = assignments
-    .filter((sa: any) => sa.reviewStatus === 'submitted' || sa.reviewStatus === 'approved')
-    .map((sa: any) => String(sa.assigneeId));
+  const submissions = await DatasetAssignmentSubmission.find({
+    datasetVersionId: { $in: [versionOid, String(versionOid)] },
+  }).select('assigneeId status').lean();
+
+  const submittedAssigneeIds = new Set(
+    submissions
+      .filter((s: any) => s.status === 'submitted' || s.status === 'approved')
+      .map((s: any) => String(s.assigneeId))
+  );
+
   const allSampleAssignments = await LabelAssignment.find({
     sampleId: sampleOid,
     type: { $in: ['hard', 'soft'] },
   }).lean();
-  // Staff–Staff conflict is only meaningful after at least two assigned Staff
-  // have submitted this same sample. Owner/canonical labels are not annotators.
-  const comparisonAnnotatorIds = assigneeIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+
+  const labelCreatorIds = new Set(
+    allSampleAssignments
+      .map((item: any) => String(item.createdBy))
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+  );
+
+  const assigneeIds = assignments
+    .map((sa: any) => String(sa.assigneeId))
+    .filter((id) =>
+      mongoose.Types.ObjectId.isValid(id) &&
+      (
+        submittedAssigneeIds.has(id) ||
+        labelCreatorIds.has(id) ||
+        assignments.some((sa: any) => String(sa.assigneeId) === id && (sa.reviewStatus === 'submitted' || sa.reviewStatus === 'approved'))
+      )
+    );
+
+  const comparisonAnnotatorIds = Array.from(new Set([
+    ...assigneeIds,
+    ...Array.from(labelCreatorIds)
+  ])).filter((id) => mongoose.Types.ObjectId.isValid(id));
   const hardAssignments = allSampleAssignments.filter((item: any) => item.type === 'hard' && comparisonAnnotatorIds.includes(String(item.createdBy)));
   const softAssignments = allSampleAssignments.filter((item: any) => item.type === 'soft' && item.targetScope === 'sample' && comparisonAnnotatorIds.includes(String(item.createdBy)));
   const sampleMessages = Array.isArray((sample as any).data?.messages) ? (sample as any).data.messages : [];
@@ -1492,19 +1659,27 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
     const threshold = similarityThreshold;
     const msgIdx = target.messageIndex ?? null;
     const msgRole = target.messageRole ?? null;
-    const existing = existingAdjs.find((a: any) => a.targetScope === target.targetScope && a.messageIndex === msgIdx && a.messageRole === msgRole);
+    const existing = existingAdjs.find((a: any) => 
+      a.targetScope === target.targetScope && 
+      (a.messageIndex ?? null) === msgIdx && 
+      (a.messageRole ?? null) === msgRole
+    );
     
     const canonical = canonicalLabels.find((c: any) => 
       c.targetScope === target.targetScope && 
-      c.messageIndex === msgIdx && 
-      c.messageRole === msgRole
+      (c.messageIndex ?? null) === msgIdx && 
+      (c.messageRole ?? null) === msgRole
     );
 
+    const isAlreadyPublished = Boolean(canonical) || existing?.status === 'published';
+    const isAlreadyResolvedUnpublished = !isAlreadyPublished && existing?.status === 'resolved_unpublished';
+    const resolvedStatus = isAlreadyPublished ? 'published' : isAlreadyResolvedUnpublished ? 'resolved_unpublished' : 'pending';
+
     const hasUrgentPriority = assignments.some((a) => a.priority === 'urgent');
-    const isUrgentPending = hasUrgentPriority && (!existing || existing.status !== 'published') && !canonical;
+    const isUrgentPending = hasUrgentPriority && !isAlreadyPublished;
 
     if (agreementScore === null || (agreementScore >= threshold && !isUrgentPending)) {
-      if (existing && existing.status !== 'published') {
+      if (existing && !isAlreadyPublished && !isAlreadyResolvedUnpublished) {
         bulkOps.push({
           deleteOne: {
             filter: { _id: existing._id }
@@ -1512,35 +1687,57 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
         });
       }
     } else {
-      bulkOps.push({
-        updateOne: {
-          filter: {
-            datasetVersionId: versionOid,
-            sampleId: sampleOid,
-            targetScope: target.targetScope,
-            messageIndex: msgIdx,
-            messageRole: msgRole,
-          },
-          update: {
-            $set: {
-              status: existing?.status === 'published' ? 'published' : existing?.status === 'resolved_unpublished' ? 'resolved_unpublished' : 'pending',
-              threshold,
-              agreementScore: agreementScore !== null ? agreementScore : 1.0,
-              majorityLabels,
-              labelCounts,
-              annotatorSets,
+      if (isAlreadyPublished || isAlreadyResolvedUnpublished) {
+        bulkOps.push({
+          updateOne: {
+            filter: {
+              datasetVersionId: versionOid,
+              sampleId: sampleOid,
+              targetScope: target.targetScope,
+              messageIndex: msgIdx,
+              messageRole: msgRole,
             },
-            $setOnInsert: {
-              finalLabels: [],
-              note: '',
+            update: {
+              $set: {
+                status: resolvedStatus,
+                threshold,
+                agreementScore: agreementScore !== null ? agreementScore : 1.0,
+                majorityLabels,
+                labelCounts,
+                annotatorSets,
+              }
+            }
+          }
+        });
+      } else {
+        bulkOps.push({
+          updateOne: {
+            filter: {
+              datasetVersionId: versionOid,
+              sampleId: sampleOid,
+              targetScope: target.targetScope,
+              messageIndex: msgIdx,
+              messageRole: msgRole,
             },
-            ...(existing?.status === 'published' || existing?.status === 'resolved_unpublished' ? {} : {
+            update: {
+              $set: {
+                status: 'pending',
+                threshold,
+                agreementScore: agreementScore !== null ? agreementScore : 1.0,
+                majorityLabels,
+                labelCounts,
+                annotatorSets,
+              },
+              $setOnInsert: {
+                finalLabels: [],
+                note: '',
+              },
               $unset: { resolvedBy: 1, resolvedAt: 1, publishedBy: 1, publishedAt: 1 }
-            })
-          },
-          upsert: true
-        }
-      });
+            },
+            upsert: true
+          }
+        });
+      }
     }
 
     const targetAnnotators = annotatorSets.map((item) => ({
@@ -1602,8 +1799,10 @@ export async function buildAssignmentSampleComparison(datasetVersionId: string, 
 
   const targetComparisons = targetSummaries.map((target) => {
     const adjudication = adjudicationMap.get(target.targetKey);
+    const isPublished = adjudication?.status === 'published';
     return {
       ...target,
+      hasConflict: target.hasConflict && !isPublished,
       adjudication: adjudication
         ? {
             status: adjudication.status,

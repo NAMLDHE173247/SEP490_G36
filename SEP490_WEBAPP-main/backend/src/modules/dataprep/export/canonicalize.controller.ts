@@ -73,50 +73,119 @@ export class CanonicalizeController {
         return;
       }
 
-      const labelsBySample = new Map<string, any[]>();
-      for (const label of activeCanonical) {
-        const key = String(label.sampleId);
-        const rows = labelsBySample.get(key) || [];
-        rows.push(label);
-        labelsBySample.set(key, rows);
-      }
+      // Identify privileged user IDs (admin, supervisor, checker, and dataset owner)
+      const privilegedUsers = await User.find({ role: { $in: ['admin', 'supervisor', 'checker'] } }).select('_id').lean();
+      const privilegedIds = new Set<string>(privilegedUsers.map((u: any) => String(u._id)));
+      if (version.ownerId) privilegedIds.add(String(version.ownerId));
 
-      // Supplement with message-level LabelAssignment labels when canonical labels
-      // exist only at sample-level (e.g. SUBJECT labels after canonicalize) but the
-      // admin assigned message intents via Step 7 that were never promoted to
-      // DatasetCanonicalLabel.  This ensures intent labels always appear in the export.
-
-      const hasCanonicalMessageLabels = activeCanonical.some(
-        (l: any) => l.targetScope === 'message' && l.messageIndex != null
-      );
-      
       const msgHardLabels = await LabelAssignment.find({
         sampleId: { $in: itemIds },
         targetScope: 'message',
         type: 'hard',
       }).lean();
 
-      const ROUTER_INTENTS = new Set([
-        'solve_problem', 'explain_concept', 'give_hint', 'check_answer',
-        'diagnose_error', 'ask_follow_up', 'ask_clarification'
+      const msgHardBySample = new Map<string, any[]>();
+      for (const hl of msgHardLabels) {
+        const sKey = String(hl.sampleId);
+        const list = msgHardBySample.get(sKey) || [];
+        list.push(hl);
+        msgHardBySample.set(sKey, list);
+      }
+
+      const SAMPLE_LEVEL_LABEL_NAMES = new Set([
+        'MATH', 'PHYSICAL', 'CHEMISTRY', 'LITERATURE', 'BIOLOGY', 'OUT_OF_SCOPE', 'REJECT', 'UNGROUPED'
       ]);
 
-      for (const hl of msgHardLabels) {
-        // Always include intents, because admins assign intents in Step 7 which might not be canonicalized.
-        // If not an intent, only include if there are no canonical message labels to avoid resurrecting rejected staff labels.
-        if (!hasCanonicalMessageLabels || ROUTER_INTENTS.has(String(hl.name || ''))) {
-          const key = String(hl.sampleId);
-          const rows = labelsBySample.get(key) || [];
-          rows.push({
-            sampleId: hl.sampleId,
-            targetScope: 'message',
-            messageIndex: hl.messageIndex ?? null,
-            messageRole: hl.messageRole ?? null,
-            labels: hl.name ? [hl.name] : [],
-          });
-          labelsBySample.set(key, rows);
+      const labelsBySample = new Map<string, any[]>();
+      for (const item of items) {
+        const key = String(item._id);
+        const canonicalRows = activeCanonical.filter((c: any) => String(c.sampleId) === key);
+        const sampleMsgLabels = msgHardBySample.get(key) || [];
+
+        const targetMap = new Map<string, {
+          messageIndex: number;
+          messageRole: string;
+          privilegedLabels: Set<string>;
+          staffLabels: Set<string>;
+          canonicalLabels: Set<string>;
+        }>();
+
+        // 1. Collect canonical message labels
+        for (const row of canonicalRows) {
+          if (row.targetScope === 'message' && Number.isInteger(row.messageIndex)) {
+            const msgIdx = Number(row.messageIndex);
+            const tKey = `${msgIdx}:${row.messageRole || ''}`;
+            const target = targetMap.get(tKey) || {
+              messageIndex: msgIdx,
+              messageRole: row.messageRole || '',
+              privilegedLabels: new Set(),
+              staffLabels: new Set(),
+              canonicalLabels: new Set(),
+            };
+            const cNames = Array.isArray(row.labels) ? row.labels : ((row as any).name ? [(row as any).name] : []);
+            cNames.forEach((n: string) => {
+              if (n && !SAMPLE_LEVEL_LABEL_NAMES.has(String(n).toUpperCase())) {
+                target.canonicalLabels.add(String(n));
+              }
+            });
+            targetMap.set(tKey, target);
+          }
         }
+
+        // 2. Collect LabelAssignment hard labels (privileged vs staff)
+        for (const hl of sampleMsgLabels) {
+          if (Number.isInteger(hl.messageIndex) && hl.name) {
+            const msgIdx = Number(hl.messageIndex);
+            const labelName = String(hl.name).trim();
+            if (SAMPLE_LEVEL_LABEL_NAMES.has(labelName.toUpperCase())) continue;
+
+            const tKey = `${msgIdx}:${hl.messageRole || ''}`;
+            const target = targetMap.get(tKey) || {
+              messageIndex: msgIdx,
+              messageRole: hl.messageRole || '',
+              privilegedLabels: new Set(),
+              staffLabels: new Set(),
+              canonicalLabels: new Set(),
+            };
+
+            const creatorId = String(hl.createdBy || '');
+            if (privilegedIds.has(creatorId)) {
+              target.privilegedLabels.add(labelName);
+            } else {
+              target.staffLabels.add(labelName);
+            }
+            targetMap.set(tKey, target);
+          }
+        }
+
+        // 3. Merge message labels with priority: Privileged Admin label > Canonical label > Staff label
+        const sampleLevelRows = canonicalRows.filter((r: any) => r.targetScope !== 'message' || !Number.isInteger(r.messageIndex));
+        const mergedMessageRows: any[] = [];
+
+        for (const target of targetMap.values()) {
+          let finalLabels: string[] = [];
+          if (target.privilegedLabels.size > 0) {
+            finalLabels = Array.from(target.privilegedLabels);
+          } else if (target.canonicalLabels.size > 0) {
+            finalLabels = Array.from(target.canonicalLabels);
+          } else if (target.staffLabels.size > 0) {
+            finalLabels = Array.from(target.staffLabels);
+          }
+
+          if (finalLabels.length > 0) {
+            mergedMessageRows.push({
+              sampleId: item._id,
+              targetScope: 'message',
+              messageIndex: target.messageIndex,
+              messageRole: target.messageRole,
+              labels: finalLabels,
+            });
+          }
+        }
+
+        labelsBySample.set(key, [...sampleLevelRows, ...mergedMessageRows]);
       }
+
       const rewritesBySample = new Map<string, Map<number, string>>();
       for (const rewrite of rewrites) {
         const key = String(rewrite.sampleId);

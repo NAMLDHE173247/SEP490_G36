@@ -184,8 +184,10 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'assignment_updated' && data.action === 'submit') {
-          toast('Một nhân viên vừa nộp bài, danh sách Conflict đang được cập nhật!', { icon: '🔄' });
+        if (data.type === 'assignment_updated') {
+          if (data.action === 'submit') {
+            toast('Một nhân viên vừa nộp bài, danh sách Conflict đang được cập nhật!', { icon: '🔄' });
+          }
           void loadQueue(true);
         }
       } catch (err) {

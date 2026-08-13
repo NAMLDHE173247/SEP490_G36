@@ -140,8 +140,45 @@ function getDbLabelName(uiName: string, role: 'user' | 'assistant'): string | nu
 
 /** Lấy UI tag name từ DB label và role. Trả về null nếu không tìm thấy. */
 function getUiTagName(dbName: string, role: 'user' | 'assistant'): string | null {
+  if (!dbName) return null;
   if (ISSUES_SOFT_LABELS.has(dbName)) return dbName;
-  return role === 'user' ? (DB_TO_UI_USER[dbName] ?? null) : (DB_TO_UI_ASSISTANT[dbName] ?? null);
+  if (role === 'user') {
+    if (USER_LABEL_MAP[dbName] !== undefined) return dbName;
+    return DB_TO_UI_USER[dbName] ?? dbName;
+  } else {
+    if (ASSISTANT_LABEL_MAP[dbName] !== undefined) return dbName;
+    return DB_TO_UI_ASSISTANT[dbName] ?? dbName;
+  }
+}
+
+function normalizeStatus(val: string): string | null {
+  if (!val) return null;
+  const upper = val.trim().toUpperCase();
+  if (['COMPLETED', 'COMPLETE', 'HOÀN THÀNH', 'HOAN THANH'].includes(upper)) return 'Completed';
+  if (['INCOMPLETE', 'CHƯA HOÀN THÀNH', 'CHUA HOAN THANH'].includes(upper)) return 'Incomplete';
+  if (['ABANDONED', 'BỎ QUA', 'BO QUA'].includes(upper)) return 'Abandoned';
+  if (['Completed', 'Incomplete', 'Abandoned'].includes(val.trim())) return val.trim();
+  return null;
+}
+
+function normalizeQuality(val: string): string | null {
+  if (!val) return null;
+  const upper = val.trim().toUpperCase();
+  if (['GOLD', 'XUẤT SẮC', 'XUAT SAC'].includes(upper)) return 'Gold';
+  if (['REWRITE', 'VIẾT LẠI', 'VIET LAI'].includes(upper)) return 'Rewrite';
+  if (['BAD', 'TỆ', 'TE'].includes(upper)) return 'Bad';
+  if (['Gold', 'Rewrite', 'Bad'].includes(val.trim())) return val.trim();
+  return null;
+}
+
+function normalizeIssue(val: string): string | null {
+  if (!val) return null;
+  const upper = val.trim().toUpperCase();
+  if (['FACTUAL ERROR', 'FACT_ERR', 'SAI KIẾN THỨC', 'SAI KIEN THUC', 'FACTUALERROR'].includes(upper)) return 'Factual Error';
+  if (['DIRECT ANSWER', 'DIR_ANS', 'LỘ ĐÁP ÁN', 'LO DAP AN', 'DIRECTANSWER'].includes(upper)) return 'Direct Answer';
+  if (['LANGUAGE ISSUE', 'LANG_ISSUE', 'LỖI NGÔN NGỮ', 'LOI NGON NGU', 'LANGUAGEISSUE'].includes(upper)) return 'Language Issue';
+  if (['Factual Error', 'Direct Answer', 'Language Issue'].includes(val.trim())) return val.trim();
+  return null;
 }
 
 /** Helper: Set một tag's active state cho một message cụ thể. */
@@ -338,13 +375,49 @@ export const Stage3Labeling: React.FC = () => {
     return parts.length > 0 ? <>{parts}</> : <>{content}</>;
   };
 
+  const checkConvLabelActive = (list: string[], group: string, label: string): boolean => {
+    if (!list || !list.length) return false;
+    if (list.includes(label)) return true;
+
+    const targetNorm = group === 'STATUS' ? normalizeStatus(label)
+      : group === 'QUALITY' ? normalizeQuality(label)
+      : group === 'ISSUES' ? normalizeIssue(label)
+      : label.toUpperCase();
+
+    return list.some((item) => {
+      if (item === label) return true;
+      const itemNorm = group === 'STATUS' ? normalizeStatus(item)
+        : group === 'QUALITY' ? normalizeQuality(item)
+        : group === 'ISSUES' ? normalizeIssue(item)
+        : item.toUpperCase();
+      return Boolean(itemNorm && targetNorm && itemNorm === targetNorm);
+    });
+  };
+
   const toggleConversationLabel = (group: string, label: string) => {
-    setConversationLabels(prev => ({
-      ...prev,
-      [group]: group === 'ISSUES'
-        ? (prev[group]?.includes(label) ? prev[group].filter(item => item !== label) : [...(prev[group] || []), label])
-        : (prev[group]?.includes(label) ? [] : [label]),
-    }));
+    setConversationLabels((prev) => {
+      const currentList = prev[group] || [];
+      const isActive = checkConvLabelActive(currentList, group, label);
+
+      if (group === 'ISSUES') {
+        if (isActive) {
+          const normTarget = normalizeIssue(label);
+          const nextList = currentList.filter((item) => {
+            const normItem = normalizeIssue(item);
+            return item !== label && normItem !== normTarget;
+          });
+          return { ...prev, [group]: nextList };
+        } else {
+          return { ...prev, [group]: [...currentList, label] };
+        }
+      } else {
+        if (isActive) {
+          return { ...prev, [group]: [] };
+        } else {
+          return { ...prev, [group]: [label] };
+        }
+      }
+    });
   };
 
   const saveCanonicalConversationLabels = async () => {
@@ -711,29 +784,145 @@ export const Stage3Labeling: React.FC = () => {
 
           setIaMessages(activateLabelsInMessages(baseMessages, mergedLabels));
 
-          // Khôi phục Nhãn Cứng Hội Thoại
+          // Khôi phục Nhãn Cứng Hội Thoại (DECISION, SUBJECT, STATUS, QUALITY, ISSUES)
           const newConvLabels: Record<string, string[]> = { DECISION: [], SUBJECT: [], STATUS: [], QUALITY: [], ISSUES: [] };
+
+          const normalizeStatus = (val: string): string | null => {
+            if (!val) return null;
+            const upper = val.trim().toUpperCase();
+            if (['COMPLETED', 'COMPLETE', 'HOÀN THÀNH', 'HOAN THANH'].includes(upper)) return 'Completed';
+            if (['INCOMPLETE', 'CHƯA HOÀN THÀNH', 'CHUA HOAN THANH'].includes(upper)) return 'Incomplete';
+            if (['ABANDONED', 'BỎ QUA', 'BO QUA'].includes(upper)) return 'Abandoned';
+            if (['Completed', 'Incomplete', 'Abandoned'].includes(val.trim())) return val.trim();
+            return null;
+          };
+
+          const normalizeQuality = (val: string): string | null => {
+            if (!val) return null;
+            const upper = val.trim().toUpperCase();
+            if (['GOLD', 'XUẤT SẮC', 'XUAT SAC'].includes(upper)) return 'Gold';
+            if (['REWRITE', 'VIẾT LẠI', 'VIET LAI'].includes(upper)) return 'Rewrite';
+            if (['BAD', 'TỆ', 'TE'].includes(upper)) return 'Bad';
+            if (['Gold', 'Rewrite', 'Bad'].includes(val.trim())) return val.trim();
+            return null;
+          };
+
+          const normalizeIssue = (val: string): string | null => {
+            if (!val) return null;
+            const upper = val.trim().toUpperCase();
+            if (['FACTUAL ERROR', 'FACT_ERR', 'SAI KIẾN THỨC', 'SAI KIEN THUC', 'FACTUALERROR'].includes(upper)) return 'Factual Error';
+            if (['DIRECT ANSWER', 'DIR_ANS', 'LỘ ĐÁP ÁN', 'LO DAP AN', 'DIRECTANSWER'].includes(upper)) return 'Direct Answer';
+            if (['LANGUAGE ISSUE', 'LANG_ISSUE', 'LỖI NGÔN NGỮ', 'LOI NGON NGU', 'LANGUAGEISSUE'].includes(upper)) return 'Language Issue';
+            if (['Factual Error', 'Direct Answer', 'Language Issue'].includes(val.trim())) return val.trim();
+            return null;
+          };
+
+          const addConvLabel = (group: string, value: string) => {
+            if (newConvLabels[group] && !newConvLabels[group].includes(value)) {
+              newConvLabels[group].push(value);
+            }
+          };
+
           (labels || []).forEach((lbl: any) => {
-            if (lbl.targetScope === 'conversation' && lbl.name) {
-              const parts = lbl.name.split(':');
-              if (parts.length >= 2) {
-                const group = parts[0];
-                const value = parts.slice(1).join(':');
-                if (newConvLabels[group] && !newConvLabels[group].includes(value)) {
-                  newConvLabels[group].push(value);
-                }
+            if (!lbl.name) return;
+            const nameStr = String(lbl.name).trim();
+
+            // 1. Check "GROUP:VALUE" format
+            if (nameStr.includes(':')) {
+              const parts = nameStr.split(':');
+              const group = parts[0].toUpperCase();
+              const value = parts.slice(1).join(':').trim();
+              if (group === 'STATUS') {
+                const norm = normalizeStatus(value);
+                if (norm) addConvLabel('STATUS', norm);
+              } else if (group === 'QUALITY') {
+                const norm = normalizeQuality(value);
+                if (norm) addConvLabel('QUALITY', norm);
+              } else if (group === 'ISSUES') {
+                const norm = normalizeIssue(value);
+                if (norm) addConvLabel('ISSUES', norm);
+              } else if (group === 'SUBJECT') {
+                addConvLabel('SUBJECT', value.toUpperCase());
+              } else if (newConvLabels[group]) {
+                addConvLabel(group, value);
               }
+              return;
+            }
+
+            // 2. Direct name matching without prefix
+            const normStatus = normalizeStatus(nameStr);
+            if (normStatus) { addConvLabel('STATUS', normStatus); return; }
+
+            const normQuality = normalizeQuality(nameStr);
+            if (normQuality) { addConvLabel('QUALITY', normQuality); return; }
+
+            const normIssue = normalizeIssue(nameStr);
+            if (normIssue) { addConvLabel('ISSUES', normIssue); return; }
+
+            const upper = nameStr.toUpperCase();
+            if (['MATH', 'PHYSICAL', 'PHYSICS', 'CHEMISTRY', 'BIOLOGY', 'LITERATURE', 'HISTORY', 'GEOGRAPHY', 'CIVICS', 'IT', 'CROSS_CURRICULAR', 'UNKNOWN'].includes(upper)) {
+              addConvLabel('SUBJECT', upper);
+              return;
+            }
+
+            // 3. If lbl contains targetTextSnapshot (soft label JSON from staff)
+            if (lbl.targetTextSnapshot) {
+              try {
+                const parsed = JSON.parse(lbl.targetTextSnapshot);
+                if (parsed.completion) {
+                  const norm = normalizeStatus(parsed.completion);
+                  if (norm) addConvLabel('STATUS', norm);
+                }
+                if (parsed.quality) {
+                  const norm = normalizeQuality(parsed.quality);
+                  if (norm) addConvLabel('QUALITY', norm);
+                }
+                const issueList = parsed.issues || parsed.flags;
+                if (issueList) {
+                  if (typeof issueList === 'object' && !Array.isArray(issueList)) {
+                    if (issueList.factualError) addConvLabel('ISSUES', 'Factual Error');
+                    if (issueList.directAnswer) addConvLabel('ISSUES', 'Direct Answer');
+                    if (issueList.languageIssue) addConvLabel('ISSUES', 'Language Issue');
+                  } else if (Array.isArray(issueList)) {
+                    issueList.forEach((iss: string) => {
+                      const norm = normalizeIssue(iss);
+                      if (norm) addConvLabel('ISSUES', norm);
+                    });
+                  }
+                }
+              } catch { /* ignore JSON parse error */ }
             }
           });
 
+          // 4. Pre-select from currentSample assignment data if available
+          const currentSample = step7Samples.find((s) => s.sampleId === sampleId);
+          if (currentSample) {
+            if (newConvLabels['STATUS'].length === 0 && currentSample.completion) {
+              const norm = normalizeStatus(currentSample.completion);
+              if (norm) addConvLabel('STATUS', norm);
+            }
+            if (newConvLabels['QUALITY'].length === 0 && currentSample.quality) {
+              const norm = normalizeQuality(currentSample.quality);
+              if (norm) addConvLabel('QUALITY', norm);
+            }
+            const sampleIssues = currentSample.issues || currentSample.flags;
+            if (sampleIssues) {
+              if (Array.isArray(sampleIssues)) {
+                sampleIssues.forEach((iss: string) => {
+                  const norm = normalizeIssue(iss);
+                  if (norm) addConvLabel('ISSUES', norm);
+                });
+              }
+            }
+          }
+
           // Pre-select AI Subject or human consensus if NO manual SUBJECT is saved yet
           if (newConvLabels['SUBJECT'].length === 0) {
-            const currentSample = step7Samples.find((s) => s.sampleId === sampleId);
             const humanSubject = currentSample?.subjectLabelWithHuman;
             const aiSubject = conv.groupLabel || conv.subject || conv.cluster;
             const finalSubject = humanSubject || (aiSubject && aiSubject !== 'NOISE' ? aiSubject : null);
             if (finalSubject) {
-              newConvLabels['SUBJECT'].push(finalSubject);
+              addConvLabel('SUBJECT', finalSubject);
             }
           }
 
@@ -749,20 +938,24 @@ export const Stage3Labeling: React.FC = () => {
         if (!cancelled) setIsFetchingLabels(false);
       }
     },
-    [stage3Convs, setIaMessages, localMessageLabelCache]
+    [stage3Convs, setIaMessages, localMessageLabelCache, step7Samples]
   );
 
   /** Di chuyển đến sample thứ idx (0-based) trong step 7. */
   const goToStep7Sample = React.useCallback(
     async (idx: number) => {
-      if (idx < 0 || idx >= step7Samples.length) return;
+      const total = step7Samples.length || stage3Convs.length;
+      if (idx < 0 || idx >= total) return;
       setStep7SampleIndex(idx);
       setSelectedIaMsgId(null);
       const sample = step7Samples[idx];
-      const convIdx = (sample.sampleIndex ?? idx + 1) - 1; // sampleIndex 1-based → 0-based
-      await loadLabelsForSample(sample.sampleId, convIdx);
+      const sampleId = sample?.sampleId || stage3Convs[idx]?.sampleId || stage3Convs[idx]?.id || (stage3Convs[idx] as any)?._id;
+      const convIdx = (sample?.sampleIndex ?? idx + 1) - 1; // sampleIndex 1-based → 0-based
+      if (sampleId) {
+        await loadLabelsForSample(sampleId, convIdx >= 0 ? convIdx : idx);
+      }
     },
-    [step7Samples, loadLabelsForSample, setSelectedIaMsgId]
+    [step7Samples, stage3Convs, loadLabelsForSample, setSelectedIaMsgId]
   );
 
   React.useEffect(() => {
@@ -778,8 +971,30 @@ export const Stage3Labeling: React.FC = () => {
         ]);
         if (cancelled) return;
 
-        const samples = assignRes.samples || [];
-        setAssignmentSamples(samples);
+        let samples = assignRes.samples || [];
+        if (samples.length === 0 && versionId) {
+          try {
+            const detailRes = await apiService.getDatasetVersionDetail(versionId);
+            if (detailRes?.items?.length) {
+              samples = detailRes.items.map((item: any, idx: number) => ({
+                sampleId: String(item._id || item.sampleId),
+                sampleIndex: idx + 1,
+                preview: item.preview || (item.data?.messages?.[0]?.content || item.data?.prompt || '').substring(0, 100),
+              }));
+            }
+          } catch (e) {
+            console.warn('[Step7] Could not load dataset version detail fallback:', e);
+          }
+        }
+
+        if (samples.length === 0 && stage3Convs.length > 0) {
+          samples = stage3Convs.map((conv: any, idx: number) => ({
+            sampleId: String(conv.sampleId || conv.id || conv._id || `sample_${idx + 1}`),
+            sampleIndex: idx + 1,
+          }));
+        }
+
+        setAssignmentSamples(assignRes.samples || []);
         setAssignmentTotals(assignRes.totals || null);
         setAssignmentDashboard(dashboardRes || null);
         setStep7Samples(samples);
@@ -787,10 +1002,13 @@ export const Stage3Labeling: React.FC = () => {
         setStep7TotalSamples(total);
         setStep7SampleIndex(0);
 
+        const publishedCount = dashboardRes?.overview?.publishedDecisionCount ?? samples.filter((s: any) => s.subjectLabelWithHuman || (s.assignees?.length > 0 && !s.hasConflict)).length;
+        setStep7CoverageCount(publishedCount);
+
         if (samples.length > 0 && stage3Convs.length > 0) {
           const first = samples[0];
           const convIdx = (first.sampleIndex ?? 1) - 1;
-          await loadLabelsForSample(first.sampleId, convIdx, cancelled);
+          await loadLabelsForSample(first.sampleId, convIdx >= 0 ? convIdx : 0, cancelled);
         } else if (stage3Convs.length > 0) {
           if (!cancelled) setIaMessages(buildBaseIaMessages(stage3Convs[0]?.messages || []));
         }
@@ -826,7 +1044,10 @@ export const Stage3Labeling: React.FC = () => {
       handleToggleLabel(msg.id, groupName, tagName);
 
       // Gọi API (fire-and-forget)
-      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.id
+        || (stage3Convs[step7SampleIndex] as any)?._id;
       if (!sampleId) return;
 
       const dbName = getDbLabelName(tagName, msg.role);
@@ -859,7 +1080,7 @@ export const Stage3Labeling: React.FC = () => {
         );
       }
     },
-    [handleToggleLabel, step7Samples, step7SampleIndex]
+    [handleToggleLabel, step7Samples, step7SampleIndex, stage3Convs]
   );
 
   /**
@@ -872,7 +1093,10 @@ export const Stage3Labeling: React.FC = () => {
       handleRemoveMessageSingleLabel(msg.id, uiTagName);
 
       // Gọi API
-      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.id
+        || (stage3Convs[step7SampleIndex] as any)?._id;
       if (!sampleId) return;
 
       const dbName = getDbLabelName(uiTagName, msg.role);
@@ -889,7 +1113,7 @@ export const Stage3Labeling: React.FC = () => {
         console.error('[handleRemoveLabelWithApi] removeSampleLabel failed:', err)
       );
     },
-    [handleRemoveMessageSingleLabel, step7Samples, step7SampleIndex]
+    [handleRemoveMessageSingleLabel, step7Samples, step7SampleIndex, stage3Convs]
   );
 
   const handleToggleLabelMultiWithApi = React.useCallback(
@@ -898,7 +1122,10 @@ export const Stage3Labeling: React.FC = () => {
       const wasActive = Boolean(currentTag?.active);
       setIaMessages((prev: any[]) => setMessageTagActive(prev, msg.id, tagName, !wasActive));
 
-      const sampleId = step7Samples[step7SampleIndex]?.sampleId;
+      const sampleId = step7Samples[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.sampleId
+        || stage3Convs[step7SampleIndex]?.id
+        || (stage3Convs[step7SampleIndex] as any)?._id;
       if (!sampleId) return;
 
       const dbName = getDbLabelName(tagName, msg.role);
@@ -946,7 +1173,7 @@ export const Stage3Labeling: React.FC = () => {
           .catch((err: any) => console.error('[handleToggleLabelMultiWithApi] removeSampleLabel failed:', err));
       }
     },
-    [setIaMessages, step7Samples, step7SampleIndex]
+    [setIaMessages, step7Samples, step7SampleIndex, stage3Convs]
   );
 
   // =====================================================
@@ -2746,7 +2973,7 @@ export const Stage3Labeling: React.FC = () => {
                       </div>
                       <div className="conversation-label-grid">
                         {labels.map(label => {
-                          const active = conversationLabels[group]?.includes(label);
+                          const active = checkConvLabelActive(conversationLabels[group] || [], group, label);
                           return <button type="button" key={label} className={`conversation-label-btn ${active ? 'active' : ''}`} onClick={() => toggleConversationLabel(group, label)}><span>{active ? '✓' : '+'}</span>{DISPLAY_LABELS[label] || label}</button>;
                         })}
                       </div>
