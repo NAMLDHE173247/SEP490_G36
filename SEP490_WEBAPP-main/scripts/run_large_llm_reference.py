@@ -216,7 +216,7 @@ def main() -> int:
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--model", required=True, help="Pinned OpenRouter model identifier")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--judge-model", default="google/gemini-2.5-flash")
+    parser.add_argument("--judge-model", default="openai/gpt-5.6-luna")
     parser.add_argument("--prompt-variant", choices=("P0", "P1"), default="P1")
     parser.add_argument("--prompt-file", type=Path)
     parser.add_argument("--prompt-version", default="UNVERSIONED")

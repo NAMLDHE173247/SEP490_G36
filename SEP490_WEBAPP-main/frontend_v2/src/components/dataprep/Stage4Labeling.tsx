@@ -986,7 +986,7 @@ export const Stage4Labeling: React.FC = () => {
       convId: item.sampleId,
       subject: getStaffSubjectFromComparison(
         getComparisonForSample(sampleId, String(item.sampleId)),
-        item.data?.subject || item.subject,
+        (item as any).data?.subject || (item as any).subject,
       ),
       ...item,
       bucket: combinedBucket,
@@ -1562,7 +1562,7 @@ export const Stage4Labeling: React.FC = () => {
             const aiModels = [
               { key: 'gemini', label: 'Gemini 2.5 Flash', desc: 'Fast education-quality judge', color: '#4f46e5', badge: 'Recommended' },
               { key: 'deepseek', label: 'DeepSeek V4 Flash', desc: 'Advanced logic and factuality judge', color: '#0891b2', badge: '' },
-              { key: 'openai', label: 'ChatGPT GPT-4', desc: 'Independent high-precision verification', color: '#059669', badge: '' },
+              { key: 'openai', label: 'GPT 5.6 Luna', desc: 'Independent high-precision verification', color: '#059669', badge: '' },
             ];
             const selectedCount = Object.values(judgeModels).filter(Boolean).length;
 

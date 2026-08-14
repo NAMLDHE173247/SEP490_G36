@@ -203,7 +203,7 @@ const EvaluationSchema = new Schema<IEvaluation>(
     gpuResult:         { type: Schema.Types.Mixed, default: {} },
     startedAt:         { type: Date, required: true },
     completedAt:       { type: Date },
-    judgeModel:        { type: String, default: 'google/gemini-2.5-flash' },
+    judgeModel:        { type: String, default: 'openai/gpt-5.6-luna' },
     error:             { type: String, default: '' },
     failureStage:      { type: String, default: '' },
     flags:             { type: [String], default: [] },

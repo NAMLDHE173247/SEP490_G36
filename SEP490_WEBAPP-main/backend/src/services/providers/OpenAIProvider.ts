@@ -10,8 +10,8 @@ export class OpenAIProvider implements ILlmProvider {
   private readonly baseUrl: string;
 
   constructor(customApiKey?: string) {
-    this.model = process.env.OPENAI_MODEL || 'gpt-4';
-    this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+    this.model = process.env.OPENAI_MODEL || 'openai/gpt-5.6-luna';
+    this.baseUrl = process.env.OPENAI_BASE_URL || 'https://openrouter.ai/api/v1';
     this.apiKey = customApiKey || this.resolveApiKey();
 
     if (!this.apiKey) {
