@@ -156,7 +156,7 @@ export const Stage6Finish: React.FC = () => {
   const [isSplitting, setIsSplitting] = useState(false);
   const [splitResult, setSplitResult] = useState<any>(null);
 
-  const [splitTestPercentage, setSplitTestPercentage] = useState(20);
+  const [splitTestPercentage, setSplitTestPercentage] = useState(10);
   const [splitValPercentage, setSplitValPercentage] = useState(10);
   const [splitThreshold, setSplitThreshold] = useState(0.85);
   const [splitMaxAttempts, setSplitMaxAttempts] = useState(20);
@@ -1557,7 +1557,7 @@ export const Stage6Finish: React.FC = () => {
                 min="5"
                 max={Math.max(5, 90 - splitValPercentage)}
                 value={splitTestPercentage}
-                onChange={e => setSplitTestPercentage(Number(e.target.value))}
+                disabled
                 className="sg-slider sg-slider-purple"
                 style={getSliderStyle(splitTestPercentage, 5, Math.max(5, 90 - splitValPercentage), '#7c3aed')}
               />
@@ -1572,7 +1572,7 @@ export const Stage6Finish: React.FC = () => {
                 min="5"
                 max={Math.max(5, 90 - splitTestPercentage)}
                 value={splitValPercentage}
-                onChange={e => setSplitValPercentage(Number(e.target.value))}
+                disabled
                 className="sg-slider"
                 style={getSliderStyle(splitValPercentage, 5, Math.max(5, 90 - splitTestPercentage), '#10b981')}
               />
@@ -1588,7 +1588,7 @@ export const Stage6Finish: React.FC = () => {
                 Tự tính = 100% − Test − Val
               </div>
             </div>
-            <div className="sg-config-card">
+            <div className="sg-config-card" style={{ display: 'none' }}>
               <div className="sg-config-label-row">
                 <span className="sg-config-label">SEMANTIC THRESHOLD</span>
                 <span className="sg-config-pct">{splitThreshold.toFixed(2)}</span>
@@ -1606,7 +1606,7 @@ export const Stage6Finish: React.FC = () => {
           </div>
 
           {/* Max Attempts */}
-          <div className="sg-attempts-card">
+          <div className="sg-attempts-card" style={{ display: 'none' }}>
             <span className="sg-config-label">MAX ATTEMPTS</span>
             <p className="sg-attempts-desc">The GPU service will reshuffle until the split is clean or this limit is reached.</p>
             <input

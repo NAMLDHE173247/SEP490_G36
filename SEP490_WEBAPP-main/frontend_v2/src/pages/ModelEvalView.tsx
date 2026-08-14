@@ -2051,7 +2051,7 @@ export default function ModelEvalView() {
                   <div className="score-definition-grid" aria-label="Chú giải các loại điểm">
                     <div><b>Độ chính xác kiến thức (K)</b><span>Bằng tiêu chí B1: câu trả lời đúng kiến thức đến đâu.</span></div>
                     <div><b>Khả năng gợi mở Socratic (S)</b><span>Trung bình A1–A3: có giữ đáp án, gợi mở và thích ứng hay không.</span></div>
-                    <div><b>Kết quả phụ A1–D1</b><span>Báo cáo từng tiêu chí, Δ, CI95, effect size và Holm-adjusted p; không gộp bằng trọng số tùy ý.</span></div>
+                    <div><b>Kết quả phụ A1–D1</b><span>Báo cáo từng tiêu chí, Δ và CI95; không gộp bằng trọng số tùy ý.</span></div>
                     <div><b>Kết quả vận hành</b><span>D2, TTFT, E2E, TPOT, throughput và failure rate được báo cáo riêng, không trộn với chất lượng nội dung.</span></div>
                   </div>
 
@@ -2103,7 +2103,7 @@ export default function ModelEvalView() {
                       </div>
                     </div>
                     <table className="comparison-table">
-                      <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th><th className="text-right">Effect size dz</th><th className="text-right">Holm p</th></tr></thead>
+                      <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th></tr></thead>
                       <tbody>{fullCriteriaResearchRows.map(row => (
                         <tr key={row.key}>
                           <td><b>{row.key}</b> · {row.label}{row.key === 'D2' && <small> · chỉ số vận hành, xem thêm latency thô</small>}</td>
@@ -2111,8 +2111,6 @@ export default function ModelEvalView() {
                           <td className="text-center font-semibold">{Number.isFinite(row.ft) ? row.ft.toFixed(2) : '—'}</td>
                           <td className={`text-right font-bold ${row.delta >= 0 ? 'text-success' : 'text-danger'}`}>{Number.isFinite(row.delta) ? `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}` : '—'}</td>
                           <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
-                          <td className="text-right">{row.effectSize === null ? '—' : row.effectSize.toFixed(3)}</td>
-                          <td className="text-right">{row.key === 'D2' ? 'Tách riêng' : row.pAdjusted === null ? '—' : row.pAdjusted < 0.001 ? '<0.001' : row.pAdjusted.toFixed(3)}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -2142,7 +2140,7 @@ export default function ModelEvalView() {
 
                     {adaptiveDiagnosticRows.length > 0 ? (
                       <table className="comparison-table">
-                        <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th><th className="text-right">Effect size dz</th><th className="text-right">Holm p</th></tr></thead>
+                        <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th></tr></thead>
                         <tbody>{adaptiveDiagnosticRows.map(row => (
                           <tr key={row.key}>
                             <td><b>{row.key}</b> · {row.label}</td>
@@ -2152,8 +2150,6 @@ export default function ModelEvalView() {
                               {row.delta === null ? '—' : `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}`}
                             </td>
                             <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
-                            <td className="text-right">{row.effectSize === null ? '—' : row.effectSize.toFixed(3)}</td>
-                            <td className="text-right">{row.key === 'AS' ? 'Điểm tổng' : row.pAdjusted === null ? '—' : row.pAdjusted < 0.001 ? '<0.001' : row.pAdjusted.toFixed(3)}</td>
                           </tr>
                         ))}</tbody>
                       </table>
