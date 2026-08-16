@@ -92,10 +92,10 @@ const DB_TO_UI_USER: Record<string, string> = Object.fromEntries(
 const DB_TO_UI_ASSISTANT: Record<string, string> = {
   ...Object.fromEntries(Object.entries(ASSISTANT_LABEL_MAP).map(([ui, db]) => [db, ui])),
   // Legacy DB names (lưu bởi phiên bản cũ) → vẫn hiển thị đúng UI tag
-  'HINTING':                 'A_HINT',
-  'CORRECT_MISTAKE':         'FIX',
-  'CONCEPT_CLARIFY':         'CLR',
-  'CONFIRM_CORRECT_ANSWER':  'CONF',
+  'HINTING': 'A_HINT',
+  'CORRECT_MISTAKE': 'FIX',
+  'CONCEPT_CLARIFY': 'CLR',
+  'CONFIRM_CORRECT_ANSWER': 'CONF',
 };
 
 /** ISSUES labels không có trong HARD_LABELS → lưu dưới dạng 'soft' */
@@ -305,7 +305,7 @@ function activateLabelsInMessages(baseMessages: any[], dbLabels: any[]): any[] {
 
   return baseMessages.map((msg) => {
     const active = activationMap[msg.messageIndex];
-    
+
     const newLabels: Record<string, any[]> = {};
     Object.entries(msg.labels).forEach(([groupName, tags]: [string, any]) => {
       newLabels[groupName] = tags.map((tag: any) => {
@@ -381,15 +381,15 @@ export const Stage3Labeling: React.FC = () => {
 
     const targetNorm = group === 'STATUS' ? normalizeStatus(label)
       : group === 'QUALITY' ? normalizeQuality(label)
-      : group === 'ISSUES' ? normalizeIssue(label)
-      : label.toUpperCase();
+        : group === 'ISSUES' ? normalizeIssue(label)
+          : label.toUpperCase();
 
     return list.some((item) => {
       if (item === label) return true;
       const itemNorm = group === 'STATUS' ? normalizeStatus(item)
         : group === 'QUALITY' ? normalizeQuality(item)
-        : group === 'ISSUES' ? normalizeIssue(item)
-        : item.toUpperCase();
+          : group === 'ISSUES' ? normalizeIssue(item)
+            : item.toUpperCase();
       return Boolean(itemNorm && targetNorm && itemNorm === targetNorm);
     });
   };
@@ -424,7 +424,7 @@ export const Stage3Labeling: React.FC = () => {
     const versionId = localStorage.getItem('current_version_id');
     const sample = step7Samples[step7SampleIndex];
     if (!versionId || !sample?.sampleId) return toast('Không tìm thấy hội thoại hiện tại.', 'error');
-    
+
     // Kiểm tra xem có pending labels không (chưa save)
     const sampleId = sample.sampleId;
     const hasPendingLabels = Object.keys(localMessageLabelCache).some(
@@ -434,7 +434,7 @@ export const Stage3Labeling: React.FC = () => {
       toast('Vui lòng chờ toàn bộ nhãn message được lưu trước khi chốt.', 'warning');
       return;
     }
-    
+
     const normalizedConversationLabels = {
       ...conversationLabels,
       SUBJECT: (conversationLabels.SUBJECT || []).map((value) => String(value).replace(/^SUBJECT:\s*/i, '').trim()).filter(Boolean),
@@ -445,7 +445,7 @@ export const Stage3Labeling: React.FC = () => {
     try {
       await apiService.setDatasetSampleCanonicalLabels({ versionId, sampleId: sample.sampleId, labels, targetTextSnapshot: JSON.stringify(normalizedConversationLabels) });
       toast('Đã chốt nhãn hội thoại của Admin.', 'success');
-      
+
       // Clear cache cho sample này
       setLocalMessageLabelCache((prev) => {
         const next = { ...prev };
@@ -454,7 +454,7 @@ export const Stage3Labeling: React.FC = () => {
         });
         return next;
       });
-      
+
       // Cập nhật lại stage3Convs để ghi nhớ môn học vừa chốt
       const finalSubject = normalizedConversationLabels['SUBJECT']?.[0];
       if (finalSubject) {

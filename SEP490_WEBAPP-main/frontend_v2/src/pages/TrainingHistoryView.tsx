@@ -534,33 +534,9 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
     setClearingQueue(true);
     const toastId = toast.loading('Đang phát tín hiệu dọn dẹp Hàng đợi GPU...');
     try {
-      const statusRes = await api.get('/train/queue-status');
-      const data = statusRes.data || {};
-      const queuedJobs: string[] = data.queued_jobs || [];
-      const activeJobs: string[] = data.active_jobs || [];
-      const allJobsToStop = Array.from(new Set([...queuedJobs, ...activeJobs]));
-
-      let stoppedCount = 0;
-      for (const jobId of allJobsToStop) {
-        try {
-          await api.post(`/train/stop/${jobId}`);
-          stoppedCount++;
-        } catch (err) {
-          console.warn(`Failed to stop job ${jobId}:`, err);
-        }
-      }
-
-      const stuckInDb = histories.filter(h => ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'].includes(h.status));
-      for (const item of stuckInDb) {
-        if (!allJobsToStop.includes(item.jobId)) {
-          try {
-            await api.post(`/train/stop/${item.jobId}`);
-            stoppedCount++;
-          } catch { /* ignore */ }
-        }
-      }
-
-      toast.success(`Đã dọn dẹp Queue GPU thành công! (${stoppedCount} job đã được xử lý)`, { id: toastId });
+      const res = await api.post('/train/clear-queue');
+      const msg = res.data?.message || 'Đã dọn dẹp Hàng đợi GPU thành công!';
+      toast.success(msg, { id: toastId });
       fetchHistories(selectedModel || undefined);
     } catch (err: any) {
       console.error('Lỗi dọn dẹp queue:', err);

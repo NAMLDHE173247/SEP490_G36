@@ -6,6 +6,7 @@ import { CloudStorageController } from '../controllers/cloudStorageController';
 import { EvaluationController } from '../controllers/evaluationController';
 import {
   stopTraining,
+  clearTrainQueue,
   startTraining,
   resumeTraining,
   getTrainingStatus,
@@ -229,6 +230,7 @@ router.get('/train/active', authMiddleware, getActiveTrainingJobs);
 router.get('/train/monitor', authMiddleware, getTrainingMonitor);
 router.get('/train/status/:jobId', authMiddleware, getTrainingStatus);
 router.get('/train/queue-status', authMiddleware, getTrainQueueStatus);
+router.post('/train/clear-queue', authMiddleware, requireManager, clearTrainQueue);
 router.post('/train/summary/:jobId', authMiddleware, generateTrainingSummary);
 router.get('/train/stream/:jobId', authMiddleware, streamTrainingStatus);
 router.post('/train/stop/:jobId', authMiddleware, requireManager, stopTraining);

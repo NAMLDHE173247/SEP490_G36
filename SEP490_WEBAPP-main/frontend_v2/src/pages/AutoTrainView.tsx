@@ -724,23 +724,9 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     setClearingQueue(true);
     triggerToast('Đang phát tín hiệu dọn dẹp Hàng đợi GPU...', 'info');
     try {
-      const statusRes = await api.get('/train/queue-status');
-      const data = statusRes.data || {};
-      const queuedJobs: string[] = data.queued_jobs || [];
-      const activeJobs: string[] = data.active_jobs || [];
-      const allJobsToStop = Array.from(new Set([...queuedJobs, ...activeJobs]));
-
-      let stoppedCount = 0;
-      for (const jobId of allJobsToStop) {
-        try {
-          await api.post(`/train/stop/${jobId}`);
-          stoppedCount++;
-        } catch (err) {
-          console.warn(`Failed to stop job ${jobId}:`, err);
-        }
-      }
-
-      triggerToast(`Đã dọn dẹp Queue GPU thành công! (${stoppedCount} job đã xử lý)`, 'success');
+      const res = await api.post('/train/clear-queue');
+      const msg = res.data?.message || 'Đã dọn dẹp Queue GPU thành công!';
+      triggerToast(msg, 'success');
     } catch (err: any) {
       console.error('Lỗi dọn dẹp queue:', err);
       triggerToast('Lỗi dọn dẹp queue: ' + (err.response?.data?.error || err.message), 'error');
