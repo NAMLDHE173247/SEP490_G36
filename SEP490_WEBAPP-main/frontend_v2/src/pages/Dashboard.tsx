@@ -29,6 +29,8 @@ import TrainingHistoryView from './TrainingHistoryView';
 import ApiKeySettingsPage from './ApiKeySettingsPage';
 import HumanAuditReplayView from './HumanAuditReplayView';
 import HumanAuditManagerView from './HumanAuditManagerView';
+import ProfileSettingsView from './ProfileSettingsView';
+import AppSettingsView from './AppSettingsView';
 
 function Dashboard() {
   const { user } = useAuth();
@@ -49,8 +51,10 @@ function Dashboard() {
     }
   }, [user, navigate]);
 
-  // Default tab per role
+  // Default tab per role (or custom preference set in Settings)
   const getDefaultTab = () => {
+    const customLanding = localStorage.getItem('app_landing_page');
+    if (customLanding) return customLanding;
     if (!user) return 'Dashboard';
     switch (user.role) {
       case 'admin': return 'Dashboard';
@@ -156,6 +160,8 @@ function Dashboard() {
 
       const isValid =
         (activeTab === 'API Keys') ||
+        (activeTab === 'Profile Settings') ||
+        (activeTab === 'Settings') ||
         (activeTab === 'Staff Label' && user.role === 'staff') ||
         (activeTab === 'Staff Rewrite' && user.role === 'staff') ||
         (activeTab === 'Task Detail' && ['admin', 'supervisor', 'checker'].includes(user.role)) ||
@@ -252,6 +258,10 @@ function Dashboard() {
         return <MyStatsView />;
       case 'API Keys':
         return <ApiKeySettingsPage />;
+      case 'Profile Settings':
+        return <ProfileSettingsView />;
+      case 'Settings':
+        return <AppSettingsView />;
       default:
         if (user.role === 'staff') return <StaffTasksView onOpenTask={handleOpenTask} />;
         if (user.role === 'supervisor') return <SupervisorReviewView onOpenTask={handleViewTaskDetail} />;

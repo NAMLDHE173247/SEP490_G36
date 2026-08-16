@@ -899,4 +899,12 @@ export const apiService = {
     const response = await api.post(`/human-audit/manage/${evalId}/adjudicate/${convIndex}`, payload);
     return response.data;
   },
+  updateProfile: async (payload: { name: string }): Promise<any> => {
+    const response = await api.patch('/auth/profile', payload);
+    return response.data;
+  },
+  changePassword: async (payload: { currentPassword: string; newPassword: string }): Promise<any> => {
+    const response = await api.post('/auth/change-password', payload);
+    return response.data;
+  },
 };

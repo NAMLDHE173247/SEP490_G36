@@ -17,6 +17,8 @@ import {
   updateUserStatus, 
   requestPasswordResetOtp,
   verifyOtpAndResetPassword,
+  updateProfile,
+  changePassword,
 } from '../controllers/authController';
 
 const router = express.Router();
@@ -33,6 +35,13 @@ const authLimiter = rateLimit({
 
 
 router.get('/me', authMiddleware, getMe);
+router.patch('/profile', authMiddleware, updateProfile);
+router.post('/profile', authMiddleware, updateProfile);
+router.put('/profile', authMiddleware, updateProfile);
+
+router.post('/change-password', authMiddleware, changePassword);
+router.put('/change-password', authMiddleware, changePassword);
+router.patch('/change-password', authMiddleware, changePassword);
 router.post('/login', authLimiter, login);
 router.get('/mock-consent', mockConsentPage);
 router.get('/google/redirect', googleRedirect);

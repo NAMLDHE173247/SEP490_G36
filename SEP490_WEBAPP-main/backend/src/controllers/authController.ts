@@ -689,3 +689,92 @@ export const verifyOtpAndResetPassword = async (req: Request, res: Response) => 
     res.status(500).json({ error: 'Internal server error.' });
   }
 };
+
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?._id;
+    const { name } = req.body;
+
+    if (!userId || userId === 'public') {
+      res.status(401).json({ error: 'Phiên đăng nhập không hợp lệ.' });
+      return;
+    }
+
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'Tên người dùng không được để trống.' });
+      return;
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $set: { name: name.trim() } },
+      { new: true }
+    ).select('-passwordHash');
+
+    if (!user) {
+      res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+      return;
+    }
+
+    res.status(200).json({
+      message: 'Cập nhật thông tin tài khoản thành công.',
+      user: {
+        id: String(user._id),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+      },
+    });
+  } catch (error: any) {
+    console.error('updateProfile error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+};
+
+export const changePassword = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId || (req as any).user?.id || (req as any).user?._id;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!userId || userId === 'public') {
+      res.status(401).json({ error: 'Phiên đăng nhập không hợp lệ.' });
+      return;
+    }
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: 'Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.' });
+      return;
+    }
+
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
+      res.status(400).json({ error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' });
+      return;
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+      return;
+    }
+
+    let isMatch = false;
+    if (user.passwordHash) {
+      isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    }
+
+    if (!isMatch) {
+      res.status(400).json({ error: 'Mật khẩu hiện tại không chính xác.' });
+      return;
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.passwordHash = await bcrypt.hash(newPassword, salt);
+    await user.save();
+    res.status(200).json({ message: 'Đổi mật khẩu thành công.' });
+  } catch (error: any) {
+    console.error('changePassword error:', error);
+    res.status(500).json({ error: 'Internal server error.' });
+  }
+};
+

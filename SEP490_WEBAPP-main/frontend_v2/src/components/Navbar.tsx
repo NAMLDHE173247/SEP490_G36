@@ -167,6 +167,13 @@ function Navbar() {
     logout();
     navigate('/login');
   };
+
+  const handleNavigateTab = (tabName: string) => {
+    setDropdownOpen(false);
+    navigate('/dashboard', { state: { tab: tabName } });
+    window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: tabName }));
+  };
+
   const unreadNotificationCount = notifications.filter((note: any) => !note.readAt).length;
   const canManageGpu = user?.role === 'admin' || user?.role === 'supervisor';
 
@@ -213,7 +220,8 @@ function Navbar() {
                     <Activity size={16} className="icon-blue" />
                     <span>Util: {Math.round(gpuStats.gpu_util || 0)}%</span>
                   </div>
-                  <div className="divider"></div>
+                  {/* Tạm thời ẩn hiển thị VRAM theo yêu cầu người dùng */}
+                  {/* <div className="divider"></div>
                   <div className="resources-item">
                     <span className="vram-text">VRAM:</span>
                     <span className="vram-value">
@@ -222,7 +230,7 @@ function Navbar() {
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: `${Math.min(100, ((gpuStats.vram_used_mb || 0) / Math.max(1, gpuStats.vram_total_mb || 1)) * 100)}%` }}></div>
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               ) : (
                 <div className="resources-pill" style={{ opacity: 0.6 }}>
@@ -231,14 +239,15 @@ function Navbar() {
                     <Activity size={16} className="icon-blue" style={{ filter: 'grayscale(100%)' }} />
                     <span>Offline</span>
                   </div>
-                  <div className="divider"></div>
+                  {/* Tạm thời ẩn hiển thị VRAM theo yêu cầu người dùng */}
+                  {/* <div className="divider"></div>
                   <div className="resources-item">
                     <span className="vram-text">VRAM:</span>
                     <span className="vram-value">-- / -- GB</span>
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: '0%', background: '#cbd5e1' }}></div>
                     </div>
-                  </div>
+                  </div> */}
                 </div>
               )
             )}
@@ -367,7 +376,14 @@ function Navbar() {
               {/* Dropdown Menu */}
               {dropdownOpen && (
                 <div className="dropdown-menu">
-                  <div className="dropdown-header">
+                  <div
+                    className="dropdown-header"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleNavigateTab('Profile Settings');
+                    }}
+                  >
                     <div className="user-avatar">
                       <User size={24} />
                     </div>
@@ -377,29 +393,56 @@ function Navbar() {
                     </div>
                   </div>
                   <ul className="dropdown-list">
-                    <li className="dropdown-item">
+                    <li
+                      className="dropdown-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNavigateTab('Profile Settings');
+                      }}
+                    >
                       <User size={18} className="dropdown-item-icon" />
                       Profile Settings
                     </li>
-                    <li className="dropdown-item" onClick={() => {
-                      setDropdownOpen(false);
-                      navigate('/dashboard', { state: { tab: 'API Keys' } });
-                    }}>
+                    <li
+                      className="dropdown-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNavigateTab('API Keys');
+                      }}
+                    >
                       <Shield size={18} className="dropdown-item-icon" />
                       Kết nối nhà cung cấp AI
                     </li>
-                    <li className="dropdown-item">
+                    <li
+                      className="dropdown-item"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNavigateTab('Settings');
+                      }}
+                    >
                       <Settings size={18} className="dropdown-item-icon" />
                       Settings
                     </li>
                     {user?.role === 'admin' && (
-                      <li className="dropdown-item">
+                      <li
+                        className="dropdown-item"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNavigateTab('Manager Account');
+                        }}
+                      >
                         <Shield size={18} className="dropdown-item-icon" />
                         Admin Panel
                       </li>
                     )}
                     <div className="dropdown-divider"></div>
-                    <li className="dropdown-item danger" onClick={handleLogout}>
+                    <li
+                      className="dropdown-item danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLogout();
+                      }}
+                    >
                       <LogOut size={18} className="dropdown-item-icon" />
                       Logout
                     </li>

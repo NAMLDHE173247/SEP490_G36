@@ -139,7 +139,16 @@ const upload = multer({
   },
 });
 
+import { updateProfile, changePassword } from '../controllers/authController';
+
 router.use('/auth', authRoutes);
+
+// Direct explicit aliases for profile update and password change
+router.all('/auth/profile', authMiddleware, updateProfile);
+router.all('/auth/change-password', authMiddleware, changePassword);
+router.all('/profile', authMiddleware, updateProfile);
+router.all('/change-password', authMiddleware, changePassword);
+
 router.use(optionalAuthMiddleware);
 // Conversion Routes
 router.post('/upload', authMiddleware, upload.single('file'), (req, res) => controller.uploadFile(req, res));

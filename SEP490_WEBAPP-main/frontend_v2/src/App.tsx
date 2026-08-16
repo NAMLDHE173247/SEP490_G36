@@ -9,6 +9,14 @@ import { Toaster } from 'react-hot-toast';
 import './styles/index.css';
 
 function App() {
+  React.useEffect(() => {
+    const savedTheme = localStorage.getItem('app_theme') || 'light';
+    const isCompact = localStorage.getItem('app_compact_mode') === 'true';
+    document.body.classList.toggle('dark-mode', savedTheme === 'dark');
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.body.classList.toggle('compact-mode', isCompact);
+  }, []);
+
   return (
     <AuthProvider>
       <Toaster position="top-right" reverseOrder={false} />

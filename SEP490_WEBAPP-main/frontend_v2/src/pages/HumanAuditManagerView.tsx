@@ -475,7 +475,7 @@ export default function HumanAuditManagerView() {
                   )}
                 </div>
               </td>
-              <td><button type="button" onClick={() => openResolution(item)} disabled={!uniqueReviews.length}><Scale size={14} /> Xem & xử lý</button></td>
+              <td><button type="button" onClick={() => openResolution(item)}><Scale size={14} /> Xem & xử lý</button></td>
             </tr>
           );
         })}</tbody></table>{!visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}</div>

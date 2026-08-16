@@ -10,6 +10,326 @@
   --success: #10b981;
 }
 
+body.dark-mode, [data-theme="dark"] {
+  /* Global Root CSS Variables */
+  --bg-color: #0f172a !important;
+  --surface: #1e293b !important;
+  --border: #334155 !important;
+  --text-main: #f8fafc !important;
+  --text-muted: #94a3b8 !important;
+
+  /* Feature CSS Prefixes */
+  --sv-bg: #0f172a !important;
+  --sv-surface: #1e293b !important;
+  --sv-border: #334155 !important;
+  --sv-border-hover: #475569 !important;
+  --sv-text: #f8fafc !important;
+  --sv-text-secondary: #cbd5e1 !important;
+  --sv-text-muted: #94a3b8 !important;
+  --sv-accent-light: rgba(99, 102, 241, 0.2) !important;
+
+  --cr-bg: #0f172a !important;
+  --cr-surface: #1e293b !important;
+  --cr-border: #334155 !important;
+  --cr-border-hover: #475569 !important;
+  --cr-text: #f8fafc !important;
+  --cr-text-secondary: #cbd5e1 !important;
+  --cr-text-muted: #94a3b8 !important;
+
+  --st-bg: #0f172a !important;
+  --st-surface: #1e293b !important;
+  --st-border: #334155 !important;
+  --st-text: #f8fafc !important;
+  --st-text-muted: #94a3b8 !important;
+
+  --ms-bg: #0f172a !important;
+  --ms-surface: #1e293b !important;
+  --ms-border: #334155 !important;
+  --ms-text: #f8fafc !important;
+
+  --at-bg: #0f172a !important;
+  --at-surface: #1e293b !important;
+  --at-border: #334155 !important;
+  --at-text: #f8fafc !important;
+
+  --dp-bg: #0f172a !important;
+  --dp-surface: #1e293b !important;
+  --dp-border: #334155 !important;
+  --dp-text: #f8fafc !important;
+
+  --ham-bg: #0f172a !important;
+  --ham-surface: #1e293b !important;
+  --ham-border: #334155 !important;
+  --ham-text: #f8fafc !important;
+
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Base Body & App Container in Dark Mode */
+body.dark-mode,
+body.dark-mode #root,
+body.dark-mode .app-container,
+body.dark-mode .main-content,
+body.dark-mode .page-container,
+body.dark-mode .header {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .header {
+  background-color: #1e293b !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+body.dark-mode .sidebar {
+  background-color: #1e293b !important;
+  border-right: 1px solid #334155 !important;
+}
+
+body.dark-mode .sidebar-item {
+  color: #cbd5e1 !important;
+}
+
+body.dark-mode .sidebar-item:hover,
+body.dark-mode .sidebar-item.active {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+  color: #818cf8 !important;
+}
+
+/* All Cards, Panels, Sections in Dark Mode */
+body.dark-mode .sv-page,
+body.dark-mode .cr-page,
+body.dark-mode .st-page,
+body.dark-mode .ms-page,
+body.dark-mode .at-page,
+body.dark-mode .dp-page,
+body.dark-mode .vdp-page,
+body.dark-mode .ma-page,
+body.dark-mode .ht-page,
+body.dark-mode .eval-page,
+body.dark-mode .mr-page,
+body.dark-mode .rc-page,
+body.dark-mode .ham-page,
+body.dark-mode .chat-page,
+body.dark-mode .home-page {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .sv-project-directory,
+body.dark-mode .project-card,
+body.dark-mode .kpi-card,
+body.dark-mode .workspace-header,
+body.dark-mode .sv-overlap-card,
+body.dark-mode .sv-reviewer-card,
+body.dark-mode .sv-workspace-tabs,
+body.dark-mode .dashboard-card,
+body.dark-mode .card,
+body.dark-mode .chart-card,
+body.dark-mode .summary-card,
+body.dark-mode .project-card-body,
+body.dark-mode .project-card-footer,
+body.dark-mode .mini-kpi,
+body.dark-mode .project-mini-kpis,
+body.dark-mode .wkpi,
+body.dark-mode .ham-review-card,
+body.dark-mode .ham-assignment-card,
+body.dark-mode .ham-agreement-card,
+body.dark-mode .ham-summary-grid article,
+body.dark-mode .ham-modal,
+body.dark-mode .ham-replay,
+body.dark-mode .api-settings-container,
+body.dark-mode .api-key-group,
+body.dark-mode .dp-card,
+body.dark-mode .vdp-card,
+body.dark-mode .ma-card,
+body.dark-mode .st-card,
+body.dark-mode .ht-card,
+body.dark-mode .eval-card,
+body.dark-mode .mr-card,
+body.dark-mode .rc-card,
+body.dark-mode .ltd-card,
+body.dark-mode .sl-card,
+body.dark-mode .panel,
+body.dark-mode .box {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+body.dark-mode .project-mini-kpis,
+body.dark-mode .project-card-footer,
+body.dark-mode .wkpi,
+body.dark-mode .sv-reviewer-card,
+body.dark-mode .sv-reviewer-card.empty-reviewer,
+body.dark-mode .sample-number,
+body.dark-mode .version-id-badge {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+
+/* Filter Bars & Controls */
+body.dark-mode .workspace-filters-bar,
+body.dark-mode .filter-bar,
+body.dark-mode .search-bar,
+body.dark-mode .search-input-wrapper {
+  background-color: transparent !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .workspace-filters-bar label,
+body.dark-mode .workspace-filters-bar input,
+body.dark-mode .workspace-filters-bar select,
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder {
+  color: #64748b !important;
+}
+
+body.dark-mode select option {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* Headings, Text & Labels in Dark Mode */
+body.dark-mode h1,
+body.dark-mode h2,
+body.dark-mode h3,
+body.dark-mode h4,
+body.dark-mode h5,
+body.dark-mode h6,
+body.dark-mode strong,
+body.dark-mode b,
+body.dark-mode label,
+body.dark-mode .project-title,
+body.dark-mode .directory-header h2,
+body.dark-mode .workspace-meta h2,
+body.dark-mode .sv-header h1,
+body.dark-mode .cr-header h1 {
+  color: #f8fafc !important;
+}
+
+body.dark-mode p,
+body.dark-mode span,
+body.dark-mode small,
+body.dark-mode div,
+body.dark-mode .project-dataset-name,
+body.dark-mode .directory-header p,
+body.dark-mode .workspace-meta p,
+body.dark-mode .sv-header p,
+body.dark-mode .sample-preview,
+body.dark-mode .reviewer-info strong,
+body.dark-mode .reviewer-label-summary {
+  color: #cbd5e1 !important;
+}
+
+/* Buttons in Dark Mode */
+body.dark-mode .sv-button.secondary,
+body.dark-mode .sv-open-btn,
+body.dark-mode .back-btn {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  border-color: #475569 !important;
+}
+
+body.dark-mode .sv-button.secondary:hover,
+body.dark-mode .sv-open-btn:hover,
+body.dark-mode .back-btn:hover {
+  background-color: #334155 !important;
+  color: #ffffff !important;
+}
+
+/* Segmented Tabs in Dark Mode */
+body.dark-mode .sv-workspace-tabs,
+body.dark-mode .rewrite-filter-tabs {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .sv-workspace-tabs button,
+body.dark-mode .rewrite-filter-tabs button {
+  color: #cbd5e1 !important;
+}
+
+body.dark-mode .sv-workspace-tabs button.active,
+body.dark-mode .rewrite-filter-tabs button.active {
+  background-color: #4f46e5 !important;
+  color: #ffffff !important;
+}
+
+/* Tables in Dark Mode */
+body.dark-mode table,
+body.dark-mode table thead,
+body.dark-mode table tbody,
+body.dark-mode table tr,
+body.dark-mode table th,
+body.dark-mode table td {
+  border-color: #334155 !important;
+}
+
+body.dark-mode table th {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode table td {
+  background-color: #1e293b !important;
+  color: #cbd5e1 !important;
+}
+
+body.dark-mode table tr:hover td {
+  background-color: #334155 !important;
+}
+
+/* Modals & Dialogs in Dark Mode */
+body.dark-mode .sv-modal,
+body.dark-mode .modal,
+body.dark-mode .dialog,
+body.dark-mode .dropdown-menu,
+body.dark-mode .notification-menu {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+body.dark-mode .sv-modal-header {
+  background-color: #0f172a !important;
+  border-bottom: 1px solid #334155 !important;
+}
+
+body.dark-mode .sv-modal-header h3 {
+  color: #f8fafc !important;
+}
+
+/* Compact Mode Styles */
+body.compact-mode .page-content {
+  padding: 16px !important;
+}
+body.compact-mode table th,
+body.compact-mode table td {
+  padding: 6px 10px !important;
+  font-size: 13px !important;
+}
+body.compact-mode .dashboard-card {
+  padding: 16px !important;
+}
+body.compact-mode .sidebar {
+  padding: 16px 12px !important;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -20,6 +340,7 @@ body {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   background-color: var(--bg-color);
   color: var(--text-main);
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 button, input, textarea, select {
