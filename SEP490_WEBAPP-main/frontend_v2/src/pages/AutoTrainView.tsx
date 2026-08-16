@@ -720,7 +720,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   }, [completedJobId]);
 
   const handleClearGpuQueue = useCallback(async () => {
-    if (!confirm('Bạn có chắc chắn muốn phát tín hiệu dọn dẹp các job đang kẹt trong Queue không?')) return;
+    if (!confirm('Bạn có chắc chắn muốn dọn sạch toàn bộ Queue và xóa tất cả thẻ theo dõi trên giao diện không?')) return;
     setClearingQueue(true);
     triggerToast('Đang tìm kiếm và hủy các job bị treo...', 'info');
     try {
@@ -738,34 +738,46 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         console.warn('Could not fetch active jobs:', err);
       }
 
-      // 2. Also check activeJobs in FE global state
+      // 2. Collect job IDs from FE global state activeJobs
       Object.keys(globalTrainingState.activeJobs).forEach((id) => {
         jobIdsToStop.add(id);
       });
-
-      if (jobIdsToStop.size === 0) {
-        triggerToast('Hiện tại không phát hiện job nào bị kẹt trên hệ thống!', 'success');
-        return;
-      }
 
       // 3. Send stop signal for each job using existing POST /train/stop/:jobId
       for (const id of Array.from(jobIdsToStop)) {
         try {
           await api.post(`/train/stop/${id}`);
-          closeTracking(id, 'STOPPED');
         } catch (err) {
           console.warn(`Stop call for job ${id} warning:`, err);
         }
       }
 
-      triggerToast(`Đã phát tín hiệu dọn dẹp Queue cho ${jobIdsToStop.size} job(s)!`, 'success');
+      // 4. FORCE CLEAR ALL FRONTEND STATE & TIMERS
+      Object.keys(globalTrainingState.eventSources).forEach((id) => {
+        try {
+          globalTrainingState.eventSources[id]?.close?.();
+        } catch (e) {
+          console.warn('Error closing eventSource:', e);
+        }
+        delete globalTrainingState.eventSources[id];
+      });
+
+      globalTrainingState.activeJobs = {};
+      globalTrainingState.lossHistories = {};
+      globalTrainingState.evalLossHistories = {};
+      globalTrainingState.jobConfigs = {};
+      localStorage.removeItem('autotrain_resume_job_id');
+      globalTrainingState.notify();
+
+      setCompletedJobId(null);
+      triggerToast(`Đã dọn sạch toàn bộ thẻ theo dõi GPU trên giao diện FE thành công!`, 'success');
     } catch (err: any) {
       console.error('Lỗi dọn dẹp queue:', err);
       triggerToast('Có lỗi xảy ra: ' + (err.response?.data?.error || err.message), 'error');
     } finally {
       setClearingQueue(false);
     }
-  }, [triggerToast, eventSources]);
+  }, [triggerToast]);
 
   const handleChatTest = useCallback((jobId: string) => {
     const jobConfig = globalTrainingState.jobConfigs[jobId];

@@ -944,27 +944,25 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {job.status === 'TRAINING' && (
+                {['TRAINING', 'RUNNING', 'QUEUED', 'PENDING', 'LOADING_MODEL'].includes(job.status) && (
                   <button
                     type="button"
                     className="at-btn-icon-sm danger"
-                    title="Stop Training"
+                    title="Dừng tiến trình này"
                     onClick={() => onStopJob(job.id)}
                     style={{ padding: '8px 12px', gap: 6, display: 'inline-flex', alignItems: 'center', width: 'auto', fontSize: '13px' }}
                   >
-                    <StopCircle size={14} /> Stop
+                    <StopCircle size={14} /> Dừng (Stop)
                   </button>
                 )}
-                {(job.status === 'COMPLETED' || job.status === 'STOPPED' || job.status === 'ERROR') && (
-                  <button
-                    type="button"
-                    className="at-btn-icon-sm"
-                    title="Dismiss Job"
-                    onClick={() => onDismissJob(job.id)}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="at-btn-icon-sm"
+                  title="Xóa thẻ khỏi màn hình"
+                  onClick={() => onDismissJob(job.id)}
+                >
+                  <X size={14} />
+                </button>
               </div>
             </div>
 
