@@ -52,7 +52,7 @@ from core.gpu_state import (  # extracted foundation
     _read_secret,
     UPLOAD_FOLDER, LOCAL_CHECKPOINT_BASE, EVAL_CHECKPOINT_BASE,
     _eval_checkpoint_dir, _load_eval_checkpoint, _update_eval_manifest,
-    jobs_db, eval_jobs_db, job_queue, active_training_jobs, MAX_CONCURRENT_JOBS,
+    jobs_db, eval_jobs_db, job_queue, active_training_jobs, _active_train_threads, MAX_CONCURRENT_JOBS,
     gpu_handle,
     _model_slots, _slot_locks, _slot_abort_events, AbortStoppingCriteria,
     StoppingCriteriaList, inference_logs_db,
@@ -123,22 +123,28 @@ def job_manager_thread():
             job_manager_last_heartbeat = time.time()
             _log_cycle += 1
 
-            # ── Zombie cleanup: remove stale jobs from active_training_jobs ──
+            # ── Zombie cleanup: remove stale jobs from active_training_jobs ONLY when thread has exited ──
             stale_ids = []
             for active_id in list(active_training_jobs):
                 job_info = jobs_db.get(active_id, {})
                 status = job_info.get('status', '')
                 started = _job_start_times.get(active_id, 0)
                 age = time.time() - started if started else 0
-                # If status is terminal but job still in active set → zombie
-                if status in _TERMINAL_STATUSES:
+
+                t = _active_train_threads.get(active_id)
+                thread_alive = t is not None and t.is_alive()
+
+                # ONLY remove if the thread is NO LONGER ALIVE and job is terminal
+                if not thread_alive and status in _TERMINAL_STATUSES:
                     stale_ids.append(active_id)
-                # If job has been active > 2h with no progress → likely stuck
-                elif age > _STALE_JOB_TIMEOUT and status not in ('TRAINING', 'LOADING_MODEL'):
+                # If job has been active > 2h with no progress AND thread is dead → clean up
+                elif age > _STALE_JOB_TIMEOUT and not thread_alive:
                     stale_ids.append(active_id)
+
             for sid in stale_ids:
                 active_training_jobs.discard(sid)
                 _job_start_times.pop(sid, None)
+                _active_train_threads.pop(sid, None)
                 print(f"[JobManager] 🧹 Cleaned up stale/zombie job {sid} (status={jobs_db.get(sid, {}).get('status','?')})")
 
             # ── Periodic diagnostic log (every ~30s = 10 cycles × 3s sleep) ──
@@ -163,6 +169,7 @@ def job_manager_thread():
                     jobs_db[job_id] = {'status': 'PENDING', 'progress': 0, 'logs': []}
                     print(f"[JobManager] 🚀 Dispatching Train Job {job_id}.")
                     thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
+                    _active_train_threads[job_id] = thread
                     thread.start()
 
         except Exception as exc:

@@ -181,6 +181,7 @@ def _update_eval_manifest(eval_job_id: str, **updates) -> dict:
 jobs_db = {}
 job_queue = collections.deque()
 active_training_jobs = set()
+_active_train_threads = {}
 MAX_CONCURRENT_JOBS = 1  # 1 GPU Colab runs only 1 job at a time
 job_manager_last_heartbeat = 0.0
 
@@ -3681,35 +3682,29 @@ def job_manager_thread():
     global job_manager_last_heartbeat
     while True:
         job_manager_last_heartbeat = time.time()
+        # Clean up inactive jobs
+        stale_ids = []
+        for active_id in list(active_training_jobs):
+            t = _active_train_threads.get(active_id)
+            if t is None or not t.is_alive():
+                stale_ids.append(active_id)
+        for sid in stale_ids:
+            active_training_jobs.discard(sid)
+            _active_train_threads.pop(sid, None)
+
         if job_queue and len(active_training_jobs) < MAX_CONCURRENT_JOBS:
             job_id, config, file_path, validation_file_path, hf_token = job_queue.popleft()
-
             if job_id in active_training_jobs:
                 continue
-
-            active_training_jobs.add(job_id)
-            jobs_db[job_id] = {'status': 'PENDING', 'progress': 0, 'logs': []}
-            print(f"[INFO] Bắt đầu Train Job {job_id}.")
-
-            thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
-            thread.start()
-
-        time.sleep(3)
-
-
-# Cell cập nhật job_manager_thread để đảm bảo tính đồng bộ
-def job_manager_thread():
-    global job_manager_last_heartbeat
-    while True:
-        job_manager_last_heartbeat = time.time()
-        if job_queue and len(active_training_jobs) < MAX_CONCURRENT_JOBS:
-            job_id, config, file_path, validation_file_path, hf_token = job_queue.popleft()
-            if job_id in active_training_jobs: continue
+            if jobs_db.get(job_id, {}).get('status') == 'STOPPED':
+                continue
             active_training_jobs.add(job_id)
             jobs_db[job_id] = {'status': 'PENDING', 'progress': 0, 'logs': []}
             print(f"[INFO] Bắt đầu Train Job {job_id}.")
             thread = threading.Thread(target=background_train_task, args=(job_id, config, file_path, validation_file_path, hf_token))
+            _active_train_threads[job_id] = thread
             thread.start()
+
         time.sleep(3)
 
 

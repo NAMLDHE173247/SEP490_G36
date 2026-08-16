@@ -19,7 +19,7 @@ from unsloth import FastLanguageModel, is_bfloat16_supported
 from transformers import TrainerCallback, DataCollatorForLanguageModeling
 
 from core.gpu_state import (
-    jobs_db, active_training_jobs,
+    jobs_db, active_training_jobs, _active_train_threads,
     get_gpu_stats, _release_gpu_memory,
     LOCAL_CHECKPOINT_BASE,
 )
@@ -739,6 +739,12 @@ class AutoTrainEarlyStoppingCallback(TrainerCallback):
         _append_log(self.job_id, msg)
 
 
+def _check_stopped(job_id):
+    if jobs_db.get(job_id, {}).get('status') == 'STOPPED':
+        print(f"🛑 Interrupted: Job {job_id} was stopped by user request.")
+        raise InterruptedError(f"Job {job_id} stopped by user.")
+
+
 def background_train_task(job_id, config, filepath, validation_filepath, hf_token):
     jobs_db[job_id]['status'] = 'TRAINING'
     build_line = f"[Build] training_pipeline={TRAINING_PIPELINE_BUILD}"
@@ -748,6 +754,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
     hf_repo_id = config.get('hf_repo_id')
 
     try:
+        _check_stopped(job_id)
         if hf_token:
             # Clean up token (remove quotes, non-ASCII hidden characters, and whitespace)
             hf_token = str(hf_token).strip().strip("'\"").encode('ascii', 'ignore').decode('ascii').strip()
@@ -775,6 +782,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         os.makedirs(local_job_dir, exist_ok=True)
         _release_gpu_memory()
 
+        _check_stopped(job_id)
         dtype = torch.bfloat16 if is_bfloat16_supported() else torch.float16
         print(f"[*] Loading model with dtype: {dtype}")
         model, tokenizer = FastLanguageModel.from_pretrained(
@@ -784,6 +792,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             load_in_4bit=True,
             token=hf_token or None,
         )
+        _check_stopped(job_id)
 
         enable_thinking = bool(config.get('enable_thinking', False))
         chat_template_override = config.get('chat_template')
@@ -954,6 +963,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         else:
             _append_log(job_id, "[Thinking] enable_thinking=False — format không bật khối think.")
 
+        _check_stopped(job_id)
         dataset_train = raw_train.map(
             lambda x: formatting_prompts_func(
                 x, tokenizer, col_map, sys_prompt, enable_thinking,
@@ -967,6 +977,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 ),
                 batched=True,
             )
+        _check_stopped(job_id)
 
         if len(dataset_train) > 0:
             rendered_train_sample = str(dataset_train[0].get('text') or "")
@@ -1176,20 +1187,6 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 if config.get("checkpoint_source") == "hf" or config.get("checkpoint_hf_repo"):
                     raise ValueError(f"Can't find a valid checkpoint at {last_ckpt_path}")
 
-
-          # Chuỗi đánh dấu bắt đầu câu trả lời của Bot trong Qwen (ChatML format)
-
-        # response_template = "<|im_start|>assistant\n"
-
-          # Khởi tạo Collator: Nó sẽ tìm chuỗi trên, và CHỈ tính loss từ đoạn đó trở đi
-        # collator = DataCollatorForCompletionOnlyLM(
-        #     response_template=response_template,
-        #     tokenizer=tokenizer
-        # )
-
-        # Train on assistant spans with robust fallback. Preflight chạy trên
-        # nhiều mẫu: một mẫu duy nhất không đại diện cho cả dataset, và mẫu lệch
-        # định dạng sẽ âm thầm được train trên toàn bộ hội thoại.
         collator = AssistantOnlyDataCollator(tokenizer, enable_thinking=enable_thinking)
         sample_count = min(PREFLIGHT_SAMPLES, len(dataset_train))
         preflight = preflight_assistant_mask(
@@ -1417,6 +1414,7 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
             callbacks = callbacks,
         )
 
+        _check_stopped(job_id)
         # 2.6. Bắt đầu huấn luyện (Tự động Resume nếu có checkpoint)
         trainer.train(resume_from_checkpoint = resume_from)
 
@@ -1447,6 +1445,11 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         else:
             jobs_db[job_id].update({'status': 'COMPLETED', 'progress': 100})
 
+    except InterruptedError as ie:
+        print(f"[⏹️] {ie}")
+        _append_log(job_id, f"⏹️ {ie}")
+        if jobs_db.get(job_id):
+            jobs_db[job_id]['status'] = 'STOPPED'
     except Exception as e:
         error_traceback = traceback.format_exc()
         print(f"[❌] Error: {str(e)}\n{error_traceback}")
@@ -1468,10 +1471,6 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
                 f"Persistent checkpoint retained for recovery: {local_job_dir}"
             )
 
-        if job_id in active_training_jobs:
-            active_training_jobs.remove(job_id)
-            print(f"[INFO] Job {job_id} finished. Worker free.")
-
         # Xoá triệt để các biến cục bộ đang chiếm GPU để tránh rò rỉ VRAM
         try:
             del model
@@ -1485,3 +1484,8 @@ def background_train_task(job_id, config, filepath, validation_filepath, hf_toke
         torch.cuda.empty_cache()
 
         _release_gpu_memory()
+
+        if job_id in active_training_jobs:
+            active_training_jobs.remove(job_id)
+            print(f"[INFO] Job {job_id} finished. Worker free.")
+        _active_train_threads.pop(job_id, None)

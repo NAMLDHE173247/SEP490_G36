@@ -177,6 +177,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   const [showStartError, setShowStartError] = useState(false);
   const [completedJobId, setCompletedJobId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [clearingQueue, setClearingQueue] = useState(false);
   const trainSummaryRequests = useRef(new Set<string>());
 
   // Auto-dismiss toast
@@ -718,6 +719,36 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     globalTrainingState.notify();
   }, [completedJobId]);
 
+  const handleClearGpuQueue = useCallback(async () => {
+    if (!confirm('Bạn có chắc chắn muốn dọn sạch tất cả các job đang kẹt trong Hàng đợi GPU (Queue) không?')) return;
+    setClearingQueue(true);
+    triggerToast('Đang phát tín hiệu dọn dẹp Hàng đợi GPU...', 'info');
+    try {
+      const statusRes = await api.get('/train/queue-status');
+      const data = statusRes.data || {};
+      const queuedJobs: string[] = data.queued_jobs || [];
+      const activeJobs: string[] = data.active_jobs || [];
+      const allJobsToStop = Array.from(new Set([...queuedJobs, ...activeJobs]));
+
+      let stoppedCount = 0;
+      for (const jobId of allJobsToStop) {
+        try {
+          await api.post(`/train/stop/${jobId}`);
+          stoppedCount++;
+        } catch (err) {
+          console.warn(`Failed to stop job ${jobId}:`, err);
+        }
+      }
+
+      triggerToast(`Đã dọn dẹp Queue GPU thành công! (${stoppedCount} job đã xử lý)`, 'success');
+    } catch (err: any) {
+      console.error('Lỗi dọn dẹp queue:', err);
+      triggerToast('Lỗi dọn dẹp queue: ' + (err.response?.data?.error || err.message), 'error');
+    } finally {
+      setClearingQueue(false);
+    }
+  }, [triggerToast]);
+
   const handleChatTest = useCallback((jobId: string) => {
     const jobConfig = globalTrainingState.jobConfigs[jobId];
     const modelName = jobConfig ? jobConfig.projectName : 'My Custom AI Model';
@@ -846,13 +877,22 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
             <p>Fine-tune and deploy your own custom AI tutors from conversation logs in 3 simple steps.</p>
           </div>
         </div>
-        <div className="at-header-right">
+        <div className="at-header-right" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {Object.keys(activeJobs).length > 0 && (
             <div className="at-badge-active" aria-label={`${Object.keys(activeJobs).length} active training runs`}>
               <span className="at-pulse-dot" />
               {Object.keys(activeJobs).length} Active
             </div>
           )}
+          <button
+            className="at-btn-history"
+            onClick={handleClearGpuQueue}
+            disabled={clearingQueue}
+            title="Dọn sạch hàng đợi GPU nếu gặp lỗi treo job"
+            style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}
+          >
+            🧹 {clearingQueue ? 'Đang dọn...' : 'Dọn Queue GPU'}
+          </button>
           <button className="at-btn-history" onClick={() => setActiveTab('Training History')}>
             <History size={14} /> History
           </button>

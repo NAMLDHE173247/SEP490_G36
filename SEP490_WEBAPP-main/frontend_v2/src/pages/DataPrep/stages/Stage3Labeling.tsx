@@ -772,11 +772,15 @@ export const Stage3Labeling: React.FC = () => {
               const dbName = getDbLabelName(tagName, msg.role);
               if (dbName && !mergedLabels.some(l => l.messageIndex === msg.messageIndex && l.messageRole === msg.role && l.name === dbName)) {
                 mergedLabels.push({
+                  _id: `${sampleId}_${msg.messageIndex}_${dbName}`,
+                  sampleId: sampleId,
                   name: dbName,
                   type: ISSUES_SOFT_LABELS.has(tagName) ? 'soft' : 'hard',
                   targetScope: 'message',
                   messageIndex: msg.messageIndex,
                   messageRole: msg.role,
+                  assignedUserCount: 1,
+                  assignedByCurrentUser: true,
                 });
               }
             });

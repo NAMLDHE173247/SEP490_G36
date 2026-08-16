@@ -421,6 +421,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   const [auditByJob, setAuditByJob] = useState<Record<string, TrainAuditPayload>>({});
   const [auditLoading, setAuditLoading] = useState<string | null>(null);
   const [auditTab, setAuditTab] = useState<'events' | 'logs' | 'config' | 'resources'>('events');
+  const [clearingQueue, setClearingQueue] = useState(false);
 
   // Fetch base models
   const fetchBaseModels = useCallback(async () => {
@@ -524,6 +525,48 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
       console.error('Failed to delete history record:', err);
     } finally {
       setDeleteLoading(null);
+    }
+  };
+
+  // Clear GPU Queue helper
+  const handleClearGpuQueue = async () => {
+    if (!confirm('Bạn có chắc chắn muốn dọn sạch tất cả các job đang kẹt trong Hàng đợi GPU (Queue) không?')) return;
+    setClearingQueue(true);
+    const toastId = toast.loading('Đang phát tín hiệu dọn dẹp Hàng đợi GPU...');
+    try {
+      const statusRes = await api.get('/train/queue-status');
+      const data = statusRes.data || {};
+      const queuedJobs: string[] = data.queued_jobs || [];
+      const activeJobs: string[] = data.active_jobs || [];
+      const allJobsToStop = Array.from(new Set([...queuedJobs, ...activeJobs]));
+
+      let stoppedCount = 0;
+      for (const jobId of allJobsToStop) {
+        try {
+          await api.post(`/train/stop/${jobId}`);
+          stoppedCount++;
+        } catch (err) {
+          console.warn(`Failed to stop job ${jobId}:`, err);
+        }
+      }
+
+      const stuckInDb = histories.filter(h => ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'].includes(h.status));
+      for (const item of stuckInDb) {
+        if (!allJobsToStop.includes(item.jobId)) {
+          try {
+            await api.post(`/train/stop/${item.jobId}`);
+            stoppedCount++;
+          } catch { /* ignore */ }
+        }
+      }
+
+      toast.success(`Đã dọn dẹp Queue GPU thành công! (${stoppedCount} job đã được xử lý)`, { id: toastId });
+      fetchHistories(selectedModel || undefined);
+    } catch (err: any) {
+      console.error('Lỗi dọn dẹp queue:', err);
+      toast.error('Lỗi dọn dẹp queue: ' + (err.response?.data?.error || err.message), { id: toastId });
+    } finally {
+      setClearingQueue(false);
     }
   };
 
@@ -677,7 +720,16 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
             <p>Quản lý các đợt fine-tune model, so sánh các run và tải checkpoint</p>
           </div>
         </div>
-        <div className="history-header-actions">
+        <div className="history-header-actions" style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn-outline"
+            onClick={handleClearGpuQueue}
+            disabled={clearingQueue}
+            title="Giải phóng hàng đợi GPU từ xa nếu gặp lỗi treo job"
+            style={{ borderColor: '#fca5a5', color: '#dc2626', background: '#fef2f2' }}
+          >
+            <Trash2 size={16} /> {clearingQueue ? 'Đang dọn...' : '🧹 Dọn Queue GPU'}
+          </button>
           <button className="btn-outline" onClick={() => fetchHistories(selectedModel || undefined)}>
             <RefreshCw size={16} /> Tải lại danh sách
           </button>

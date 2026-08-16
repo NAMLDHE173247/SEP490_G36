@@ -88,6 +88,7 @@ jobs_db = {}
 eval_jobs_db = {}
 job_queue = collections.deque()
 active_training_jobs = set()
+_active_train_threads = {}
 
 
 
