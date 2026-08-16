@@ -528,19 +528,53 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
     }
   };
 
-  // Clear GPU Queue helper
+  // Clear GPU Queue helper (100% FE-side using existing deployed endpoints)
   const handleClearGpuQueue = async () => {
-    if (!confirm('Bạn có chắc chắn muốn dọn sạch tất cả các job đang kẹt trong Hàng đợi GPU (Queue) không?')) return;
+    if (!confirm('Bạn có chắc chắn muốn phát tín hiệu dọn dẹp các job đang kẹt trong Queue không?')) return;
     setClearingQueue(true);
-    const toastId = toast.loading('Đang phát tín hiệu dọn dẹp Hàng đợi GPU...');
+    const toastId = toast.loading('Đang tìm kiếm và hủy các job bị treo...');
     try {
-      const res = await api.post('/train/clear-queue');
-      const msg = res.data?.message || 'Đã dọn dẹp Hàng đợi GPU thành công!';
-      toast.success(msg, { id: toastId });
+      const jobIdsToStop = new Set<string>();
+
+      // 1. Fetch active jobs from existing deployed API /train/active
+      try {
+        const activeRes = await api.get('/train/active');
+        const activeJobsList = Array.isArray(activeRes.data) ? activeRes.data : [];
+        activeJobsList.forEach((j: any) => {
+          const id = j.jobId || j.id;
+          if (id) jobIdsToStop.add(id);
+        });
+      } catch (err) {
+        console.warn('Could not fetch active jobs:', err);
+      }
+
+      // 2. Filter stuck jobs from training histories list
+      histories.forEach((h) => {
+        if (['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'].includes(h.status)) {
+          if (h.jobId) jobIdsToStop.add(h.jobId);
+        }
+      });
+
+      if (jobIdsToStop.size === 0) {
+        toast.success('Hiện tại không phát hiện job nào bị kẹt trên hệ thống!', { id: toastId });
+        return;
+      }
+
+      // 3. Send stop signal for each job using existing POST /train/stop/:jobId
+      for (const id of Array.from(jobIdsToStop)) {
+        try {
+          await api.post(`/train/stop/${id}`);
+        } catch (err) {
+          // Bỏ qua lỗi 404/500 cho từng job lẻ để không gián đoạn luồng
+          console.warn(`Stop call for job ${id} warning:`, err);
+        }
+      }
+
+      toast.success(`Đã phát tín hiệu dọn dẹp Queue cho ${jobIdsToStop.size} job(s)!`, { id: toastId });
       fetchHistories(selectedModel || undefined);
     } catch (err: any) {
       console.error('Lỗi dọn dẹp queue:', err);
-      toast.error('Lỗi dọn dẹp queue: ' + (err.response?.data?.error || err.message), { id: toastId });
+      toast.error('Có lỗi xảy ra: ' + (err.response?.data?.error || err.message), { id: toastId });
     } finally {
       setClearingQueue(false);
     }

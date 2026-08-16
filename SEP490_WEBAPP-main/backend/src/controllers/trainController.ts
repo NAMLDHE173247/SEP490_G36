@@ -1288,100 +1288,38 @@ export const streamTrainingStatus = async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 export const stopTraining = async (req: Request, res: Response) => {
   try {
-    const { jobId } = req.params;
-
-    // Get worker URL from DB or default worker
-    const history = await TrainingHistory.findOne({ jobId });
-    const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
-
-    let data: any = { message: `Stop signal sent for ${jobId}` };
-    if (workerUrl) {
-      try {
-        const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
-          method: 'POST',
-          headers: GPU_TUNNEL_HEADERS
-        });
-        if (response.ok) {
-          data = await response.json().catch(() => ({ message: `Stopped job ${jobId}` }));
-        }
-      } catch (workerErr: any) {
-        console.warn(`[stopTraining] Worker call warning for ${jobId}:`, workerErr.message);
-      }
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const { jobId } = req.params;
+
+    // Get worker URL from DB
+    const history = await TrainingHistory.findOne({ jobId, ownerId });
+    if (!history) {
+      return res.status(404).json({ error: 'Training job not found' });
+    }
+    const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
+
+    const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
+      method: 'POST',
+      headers: GPU_TUNNEL_HEADERS
+    });
+    const data = await response.json();
+
     await TrainingHistory.updateOne(
-      { jobId },
+      { jobId, ownerId },
       {
         status: 'STOPPED',
         completedAt: new Date(),
       }
     );
 
-    if (workerUrl) {
-      workerManager.decrementJobs(workerUrl);
-    }
+    workerManager.decrementJobs(workerUrl);
     return res.json(data);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to stop training' });
-  }
-};
-
-// ---------------------------------------------------------------------------
-// POST /api/train/clear-queue
-// Emergency clear of GPU worker queue and stuck MongoDB training records
-// ---------------------------------------------------------------------------
-export const clearTrainQueue = async (_req: Request, res: Response) => {
-  try {
-    const urls = workerManager.getUrls();
-    let totalStopped = 0;
-
-    // 1. Fetch queue status from GPU workers and send stop signal to all active/queued jobs
-    for (const url of urls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        const statusRes = await fetch(`${url}/api/train/queue-status`, {
-          headers: GPU_TUNNEL_HEADERS,
-          signal: controller.signal as any,
-        });
-        clearTimeout(timeoutId);
-        if (statusRes.ok) {
-          const queueData: any = await statusRes.json().catch(() => ({}));
-          const queuedJobs: string[] = queueData.queued_jobs || [];
-          const activeJobs: string[] = queueData.active_jobs || [];
-          const jobsToStop = Array.from(new Set([...queuedJobs, ...activeJobs]));
-
-          for (const jobId of jobsToStop) {
-            try {
-              await fetch(`${url}/api/train/stop/${jobId}`, {
-                method: 'POST',
-                headers: GPU_TUNNEL_HEADERS,
-              });
-              totalStopped++;
-            } catch (err: any) {
-              console.warn(`[clearTrainQueue] Failed to stop job ${jobId} on worker ${url}:`, err.message);
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[clearTrainQueue] Error querying worker ${url}:`, err.message);
-      }
-    }
-
-    // 2. Mark any stuck MongoDB jobs as STOPPED
-    const result = await TrainingHistory.updateMany(
-      { status: { $in: ['QUEUED', 'PENDING', 'LOADING_MODEL', 'TRAINING', 'RUNNING'] } },
-      { $set: { status: 'STOPPED', completedAt: new Date(), lastError: 'Queue force cleared by admin/manager' } }
-    );
-    totalStopped += result.modifiedCount || 0;
-
-    return res.json({
-      message: `Đã dọn dẹp Hàng đợi GPU và CSDL thành công (${totalStopped} job đã xử lý).`,
-      stoppedCount: totalStopped,
-    });
-  } catch (error: any) {
-    console.error('Error in clearTrainQueue:', error);
-    return res.status(500).json({ error: error.message || 'Lỗi khi dọn dẹp hàng đợi' });
   }
 };
 
