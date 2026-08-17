@@ -220,8 +220,7 @@ function Navbar() {
                     <Activity size={16} className="icon-blue" />
                     <span>Util: {Math.round(gpuStats.gpu_util || 0)}%</span>
                   </div>
-                  {/* Tạm thời ẩn hiển thị VRAM theo yêu cầu người dùng */}
-                  {/* <div className="divider"></div>
+                  <div className="divider"></div>
                   <div className="resources-item">
                     <span className="vram-text">VRAM:</span>
                     <span className="vram-value">
@@ -230,7 +229,7 @@ function Navbar() {
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: `${Math.min(100, ((gpuStats.vram_used_mb || 0) / Math.max(1, gpuStats.vram_total_mb || 1)) * 100)}%` }}></div>
                     </div>
-                  </div> */}
+                  </div>
                 </div>
               ) : (
                 <div className="resources-pill" style={{ opacity: 0.6 }}>
@@ -239,15 +238,14 @@ function Navbar() {
                     <Activity size={16} className="icon-blue" style={{ filter: 'grayscale(100%)' }} />
                     <span>Offline</span>
                   </div>
-                  {/* Tạm thời ẩn hiển thị VRAM theo yêu cầu người dùng */}
-                  {/* <div className="divider"></div>
+                  <div className="divider"></div>
                   <div className="resources-item">
                     <span className="vram-text">VRAM:</span>
                     <span className="vram-value">-- / -- GB</span>
                     <div className="progress-bar-container">
                       <div className="progress-bar-fill" style={{ width: '0%', background: '#cbd5e1' }}></div>
                     </div>
-                  </div> */}
+                  </div>
                 </div>
               )
             )}
