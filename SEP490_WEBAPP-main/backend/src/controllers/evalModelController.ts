@@ -1984,6 +1984,7 @@ export const getVersion1SharedReferenceStatus = async (req: Request, res: Respon
 export const getEvaluatedModels = async (req: Request, res: Response) => {
   try {
     const ownerFilter = getOwnerFilter(req);
+    const gpuActiveEvals = await getGpuActiveEvaluations();
 
     const evaluatedJobIds = await ModelEvaluation.distinct('jobId', ownerFilter);
     const histories = await TrainingHistory.find({
@@ -2013,16 +2014,25 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
 
         const modelEvalId = displayEval?.modelEvalId ?? null;
 
+        const activeGpuJob = (gpuActiveEvals || []).find(
+          g => g.eval_job_id === modelEvalId || (g.job_id && g.job_id === h.jobId)
+        );
+        const progress = activeGpuJob && typeof activeGpuJob.progress === 'number'
+          ? activeGpuJob.progress
+          : (typeof (displayEval as any)?.progress === 'number' ? (displayEval as any).progress : 0);
+        const stageLabel = activeGpuJob?.stage_label || (displayEval as any)?.stage || null;
+
         return {
           jobId: h.jobId,
           projectName: h.projectName,
           baseModel: h.baseModel,
           completedAt: h.completedAt,
           trainingDuration: h.trainingDuration,
-          /** ID eval dùng cho điểm + nút View — ưu tiên eval Official (pinned), không có thì mới nhất */
           modelEvalId,
           pinnedEvalId: h.pinnedEvalId ?? null,
           status: displayEval?.status ?? latestAttempt?.status ?? 'UNKNOWN',
+          progress,
+          stageLabel,
           error: displayEval?.error ?? null,
           failureStage: displayEval?.failureStage ?? null,
           latestAttemptId: latestAttempt?.modelEvalId ?? null,

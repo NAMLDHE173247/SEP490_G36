@@ -61,6 +61,8 @@ interface LeaderboardItem {
   modelEvalId: string | null;
   pinnedEvalId: string | null;
   status: string;
+  progress?: number;
+  stageLabel?: string;
   error?: string | null;
   failureStage?: string | null;
   latestAttemptId?: string | null;
@@ -1878,8 +1880,8 @@ export default function ModelEvalView() {
                            </div>
                            {isFailed && <div className="text-danger text-xs" title={failureMessage}>{failureMessage}</div>}
                            {isRunning && (() => {
-                             const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId);
-                             const pct = slot && typeof slot.progress === 'number' ? slot.progress : null;
+                             const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
+                             const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
                              return (
                                <div
                                  className="text-primary text-xs font-semibold cursor-pointer hover:underline flex items-center gap-1 mt-1"
@@ -1896,12 +1898,22 @@ export default function ModelEvalView() {
                            })()}
                          </td>
                         <td>
-                          <span
-                            className={`flag-tag ${isFailed ? 'danger' : ''}`}
-                            title={isCompleted ? 'Đã hoàn thành' : isRunning ? 'Evaluation đang chạy' : failureMessage}
-                          >
-                            {row.status}
-                          </span>
+                          {isRunning ? (() => {
+                            const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
+                            const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
+                            return (
+                              <span className="flag-tag success font-bold" title="Evaluation đang chạy thời gian thực">
+                                ⚡ RUNNING {pct !== null ? `${pct}%` : ''}
+                              </span>
+                            );
+                          })() : (
+                            <span
+                              className={`flag-tag ${isFailed ? 'danger' : ''}`}
+                              title={isCompleted ? 'Đã hoàn thành' : failureMessage}
+                            >
+                              {row.status}
+                            </span>
+                          )}
                         </td>
                         <td className="text-muted text-sm">{row.baseModel}</td>
                         <td className="text-center font-bold text-primary">{row.scores.knowledge?.toFixed(2) ?? '—'}</td>
