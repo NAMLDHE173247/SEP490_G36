@@ -1569,7 +1569,7 @@ export default function ModelEvalView() {
                   <span className={`slot-dot ${isOccupied ? 'live' : ''}`} />
                   <strong>Slot #{slot.slotIndex}</strong>
                   {isOccupied ? (
-                    <span className="slot-name">{slot.projectName}</span>
+                    <span className="slot-name">{slot.projectName} {typeof slot.progress === 'number' ? `(${slot.progress}%)` : ''}</span>
                   ) : (
                     <span className="slot-name text-muted">Sẵn sàng</span>
                   )}
@@ -1877,7 +1877,23 @@ export default function ModelEvalView() {
                             )}
                            </div>
                            {isFailed && <div className="text-danger text-xs" title={failureMessage}>{failureMessage}</div>}
-                           {isRunning && <div className="text-primary text-xs">Evaluation đang chạy — mở bảng tiến trình để theo dõi.</div>}
+                           {isRunning && (() => {
+                             const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId);
+                             const pct = slot && typeof slot.progress === 'number' ? slot.progress : null;
+                             return (
+                               <div
+                                 className="text-primary text-xs font-semibold cursor-pointer hover:underline flex items-center gap-1 mt-1"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   if (row.modelEvalId) startProgressStream(row.modelEvalId);
+                                 }}
+                                 title="Bấm để mở luồng Live Log"
+                               >
+                                 <Activity size={12} className="animate-pulse text-emerald" />
+                                 Evaluation đang chạy {pct !== null ? `(${pct}%)` : ''} — Bấm mở Live Log
+                               </div>
+                             );
+                           })()}
                          </td>
                         <td>
                           <span
@@ -3252,6 +3268,23 @@ export default function ModelEvalView() {
                               {slot.startedAt && (
                                 <span className="slot-meta-tag">
                                   <Clock size={10} className="inline mr-1" /> {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-3 pt-2 border-t border-slate-100 flex flex-col gap-1">
+                              <div className="flex justify-between text-xs font-bold text-slate-800">
+                                <span>Tiến độ thực thi:</span>
+                                <span className="text-indigo-600 font-extrabold">{slot.progress || 0}%</span>
+                              </div>
+                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
+                                <div
+                                  className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
+                                  style={{ width: `${Math.max(4, slot.progress || 0)}%` }}
+                                />
+                              </div>
+                              {slot.stage_label && (
+                                <span className="text-[11px] text-slate-500 italic mt-0.5">
+                                  {slot.stage_label}{slot.stage_detail ? `: ${slot.stage_detail}` : ''}
                                 </span>
                               )}
                             </div>

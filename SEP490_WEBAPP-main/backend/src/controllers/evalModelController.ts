@@ -245,7 +245,7 @@ async function getGpuStatus(): Promise<GpuStatus | null> {
   return null;
 }
 
-type GpuActiveEvaluation = { eval_job_id: string; status: string; job_id?: string };
+type GpuActiveEvaluation = { eval_job_id: string; status: string; job_id?: string; progress?: number; stage_label?: string; stage_detail?: string };
 
 type GpuEvalRecoveryState = {
   state: 'active' | 'resumable' | 'completed' | 'missing' | 'unknown';
@@ -1312,6 +1312,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
             projectName: hist?.projectName || 'Dự án Fine-tune',
             baseModel: hist?.baseModel || evalDoc.baseModelRepo || 'Base Model',
             status: gpuJob.status || evalDoc.status,
+            progress: typeof gpuJob.progress === 'number' ? gpuJob.progress : 0,
+            stage_label: gpuJob.stage_label || 'Đang thực thi',
+            stage_detail: gpuJob.stage_detail || '',
             isMine: true,
             startedAt: evalDoc.startedAt,
           });
@@ -1323,6 +1326,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
             projectName: 'GPU Job (Khác)',
             baseModel: '—',
             status: gpuJob.status || 'RUNNING',
+            progress: typeof gpuJob.progress === 'number' ? gpuJob.progress : 0,
+            stage_label: gpuJob.stage_label || 'Đang thực thi',
+            stage_detail: gpuJob.stage_detail || '',
             isMine: false,
             startedAt: null,
           });
@@ -1337,6 +1343,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
           projectName: hist?.projectName || 'Dự án Fine-tune',
           baseModel: hist?.baseModel || evalDoc.baseModelRepo || 'Base Model',
           status: evalDoc.status,
+          progress: 0,
+          stage_label: 'Đang chuẩn bị',
+          stage_detail: '',
           isMine: true,
           startedAt: evalDoc.startedAt,
         });
@@ -1348,6 +1357,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
           projectName: null,
           baseModel: null,
           status: 'IDLE',
+          progress: 0,
+          stage_label: null,
+          stage_detail: null,
           isMine: false,
           startedAt: null,
         });
