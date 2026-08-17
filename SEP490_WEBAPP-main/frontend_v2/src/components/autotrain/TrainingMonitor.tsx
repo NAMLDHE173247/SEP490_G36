@@ -445,7 +445,7 @@ const TechnicalLogLine: React.FC<{ log: string; index: number }> = ({ log, index
   );
 };
 
-const ConsoleTerminal: React.FC<{ logs: string[]; height?: number }> = ({ logs, height = 280 }) => {
+const ConsoleTerminal: React.FC<{ logs: string[]; height?: number | string }> = ({ logs, height = 280 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -464,7 +464,8 @@ const ConsoleTerminal: React.FC<{ logs: string[]; height?: number }> = ({ logs, 
         fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
         padding: '16px',
         borderRadius: '8px',
-        height: `${height}px`,
+        height: typeof height === 'number' ? `${height}px` : height,
+        boxSizing: 'border-box',
         overflowY: 'auto',
         fontSize: '12px',
         lineHeight: '1.6',
@@ -509,14 +510,14 @@ const LogFullscreenModal: React.FC<{ logs: string[]; onClose: () => void }> = ({
     <div
       role="presentation"
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(2,6,23,0.88)', display: 'flex', alignItems: 'stretch', justifyContent: 'center', padding: 24 }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(2,6,23,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Full log view"
         onClick={e => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: 1100, display: 'flex', flexDirection: 'column', background: '#0F172A', borderRadius: 14, border: '1px solid #1E293B', overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,0.7)' }}
+        style={{ width: '100%', maxWidth: 1100, height: 'min(850px, calc(100vh - 48px))', display: 'flex', flexDirection: 'column', background: '#0F172A', borderRadius: 14, border: '1px solid #1E293B', overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,0.7)' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #1E293B', flexShrink: 0 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -531,8 +532,8 @@ const LogFullscreenModal: React.FC<{ logs: string[]; onClose: () => void }> = ({
             <X size={14} />
           </button>
         </div>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <ConsoleTerminal logs={logs} height={9999} />
+        <div style={{ flex: 1, minHeight: 0, padding: 12, display: 'flex', flexDirection: 'column' }}>
+          <ConsoleTerminal logs={logs} height="100%" />
         </div>
       </div>
     </div>

@@ -1053,3 +1053,28 @@
   display: block;
 }
 
+/* === Terminal Log Scrollbar Customization === */
+.at-console {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 #090D16;
+}
+
+.at-console::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.at-console::-webkit-scrollbar-track {
+  background: #090D16;
+  border-radius: 4px;
+}
+
+.at-console::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.at-console::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
