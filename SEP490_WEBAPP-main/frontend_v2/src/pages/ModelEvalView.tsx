@@ -2103,7 +2103,17 @@ export default function ModelEvalView() {
                       </div>
                     </div>
                     <table className="comparison-table">
-                      <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th></tr></thead>
+                      <thead>
+                        <tr>
+                          <th>Tiêu chí</th>
+                          <th className="text-center">Base</th>
+                          <th className="text-center">Fine-tuned</th>
+                          <th className="text-right">Δ FT−Base</th>
+                          <th>95% CI</th>
+                          <th className="text-right">Effect Size (d_z)</th>
+                          <th className="text-right">p-value (Holm)</th>
+                        </tr>
+                      </thead>
                       <tbody>{fullCriteriaResearchRows.map(row => (
                         <tr key={row.key}>
                           <td><b>{row.key}</b> · {row.label}{row.key === 'D2' && <small> · chỉ số vận hành, xem thêm latency thô</small>}</td>
@@ -2111,6 +2121,8 @@ export default function ModelEvalView() {
                           <td className="text-center font-semibold">{Number.isFinite(row.ft) ? row.ft.toFixed(2) : '—'}</td>
                           <td className={`text-right font-bold ${row.delta >= 0 ? 'text-success' : 'text-danger'}`}>{Number.isFinite(row.delta) ? `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}` : '—'}</td>
                           <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
+                          <td className="text-right">{row.effectSize !== null && Number.isFinite(row.effectSize) ? row.effectSize.toFixed(3) : '—'}</td>
+                          <td className="text-right">{row.pAdjusted !== null && Number.isFinite(row.pAdjusted) ? (row.pAdjusted < 0.001 ? '< 0.001' : row.pAdjusted.toFixed(3)) : '—'}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -2140,7 +2152,17 @@ export default function ModelEvalView() {
 
                     {adaptiveDiagnosticRows.length > 0 ? (
                       <table className="comparison-table">
-                        <thead><tr><th>Tiêu chí</th><th className="text-center">Base</th><th className="text-center">Fine-tuned</th><th className="text-right">Δ FT−Base</th><th>95% CI</th></tr></thead>
+                        <thead>
+                          <tr>
+                            <th>Tiêu chí</th>
+                            <th className="text-center">Base</th>
+                            <th className="text-center">Fine-tuned</th>
+                            <th className="text-right">Δ FT−Base</th>
+                            <th>95% CI</th>
+                            <th className="text-right">Effect Size (d_z)</th>
+                            <th className="text-right">p-value (Holm)</th>
+                          </tr>
+                        </thead>
                         <tbody>{adaptiveDiagnosticRows.map(row => (
                           <tr key={row.key}>
                             <td><b>{row.key}</b> · {row.label}</td>
@@ -2150,6 +2172,8 @@ export default function ModelEvalView() {
                               {row.delta === null ? '—' : `${row.delta >= 0 ? '+' : ''}${row.delta.toFixed(2)}`}
                             </td>
                             <td>{row.ci.length === 2 ? `[${Number(row.ci[0]).toFixed(3)}, ${Number(row.ci[1]).toFixed(3)}]` : 'Chưa kiểm định'}</td>
+                            <td className="text-right">{row.effectSize !== null && Number.isFinite(row.effectSize) ? row.effectSize.toFixed(3) : '—'}</td>
+                            <td className="text-right">{row.pAdjusted !== null && Number.isFinite(row.pAdjusted) ? (row.pAdjusted < 0.001 ? '< 0.001' : row.pAdjusted.toFixed(3)) : '—'}</td>
                           </tr>
                         ))}</tbody>
                       </table>
