@@ -3241,120 +3241,148 @@ export default function ModelEvalView() {
                 </div>
               </div>
 
-              {/* Slots Cards Grid */}
-              <div className="flex-center justify-between mb-3">
-                <h4 className="text-sm font-bold text-slate-800 m-0">
-                  Danh sách {slotsInfo.length} GPU Evaluation Slots
+              {/* Slots Full Progress Trackers Stacked List */}
+              <div className="flex-center justify-between mb-2">
+                <h4 className="text-sm font-bold text-slate-800 m-0 flex items-center gap-2">
+                  <Activity size={16} className="text-indigo-600 animate-pulse" />
+                  Tiến trình chi tiết {slotsInfo.length} Evaluation Slots (Cuộn xuống để xem tất cả)
                 </h4>
                 <button type="button" className="btn-outline-eval text-xs" onClick={fetchActiveSlots} disabled={loadingSlots}>
                   <RefreshCw size={12} className={loadingSlots ? 'animate-spin mr-1' : 'mr-1'} /> Tải lại
                 </button>
               </div>
 
-              <div className="slots-grid">
+              <div className="slots-stacked-list">
                 {slotsInfo.map((slot: any) => {
                   const isOccupied = slot.status !== 'IDLE';
                   const isCurrentStream = activeEvalId === slot.modelEvalId;
+                  const progressPct = typeof slot.progress === 'number' ? slot.progress : 0;
+                  const logsList = Array.isArray(slot.logs) ? slot.logs : [];
 
                   return (
-                    <div key={slot.slotIndex} className={`slot-card ${isOccupied ? 'running' : 'idle'}`}>
-                      <div className="slot-card-header">
-                        <span className="slot-number-badge">Slot #{slot.slotIndex}</span>
-                        <span className={`flag-tag ${isOccupied ? 'success' : 'neutral'}`}>
-                          {slot.status}
-                        </span>
-                      </div>
-
-                      <div className="slot-card-body">
-                        {isOccupied ? (
-                          <>
-                            <h4>{slot.projectName}</h4>
-                            <p className="font-mono text-xs text-muted mb-2">{slot.modelEvalId}</p>
-                            <div className="slot-meta-tags">
-                              <span className="slot-meta-tag">{slot.baseModel}</span>
-                              {slot.isMine ? (
-                                <span className="slot-meta-tag mine">Tài khoản của bạn</span>
+                    <div key={slot.slotIndex} className={`active-eval-tracker card slot-modal-tracker ${isOccupied ? 'occupied' : 'idle-slot-card'}`}>
+                      <div className="tracker-header">
+                        <div className="tracker-title-group">
+                          <span className="slot-number-badge font-extrabold mr-2">Slot #{slot.slotIndex}</span>
+                          <div>
+                            <h3>
+                              {isOccupied ? (
+                                <>
+                                  <span className="font-bold text-slate-800">{slot.projectName}</span>
+                                  <span className="font-mono text-xs text-muted ml-2">({slot.modelEvalId})</span>
+                                </>
                               ) : (
-                                <span className="slot-meta-tag text-amber">Tài khoản khác</span>
+                                <span className="text-slate-500 font-semibold">Slot Trống (Sẵn sàng)</span>
                               )}
-                              {slot.startedAt && (
-                                <span className="slot-meta-tag">
-                                  <Clock size={10} className="inline mr-1" /> {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
-                                </span>
-                              )}
-                            </div>
-                            <div className="mt-3 pt-2 border-t border-slate-100 flex flex-col gap-1">
-                              <div className="flex justify-between text-xs font-bold text-slate-800">
-                                <span>Tiến độ thực thi:</span>
-                                <span className="text-indigo-600 font-extrabold">{slot.progress || 0}%</span>
-                              </div>
-                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
-                                <div
-                                  className="bg-indigo-600 h-full transition-all duration-300 rounded-full"
-                                  style={{ width: `${Math.max(4, slot.progress || 0)}%` }}
-                                />
-                              </div>
-                              {slot.stage_label && (
-                                <span className="text-[11px] text-slate-500 italic mt-0.5">
-                                  {slot.stage_label}{slot.stage_detail ? `: ${slot.stage_detail}` : ''}
-                                </span>
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="py-4 text-center text-muted">
-                            <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald opacity-60" />
-                            <strong className="block text-slate-700">Slot Trống (Ready)</strong>
-                            <span className="text-xs">Sẵn sàng nhận đợt Đánh giá mới</span>
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {isOccupied
+                                ? `Mô hình gốc: ${slot.baseModel} · ${slot.isMine ? 'Tài khoản của bạn' : 'Tài khoản khác'}`
+                                : 'Sẵn sàng tiếp nhận đợt Đánh giá mô hình mới'}
+                            </p>
                           </div>
-                        )}
-                      </div>
-
-                      <div className="slot-card-actions">
-                        {isOccupied && slot.isMine && (
-                          <>
+                        </div>
+                        <div className="tracker-actions">
+                          {isOccupied && <span className="tracker-pct font-black text-indigo-600">{progressPct}%</span>}
+                          {isOccupied && slot.isMine && (
                             <button
                               type="button"
-                              className={`btn-slot-action ${isCurrentStream ? 'outline' : 'primary'}`}
+                              className={`btn btn-sm ${isCurrentStream ? 'btn-outline-eval' : 'btn-primary'}`}
                               onClick={() => {
                                 startProgressStream(slot.modelEvalId);
                                 setIsSlotsModalOpen(false);
                               }}
                             >
-                              <Activity size={13} />
-                              {isCurrentStream ? 'Đang xem Log' : 'Xem Live Log'}
+                              <Activity size={14} />
+                              {isCurrentStream ? 'Đang xem trên Banner' : 'Mở Live Log Banner'}
                             </button>
+                          )}
+                          {!isOccupied && (
                             <button
                               type="button"
-                              className="btn-slot-action outline"
+                              className="btn btn-sm btn-primary"
                               onClick={() => {
                                 setIsSlotsModalOpen(false);
-                                handleViewDetails(slot.modelEvalId);
+                                openRunModal();
                               }}
+                              disabled={gpuStatus && !gpuStatus.can_create_eval}
                             >
-                              <Eye size={13} /> Chi tiết
+                              <Play size={14} /> Chạy Eval Ngay
                             </button>
-                          </>
-                        )}
-                        {isOccupied && !slot.isMine && (
-                          <span className="text-xs text-muted italic text-center w-full py-2">
-                            🔒 Job thuộc tài khoản khác
-                          </span>
-                        )}
-                        {!isOccupied && (
-                          <button
-                            type="button"
-                            className="btn-slot-action primary"
-                            onClick={() => {
-                              setIsSlotsModalOpen(false);
-                              openRunModal();
-                            }}
-                            disabled={gpuStatus && !gpuStatus.can_create_eval}
-                          >
-                            <Play size={13} /> Chạy Eval Ngay
-                          </button>
-                        )}
+                          )}
+                        </div>
                       </div>
+
+                      {isOccupied && (
+                        <>
+                          {/* Progress bar */}
+                          <div className="tracker-progress-bg my-2">
+                            <div className="tracker-progress-fill animate-shimmer" style={{ width: `${Math.max(3, progressPct)}%` }} />
+                          </div>
+
+                          {/* Stage steps bar */}
+                          <div className="tracker-stage-steps">
+                            {['Warmup', 'Replay', 'Judging', 'Finalize'].map((stageName, sIdx) => {
+                              const currentStageIdx = progressPct >= 95 ? 3 : progressPct >= 65 ? 2 : progressPct >= 20 ? 1 : 0;
+                              const done = sIdx < currentStageIdx;
+                              const current = sIdx === currentStageIdx;
+                              return (
+                                <div key={stageName} className={`tracker-step ${done ? 'done' : ''} ${current ? 'current' : ''}`}>
+                                  <span className="tracker-step-line" />
+                                  <span className="tracker-step-label">{stageName}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="tracker-stage-info my-2 flex items-center justify-between text-xs">
+                            <div>
+                              <span className="stage-badge mr-2">{slot.stage_label || slot.status}</span>
+                              <span className="stage-detail text-slate-600">{slot.stage_detail || ''}</span>
+                            </div>
+                            {slot.startedAt && (
+                              <span className="text-slate-400 font-mono text-[11px]">
+                                Khởi chạy: {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Current Sample details if available */}
+                          {slot.current_sample && (
+                            <div className="tracker-current-sample my-2">
+                              <div className="sample-label">Đang replay câu hỏi {slot.current_sample.index + 1}:</div>
+                              <div className="sample-text italic">"{slot.current_sample.instruction?.slice(0, 140)}..."</div>
+                              {slot.current_sample.ft_answer && (
+                                <div className="sample-model-res">
+                                  <span className="text-primary font-semibold">FT Answer: </span>
+                                  "{slot.current_sample.ft_answer?.slice(0, 140)}..."
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Logs Console */}
+                          <div className="tracker-console-card mt-2">
+                            <div className="console-header">
+                              <div className="console-left">
+                                <span className="console-dot-green"></span>
+                                <span className="console-title">GPU Runner Logs (Slot #{slot.slotIndex})</span>
+                              </div>
+                              <span className="console-lines-count">{logsList.length} dòng log</span>
+                            </div>
+                            <div className="logs-console" style={{ maxHeight: '120px' }}>
+                              {logsList.map((log: any, index: number) => (
+                                <div key={index} className="log-line">
+                                  <span className="log-timestamp">[{log.timestamp || 'LOG'}]</span> {typeof log === 'string' ? log : log.text}
+                                </div>
+                              ))}
+                              {logsList.length === 0 && (
+                                <div className="log-line text-muted">Đang theo dõi tiến trình thực thi thời gian thực trên GPU Slot #{slot.slotIndex}...</div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })}
