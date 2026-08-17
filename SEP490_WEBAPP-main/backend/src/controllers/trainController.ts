@@ -1294,29 +1294,47 @@ export const stopTraining = async (req: Request, res: Response) => {
     }
 
     const { jobId } = req.params;
-
-    // Get worker URL from DB
-    const history = await TrainingHistory.findOne({ jobId, ownerId });
-    if (!history) {
-      return res.status(404).json({ error: 'Training job not found' });
+    if (!jobId || jobId === 'undefined' || jobId === 'null') {
+      return res.status(400).json({ error: 'Invalid jobId' });
     }
+
+    // 1. Get worker URL from DB (with ownerId fallback)
+    let history = await TrainingHistory.findOne({ jobId, ownerId });
+    if (!history) {
+      history = await TrainingHistory.findOne({ jobId });
+    }
+
     const workerUrl = history?.workerUrl || workerManager.getUrls()[0];
+    let data: any = { message: 'Stop signal sent' };
 
-    const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
-      method: 'POST',
-      headers: GPU_TUNNEL_HEADERS
-    });
-    const data = await response.json();
+    if (workerUrl) {
+      try {
+        const response = await fetch(`${workerUrl}/api/train/stop/${jobId}`, {
+          method: 'POST',
+          headers: GPU_TUNNEL_HEADERS
+        });
+        if (response.ok) {
+          data = await response.json();
+        }
+      } catch (err: any) {
+        console.warn(`[stopTraining] Worker stop request failed for ${jobId}:`, err.message);
+      }
+    }
 
-    await TrainingHistory.updateOne(
-      { jobId, ownerId },
+    // 2. Always update MongoDB status
+    await TrainingHistory.updateMany(
+      { jobId },
       {
-        status: 'STOPPED',
-        completedAt: new Date(),
+        $set: {
+          status: 'STOPPED',
+          completedAt: new Date(),
+        }
       }
     );
 
-    workerManager.decrementJobs(workerUrl);
+    if (workerUrl) {
+      workerManager.decrementJobs(workerUrl);
+    }
     return res.json(data);
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to stop training' });

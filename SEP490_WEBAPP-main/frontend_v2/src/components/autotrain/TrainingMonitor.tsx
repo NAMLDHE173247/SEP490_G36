@@ -920,12 +920,12 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
       {/* ──────── Active Jobs Monitor Cards ──────── */}
       {jobsList.map((job) => {
         const jobIdStr = String(job.id || (job as any).job_id || '');
-        const chartData = getChartData(job.id || (job as any).job_id);
+        const chartData = getChartData(jobIdStr);
         const hasLogs = job.logs && job.logs.length > 0;
 
         return (
           <div
-            key={job.id || jobIdStr}
+            key={jobIdStr || Math.random()}
             className="at-panel"
             style={{
               animation: 'atFadeIn 0.3s ease-out',
@@ -951,7 +951,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                     type="button"
                     className="at-btn-icon-sm danger"
                     title="Dừng tiến trình này"
-                    onClick={() => onStopJob(job.id)}
+                    onClick={() => onStopJob(jobIdStr)}
                     style={{ padding: '8px 12px', gap: 6, display: 'inline-flex', alignItems: 'center', width: 'auto', fontSize: '13px' }}
                   >
                     <StopCircle size={14} /> Dừng (Stop)
@@ -961,7 +961,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                   type="button"
                   className="at-btn-icon-sm"
                   title="Xóa thẻ khỏi màn hình"
-                  onClick={() => onDismissJob(job.id)}
+                  onClick={() => onDismissJob(jobIdStr)}
                 >
                   <X size={14} />
                 </button>
@@ -973,7 +973,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
 
               {/* Friendly status summary — designed for non-ML teachers */}
               {(() => {
-                const summary = deriveFriendlySummary(job, lossHistories[job.id] || [], evalLossHistories[job.id] || []);
+                const summary = deriveFriendlySummary(job, lossHistories[jobIdStr] || [], evalLossHistories[jobIdStr] || []);
                 const palette = TONE_PALETTE[summary.tone];
                 const TrendIcon = summary.trendIcon;
                 return (
@@ -1034,7 +1034,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
               >
                 <button
                   type="button"
-                  onClick={() => setSelectedTrainJobId(job.id)}
+                  onClick={() => setSelectedTrainJobId(jobIdStr)}
                   aria-label="Open train loss details"
                   style={{ background: '#F5F3FF', border: '1px solid #C4B5FD', padding: '12px', borderRadius: 8, textAlign: 'center', cursor: 'pointer', color: 'inherit' }}
                 >
@@ -1047,7 +1047,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => setSelectedEvalJobId(job.id)}
+                  onClick={() => setSelectedEvalJobId(jobIdStr)}
                   aria-label="Open eval loss details"
                   style={{ background: '#FFF7F7', border: '1px solid #FECACA', padding: '12px', borderRadius: 8, textAlign: 'center', cursor: 'pointer', color: 'inherit' }}
                 >
@@ -1109,7 +1109,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                 </div>
               </div>
 
-              <ConfigSummary job={job} jobConfig={jobConfigs[job.id]} />
+              <ConfigSummary job={job} jobConfig={jobConfigs[jobIdStr]} />
               <TrainSummaryCard job={job} onGenerateSummary={onGenerateSummary} />
 
               {/* Chart & Terminal container */}

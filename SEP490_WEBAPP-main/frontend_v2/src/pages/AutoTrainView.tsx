@@ -583,6 +583,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
           ...globalTrainingState.activeJobs,
           [jobId]: {
             ...previousJob,
+            id: jobId,
             status: data.status,
             progress,
             current_epoch: currentEpoch,
@@ -618,13 +619,8 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         const epochValue = finiteNumber(metrics.epoch, metrics.current_epoch, data.epoch, currentEpoch);
         if (typeof metrics.loss === 'number' && Number.isFinite(metrics.loss)) {
           const history = globalTrainingState.lossHistories[jobId] || [];
-          const last = history[history.length - 1];
-          const isNewPoint = !last || (
-            stepValue !== undefined && last.step !== undefined
-              ? last.step !== stepValue
-              : last.progress !== progressValue
-          );
-          if (isNewPoint) {
+          const existing = history.find(h => h.step === stepValue && stepValue !== undefined);
+          if (!existing) {
             globalTrainingState.lossHistories[jobId] = [
               ...history,
               { progress: progressValue, loss: metrics.loss, step: stepValue, epoch: epochValue, timestamp: Date.now() },
@@ -634,16 +630,11 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
         // Append Eval Loss history
         if (typeof metrics.eval_loss === 'number' && Number.isFinite(metrics.eval_loss)) {
-          const history = globalTrainingState.evalLossHistories[jobId] || [];
-          const last = history[history.length - 1];
-          const isNewPoint = !last || (
-            stepValue !== undefined && last.step !== undefined
-              ? last.step !== stepValue
-              : last.progress !== progressValue
-          );
-          if (isNewPoint) {
+          const evalHistory = globalTrainingState.evalLossHistories[jobId] || [];
+          const existing = evalHistory.find(h => h.step === stepValue && stepValue !== undefined);
+          if (!existing) {
             globalTrainingState.evalLossHistories[jobId] = [
-              ...history,
+              ...evalHistory,
               { progress: progressValue, loss: metrics.eval_loss, step: stepValue, epoch: epochValue, timestamp: Date.now() },
             ];
           }
@@ -699,21 +690,34 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
     globalTrainingState.notify();
   };
 
-  const handleStopJob = useCallback(async (jobId: string) => {
+  const handleStopJob = useCallback(async (targetJobId: string) => {
+    const jobId = targetJobId || '';
+    if (!jobId) return;
     try {
       await api.post(`/train/stop/${jobId}`);
       closeTracking(jobId, 'STOPPED');
       triggerToast('Training job stopped.', 'info');
     } catch (err: any) {
       console.error('Error stopping job:', err);
-      triggerToast('Failed to stop training: ' + (err.response?.data?.error || err.message), 'error');
+      closeTracking(jobId, 'STOPPED');
+      triggerToast('Đã dừng thẻ theo dõi (Lỗi từ server GPU: ' + (err.response?.data?.error || err.message) + ')', 'info');
     }
-  }, [triggerToast]);
+  }, [closeTracking, triggerToast]);
 
-  const handleDismissJob = useCallback((jobId: string) => {
+  const handleDismissJob = useCallback((targetJobId: string) => {
+    const jobId = targetJobId || '';
     globalTrainingState.activeJobs = { ...globalTrainingState.activeJobs };
-    delete globalTrainingState.activeJobs[jobId];
-    if (completedJobId === jobId) {
+    if (jobId) {
+      delete globalTrainingState.activeJobs[jobId];
+    }
+    // Clean up any orphan job key matching targetJobId or empty/undefined id
+    Object.keys(globalTrainingState.activeJobs).forEach(k => {
+      const j = globalTrainingState.activeJobs[k];
+      if (!k || k === jobId || j?.id === jobId || !j?.id) {
+        delete globalTrainingState.activeJobs[k];
+      }
+    });
+    if (completedJobId === jobId || !jobId) {
       setCompletedJobId(null);
     }
     globalTrainingState.notify();
