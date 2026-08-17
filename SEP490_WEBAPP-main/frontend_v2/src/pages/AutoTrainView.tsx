@@ -43,6 +43,7 @@ const globalTrainingState = {
   evalLossHistories: {} as Record<string, LossPoint[]>,
   jobConfigs: {} as Record<string, any>,
   eventSources: {} as Record<string, any>,
+  dismissedJobs: new Set<string>(),
   listeners: new Set<() => void>(),
 
   subscribe(listener: () => void) {
@@ -280,11 +281,37 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
   // Hydrate resume request from TrainingHistoryView (if available)
   useEffect(() => {
-    const resumeId = localStorage.getItem('autotrain_resume_job_id');
-    if (resumeId) {
-      localStorage.removeItem('autotrain_resume_job_id');
-      startTrackingJob(resumeId);
-    }
+    const checkResumeRequest = async () => {
+      const resumeId = localStorage.getItem('autotrain_resume_job_id');
+      if (resumeId) {
+        localStorage.removeItem('autotrain_resume_job_id');
+        globalTrainingState.dismissedJobs.delete(resumeId);
+
+        // Fetch history info if jobConfig is missing
+        if (!globalTrainingState.jobConfigs[resumeId]) {
+          try {
+            const historyRes = await api.get('/train/history');
+            const histories = Array.isArray(historyRes.data) ? historyRes.data : [];
+            const found = histories.find((h: any) => h.jobId === resumeId);
+            if (found) {
+              globalTrainingState.jobConfigs[resumeId] = {
+                projectName: found.projectName,
+                baseModel: found.baseModel,
+                datasetSource: found.datasetSource,
+                datasetName: found.datasetName,
+                columnMapping: found.columnMapping,
+                trainingConfig: found.parameters || {},
+              };
+            }
+          } catch (err) {
+            console.warn('Could not fetch history metadata for resumeId:', err);
+          }
+        }
+
+        startTrackingJob(resumeId, globalTrainingState.jobConfigs[resumeId], true);
+      }
+    };
+    checkResumeRequest();
   }, []);
 
   // Fetch currently active jobs from database on mount to restore monitoring panels
@@ -295,7 +322,11 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         const jobs = Array.isArray(res.data) ? res.data : [];
         jobs.forEach((job: any) => {
           const jobId = job.jobId || job.id;
-          if (jobId && !eventSources[jobId]) {
+          if (
+            jobId &&
+            (!eventSources[jobId] || !globalTrainingState.activeJobs[jobId]) &&
+            !globalTrainingState.dismissedJobs.has(jobId)
+          ) {
             startTrackingJob(jobId, {
               projectName: job.projectName,
               baseModel: job.baseModel,
@@ -508,8 +539,18 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
   }, []);
 
   // SSE stream connecting & tracking
-  const startTrackingJob = (jobId: string, jobConfig?: any) => {
-    if (eventSources[jobId]) return;
+  const startTrackingJob = (jobId: string, jobConfig?: any, force = false) => {
+    if (!jobId) return;
+    globalTrainingState.dismissedJobs.delete(jobId);
+
+    // If already tracking and not force, don't restart interval
+    if (eventSources[jobId] && !force && globalTrainingState.activeJobs[jobId]) return;
+
+    // Clean up existing timer if force restart
+    if (eventSources[jobId]) {
+      try { eventSources[jobId].close?.(); } catch {}
+      delete eventSources[jobId];
+    }
 
     if (jobConfig) {
       globalTrainingState.jobConfigs = {
@@ -522,14 +563,22 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       ...globalTrainingState.activeJobs,
       [jobId]: {
         id: jobId,
-        status: 'QUEUED',
-        progress: 0,
-        requested_config: jobConfig?.trainingConfig,
-        logs: ['Establishing connection to background job...'],
+        status: globalTrainingState.activeJobs[jobId]?.status || 'QUEUED',
+        progress: globalTrainingState.activeJobs[jobId]?.progress || 0,
+        requested_config: jobConfig?.trainingConfig || globalTrainingState.jobConfigs[jobId]?.trainingConfig,
+        logs: globalTrainingState.activeJobs[jobId]?.logs || ['Establishing connection to background job...'],
       }
     };
 
     const pollJob = async () => {
+      if (globalTrainingState.dismissedJobs.has(jobId)) {
+        const es = globalTrainingState.eventSources[jobId];
+        if (es) {
+          try { es.close(); } catch {}
+          delete globalTrainingState.eventSources[jobId];
+        }
+        return;
+      }
       try {
         const res = await api.get(`/train/status/${jobId}`);
         const data = res.data;
@@ -706,6 +755,18 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
 
   const handleDismissJob = useCallback((targetJobId: string) => {
     const jobId = targetJobId || '';
+    if (jobId) {
+      globalTrainingState.dismissedJobs.add(jobId);
+      const es = globalTrainingState.eventSources[jobId];
+      if (es) {
+        try {
+          es.close();
+        } catch (err) {
+          console.warn('Error closing eventSource on dismiss:', err);
+        }
+        delete globalTrainingState.eventSources[jobId];
+      }
+    }
     globalTrainingState.activeJobs = { ...globalTrainingState.activeJobs };
     if (jobId) {
       delete globalTrainingState.activeJobs[jobId];
@@ -766,6 +827,7 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
         delete globalTrainingState.eventSources[id];
       });
 
+      globalTrainingState.dismissedJobs.clear();
       globalTrainingState.activeJobs = {};
       globalTrainingState.lossHistories = {};
       globalTrainingState.evalLossHistories = {};
