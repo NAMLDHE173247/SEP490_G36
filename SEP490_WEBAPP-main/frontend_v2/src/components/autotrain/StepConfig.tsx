@@ -216,7 +216,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
             <div className="at-form-group primary">
               <label className="at-label">
                 Base AI Model
-                <HelpTooltip text="Chọn mô hình AI nền tảng. Các mô hình nhỏ (0.6B) chạy nhanh và nhẹ, mô hình lớn hơn (8B+) yêu cầu GPU mạnh hơn." />
+                <HelpTooltip text="Choose the base AI model. Smaller models (0.6B) are fast and light, larger ones (8B+) require powerful GPUs." />
               </label>
               <select
                 className="at-select"
@@ -356,7 +356,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
             <div className="at-form-group">
               <label className="at-label">
                 Select Parameter Preset
-                <HelpTooltip text="Bộ thiết lập có sẵn (Presets) áp dụng cấu hình khuyến nghị. Bạn có thể điều chỉnh và lưu thành bộ thiết lập riêng." />
+                <HelpTooltip text="Presets apply recommended settings. You can modify them and save them as custom presets." />
               </label>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -496,7 +496,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
                 <div className="at-param-rows">
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Epochs <HelpTooltip text="Số lần mô hình duyệt qua toàn bộ tập dữ liệu huấn luyện. Mặc định là 3. Tăng số Epoch giúp học kỹ hơn nhưng dễ bị quá khớp (overfitting) với tập dữ liệu nhỏ." /></span>
+                    <span className="at-label">Epochs <HelpTooltip text="Number of full passes over your dataset. Default 3. More = learns harder but risks overfitting on small datasets." /></span>
                     <input
                       className={`at-param-input at-input ${!isEpochsValid(config.epochs) ? 'at-input-error' : ''}`}
                       type="number"
@@ -507,7 +507,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Batch Size <HelpTooltip text="Số mẫu dữ liệu xử lý trong mỗi bước huấn luyện. Lớn hơn = huấn luyện nhanh hơn nhưng tốn nhiều VRAM GPU hơn. Mặc định là 2 phù hợp với đa số GPU." /></span>
+                    <span className="at-label">Batch Size <HelpTooltip text="Samples processed per step. Bigger = faster but uses more VRAM. Default 2 fits most GPUs." /></span>
                     <input
                       className={`at-param-input at-input ${!isBatchSizeValid(config.batchSize) ? 'at-input-error' : ''}`}
                       type="number"
@@ -518,7 +518,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Learning Rate <HelpTooltip text="Tốc độ cập nhật trọng số của mô hình. Mức khuyến nghị cho LoRA là từ 2e-5 đến 5e-5. Quá cao sẽ gây mất ổn định, quá thấp sẽ khiến mô hình học rất chậm." /></span>
+                    <span className="at-label">Learning Rate <HelpTooltip text="How big each weight update is. Recommended 2e-5 to 5e-5 for LoRA. Too high = unstable, too low = no learning." /></span>
                     <input
                       className={`at-param-input at-input ${!isLearningRateValid(config.learningRate) ? 'at-input-error' : ''}`}
                       type="number"
@@ -530,7 +530,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Block Size <HelpTooltip text="Số lượng token tối đa mô hình xử lý cùng lúc trong khi huấn luyện. 512 phù hợp hội thoại ngắn, 1024–2048 cho hội thoại dài. Giá trị cao hơn sẽ tiêu tốn nhiều VRAM hơn." /></span>
+                    <span className="at-label">Block Size <HelpTooltip text="How many tokens the model sees at once during training. 512 fits short chats, 1024-2048 for longer dialogs. Higher = more VRAM." /></span>
                     <input
                       className={`at-param-input at-input ${!isBlockSizeValid(config.blockSize) ? 'at-input-error' : ''}`}
                       type="number"
@@ -541,7 +541,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Max Length <HelpTooltip text="Số token tối đa mô hình có thể sinh ra trong mỗi câu phản hồi. Thường đặt bằng hoặc lớn hơn Block Size. Mặc định là 1024." /></span>
+                    <span className="at-label">Max Length <HelpTooltip text="Max tokens the trained model can generate per reply. Usually set equal or above Block Size. Default 1024." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -552,7 +552,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Grad Accumulation <HelpTooltip text="Tích lũy độ dốc (gradient) qua N bước trước khi cập nhật trọng số. Batch size thực tế = Batch Size × Số bước tích lũy. Nên chọn 4–8 khi VRAM GPU hạn chế." /></span>
+                    <span className="at-label">Grad Accumulation <HelpTooltip text="Accumulates gradients over N steps before updating. Effective batch = Batch Size × this. Use 4-8 when VRAM is tight." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -563,7 +563,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Warmup Steps <HelpTooltip text="Số bước khởi động để tăng dần tốc độ học từ 0 lên mức mục tiêu, giúp tránh mất ổn định ở giai đoạn đầu. Mặc định là 5 (dùng 10–50 cho tập dữ liệu lớn)." /></span>
+                    <span className="at-label">Warmup Steps <HelpTooltip text="Steps where learning rate ramps up from 0 to the target. Prevents early instability. Default 5, use 10-50 for larger datasets." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -574,7 +574,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Weight Decay <HelpTooltip text="Hệ số suy giảm trọng số (Regularization) giúp kéo trọng số về 0 để tránh quá khớp (overfitting). Mặc định 0.01. Đặt 0 để tắt." /></span>
+                    <span className="at-label">Weight Decay <HelpTooltip text="Regularization that pulls weights toward zero to prevent overfitting. Default 0.01. Set 0 to disable." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -586,7 +586,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Optimizer <HelpTooltip text="Thuật toán tối ưu hóa cập nhật trọng số. adamw_8bit giúp tiết kiệm ~75% VRAM và là lựa chọn mặc định an toàn. sgd hiếm khi dùng cho LoRA." /></span>
+                    <span className="at-label">Optimizer <HelpTooltip text="Algorithm that updates weights. adamw_8bit saves ~75% VRAM and is the safe default. sgd is rarely used for LoRA." /></span>
                     <select
                       className="at-select"
                       value={config.optim}
@@ -600,7 +600,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LR Scheduler <HelpTooltip text="Điều chỉnh cách tốc độ học thay đổi theo thời gian. 'linear' giảm đều, 'cosine' giảm mượt theo đường cong, 'constant' giữ nguyên không đổi." /></span>
+                    <span className="at-label">LR Scheduler <HelpTooltip text="Controls how learning rate changes during training. 'linear' decreases steadily, 'cosine' decays smoothly, 'constant' stays fixed." /></span>
                     <select
                       className="at-select"
                       value={config.lrScheduler}
@@ -615,7 +615,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">Random Seed <HelpTooltip text="Số ngẫu nhiên cố định để đảm bảo tính tái lập kết quả. Cùng Seed + cùng dữ liệu = cùng kết quả huấn luyện. Mặc định 3407." /></span>
+                    <span className="at-label">Random Seed <HelpTooltip text="Fixed number for reproducibility. Same seed + same data = same result. Default 3407." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -632,7 +632,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
 
                 <div className="at-param-rows">
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Rank (R) <HelpTooltip text="Dung lượng ma trận thích ứng LoRA. Rank cao hơn = học được nhiều chi tiết tinh vi hơn nhưng tốn nhiều VRAM hơn. Giá trị phổ biến: 8, 16, 32." /></span>
+                    <span className="at-label">LoRA Rank (R) <HelpTooltip text="Capacity of the LoRA adapter. Higher = learns finer details but uses more VRAM. Common: 8, 16, 32." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -643,7 +643,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Alpha <HelpTooltip text="Hệ số tỉ lệ (scaling) cho việc cập nhật LoRA. Quy tắc thông dụng: đặt bằng hoặc gấp đôi giá trị LoRA Rank." /></span>
+                    <span className="at-label">LoRA Alpha <HelpTooltip text="Scaling factor for the LoRA update. Rule of thumb: set equal to or double the Rank." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -654,7 +654,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Dropout <HelpTooltip text="Tỷ lệ ngẫu nhiên ngắt các neuron LoRA trong quá trình học để chống quá khớp. 0 = tắt, phổ biến từ 0.05 đến 0.1." /></span>
+                    <span className="at-label">LoRA Dropout <HelpTooltip text="Randomly disables LoRA neurons during training to prevent overfitting. 0 = none, 0.05-0.1 typical." /></span>
                     <input
                       className="at-input"
                       type="number"
@@ -666,7 +666,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">LoRA Targets <HelpTooltip text="Các lớp mạng được gắn adapter LoRA. 'all-linear' (Attention + MLP) cho chất lượng tốt nhất; 'attention' nhẹ VRAM hơn và đủ dùng cho tập dữ liệu rất nhỏ." /></span>
+                    <span className="at-label">LoRA Targets <HelpTooltip text="Which layers get an adapter. 'all-linear' (attention + MLP) gives the best quality; 'attention' is lighter on VRAM and enough for very small datasets." /></span>
                     <select
                       className="at-select"
                       value={config.loraTargets}
@@ -680,7 +680,7 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
 
                   <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                    <span className="at-label">rsLoRA <HelpTooltip text="LoRA ổn định theo Rank (Rank-stabilized LoRA). Giúp kiểm soát tỉ lệ cập nhật khi Rank ≥ 32. Ít ảnh hưởng ở Rank thấp." /></span>
+                    <span className="at-label">rsLoRA <HelpTooltip text="Rank-stabilized LoRA. Keeps the update scale sane when Rank is 32 or higher. Little effect at low rank." /></span>
                     <input
                       type="checkbox"
                       checked={config.useRslora}
@@ -690,203 +690,200 @@ const StepConfig: React.FC<StepConfigProps> = ({
                   </div>
                 </div>
 
-                {/* Hidden Quality & Regularization section on UI (state & logic preserved) */}
-                <div style={{ display: 'none' }}>
-                  <div className="at-section-divider-line" style={{ margin: '14px 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Quality &amp; Regularization
+                <div className="at-section-divider-line" style={{ margin: '14px 0 8px 0', fontSize: 11, fontWeight: 700, color: 'var(--at-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Quality &amp; Regularization
+                </div>
+
+                <div className="at-param-rows">
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">NEFTune Alpha <HelpTooltip text="Adds noise to embeddings during training. Usually improves instruction-following quality. 0 = off, 5 is the recommended value." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="1"
+                      min="0"
+                      value={config.neftuneAlpha}
+                      onChange={handleParamChange('neftuneAlpha')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
                   </div>
 
-                  <div className="at-param-rows">
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">NEFTune Alpha <HelpTooltip text="Thêm nhiễu vào không gian nhúng (embeddings) khi huấn luyện. Giúp cải thiện khả năng tuân thủ câu lệnh của AI. 0 = tắt, khuyến nghị là 5." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        step="1"
-                        min="0"
-                        value={config.neftuneAlpha}
-                        onChange={handleParamChange('neftuneAlpha')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Max Grad Norm <HelpTooltip text="Clips gradients to this norm so a single bad batch cannot blow up the run. Default 1.0." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={config.maxGradNorm}
+                      onChange={handleParamChange('maxGradNorm')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Max Grad Norm <HelpTooltip text="Cắt ngưỡng độ dốc (gradient clipping) để tránh tình trạng bùng nổ độ dốc do một batch dữ liệu lỗi. Mặc định là 1.0." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={config.maxGradNorm}
-                        onChange={handleParamChange('maxGradNorm')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Warmup Ratio <HelpTooltip text="Warmup as a fraction of total steps (e.g. 0.03). More stable than a fixed step count when the dataset size changes. 0 = use Warmup Steps instead." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={config.warmupRatio}
+                      onChange={handleParamChange('warmupRatio')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Warmup Ratio <HelpTooltip text="Tỷ lệ bước khởi động trên tổng số bước (ví dụ: 0.03). Ổn định hơn số bước cố định khi kích thước tập dữ liệu thay đổi. 0 = dùng Warmup Steps." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={config.warmupRatio}
-                        onChange={handleParamChange('warmupRatio')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Early Stop Patience <HelpTooltip text="How many validation checks may pass without improvement before training stops. Lower = stops sooner on overfitting." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      value={config.earlyStoppingPatience}
+                      onChange={handleParamChange('earlyStoppingPatience')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Early Stop Patience <HelpTooltip text="Số lần kiểm tra đánh giá (validation) không cải thiện tối đa trước khi dừng huấn luyện sớm. Giá trị thấp = dừng sớm hơn khi phát hiện quá khớp." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        min="1"
-                        value={config.earlyStoppingPatience}
-                        onChange={handleParamChange('earlyStoppingPatience')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Eval Steps <HelpTooltip text="Validate every N optimizer steps. Leave empty to let the service pick a value that gives about 8 validation points across the run." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      placeholder="auto"
+                      value={config.evalSteps}
+                      onChange={handleParamChange('evalSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Eval Steps <HelpTooltip text="Thực hiện đánh giá sau mỗi N bước tối ưu. Để trống để hệ thống tự động tính toán khoảng 8 lần đánh giá trong suốt quá trình." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        min="1"
-                        placeholder="auto"
-                        value={config.evalSteps}
-                        onChange={handleParamChange('evalSteps')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Save Steps <HelpTooltip text="Save a checkpoint every N optimizer steps. Leave empty to align it automatically with Eval Steps." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      placeholder="auto"
+                      value={config.saveSteps}
+                      onChange={handleParamChange('saveSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Save Steps <HelpTooltip text="Lưu bản sao checkpoint sau mỗi N bước tối ưu. Để trống để tự động đồng bộ với số bước Eval Steps." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        min="1"
-                        placeholder="auto"
-                        value={config.saveSteps}
-                        onChange={handleParamChange('saveSteps')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Logging Steps <HelpTooltip text="How often the trainer reports train loss. Step/Epoch progress is still updated every optimizer step." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="1"
+                      value={config.loggingSteps}
+                      onChange={handleParamChange('loggingSteps')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Logging Steps <HelpTooltip text="Tần suất ghi lại chỉ số hao hụt (train loss). Tiến trình Step/Epoch vẫn được cập nhật liên tục ở từng bước." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        min="1"
-                        value={config.loggingSteps}
-                        onChange={handleParamChange('loggingSteps')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Data Loader Workers <HelpTooltip text="CPU workers that prepare batches. Keep 0 on Kaggle/Windows unless you have verified shared-memory support." /></span>
+                    <input
+                      className="at-input"
+                      type="number"
+                      min="0"
+                      max="16"
+                      value={config.dataloaderNumWorkers}
+                      onChange={handleParamChange('dataloaderNumWorkers')}
+                      style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Data Loader Workers <HelpTooltip text="Số lượng luồng CPU chuẩn bị dữ liệu (batching). Nên đặt là 0 trên Kaggle/Windows trừ khi có hỗ trợ bộ nhớ chia sẻ." /></span>
-                      <input
-                        className="at-input"
-                        type="number"
-                        min="0"
-                        max="16"
-                        value={config.dataloaderNumWorkers}
-                        onChange={handleParamChange('dataloaderNumWorkers')}
-                        style={{ width: 80, padding: '4px 8px', textAlign: 'right' }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Auto Tune <HelpTooltip text="Lets the GPU service cap risky settings for very small datasets to reduce overfitting and unstable runs." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.autoTune}
+                      onChange={handleToggleChange('autoTune')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Auto Tune <HelpTooltip text="Cho phép hệ thống GPU tự động giới hạn các tham số rủi ro với tập dữ liệu nhỏ để giảm overfitting và tránh lỗi tiến trình." /></span>
-                      <input
-                        type="checkbox"
-                        checked={config.autoTune}
-                        onChange={handleToggleChange('autoTune')}
-                        style={{ width: 16, height: 16 }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Gradient Checkpointing <HelpTooltip text="Trades compute for lower VRAM usage. Recommended ON for 7B+ models." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.gradientCheckpointing}
+                      onChange={handleToggleChange('gradientCheckpointing')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Gradient Checkpointing <HelpTooltip text="Đổi năng lực tính toán để tiết kiệm bộ nhớ VRAM. Khuyến nghị BẬT đối với các mô hình 7B trở lên." /></span>
-                      <input
-                        type="checkbox"
-                        checked={config.gradientCheckpointing}
-                        onChange={handleToggleChange('gradientCheckpointing')}
-                        style={{ width: 16, height: 16 }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Group By Length <HelpTooltip text="Batches samples of similar length together to waste less compute on padding. Changes batch order, so leave off when comparing runs." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.groupByLength}
+                      onChange={handleToggleChange('groupByLength')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Group By Length <HelpTooltip text="Gom nhóm các mẫu dữ liệu có độ dài tương tự vào cùng batch để giảm hao phí tính toán do padding. Nên TẮT khi cần so sánh chính xác giữa các lượt chạy." /></span>
-                      <input
-                        type="checkbox"
-                        checked={config.groupByLength}
-                        onChange={handleToggleChange('groupByLength')}
-                        style={{ width: 16, height: 16 }}
-                      />
-                    </div>
+                  <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
+                    <span className="at-label">Train Thinking <HelpTooltip text="Enable reasoning/think blocks while formatting (Gemma 4 / Qwen3). Keep OFF for Socratic tutors. When ON, Unsloth recommends ≥75% of samples contain reasoning traces. Chat serving still filters think tags by default." /></span>
+                    <input
+                      type="checkbox"
+                      checked={config.enableThinking}
+                      onChange={handleToggleChange('enableThinking')}
+                      style={{ width: 16, height: 16 }}
+                    />
+                  </div>
 
-                    <div className="at-param-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--at-border)' }}>
-                      <span className="at-label">Train Thinking <HelpTooltip text="Bật khối suy luận/suy nghĩ (reasoning/think) khi định dạng (dùng cho Gemma 4 / Qwen3). Nên TẮT đối với gia sư Socratic. Khi BẬT, Unsloth khuyến nghị ≥75% mẫu dữ liệu có chứa chuỗi suy luận." /></span>
-                      <input
-                        type="checkbox"
-                        checked={config.enableThinking}
-                        onChange={handleToggleChange('enableThinking')}
-                        style={{ width: 16, height: 16 }}
-                      />
-                    </div>
-
-                    {/* Chỉ hiện khi dùng model custom — catalog đã auto đúng, khỏi làm rối */}
-                    {isCustomActive && (
-                      <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--at-border)', background: 'var(--at-bg-subtle, #f8fafc)' }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--at-text)', marginBottom: 4 }}>
-                          Model lạ — định dạng hội thoại
-                        </div>
-                        <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--at-text-muted)', lineHeight: 1.45 }}>
-                          Để <b>Tự động</b>. Nếu hỏi người tạo model / copy từ HuggingFace được chuỗi template → chọn <b>Dán template thủ công</b>.
-                        </p>
-                        <select
-                          className="at-select"
-                          value={config.chatTemplate || 'auto'}
-                          onChange={handleParamChange('chatTemplate')}
-                          style={{ width: '100%', padding: '6px 8px' }}
-                        >
-                          <option value="auto">Tự động (khuyến nghị)</option>
-                          <option value="paste">Dán template thủ công…</option>
-                          <option value="native">Giữ template gốc của model</option>
-                          <option value="qwen-2.5">Đây là họ Qwen</option>
-                          <option value="llama-3">Đây là họ Llama 3</option>
-                          <option value="gemma-4">Đây là Gemma 4</option>
-                          <option value="gemma-4-thinking">Gemma 4 + thinking</option>
-                          <option value="gemma3">Đây là Gemma 3</option>
-                          <option value="mistral">Đây là Mistral / Vistral</option>
-                          <option value="phi-4">Đây là Phi-4</option>
-                          <option value="chatml">ChatML (generic)</option>
-                        </select>
-                        {config.chatTemplate === 'paste' && (
-                          <div style={{ marginTop: 8 }}>
-                            <label className="at-label" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
-                              Dán chat_template (Jinja) từ tokenizer_config.json hoặc người tạo model
-                            </label>
-                            <textarea
-                              className="at-input"
-                              value={config.customChatTemplate || ''}
-                              onChange={handleParamChange('customChatTemplate')}
-                              placeholder={'{% for message in messages %}...{{ message.content }}...{% endfor %}'}
-                              rows={6}
-                              style={{ width: '100%', fontFamily: 'Consolas, monospace', fontSize: 11, resize: 'vertical' }}
-                            />
-                            <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--at-text-muted)' }}>
-                              HF Hub → Files → <code>tokenizer_config.json</code> → copy giá trị field <code>chat_template</code>.
-                            </p>
-                          </div>
-                        )}
+                  {/* Chỉ hiện khi dùng model custom — catalog đã auto đúng, khỏi làm rối */}
+                  {isCustomActive && (
+                    <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--at-border)', background: 'var(--at-bg-subtle, #f8fafc)' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--at-text)', marginBottom: 4 }}>
+                        Model lạ — định dạng hội thoại
                       </div>
-                    )}
-                  </div>
+                      <p style={{ margin: '0 0 8px', fontSize: 11, color: 'var(--at-text-muted)', lineHeight: 1.45 }}>
+                        Để <b>Tự động</b>. Nếu hỏi người tạo model / copy từ HuggingFace được chuỗi template → chọn <b>Dán template thủ công</b>.
+                      </p>
+                      <select
+                        className="at-select"
+                        value={config.chatTemplate || 'auto'}
+                        onChange={handleParamChange('chatTemplate')}
+                        style={{ width: '100%', padding: '6px 8px' }}
+                      >
+                        <option value="auto">Tự động (khuyến nghị)</option>
+                        <option value="paste">Dán template thủ công…</option>
+                        <option value="native">Giữ template gốc của model</option>
+                        <option value="qwen-2.5">Đây là họ Qwen</option>
+                        <option value="llama-3">Đây là họ Llama 3</option>
+                        <option value="gemma-4">Đây là Gemma 4</option>
+                        <option value="gemma-4-thinking">Gemma 4 + thinking</option>
+                        <option value="gemma3">Đây là Gemma 3</option>
+                        <option value="mistral">Đây là Mistral / Vistral</option>
+                        <option value="phi-4">Đây là Phi-4</option>
+                        <option value="chatml">ChatML (generic)</option>
+                      </select>
+                      {config.chatTemplate === 'paste' && (
+                        <div style={{ marginTop: 8 }}>
+                          <label className="at-label" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+                            Dán chat_template (Jinja) từ tokenizer_config.json hoặc người tạo model
+                          </label>
+                          <textarea
+                            className="at-input"
+                            value={config.customChatTemplate || ''}
+                            onChange={handleParamChange('customChatTemplate')}
+                            placeholder={'{% for message in messages %}...{{ message.content }}...{% endfor %}'}
+                            rows={6}
+                            style={{ width: '100%', fontFamily: 'Consolas, monospace', fontSize: 11, resize: 'vertical' }}
+                          />
+                          <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--at-text-muted)' }}>
+                            HF Hub → Files → <code>tokenizer_config.json</code> → copy giá trị field <code>chat_template</code>.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
