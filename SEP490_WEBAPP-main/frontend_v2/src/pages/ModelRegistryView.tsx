@@ -495,7 +495,7 @@ function ModelRegistryView() {
                                   <td>
                                     {ver.modelEvalId ? (
                                       <span title={ver.modelEvalId} className="text-primary font-semibold">
-                                        {ver.modelEvalId.slice(-8)}
+                                        {String(ver.modelEvalId).slice(-8)}
                                       </span>
                                     ) : (
                                       <span className="text-muted">Chưa eval</span>

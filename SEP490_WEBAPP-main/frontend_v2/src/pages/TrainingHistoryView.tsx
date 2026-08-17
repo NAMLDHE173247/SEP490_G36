@@ -800,7 +800,7 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
                       key={run.jobId}
                       type="monotone"
                       dataKey={`loss_${run.jobId}`}
-                      name={run.projectName || run.jobId.slice(4, 12)}
+                      name={run.projectName || String(run.jobId || run._id || '').slice(4, 12)}
                       stroke={LINE_COLORS[idx % LINE_COLORS.length]}
                       strokeWidth={2}
                       dot={false}

@@ -890,7 +890,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
                 Training Completed Successfully! 🎉
               </h4>
               <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#065F46' }}>
-                Your custom AI tutor <strong>{activeJobs[completedJobId].id.slice(-12)}</strong> is fully fine-tuned and ready.
+                Your custom AI tutor <strong>{String(activeJobs[completedJobId]?.id || completedJobId || '').slice(-12)}</strong> is fully fine-tuned and ready.
               </p>
             </div>
           </div>
@@ -919,12 +919,13 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
 
       {/* ──────── Active Jobs Monitor Cards ──────── */}
       {jobsList.map((job) => {
-        const chartData = getChartData(job.id);
+        const jobIdStr = String(job.id || (job as any).job_id || '');
+        const chartData = getChartData(job.id || (job as any).job_id);
         const hasLogs = job.logs && job.logs.length > 0;
 
         return (
           <div
-            key={job.id}
+            key={job.id || jobIdStr}
             className="at-panel"
             style={{
               animation: 'atFadeIn 0.3s ease-out',
@@ -937,7 +938,7 @@ const TrainingMonitor: React.FC<TrainingMonitorProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <Activity size={18} className="text-indigo-600" />
                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 700 }}>
-                  Training Job: <span style={{ fontFamily: 'monospace', color: 'var(--at-accent)' }}>{job.id.slice(-12)}</span>
+                  Training Job: <span style={{ fontFamily: 'monospace', color: 'var(--at-accent)' }}>{jobIdStr.slice(-12)}</span>
                 </h3>
                 <span className={`at-badge ${getStatusBadgeClass(job.status)}`} style={{ fontSize: '11px', fontWeight: 700 }}>
                   {job.status}

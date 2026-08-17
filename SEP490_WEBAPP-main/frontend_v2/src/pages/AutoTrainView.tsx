@@ -867,9 +867,10 @@ export default function AutoTrainView({ setActiveTab }: AutoTrainViewProps) {
       });
 
       const data = response.data;
-      if (data && data.job_id) {
-        triggerToast(`Training initiated successfully! Job ID: ${data.job_id.slice(-8)}`, 'success');
-        startTrackingJob(data.job_id, {
+      if (data && (data.job_id || data.jobId || data.id)) {
+        const actualJobId = String(data.job_id || data.jobId || data.id);
+        triggerToast(`Training initiated successfully! Job ID: ${actualJobId.slice(-8)}`, 'success');
+        startTrackingJob(actualJobId, {
           projectName: config.projectName,
           baseModel: config.baseModel,
           datasetSource: config.datasetSource,

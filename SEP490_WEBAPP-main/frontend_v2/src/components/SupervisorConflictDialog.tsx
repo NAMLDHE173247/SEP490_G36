@@ -593,7 +593,7 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
                             return (
                               <article key={a.annotator.id}>
                                 <header>
-                                  <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
+                                  <span className="sv-avatar">{(a.annotator?.name || a.annotator?.email || '?').slice(0, 1).toUpperCase()}</span>
                                   <div>
                                     <strong>{displayName}</strong>
                                     <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetTitle(sampleTarget)}</small>
@@ -659,7 +659,7 @@ export default function SupervisorConflictDialog({item,onClose,onCompleted}:Prop
                   return (
                     <article key={a.annotator.id}>
                       <header>
-                        <span className="sv-avatar">{(a.annotator.name || a.annotator.email || '?').slice(0, 1).toUpperCase()}</span>
+                        <span className="sv-avatar">{(a.annotator?.name || a.annotator?.email || '?').slice(0, 1).toUpperCase()}</span>
                         <div>
                           <strong>{displayName}</strong>
                           <small>{a.isOwner ? 'Admin' : 'Staff'} - {targetKindText(target)}</small>

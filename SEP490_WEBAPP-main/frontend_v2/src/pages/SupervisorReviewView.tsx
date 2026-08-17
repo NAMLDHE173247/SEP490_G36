@@ -350,10 +350,10 @@ export default function SupervisorReviewView({ onOpenTask: _onOpenTask }: Props)
     }
   };
 
-  const quickReviewsTotal = selectedProject?.quickReviews.length || 0;
+  const quickReviewsTotal = selectedProject?.quickReviews?.length || 0;
   const quickReviewsTotalPages = Math.max(1, Math.ceil(quickReviewsTotal / PAGE_SIZE));
   const quickReviewsPage = Math.min(page, quickReviewsTotalPages);
-  const visibleQuickReviews = selectedProject?.quickReviews.slice((quickReviewsPage - 1) * PAGE_SIZE, quickReviewsPage * PAGE_SIZE) || [];
+  const visibleQuickReviews = (selectedProject?.quickReviews || []).slice((quickReviewsPage - 1) * PAGE_SIZE, quickReviewsPage * PAGE_SIZE);
   const historyItems = selectedProject?.conflicts.filter(item => item.status === 'published') || [];
   const filteredHistoryItems = historyItems.filter(item => {
     const matchQuery = `${item.taskName} ${item.datasetName} ${item.sampleKey} ${item.sampleIndex}`

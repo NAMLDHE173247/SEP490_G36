@@ -418,11 +418,11 @@ export default function CheckerReviewView({ onOpenTask: _onOpenTask }: Props) {
     }
   };
 
-  const overlapTotal = selectedProject?.overlapReviews.length || 0;
+  const overlapTotal = selectedProject?.overlapReviews?.length || 0;
   const overlapTotalPages = Math.max(1, Math.ceil(overlapTotal / PAGE_SIZE));
   const overlapPage = Math.min(page, overlapTotalPages);
-  const visibleOverlapReviews = selectedProject?.overlapReviews.slice((overlapPage - 1) * PAGE_SIZE, overlapPage * PAGE_SIZE) || [];
-  const historyItems = selectedProject?.conflicts.filter(item => item.status === 'published') || [];
+  const visibleOverlapReviews = (selectedProject?.overlapReviews || []).slice((overlapPage - 1) * PAGE_SIZE, overlapPage * PAGE_SIZE);
+  const historyItems = (selectedProject?.conflicts || []).filter(item => item.status === 'published');
   const filteredHistoryItems = historyItems.filter(item => {
     const matchQuery = `${item.taskName} ${item.datasetName} ${item.sampleKey} ${item.sampleIndex}`
       .toLowerCase()

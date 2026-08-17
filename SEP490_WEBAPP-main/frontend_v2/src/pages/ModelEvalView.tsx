@@ -1951,7 +1951,7 @@ export default function ModelEvalView() {
                         <div key={ev.modelEvalId} className={`history-eval-chip ${isCurrent ? 'current' : ''} ${isPinned ? 'pinned' : ''}`}>
                           <div className="history-chip-main" onClick={() => !isCurrent && handleViewDetails(ev.modelEvalId)}>
                             <div className="history-chip-title">
-                              <span className="font-mono">{ev.modelEvalId.slice(-8)}</span>
+                              <span className="font-mono">{(ev.modelEvalId || '').slice(-8)}</span>
                               {isPinned && <span className="pinned-badge"><Star size={10} fill="currentColor" /> Official</span>}
                               {isCurrent && <span className="current-badge">Đang xem</span>}
                             </div>
