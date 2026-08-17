@@ -1270,6 +1270,109 @@ export const getGpuStatusEndpoint = async (_req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------
+// GET /api/model-eval/active-slots
+// FE gọi để hiển thị danh sách tất cả các slots đánh giá đang chạy trên GPU
+// ---------------------------------------------------------------------------
+export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
+  try {
+    const ownerId = getAuthUserId(req);
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const gpuStatus = await getGpuStatus();
+    const gpuEvaluations = await getGpuActiveEvaluations();
+
+    const activeStatuses = ['PENDING', 'RUNNING', 'EVALUATING', 'INTERRUPTED'];
+    const myActiveEvals = await ModelEvaluation.find({
+      ownerId,
+      status: { $in: activeStatuses },
+    })
+      .sort({ startedAt: -1 })
+      .lean();
+
+    const jobIds = myActiveEvals.map(e => e.jobId).filter(Boolean);
+    const histories = await TrainingHistory.find({ jobId: { $in: jobIds } })
+      .select('jobId projectName baseModel hfRepoId')
+      .lean();
+    const historyMap = new Map(histories.map(h => [h.jobId, h]));
+
+    const slots: Array<Record<string, any>> = [];
+    const maxSlots = gpuStatus?.max_evals || 3;
+    const gpuEvalList = gpuEvaluations || [];
+
+    for (let i = 0; i < maxSlots; i++) {
+      const gpuJob = gpuEvalList[i];
+      if (gpuJob) {
+        const evalDoc = myActiveEvals.find(e => e.modelEvalId === gpuJob.eval_job_id);
+        if (evalDoc) {
+          const hist = historyMap.get(evalDoc.jobId);
+          slots.push({
+            slotIndex: i + 1,
+            modelEvalId: evalDoc.modelEvalId,
+            jobId: evalDoc.jobId,
+            projectName: hist?.projectName || 'Dự án Fine-tune',
+            baseModel: hist?.baseModel || evalDoc.baseModelRepo || 'Base Model',
+            status: gpuJob.status || evalDoc.status,
+            isMine: true,
+            startedAt: evalDoc.startedAt,
+          });
+        } else {
+          slots.push({
+            slotIndex: i + 1,
+            modelEvalId: gpuJob.eval_job_id,
+            jobId: gpuJob.job_id || null,
+            projectName: 'GPU Job (Khác)',
+            baseModel: '—',
+            status: gpuJob.status || 'RUNNING',
+            isMine: false,
+            startedAt: null,
+          });
+        }
+      } else if (i < myActiveEvals.length) {
+        const evalDoc = myActiveEvals[i];
+        const hist = historyMap.get(evalDoc.jobId);
+        slots.push({
+          slotIndex: i + 1,
+          modelEvalId: evalDoc.modelEvalId,
+          jobId: evalDoc.jobId,
+          projectName: hist?.projectName || 'Dự án Fine-tune',
+          baseModel: hist?.baseModel || evalDoc.baseModelRepo || 'Base Model',
+          status: evalDoc.status,
+          isMine: true,
+          startedAt: evalDoc.startedAt,
+        });
+      } else {
+        slots.push({
+          slotIndex: i + 1,
+          modelEvalId: null,
+          jobId: null,
+          projectName: null,
+          baseModel: null,
+          status: 'IDLE',
+          isMine: false,
+          startedAt: null,
+        });
+      }
+    }
+
+    return res.json({
+      gpuStatus: gpuStatus || {
+        can_create_eval: true,
+        active_evals: slots.filter(s => s.status !== 'IDLE').length,
+        max_evals: maxSlots,
+        vram_free_mb: 61440,
+        vram_total_mb: 81920,
+        gpu_util: 0,
+      },
+      slots,
+      activeCount: slots.filter(s => s.status !== 'IDLE').length,
+    });
+  } catch (err: any) {
+    console.error('[Backend] getActiveSlotsEndpoint error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to fetch active slots' });
+  }
+};
+
+// ---------------------------------------------------------------------------
 // POST /api/model-eval/save
 // Dùng cho manual trigger từ fetchAndSaveEvalResult (trainController)
 // Body: kết quả eval trực tiếp từ GPU (format cũ, modelEvalId = "eval_<jobId>")

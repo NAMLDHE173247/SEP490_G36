@@ -3502,3 +3502,335 @@
   .large-llm-run-card.card { padding: 15px; }
   .large-llm-run-heading { margin: -15px -15px 15px; padding: 16px; }
 }
+
+/* ==========================================================================
+   Multi-Slot Active Jobs Monitoring & Control Center
+   ========================================================================== */
+.active-slots-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.15);
+  color: white;
+}
+
+.active-slots-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.slots-bar-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #a5b4fc;
+  white-space: nowrap;
+}
+
+.slot-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.07);
+  color: #cbd5e1;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.slot-tab-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  border-color: #818cf8;
+}
+
+.slot-tab-btn.active {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  color: white;
+  border-color: #a5b4fc;
+  box-shadow: 0 0 14px rgba(99, 102, 241, 0.4);
+}
+
+.slot-tab-btn.occupied {
+  border-color: rgba(167, 243, 208, 0.4);
+}
+
+.slot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+.slot-dot.live {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse 1.5s infinite;
+}
+
+.btn-manage-slots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid #6366f1;
+  background: linear-gradient(135deg, #4338ca, #3730a3);
+  color: white;
+  font-size: 11.5px;
+  font-weight: 750;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(67, 56, 202, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-manage-slots:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Slots Control Modal */
+.slots-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s ease;
+}
+
+.slots-modal-content {
+  width: 100%;
+  max-width: 960px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.3);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+}
+
+.slots-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, #0f172a, #1e1b4b);
+  color: white;
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+}
+
+.slots-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: white;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slots-modal-header p {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.slots-modal-body {
+  padding: 24px;
+}
+
+.slots-system-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.sys-stat-card {
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sys-stat-card .icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #eef2ff;
+  color: #4f46e5;
+}
+
+.sys-stat-card.emerald .icon-box {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.sys-stat-card.amber .icon-box {
+  background: #fffbeb;
+  color: #f59e0b;
+}
+
+.sys-stat-card strong {
+  display: block;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.sys-stat-card span {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 18px;
+}
+
+.slot-card {
+  position: relative;
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  transition: all 0.2s ease;
+}
+
+.slot-card.running {
+  border-color: #818cf8;
+  box-shadow: 0 8px 24px -4px rgba(79, 70, 229, 0.12);
+  background: linear-gradient(180deg, #ffffff 0%, #faf5ff 100%);
+}
+
+.slot-card.idle {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.slot-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slot-number-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: white;
+}
+
+.slot-card-body h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.slot-card-body p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.slot-meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.slot-meta-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.slot-meta-tag.mine {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.slot-card-actions {
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+}
+
+.btn-slot-action {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 750;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.btn-slot-action.primary {
+  background: #4f46e5;
+  color: white;
+}
+
+.btn-slot-action.primary:hover {
+  background: #4338ca;
+}
+
+.btn-slot-action.outline {
+  background: white;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.btn-slot-action.outline:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}

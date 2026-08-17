@@ -31,7 +31,10 @@ import {
   Gauge,
   BarChart3,
   ClipboardCheck,
-  Layers3
+  Layers3,
+  Cpu,
+  Layers,
+  Server
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -239,9 +242,12 @@ export default function ModelEvalView() {
   const [activeEvalResumable, setActiveEvalResumable] = useState(false);
   const sseRef = useRef<EventSource | null>(null);
 
-  // GPU Status Widget
+  // GPU Status & Active Slots
   const [gpuStatus, setGpuStatus] = useState<any>(null);
   const [loadingGpuStatus, setLoadingGpuStatus] = useState(false);
+  const [slotsInfo, setSlotsInfo] = useState<any[]>([]);
+  const [isSlotsModalOpen, setIsSlotsModalOpen] = useState(false);
+  const [loadingSlots, setLoadingSlots] = useState(false);
 
   // Filters
   const [filterProject, setFilterProject] = useState('');
@@ -280,16 +286,33 @@ export default function ModelEvalView() {
     }
   }, []);
 
-  // Poll GPU status every 10s
+  const fetchActiveSlots = useCallback(async () => {
+    setLoadingSlots(true);
+    try {
+      const res = await apiService.getActiveSlots();
+      if (res.success && res.data) {
+        setSlotsInfo(res.data.slots || []);
+        if (res.data.gpuStatus) setGpuStatus(res.data.gpuStatus);
+      } else {
+        fetchGpuStatus();
+      }
+    } catch {
+      fetchGpuStatus();
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, [fetchGpuStatus]);
+
+  // Poll active slots and GPU status every 10s
   useEffect(() => {
     fetchLeaderboard();
-    fetchGpuStatus();
-    const interval = setInterval(fetchGpuStatus, 10000);
+    fetchActiveSlots();
+    const interval = setInterval(fetchActiveSlots, 10000);
     return () => {
       clearInterval(interval);
       if (sseRef.current) sseRef.current.close();
     };
-  }, [fetchLeaderboard, fetchGpuStatus]);
+  }, [fetchLeaderboard, fetchActiveSlots]);
 
   // Load completed jobs & dataset versions when modal opens
   const openRunModal = async () => {
@@ -1516,6 +1539,56 @@ export default function ModelEvalView() {
 
   return (
     <div className="eval-view">
+      {/* Active GPU Slots Top Navigation & Slot Switching Bar */}
+      {slotsInfo.length > 0 && (
+        <div className="active-slots-nav-bar">
+          <div className="active-slots-left">
+            <span className="slots-bar-label">
+              <Cpu size={15} /> Multi-Slot GPU Active:
+            </span>
+            {slotsInfo.map((slot: any) => {
+              const isActive = activeEvalId === slot.modelEvalId;
+              const isOccupied = slot.status !== 'IDLE';
+              return (
+                <button
+                  key={slot.slotIndex}
+                  type="button"
+                  className={`slot-tab-btn ${isActive ? 'active' : ''} ${isOccupied ? 'occupied' : 'idle'} ${!slot.isMine && isOccupied ? 'disabled' : ''}`}
+                  onClick={() => {
+                    if (isOccupied && slot.modelEvalId && slot.isMine) {
+                      startProgressStream(slot.modelEvalId);
+                    }
+                  }}
+                  disabled={!isOccupied || !slot.isMine}
+                  title={
+                    isOccupied
+                      ? `Slot #${slot.slotIndex}: ${slot.projectName} (${slot.status})${!slot.isMine ? ' - Tài khoản khác' : ''}`
+                      : `Slot #${slot.slotIndex}: Trống`
+                  }
+                >
+                  <span className={`slot-dot ${isOccupied ? 'live' : ''}`} />
+                  <strong>Slot #{slot.slotIndex}</strong>
+                  {isOccupied ? (
+                    <span className="slot-name">{slot.projectName}</span>
+                  ) : (
+                    <span className="slot-name text-muted">Sẵn sàng</span>
+                  )}
+                  {isActive && <span className="active-badge font-bold">● Live Log</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            className="btn-manage-slots"
+            onClick={() => setIsSlotsModalOpen(true)}
+          >
+            <Layers3 size={14} /> Quản lý {slotsInfo.filter(s => s.status !== 'IDLE').length}/{gpuStatus?.max_evals || 3} Slots
+          </button>
+        </div>
+      )}
+
       {/* Top Banner / SSE Progress Tracker */}
       {activeEvalId && (
         <div className="active-eval-tracker card">
@@ -1630,7 +1703,15 @@ export default function ModelEvalView() {
               </span>
             </div>
             <div className="gpu-details-row">
-              <span className="detail-tag">Active Slots: {gpuStatus.active_evals}/{gpuStatus.max_evals}</span>
+              <button
+                type="button"
+                className="btn-slots-control btn btn-sm btn-outline-eval"
+                onClick={() => setIsSlotsModalOpen(true)}
+                style={{ background: '#f8fafc', borderColor: '#cbd5e1', fontSize: '11px', fontWeight: 750, color: '#312e81' }}
+              >
+                <Activity size={13} className="text-emerald animate-pulse mr-1" />
+                Active Slots: {gpuStatus.active_evals}/{gpuStatus.max_evals} (Xem chi tiết)
+              </button>
               <span className="detail-tag">VRAM Trống: {Math.round(gpuStatus.vram_free_mb / 1024)}GB / {Math.round(gpuStatus.vram_total_mb / 1024)}GB</span>
               <span className="detail-tag">GPU Util: {gpuStatus.gpu_util}%</span>
               {!activeEvalId && gpuStatus.active_evals > 0 && (
@@ -3086,6 +3167,155 @@ export default function ModelEvalView() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Active Evaluation Slots Control Center Modal */}
+      {isSlotsModalOpen && (
+        <div className="slots-modal-overlay">
+          <div className="slots-modal-content">
+            <div className="slots-modal-header">
+              <div>
+                <h2>
+                  <Cpu size={22} className="text-emerald animate-pulse mr-1" />
+                  Trung Tâm Quản Lý GPU Evaluation Slots (Active Slots Control Center)
+                </h2>
+                <p>Theo dõi tiến trình song song, chuyển luồng xem log trực tiếp và kiểm tra trạng thái từng slot</p>
+              </div>
+              <button type="button" className="modal-close-btn text-white" onClick={() => setIsSlotsModalOpen(false)}>
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="slots-modal-body">
+              {/* System Resource Metrics */}
+              <div className="slots-system-summary">
+                <div className="sys-stat-card emerald">
+                  <div className="icon-box"><Activity size={20} /></div>
+                  <div>
+                    <strong>{gpuStatus?.active_evals || slotsInfo.filter(s => s.status !== 'IDLE').length} / {gpuStatus?.max_evals || 3} Slots</strong>
+                    <span>Slot GPU Đang Chiếm</span>
+                  </div>
+                </div>
+                <div className="sys-stat-card">
+                  <div className="icon-box"><Database size={20} /></div>
+                  <div>
+                    <strong>{Math.round((gpuStatus?.vram_free_mb || 0) / 1024)}GB Trống</strong>
+                    <span>Dung lượng VRAM khả dụng</span>
+                  </div>
+                </div>
+                <div className="sys-stat-card amber">
+                  <div className="icon-box"><Gauge size={20} /></div>
+                  <div>
+                    <strong>{gpuStatus?.gpu_util || 0}% Util</strong>
+                    <span>Hiệu suất GPU rảnh rỗi</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Slots Cards Grid */}
+              <div className="flex-center justify-between mb-3">
+                <h4 className="text-sm font-bold text-slate-800 m-0">
+                  Danh sách {slotsInfo.length} GPU Evaluation Slots
+                </h4>
+                <button type="button" className="btn-outline-eval text-xs" onClick={fetchActiveSlots} disabled={loadingSlots}>
+                  <RefreshCw size={12} className={loadingSlots ? 'animate-spin mr-1' : 'mr-1'} /> Tải lại
+                </button>
+              </div>
+
+              <div className="slots-grid">
+                {slotsInfo.map((slot: any) => {
+                  const isOccupied = slot.status !== 'IDLE';
+                  const isCurrentStream = activeEvalId === slot.modelEvalId;
+
+                  return (
+                    <div key={slot.slotIndex} className={`slot-card ${isOccupied ? 'running' : 'idle'}`}>
+                      <div className="slot-card-header">
+                        <span className="slot-number-badge">Slot #{slot.slotIndex}</span>
+                        <span className={`flag-tag ${isOccupied ? 'success' : 'neutral'}`}>
+                          {slot.status}
+                        </span>
+                      </div>
+
+                      <div className="slot-card-body">
+                        {isOccupied ? (
+                          <>
+                            <h4>{slot.projectName}</h4>
+                            <p className="font-mono text-xs text-muted mb-2">{slot.modelEvalId}</p>
+                            <div className="slot-meta-tags">
+                              <span className="slot-meta-tag">{slot.baseModel}</span>
+                              {slot.isMine ? (
+                                <span className="slot-meta-tag mine">Tài khoản của bạn</span>
+                              ) : (
+                                <span className="slot-meta-tag text-amber">Tài khoản khác</span>
+                              )}
+                              {slot.startedAt && (
+                                <span className="slot-meta-tag">
+                                  <Clock size={10} className="inline mr-1" /> {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="py-4 text-center text-muted">
+                            <CheckCircle2 size={28} className="mx-auto mb-2 text-emerald opacity-60" />
+                            <strong className="block text-slate-700">Slot Trống (Ready)</strong>
+                            <span className="text-xs">Sẵn sàng nhận đợt Đánh giá mới</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="slot-card-actions">
+                        {isOccupied && slot.isMine && (
+                          <>
+                            <button
+                              type="button"
+                              className={`btn-slot-action ${isCurrentStream ? 'outline' : 'primary'}`}
+                              onClick={() => {
+                                startProgressStream(slot.modelEvalId);
+                                setIsSlotsModalOpen(false);
+                              }}
+                            >
+                              <Activity size={13} />
+                              {isCurrentStream ? 'Đang xem Log' : 'Xem Live Log'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-slot-action outline"
+                              onClick={() => {
+                                setIsSlotsModalOpen(false);
+                                handleViewDetails(slot.modelEvalId);
+                              }}
+                            >
+                              <Eye size={13} /> Chi tiết
+                            </button>
+                          </>
+                        )}
+                        {isOccupied && !slot.isMine && (
+                          <span className="text-xs text-muted italic text-center w-full py-2">
+                            🔒 Job thuộc tài khoản khác
+                          </span>
+                        )}
+                        {!isOccupied && (
+                          <button
+                            type="button"
+                            className="btn-slot-action primary"
+                            onClick={() => {
+                              setIsSlotsModalOpen(false);
+                              openRunModal();
+                            }}
+                            disabled={gpuStatus && !gpuStatus.can_create_eval}
+                          >
+                            <Play size={13} /> Chạy Eval Ngay
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -53,6 +53,7 @@ import {
   compareEvaluations,
   reviewConversation,
   getActiveEvaluation,
+  getActiveSlotsEndpoint,
   getGpuStatusEndpoint,
   runLargeLlmReference,
   saveExtendedReferences,
@@ -268,6 +269,7 @@ router.post('/human-audit/manage/:evalId/adjudicate/:convIndex', authMiddleware,
 
 router.use('/model-eval', authMiddleware, requireManager);
 router.patch('/model-eval/:evalId/review/:convIndex', authMiddleware, requireManager, reviewConversation);
+router.get('/model-eval/active-slots', getActiveSlotsEndpoint);
 router.get('/model-eval/gpu-status', getGpuStatusEndpoint);  // ⚠️ trước wildcard
 router.get('/model-eval/active', getActiveEvaluation);
 router.post('/model-eval/resume/:evalJobId', resumeEvaluation);

@@ -228,6 +228,15 @@ export const apiService = {
       return { isOk: false };
     }
   },
+  getActiveSlots: async (): Promise<{ success: boolean; data?: any }> => {
+    try {
+      const response = await api.get('/model-eval/active-slots', { timeout: 15000 });
+      return { success: response.status === 200, data: response.data };
+    } catch (err: any) {
+      console.warn('[getActiveSlots] failed:', err?.message || err);
+      return { success: false };
+    }
+  },
   uploadFile: async (file: File, projectId?: string, onUploadProgress?: (progressEvent: any) => void): Promise<any> => {
     const formData = new FormData();
     formData.append('file', file);
