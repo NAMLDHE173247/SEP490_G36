@@ -182,16 +182,32 @@ export const listManagedHumanAudits = async (req: Request, res: Response) => {
     TrainingHistory.find({ jobId: { $in: evaluations.map(item => item.jobId) } }).select('jobId projectName').lean(),
   ]);
   const projectByJob = new Map(histories.map(item => [item.jobId, item.projectName]));
+  const assignmentsByEval = new Map<string, any[]>();
+  assignments.forEach(item => {
+    const list = assignmentsByEval.get(item.modelEvalId) || [];
+    list.push(item);
+    assignmentsByEval.set(item.modelEvalId, list);
+  });
+  const reviewsByEval = new Map<string, any[]>();
+  reviews.forEach(item => {
+    const list = reviewsByEval.get(item.modelEvalId) || [];
+    list.push(item);
+    reviewsByEval.set(item.modelEvalId, list);
+  });
+  const adjByEvalConv = new Map<string, any>();
+  adjudications.forEach(item => {
+    adjByEvalConv.set(`${item.modelEvalId}_${item.convIndex}`, item);
+  });
+
   return res.json(evaluations.map(evaluation => {
-    const evalAssignments = assignments.filter(item => item.modelEvalId === evaluation.modelEvalId);
-    const evalReviews = reviews.filter(item => item.modelEvalId === evaluation.modelEvalId);
-    const evalAdjudications = adjudications.filter(item => item.modelEvalId === evaluation.modelEvalId);
+    const evalAssignments = assignmentsByEval.get(evaluation.modelEvalId) || [];
+    const evalReviews = reviewsByEval.get(evaluation.modelEvalId) || [];
     const packageChecker: any = evalAssignments.find(item => item.checkerId)?.checkerId;
     const byConv = new Map<number, any[]>();
     evalReviews.forEach(review => byConv.set(review.convIndex, [...(byConv.get(review.convIndex) || []), review]));
     const states = [...byConv.entries()].map(([convIndex, rows]) => computeInterRaterState(
       rows,
-      evalAdjudications.find(item => item.convIndex === convIndex),
+      adjByEvalConv.get(`${evaluation.modelEvalId}_${convIndex}`),
     ));
     return {
       modelEvalId: evaluation.modelEvalId,

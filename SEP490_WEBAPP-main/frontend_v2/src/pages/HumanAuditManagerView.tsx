@@ -207,12 +207,9 @@ export default function HumanAuditManagerView() {
   useEffect(() => {
     setSelectedCheckerId(selectedEvaluation?.checkerId || '');
   }, [selectedEvalId, selectedEvaluation?.checkerId]);
-  const conflictSummary = useMemo(() => {
-    if (!detail?.items) return { ftConflicts: 0, baseConflicts: 0, totalConflicts: 0 };
-    let ftCount = 0;
-    let baseCount = 0;
-    let totalCount = 0;
-
+  const itemBreakdowns = useMemo(() => {
+    if (!detail?.items) return new Map<number, any>();
+    const map = new Map<number, any>();
     detail.items.forEach((item: any) => {
       const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
       const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
@@ -225,7 +222,20 @@ export default function HumanAuditManagerView() {
       const reviewsToUse = filterReviewerId === 'all'
         ? rawReviews
         : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-      const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
+      map.set(item.conv_index, computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi));
+    });
+    return map;
+  }, [detail, filterReviewerId, extractReviewerId]);
+
+  const conflictSummary = useMemo(() => {
+    if (!detail?.items) return { ftConflicts: 0, baseConflicts: 0, totalConflicts: 0 };
+    let ftCount = 0;
+    let baseCount = 0;
+    let totalCount = 0;
+
+    detail.items.forEach((item: any) => {
+      const breakdown = itemBreakdowns.get(item.conv_index);
+      if (!breakdown) return;
       const hasFt = breakdown.ft.maxDelta >= 1.5;
       const hasBase = breakdown.base.maxDelta >= 1.5;
       if (hasFt) ftCount++;
@@ -234,21 +244,11 @@ export default function HumanAuditManagerView() {
     });
 
     return { ftConflicts: ftCount, baseConflicts: baseCount, totalConflicts: totalCount };
-  }, [detail, filterReviewerId]);
+  }, [detail, itemBreakdowns]);
 
   const visibleItems = useMemo(() => (detail?.items || []).filter((item: any) => {
-    const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
-    const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-    const rawReviews = item.adjudication?.finalScores
-      ? [
-          { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
-          { humanScores: item.adjudication.finalScores, targetModel: 'base' }
-        ]
-      : (item.reviews || []);
-    const reviewsToUse = filterReviewerId === 'all'
-      ? rawReviews
-      : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-    const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
+    const breakdown = itemBreakdowns.get(item.conv_index);
+    if (!breakdown) return filter === 'all';
     const isFtConflict = breakdown.ft.maxDelta >= 1.5;
     const isBaseConflict = breakdown.base.maxDelta >= 1.5;
     const isAnyConflict = isFtConflict || isBaseConflict;
@@ -257,7 +257,7 @@ export default function HumanAuditManagerView() {
     if (filter === 'conflict') return isAnyConflict && item.inter_rater?.status !== 'resolved';
     if (filter === 'resolved') return item.inter_rater?.status === 'resolved';
     return !isAnyConflict && !item.adjudication;
-  }), [detail, filter, filterReviewerId]);
+  }), [detail, filter, itemBreakdowns]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -454,18 +454,7 @@ export default function HumanAuditManagerView() {
                   const uniqueReviews = filterReviewerId === 'all'
                     ? allUniqueReviews
                     : allUniqueReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-                  const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
-                  const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-                  const rawReviews = item.adjudication?.finalScores
-                    ? [
-                        { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
-                        { humanScores: item.adjudication.finalScores, targetModel: 'base' }
-                      ]
-                    : (item.reviews || []);
-                  const reviewsToUse = filterReviewerId === 'all'
-                    ? rawReviews
-                    : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-                  const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
+                  const breakdown = itemBreakdowns.get(item.conv_index) || { ft: { count: 0, maxDelta: 0, conflicts: [] }, base: { count: 0, maxDelta: 0, conflicts: [] } };
                   const ftCount = breakdown.ft.count;
                   const baseCount = breakdown.base.count;
 
