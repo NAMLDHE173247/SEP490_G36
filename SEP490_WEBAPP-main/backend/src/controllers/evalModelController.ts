@@ -284,7 +284,7 @@ async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> 
   try {
     const response = await fetch(`${configService.getGpuUrl()}/api/eval/active`, {
       headers: GPU_TUNNEL_HEADERS,
-      signal: AbortSignal.timeout(7000),
+      signal: AbortSignal.timeout(3000), // 3s max — this is supplementary info only
     });
     if (!response.ok) return null; // Compatibility with workers not deployed yet.
     const payload = await response.json() as any;
@@ -1984,7 +1984,6 @@ export const getVersion1SharedReferenceStatus = async (req: Request, res: Respon
 export const getEvaluatedModels = async (req: Request, res: Response) => {
   try {
     const ownerFilter = getOwnerFilter(req);
-    const gpuActiveEvals = await getGpuActiveEvaluations();
 
     // Query 1: Get all jobIds that have at least one eval
     const evaluatedJobIds = await ModelEvaluation.distinct('jobId', ownerFilter);
@@ -2003,15 +2002,20 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
 
     const jobIds = histories.map((h) => h.jobId);
 
-    // Query 3: Fetch all evals for these jobs in ONE query.
-    // Exclude the large 'results' array — we only need summary/metadata for the leaderboard.
-    const allEvals = await ModelEvaluation.find({
-      ...ownerFilter,
-      jobId: { $in: jobIds },
-    })
-      .select('-results')
-      .sort({ createdAt: -1 }) // newest first — used for latestAttempt grouping below
-      .lean();
+    // Query 3 + GPU fetch run in PARALLEL:
+    // - getGpuActiveEvaluations has a 7s timeout; running it concurrently means
+    //   it never blocks the DB queries from returning.
+    // - gpuActiveEvals is supplementary (only used for live progress bars).
+    const [allEvals, gpuActiveEvals] = await Promise.all([
+      ModelEvaluation.find({
+        ...ownerFilter,
+        jobId: { $in: jobIds },
+      })
+        .select('-results')
+        .sort({ createdAt: -1 })
+        .lean(),
+      getGpuActiveEvaluations().catch(() => null), // never let GPU errors block leaderboard
+    ]);
 
     // Build lookup maps in JavaScript (O(n), no extra DB roundtrips)
     const latestAttemptMap = new Map<string, any>(); // any-status, newest per jobId
