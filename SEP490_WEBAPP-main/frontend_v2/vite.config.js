@@ -15,17 +15,6 @@ export default defineConfig({
     },
   },
   build: {
-    // Cảnh báo khi chunk > 1MB
     chunkSizeWarningLimit: 1000,
-    rollupOptions: {
-      output: {
-        // Tách vendor libraries ra chunk riêng để hash ổn định hơn
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'chart-vendor': ['recharts'],
-          'ui-vendor': ['lucide-react'],
-        },
-      },
-    },
   },
 })
