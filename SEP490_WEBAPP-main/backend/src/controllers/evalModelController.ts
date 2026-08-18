@@ -1484,11 +1484,28 @@ export const getEvaluation = async (req: Request, res: Response) => {
     const ownerFilter = getOwnerFilter(req);
 
     const { evalId } = req.params;
-    // Tối ưu hóa hiệu năng: loại bỏ các trường trace khổng lồ (megabytes) và systemPrompt khỏi lần load detail ban đầu.
-    // Nếu UI cần trace cụ thể, sẽ gọi API riêng biệt (lazy load).
+    // Tối ưu hóa: MongoDB projection trên mảng sâu (-results.prompt_trace) với document lớn cực kỳ chậm.
+    // Thay vào đó, ta chỉ exclude ở level root, sau đó xóa các trường khổng lồ bằng Node.js.
     const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ...ownerFilter })
-      .select('-results.prompt_trace -results.reference_trace -results.judge_router_metadata -baseResults.prompt_trace -baseResults.reference_trace -baseResults.judge_router_metadata -systemPrompt -gpuResult')
+      .select('-systemPrompt -gpuResult')
       .lean();
+      
+    if (doc) {
+      if (Array.isArray(doc.results)) {
+        doc.results.forEach((r: any) => {
+          delete r.prompt_trace;
+          delete r.reference_trace;
+          delete r.judge_router_metadata;
+        });
+      }
+      if (Array.isArray(doc.baseResults)) {
+        doc.baseResults.forEach((r: any) => {
+          delete r.prompt_trace;
+          delete r.reference_trace;
+          delete r.judge_router_metadata;
+        });
+      }
+    }
     if (!doc) {
       return res.status(404).json({ error: 'Evaluation not found' });
     }
