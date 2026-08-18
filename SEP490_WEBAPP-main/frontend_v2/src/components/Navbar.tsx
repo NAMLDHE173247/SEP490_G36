@@ -23,6 +23,9 @@ function Navbar() {
   const [showHistory, setShowHistory] = useState(false);
   const [gpuStats, setGpuStats] = useState<any>(null);
 
+  const canManageGpu = user?.role === 'admin' || user?.role === 'supervisor';
+  const unreadNotificationCount = notifications.filter((note: any) => !note.readAt).length;
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -175,9 +178,6 @@ function Navbar() {
     navigate('/dashboard', { state: { tab: tabName } });
     window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: tabName }));
   };
-
-  const unreadNotificationCount = notifications.filter((note: any) => !note.readAt).length;
-  const canManageGpu = user?.role === 'admin' || user?.role === 'supervisor';
 
   const toggleNotifications = async () => {
     const nextOpen = !notificationOpen;
