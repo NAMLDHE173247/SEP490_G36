@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -6,31 +6,33 @@ import {
   ChevronLeft, ChevronRight, Users, GitBranch, ClipboardList, Globe, TrendingUp, ClipboardCheck, ShieldCheck, History, ListChecks,
   ListTodo, UserCheck, FolderKanban, ClipboardSignature, CheckCircle, FileEdit, Search, GitMerge
 } from 'lucide-react';
-import HomeView from './HomeView';
-import ChatView from './ChatView';
-import DataPrepView from './DataPrepView';
-import AutoTrainView from './AutoTrainView';
-import ModelRegistryView from './ModelRegistryView';
-import ModelEvalView from './ModelEvalView';
-import AdminAccountView from './AdminAccountView';
-import VersionDataPrepView from './VersionDataPrepView';
-import ManagerAssignLabelingView from './ManagerAssignLabelingView';
-import StaffTasksView from './StaffTasksView';
-import StaffLabelView from './StaffLabelView';
-import StaffRewriteView from './StaffRewriteView';
-import LabelingTaskDetailView from './LabelingTaskDetailView';
-import ReviewQueueView from './ReviewQueueView';
-import StaffStatsView from './StaffStatsView';
-import MyStatsView from './MyStatsView';
-import SupervisorReviewView from './SupervisorReviewView';
-import CheckerReviewView from './CheckerReviewView';
-import CheckerRewriteView from './CheckerRewriteView';
-import TrainingHistoryView from './TrainingHistoryView';
-import ApiKeySettingsPage from './ApiKeySettingsPage';
-import HumanAuditReplayView from './HumanAuditReplayView';
-import HumanAuditManagerView from './HumanAuditManagerView';
-import ProfileSettingsView from './ProfileSettingsView';
-import AppSettingsView from './AppSettingsView';
+
+const HomeView = lazy(() => import('./HomeView'));
+const ChatView = lazy(() => import('./ChatView'));
+const DataPrepView = lazy(() => import('./DataPrepView'));
+const AutoTrainView = lazy(() => import('./AutoTrainView'));
+const ModelRegistryView = lazy(() => import('./ModelRegistryView'));
+const ModelEvalView = lazy(() => import('./ModelEvalView'));
+const AdminAccountView = lazy(() => import('./AdminAccountView'));
+const VersionDataPrepView = lazy(() => import('./VersionDataPrepView'));
+const ManagerAssignLabelingView = lazy(() => import('./ManagerAssignLabelingView'));
+const StaffTasksView = lazy(() => import('./StaffTasksView'));
+const StaffLabelView = lazy(() => import('./StaffLabelView'));
+const StaffRewriteView = lazy(() => import('./StaffRewriteView'));
+const LabelingTaskDetailView = lazy(() => import('./LabelingTaskDetailView'));
+const ReviewQueueView = lazy(() => import('./ReviewQueueView'));
+const StaffStatsView = lazy(() => import('./StaffStatsView'));
+const MyStatsView = lazy(() => import('./MyStatsView'));
+const SupervisorReviewView = lazy(() => import('./SupervisorReviewView'));
+const CheckerReviewView = lazy(() => import('./CheckerReviewView'));
+const CheckerRewriteView = lazy(() => import('./CheckerRewriteView'));
+const TrainingHistoryView = lazy(() => import('./TrainingHistoryView'));
+const ApiKeySettingsPage = lazy(() => import('./ApiKeySettingsPage'));
+const HumanAuditReplayView = lazy(() => import('./HumanAuditReplayView'));
+const HumanAuditManagerView = lazy(() => import('./HumanAuditManagerView'));
+const ProfileSettingsView = lazy(() => import('./ProfileSettingsView'));
+const AppSettingsView = lazy(() => import('./AppSettingsView'));
+
 
 function Dashboard() {
   const { user } = useAuth();
@@ -321,7 +323,9 @@ function Dashboard() {
 
       {/* Main Content */}
       <div className="page-content">
-        {renderContent()}
+        <Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontSize: '14px' }}>Đang tải...</div>}>
+          {renderContent()}
+        </Suspense>
       </div>
     </div>
   );
