@@ -81,7 +81,7 @@ function Navbar() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !canManageGpu) return;
     try {
       const h = JSON.parse(localStorage.getItem('gpu_url_history') || '[]');
       setUrlHistory(Array.isArray(h) ? h : []);
@@ -100,12 +100,14 @@ function Navbar() {
           setConnectionStatus(isOk ? 'connected' : 'error');
           if (isOk) setGpuStats(statsData);
         }
-      } catch (err) {
-        console.error('Failed to load GPU config', err);
+      } catch (err: any) {
+        if (err?.response?.status !== 403 && err?.response?.status !== 401) {
+          console.error('Failed to load GPU config', err);
+        }
       }
     };
     fetchConfig();
-  }, [user]);
+  }, [user, canManageGpu]);
 
   // Polling GPU status every 5 seconds if connected
   useEffect(() => {
