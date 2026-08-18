@@ -371,7 +371,9 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Conversation này không thuộc assignment của bạn' });
   }
   const [evaluation, reviewer] = await Promise.all([
-    ModelEvaluation.findOne({ modelEvalId, status: 'COMPLETED' }),
+    ModelEvaluation.findOne({ modelEvalId, status: 'COMPLETED' })
+      .select('ownerId results.conv_index results.item_id results.criteria_scores results.criteria_reasons results.effective_judge_model baseResults.conv_index baseResults.item_id baseResults.criteria_scores baseResults.criteria_reasons baseResults.effective_judge_model')
+      .lean(),
     User.findById(staffId).select('name').lean(),
   ]);
   if (!evaluation || !reviewer) return res.status(404).json({ error: 'Evaluation hoặc Staff không tồn tại' });
@@ -451,8 +453,8 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     }
   }
   const distinctReviewed = await HumanAuditReview.distinct('convIndex', { modelEvalId, reviewerId: staffId });
-  assignment.status = distinctReviewed.length >= assignment.assignedConvIndexes.length ? 'completed' : 'in_progress';
-  await assignment.save();
+  const status = distinctReviewed.length >= assignment.assignedConvIndexes.length ? 'completed' : 'in_progress';
+  await HumanAuditAssignment.updateOne({ _id: assignment._id }, { $set: { status } });
   return res.json({
     message: 'Review saved',
     review: {

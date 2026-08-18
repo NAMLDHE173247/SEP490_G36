@@ -347,7 +347,7 @@ export default function HumanAuditReplayView() {
             : item)
           : (previous.baseResults || []); // Don't touch base results when saving FT
 
-        return {
+        const nextState = {
           ...previous,
           results: updatedResults,
           baseResults: updatedBaseResults,
@@ -359,6 +359,8 @@ export default function HumanAuditReplayView() {
             completion_rate: completedItems / totalItems,
           },
         };
+        evalCache.current.set(previous.modelEvalId, nextState);
+        return nextState;
       });
       toast.success(skip ? 'Đã bỏ qua replay này' : `Đã lưu Human Audit (${scoringTarget === 'base' ? 'Base Model' : 'Fine-tuned Model'})`);
     } catch (error: any) {
