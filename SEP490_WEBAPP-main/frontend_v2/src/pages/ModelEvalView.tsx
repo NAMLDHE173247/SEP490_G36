@@ -2039,9 +2039,63 @@ export default function ModelEvalView() {
           </div>
 
           {loadingDetail ? (
-            <div className="detail-loading-box">
-              <RefreshCw className="animate-spin text-primary mr-2" size={20} />
-              Đang tải chi tiết kết quả đánh giá...
+            <div className="detail-loading-skeleton-wrap">
+              <div className="detail-loading-hero-banner">
+                <div className="detail-loading-spinner-wrap">
+                  <Sparkles className="animate-spin" size={24} />
+                </div>
+                <div className="detail-loading-text-group">
+                  <h4>⚡ Đang nạp dữ liệu đánh giá mô hình...</h4>
+                  <p>Đang tổng hợp điểm số AI Judge, chỉ số Bootstrap 95% CI & bảng so sánh paired rubrics.</p>
+                  <div className="detail-loading-bar-track">
+                    <div className="detail-loading-bar-fill" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="skeleton-dashboard-grid">
+                <div className="skeleton-meta-card">
+                  <div className="space-y-2">
+                    <div className="skeleton-shimmer h-6 w-64" />
+                    <div className="skeleton-shimmer h-4 w-48" />
+                  </div>
+                  <div className="skeleton-shimmer h-12 w-28 rounded-xl" />
+                </div>
+
+                <div className="skeleton-shimmer skeleton-verdict-card" />
+
+                <div className="skeleton-metrics-row">
+                  <div className="skeleton-metric-card">
+                    <div className="skeleton-shimmer h-5 w-32" />
+                    <div className="skeleton-shimmer h-10 w-24" />
+                    <div className="skeleton-shimmer h-4 w-40" />
+                  </div>
+                  <div className="skeleton-metric-card">
+                    <div className="skeleton-shimmer h-5 w-32" />
+                    <div className="skeleton-shimmer h-10 w-24" />
+                    <div className="skeleton-shimmer h-4 w-40" />
+                  </div>
+                </div>
+
+                <div className="skeleton-chart-card">
+                  <div className="skeleton-shimmer h-5 w-48" />
+                  <div className="skeleton-chart-bars-wrap">
+                    <div className="skeleton-shimmer skeleton-chart-bar h-24" />
+                    <div className="skeleton-shimmer skeleton-chart-bar h-36" />
+                    <div className="skeleton-shimmer skeleton-chart-bar h-16" />
+                    <div className="skeleton-shimmer skeleton-chart-bar h-40" />
+                    <div className="skeleton-shimmer skeleton-chart-bar h-28" />
+                    <div className="skeleton-shimmer skeleton-chart-bar h-32" />
+                  </div>
+                </div>
+
+                <div className="skeleton-table-card">
+                  <div className="skeleton-shimmer h-6 w-56 mb-2" />
+                  <div className="skeleton-shimmer h-10 w-full" />
+                  <div className="skeleton-shimmer h-10 w-full" />
+                  <div className="skeleton-shimmer h-10 w-full" />
+                </div>
+              </div>
             </div>
           ) : detailLoadError ? (
             <div className="detail-load-error">
