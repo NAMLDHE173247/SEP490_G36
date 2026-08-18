@@ -45,7 +45,11 @@ export default function HumanAuditManagerView() {
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
   const [checkers, setCheckers] = useState<any[]>([]);
-  const [selectedEvalId, setSelectedEvalId] = useState('');
+  const [selectedEvalId, setSelectedEvalIdState] = useState(() => localStorage.getItem('ham_selected_eval_id') || '');
+  const setSelectedEvalId = useCallback((id: string) => {
+    setSelectedEvalIdState(id);
+    if (id) localStorage.setItem('ham_selected_eval_id', id);
+  }, []);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [selectedCheckerId, setSelectedCheckerId] = useState('');
   const [detail, setDetail] = useState<any>(null);

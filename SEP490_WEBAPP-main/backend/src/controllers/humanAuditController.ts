@@ -177,7 +177,7 @@ export const listManagedHumanAudits = async (req: Request, res: Response) => {
   const evalIds = evaluations.map(item => item.modelEvalId);
   const [assignments, reviews, adjudications, histories] = await Promise.all([
     HumanAuditAssignment.find({ modelEvalId: { $in: evalIds } }).populate('checkerId', 'name email').lean(),
-    HumanAuditReview.find({ modelEvalId: { $in: evalIds } }).lean(),
+    HumanAuditReview.find({ modelEvalId: { $in: evalIds } }).select('modelEvalId convIndex verdict targetModel reviewerId humanScores aiConflict').lean(),
     HumanAuditAdjudication.find({ modelEvalId: { $in: evalIds } }).lean(),
     TrainingHistory.find({ jobId: { $in: evaluations.map(item => item.jobId) } }).select('jobId projectName').lean(),
   ]);
@@ -483,7 +483,7 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
   const evaluation = await findReviewableEvaluation(
     req,
     String(req.params.evalId || ''),
-    '-gpuResult -hypothesisDecisions -adaptiveDiagnostic -researchStatistics -extendedReferences -protocolManifest -environmentManifest -loadMetrics -summary -baseSummary -delta'
+    'modelEvalId jobId ftModelRepo baseModelRepo totalConversations ownerId results.conv_index results.item_id results.criteria_scores results.criteria_reasons results.replay_turns baseResults.conv_index baseResults.item_id baseResults.criteria_scores baseResults.criteria_reasons baseResults.replay_turns'
   );
   if (!evaluation) return res.status(404).json({ error: 'Evaluation không tồn tại hoặc không thuộc quyền quản lý' });
   const [assignments, reviews, adjudications] = await Promise.all([
