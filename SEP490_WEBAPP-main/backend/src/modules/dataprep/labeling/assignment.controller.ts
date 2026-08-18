@@ -699,7 +699,7 @@ export class AssignmentController {
         priority: s.priority || 'medium',
         active: true,
       }));
-      await DatasetSampleAssignment.insertMany(newSampleDocs, { ordered: false }).catch(() => {});
+      await DatasetSampleAssignment.insertMany(newSampleDocs, { ordered: false }).catch(() => { });
 
       // 2) Khóa mẫu của người cũ (giữ để tính công)
       await DatasetSampleAssignment.updateMany(
@@ -752,7 +752,7 @@ export class AssignmentController {
           actorId: mongoose.Types.ObjectId.isValid(String(assignedBy)) ? new mongoose.Types.ObjectId(String(assignedBy)) : undefined,
           type: 'info',
           message: `Bạn được giao tiếp nhận ${fromSamples.length} mẫu (thay thế nhân sự).`,
-        }).catch(() => {});
+        }).catch(() => { });
       }
 
       return res.status(200).json({
@@ -845,7 +845,7 @@ export class AssignmentController {
           priority: s.priority || 'medium',
           active: true,
         }));
-        await DatasetSampleAssignment.insertMany(docs, { ordered: false }).catch(() => {});
+        await DatasetSampleAssignment.insertMany(docs, { ordered: false }).catch(() => { });
 
         await DatasetAssignmentSubmission.create({
           projectId,
@@ -878,7 +878,7 @@ export class AssignmentController {
             actorId: mongoose.Types.ObjectId.isValid(String(assignedBy)) ? new mongoose.Types.ObjectId(String(assignedBy)) : undefined,
             type: 'info',
             message: `Bạn được thêm vào xử lý ${sourceSamples.length} mẫu.`,
-          }).catch(() => {});
+          }).catch(() => { });
         }
       }
 
@@ -1469,14 +1469,14 @@ export class AssignmentController {
 
       const sampleIdArray = Object.keys(sampleIdMap);
       const sampleObjectIdArray = sampleIdArray.filter(id => mongoose.Types.ObjectId.isValid(id)).map(id => new mongoose.Types.ObjectId(id));
-      const labels = await LabelAssignment.find({ 
+      const labels = await LabelAssignment.find({
         sampleId: { $in: sampleObjectIdArray },
         targetScope: 'sample'
       });
 
-      const canonicalLabels = await DatasetCanonicalLabel.find({ 
+      const canonicalLabels = await DatasetCanonicalLabel.find({
         sampleId: { $in: sampleObjectIdArray },
-        targetScope: 'sample' 
+        targetScope: 'sample'
       }).select('sampleId labels targetTextSnapshot').lean();
       const canonicalMap = new Map(canonicalLabels.map((c: any) => [String(c.sampleId), c]));
       const resolvedSampleIds = new Set(canonicalLabels.map((c: any) => String(c.sampleId)));
@@ -1524,7 +1524,7 @@ export class AssignmentController {
       for (const sIndexStr of Object.keys(samplesMap)) {
         const sIndex = Number(sIndexStr);
         const sampleObjId = samplesMap[sIndex].sampleObjectId;
-        
+
         let comp: any = null;
         try {
           comp = await buildAssignmentSampleComparison(versionId, String(sampleObjId));
@@ -2204,13 +2204,15 @@ export class AssignmentController {
                 type: 'soft',
                 targetScope: 'sample',
               },
-              update: { $set: {
-                name: 'Label',
-                type: 'soft',
-                targetScope: 'sample',
-                source: 'human',
-                targetTextSnapshot: JSON.stringify(labelData),
-              } },
+              update: {
+                $set: {
+                  name: 'Label',
+                  type: 'soft',
+                  targetScope: 'sample',
+                  source: 'human',
+                  targetTextSnapshot: JSON.stringify(labelData),
+                }
+              },
               upsert: true,
             }
           }];
@@ -2460,14 +2462,14 @@ export class AssignmentController {
       }
 
       // Check if this specific staff has any pending conflicts in this version
-      const conflicts = await buildAssignmentConflictList(String(submission.datasetVersionId), { 
-        status: 'pending', 
-        assigneeId: String(submission.assigneeId) 
+      const conflicts = await buildAssignmentConflictList(String(submission.datasetVersionId), {
+        status: 'pending',
+        assigneeId: String(submission.assigneeId)
       });
 
       if (conflicts.length > 0) {
-        return res.status(400).json({ 
-          success: false, 
+        return res.status(400).json({
+          success: false,
           error: `Không thể duyệt! Nhân viên này đang có ${conflicts.length} mẫu gán nhãn bị conflict (xung đột) chưa được Checker giải quyết.`
         });
       }
@@ -2609,7 +2611,7 @@ export class AssignmentController {
       if (!batchName) {
         return res.status(400).json({ success: false, error: 'Missing batchName' });
       }
-      
+
       const query: any = {
         datasetVersionId: versionId,
         name: new RegExp('^' + batchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
@@ -2644,23 +2646,23 @@ export class AssignmentController {
           ? { $set: { checker: checkerId, checkerDeadline: parsedCheckerDeadline }, $unset: { checkerReminderSentAt: 1, checkerOverdueNotifiedAt: 1 } }
           : { $unset: { checker: 1, checkerDeadline: 1, checkerReminderSentAt: 1, checkerOverdueNotifiedAt: 1 } }
       );
-      
+
       // Fetch submissions to update corresponding sample assignments
       const subs = await DatasetAssignmentSubmission.find(query).select('_id assigneeId batchStart batchCount').lean();
       const sampleScopes = subs.map((sub: any) => ({
         assigneeId: sub.assigneeId,
         sampleIndex: { $gte: Number(sub.batchStart), $lt: Number(sub.batchStart) + Number(sub.batchCount) },
       }));
-      
+
       await DatasetSampleAssignment.updateMany(
         { datasetVersionId: versionId, $or: sampleScopes },
         checkerId
           ? { $set: { checkerId: new mongoose.Types.ObjectId(String(checkerId)) } }
           : { $unset: { checkerId: 1 } }
       );
-      
+
       broadcastAssignmentUpdate({ type: 'assignment_updated', versionId, action: 'update_checker' });
-      
+
       return res.status(200).json({ success: true, message: 'Updated checker successfully' });
     } catch (e: any) {
       console.error('[AssignmentController] updateBatchChecker error:', e);
@@ -2977,15 +2979,15 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
             for (const intent of intents.filter(Boolean)) {
               const mappedIntent = mapToStandardIntent(intent);
               hardLabelsToInsert.push({
-              sampleId: softLabel.sampleId,
-              name: mappedIntent,
-              type: 'hard',
-              targetScope: 'message',
-              messageIndex: msgIdx,
-              messageRole: 'user',
-              source: 'human',
-              targetTextSnapshot: contentSnapshot,
-              createdBy: submission.assigneeId
+                sampleId: softLabel.sampleId,
+                name: mappedIntent,
+                type: 'hard',
+                targetScope: 'message',
+                messageIndex: msgIdx,
+                messageRole: 'user',
+                source: 'human',
+                targetTextSnapshot: contentSnapshot,
+                createdBy: submission.assigneeId
               });
             }
           }
@@ -2995,15 +2997,15 @@ async function promoteSubmissionLabels(submission: any): Promise<PromotionResult
             for (const action of actions.filter(Boolean)) {
               const mappedAction = mapToStandardAction(action);
               hardLabelsToInsert.push({
-              sampleId: softLabel.sampleId,
-              name: mappedAction,
-              type: 'hard',
-              targetScope: 'message',
-              messageIndex: msgIdx,
-              messageRole: 'assistant',
-              source: 'human',
-              targetTextSnapshot: contentSnapshot,
-              createdBy: submission.assigneeId
+                sampleId: softLabel.sampleId,
+                name: mappedAction,
+                type: 'hard',
+                targetScope: 'message',
+                messageIndex: msgIdx,
+                messageRole: 'assistant',
+                source: 'human',
+                targetTextSnapshot: contentSnapshot,
+                createdBy: submission.assigneeId
               });
             }
           }

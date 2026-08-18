@@ -438,7 +438,7 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
     ).lean();
   } catch (err: any) {
     if (err?.code === 11000) {
-      await HumanAuditReview.syncIndexes().catch(() => {});
+      await HumanAuditReview.syncIndexes().catch(() => { });
       review = await HumanAuditReview.findOneAndUpdate(
         { modelEvalId, convIndex, reviewerId: staffId, targetModel },
         updateOperation,

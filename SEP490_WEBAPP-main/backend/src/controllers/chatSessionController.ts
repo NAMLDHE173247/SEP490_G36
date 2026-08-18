@@ -15,7 +15,7 @@ export const getSessions = async (req: Request, res: Response): Promise<void> =>
     const sessions = await ChatSession.find({ ownerId }, { 'messages': { $slice: -2 } }) // Return last 2 messages for sidebar preview
       .sort({ updatedAt: -1 })
       .limit(limit);
-      
+
     res.json(sessions);
   } catch (error: any) {
     console.error('Get Sessions Error:', error);
@@ -109,7 +109,7 @@ export const appendMessageToSession = async (req: Request, res: Response): Promi
     session.messages.push({ role: 'user', content: userMessage, createdAt: new Date() });
     session.messages.push({ role: 'ai', content: aiMessage, model, responseTime, createdAt: new Date() });
     session.updatedAt = new Date();
-    
+
     await session.save();
     res.json(session);
   } catch (error: any) {

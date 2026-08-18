@@ -104,6 +104,7 @@ app.use(cors({
     callback(new Error(`Origin ${origin} is not allowed by CORS policy.`));
   },
   credentials: true,
+  maxAge: 86400, // Cache CORS preflight in browser for 24h
 }));
 app.use(compression({
   filter: (req, res) => {

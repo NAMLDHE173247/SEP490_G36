@@ -520,7 +520,7 @@ export class QualityController {
         res.status(409).json({ error: `A ${existingTask.status} rewrite cannot be reassigned or overwritten.` });
         return;
       }
-      
+
       const origAssignment = await DatasetSampleAssignment.findOne({
         datasetVersionId: versionId,
         sampleId,
@@ -627,7 +627,7 @@ export class QualityController {
         res.status(400).json({ error: 'Batch contains inactive Staff or samples outside this dataset version.' });
         return;
       }
-      
+
       const sampleCheckerMap = new Map<string, string>();
       origAssignments.forEach((assign: any) => {
         if (assign.checkerId) {
@@ -680,7 +680,7 @@ export class QualityController {
         const targetIndex = Number.isInteger(parsedIndex) && parsedIndex >= 0 ? parsedIndex : null;
         const contextMode: RewriteContextMode = REWRITE_CONTEXT_MODES.includes(row.contextMode) ? row.contextMode : 'n-2:n+3';
         const originalText = String(row.originalText || (targetIndex !== null ? messages[targetIndex]?.content : '') || '');
-        
+
         const updateFields: any = {
           assigneeId: new mongoose.Types.ObjectId(row.assigneeId),
           assignedBy: new mongoose.Types.ObjectId(actorId),
@@ -698,7 +698,7 @@ export class QualityController {
           reviewNote: '',
           checkerReviewNote: ''
         };
-        
+
         updateFields.checkerId = new mongoose.Types.ObjectId(resolvedCheckerIds[rowIndex]);
 
         return {
@@ -1057,7 +1057,7 @@ export class QualityController {
       }));
 
       // Find the target message index (assume it's the last assistant message if not marked)
-      const targetIndex = messages.findIndex(m => (task.conversationMessages as any)?.[m.messageIndex]?.isTarget) !== -1 
+      const targetIndex = messages.findIndex(m => (task.conversationMessages as any)?.[m.messageIndex]?.isTarget) !== -1
         ? messages.findIndex(m => (task.conversationMessages as any)?.[m.messageIndex]?.isTarget)
         : messages.map(m => m.role).lastIndexOf('assistant');
 
@@ -1078,7 +1078,7 @@ export class QualityController {
           messageIndex: userMsgIndexInSample,
           messageRole: 'user',
         }).lean();
-        
+
         if (userLabels.length > 0) {
           // Assume the first one is the intent
           previousUserIntent = String(userLabels[0].name || '').toUpperCase();
@@ -1094,7 +1094,7 @@ export class QualityController {
       const model = typeof req.body?.model === 'string' ? req.body.model.trim() : undefined;
       const provider = await apiKeyService.createProvider(userId, providerName, true, model || undefined);
       const autoLabelService = new AutoLabelV2Service(provider);
-      
+
       let suggestion;
       try {
         suggestion = await autoLabelService.preview(messages);
@@ -1110,30 +1110,30 @@ export class QualityController {
       }
 
       const action = assistantLabel.action;
-      
+
       // Check harmful actions
       const { HARMFUL_ACTIONS } = await import('./quality.service.js');
       const harmfulSet = HARMFUL_ACTIONS[previousUserIntent];
       if (harmfulSet && harmfulSet.has(action)) {
-        res.json({ 
-          pass: false, 
-          error: `Hành động "${action}" được coi là độc hại (Harmful) đối với intent "${previousUserIntent}". Vui lòng sửa lại cách tiếp cận.` 
+        res.json({
+          pass: false,
+          error: `Hành động "${action}" được coi là độc hại (Harmful) đối với intent "${previousUserIntent}". Vui lòng sửa lại cách tiếp cận.`
         });
         return;
       }
 
       // Check expected actions
       if (expectedActions.length > 0 && !expectedActions.includes(action)) {
-        res.json({ 
-          pass: false, 
-          error: `Hành động "${action}" không khớp với yêu cầu của học sinh (Intent: ${previousUserIntent}). Các hành động hợp lệ: ${expectedActions.join(', ')}.` 
+        res.json({
+          pass: false,
+          error: `Hành động "${action}" không khớp với yêu cầu của học sinh (Intent: ${previousUserIntent}). Các hành động hợp lệ: ${expectedActions.join(', ')}.`
         });
         return;
       }
 
-      res.json({ 
-        pass: true, 
-        message: `Phản hồi hợp lệ (Nhận diện hành động: ${action}).` 
+      res.json({
+        pass: true,
+        message: `Phản hồi hợp lệ (Nhận diện hành động: ${action}).`
       });
 
     } catch (error: any) {
@@ -1214,7 +1214,7 @@ export class QualityController {
       const context = Array.isArray(messages) && messages.length
         ? messages
         : [{ role: 'assistant', content: originalText, isTarget: true }];
-      
+
       const prompt = {
         task: 'Rewrite only the target AI tutor response. Do not rewrite student messages or non-target assistant turns.',
         reason: reason || 'Improve educational quality.',

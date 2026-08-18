@@ -74,7 +74,7 @@ class ApiKeyService {
         updateObj[`apiKeys.${provider}`] = key ? encrypt(key) : '';
       }
     }
-    
+
     if (Object.keys(updateObj).length > 0) {
       await User.findByIdAndUpdate(userId, { $set: updateObj });
     }
@@ -83,7 +83,7 @@ class ApiKeyService {
   async updateGlobalKeys(keys: Partial<Record<ProviderType, string>>): Promise<void> {
     const config = await GlobalConfig.findOne({ key: 'global_api_keys' });
     let value = config?.value || {};
-    
+
     for (const [provider, key] of Object.entries(keys)) {
       if (key !== undefined) {
         value[provider] = key ? encrypt(key) : '';
@@ -130,7 +130,7 @@ class ApiKeyService {
       if (key && key.startsWith('AIzaSy')) {
         return new GeminiProvider(isJson, key);
       }
-      
+
       // Fallback: If the Gemini key is invalid/missing but we have OpenRouter key, use OpenRouter
       if (openRouterKey || process.env.OPENROUTER_API_KEY) {
         console.log('[ApiKeyService] Gemini key is invalid. Falling back to OpenRouter.');
@@ -139,7 +139,7 @@ class ApiKeyService {
           RESEARCH_MODEL_CATALOG.gemini,
         );
       }
-      
+
       // Secondary fallback to Groq
       const groqKey = await this.getApiKeyForUser(userId, 'groq').catch(() => '');
       if (groqKey || process.env.GROQ_API_KEY) {
