@@ -66,6 +66,8 @@ export default function HumanAuditManagerView() {
   const [modalTargetFilter, setModalTargetFilter] = useState<'all' | 'ft' | 'base'>('ft');
   const [activeStaffId, setActiveStaffId] = useState<string>('');
   const [filterReviewerId, setFilterReviewerId] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const computeModelConflictBreakdown = (reviews: any[], aiScores?: any, aiBaseScores?: any) => {
     const unique = deduplicateReviews(reviews);
@@ -257,6 +259,16 @@ export default function HumanAuditManagerView() {
     return !isAnyConflict && !item.adjudication;
   }), [detail, filter, filterReviewerId]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, filterReviewerId, selectedEvalId]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleItems.length / pageSize));
+  const paginatedItems = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return visibleItems.slice(start, start + pageSize);
+  }, [visibleItems, currentPage, pageSize]);
+
   const toggleStaff = (id: string) => setSelectedStaffIds(previous => (
     previous.includes(id) ? previous.filter(item => item !== id) : [...previous, id]
   ));
@@ -437,7 +449,7 @@ export default function HumanAuditManagerView() {
                   </td>
                 </tr>
               ) : (
-                visibleItems.map((item: any) => {
+                paginatedItems.map((item: any) => {
                   const allUniqueReviews = deduplicateReviews(item.reviews || []);
                   const uniqueReviews = filterReviewerId === 'all'
                     ? allUniqueReviews
@@ -528,6 +540,52 @@ export default function HumanAuditManagerView() {
             </tbody>
           </table>
           {!loadingDetail && !visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}
+          {!loadingDetail && visibleItems.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: '12px' }}>
+              <div style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>
+                Hiển thị <b>{(currentPage - 1) * pageSize + 1}</b> – <b>{Math.min(currentPage * pageSize, visibleItems.length)}</b> trong số <b>{visibleItems.length}</b> replay
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#475569' }}>
+                  <span>Hiển thị:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#fff', cursor: 'pointer', fontWeight: 600 }}
+                  >
+                    <option value={15}>15 / trang</option>
+                    <option value={30}>30 / trang</option>
+                    <option value={50}>50 / trang</option>
+                    <option value={100}>100 / trang</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: currentPage > 1 ? 'pointer' : 'not-allowed', opacity: currentPage > 1 ? 1 : 0.5, fontSize: '0.8rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <ChevronLeft size={14} /> Trước
+                  </button>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, padding: '0 8px', color: '#334155' }}>
+                    Trang {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: currentPage < totalPages ? 'pointer' : 'not-allowed', opacity: currentPage < totalPages ? 1 : 0.5, fontSize: '0.8rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    Sau <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
