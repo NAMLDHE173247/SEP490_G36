@@ -295,6 +295,10 @@ async function getGpuActiveEvaluations(): Promise<GpuActiveEvaluation[] | null> 
         eval_job_id: String(job.eval_job_id),
         status: String(job.status || 'UNKNOWN'),
         job_id: job.job_id ? String(job.job_id) : undefined,
+        // Map progress & stage fields so active-slots can display real % instead of always 0
+        progress: typeof job.progress === 'number' ? job.progress : undefined,
+        stage_label: job.stage_label ? String(job.stage_label) : undefined,
+        stage_detail: job.stage_detail ? String(job.stage_detail) : undefined,
       }));
   } catch {
     return null;
@@ -1295,13 +1299,50 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
       .lean();
     const historyMap = new Map(histories.map(h => [h.jobId, h]));
 
-    const slots: Array<Record<string, any>> = [];
-    const maxSlots = gpuStatus?.max_evals || 3;
     const gpuEvalList = gpuEvaluations || [];
+    const maxSlots = gpuStatus?.max_evals || 3;
+
+    // Fetch detailed status (progress, stage) for each GPU job in parallel
+    // Uses a short timeout to avoid blocking the response
+    const detailMap = new Map<string, { progress: number; stage_label: string; stage_detail: string }>();
+    if (gpuEvalList.length > 0) {
+      const detailFetches = gpuEvalList.map(async (job) => {
+        // If /api/eval/active already returned progress, use it directly
+        if (typeof job.progress === 'number' && job.progress > 0) {
+          detailMap.set(job.eval_job_id, {
+            progress: job.progress,
+            stage_label: job.stage_label || 'ĐANG THỰC THI',
+            stage_detail: job.stage_detail || '',
+          });
+          return;
+        }
+        // Otherwise probe /api/eval/status/:id for real-time progress
+        try {
+          const statusResp = await fetch(
+            `${configService.getGpuUrl()}/api/eval/status/${encodeURIComponent(job.eval_job_id)}`,
+            { headers: GPU_TUNNEL_HEADERS, signal: AbortSignal.timeout(4000) },
+          );
+          if (statusResp.ok) {
+            const statusData = await statusResp.json() as any;
+            detailMap.set(job.eval_job_id, {
+              progress: typeof statusData.progress === 'number' ? statusData.progress : 0,
+              stage_label: statusData.stage_label || 'ĐANG THỰC THI',
+              stage_detail: statusData.stage_detail || '',
+            });
+          }
+        } catch {
+          // Ignore — slot will show 0% as fallback
+        }
+      });
+      await Promise.all(detailFetches);
+    }
+
+    const slots: Array<Record<string, any>> = [];
 
     for (let i = 0; i < maxSlots; i++) {
       const gpuJob = gpuEvalList[i];
       if (gpuJob) {
+        const detail = detailMap.get(gpuJob.eval_job_id);
         const evalDoc = myActiveEvals.find(e => e.modelEvalId === gpuJob.eval_job_id);
         if (evalDoc) {
           const hist = historyMap.get(evalDoc.jobId);
@@ -1312,9 +1353,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
             projectName: hist?.projectName || 'Dự án Fine-tune',
             baseModel: hist?.baseModel || evalDoc.baseModelRepo || 'Base Model',
             status: gpuJob.status || evalDoc.status,
-            progress: typeof gpuJob.progress === 'number' ? gpuJob.progress : 0,
-            stage_label: gpuJob.stage_label || 'Đang thực thi',
-            stage_detail: gpuJob.stage_detail || '',
+            progress: detail?.progress ?? (typeof gpuJob.progress === 'number' ? gpuJob.progress : 0),
+            stage_label: detail?.stage_label || gpuJob.stage_label || 'Đang thực thi',
+            stage_detail: detail?.stage_detail || gpuJob.stage_detail || '',
             isMine: true,
             startedAt: evalDoc.startedAt,
           });
@@ -1326,9 +1367,9 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
             projectName: 'GPU Job (Khác)',
             baseModel: '—',
             status: gpuJob.status || 'RUNNING',
-            progress: typeof gpuJob.progress === 'number' ? gpuJob.progress : 0,
-            stage_label: gpuJob.stage_label || 'Đang thực thi',
-            stage_detail: gpuJob.stage_detail || '',
+            progress: detail?.progress ?? (typeof gpuJob.progress === 'number' ? gpuJob.progress : 0),
+            stage_label: detail?.stage_label || gpuJob.stage_label || 'Đang thực thi',
+            stage_detail: detail?.stage_detail || gpuJob.stage_detail || '',
             isMine: false,
             startedAt: null,
           });
