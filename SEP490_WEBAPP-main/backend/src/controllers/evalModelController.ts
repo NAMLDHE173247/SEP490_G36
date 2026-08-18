@@ -1484,9 +1484,9 @@ export const getEvaluation = async (req: Request, res: Response) => {
     const ownerFilter = getOwnerFilter(req);
     const { evalId } = req.params;
 
-    // Tối ưu hóa: Tìm theo modelEvalId (indexed unique) trước để đạt tốc độ sub-ms.
+    // Tối ưu hóa MongoDB Projection: loại bỏ triệt để các mảng/object text dung lượng lớn tại tầng BSON database.
     const doc = await ModelEvaluation.findOne({ modelEvalId: evalId })
-      .select('-systemPrompt -gpuResult')
+      .select('-systemPrompt -gpuResult -results.prompt_trace -results.reference_trace -results.judge_router_metadata -baseResults.replay_turns -baseResults.prompt_trace -baseResults.reference_trace -baseResults.judge_router_metadata -baseResults.criteria_reasons -baseResults.telemetry')
       .lean();
 
     if (!doc) {
@@ -1510,6 +1510,13 @@ export const getEvaluation = async (req: Request, res: Response) => {
             output_tokens: r.telemetry.output_tokens,
           };
         }
+        if (Array.isArray(r.replay_turns)) {
+          r.replay_turns = r.replay_turns.map((t: any) => ({
+            user: String(t.user || ''),
+            model: String(t.model || ''),
+            latency_ms: Number(t.latency_ms || 0),
+          }));
+        }
       });
     }
 
@@ -1527,6 +1534,8 @@ export const getEvaluation = async (req: Request, res: Response) => {
     const history = await TrainingHistory.findOne({ jobId: doc.jobId, ...ownerFilter })
       .select('pinnedEvalId projectName')
       .lean();
+
+    res.setHeader('Cache-Control', 'private, max-age=30, stale-while-revalidate=120');
 
     return res.json({
       ...doc,
