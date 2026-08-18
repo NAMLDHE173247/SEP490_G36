@@ -133,13 +133,26 @@ export default function HumanAuditManagerView() {
     }
   }, [selectedEvalId, isChecker]);
 
-  const loadDetail = useCallback(async (evalId: string) => {
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const detailCache = React.useRef<Map<string, any>>(new Map());
+
+  const loadDetail = useCallback(async (evalId: string, forceRefresh = false) => {
     if (!evalId) return;
+    const cached = detailCache.current.get(evalId);
+    if (cached && !forceRefresh) {
+      setDetail(cached);
+      return;
+    }
+    setLoadingDetail(true);
     try {
-      setDetail(await apiService.getManagedHumanAuditDetail(evalId));
+      const data = await apiService.getManagedHumanAuditDetail(evalId);
+      detailCache.current.set(evalId, data);
+      setDetail(data);
     } catch (error: any) {
       toast.error('Lỗi khi tải chi tiết dự án Human Audit');
       setDetail(null);
+    } finally {
+      setLoadingDetail(false);
     }
   }, []);
 
@@ -392,93 +405,112 @@ export default function HumanAuditManagerView() {
 
       <section className="ham-review-card">
         <header><div><h2>Đối chiếu theo từng replay trong gói project</h2><p>Một Staff vẫn tạo được Human Audit. Từ 2 Staff trở lên mới có thêm chỉ số đồng thuận (IAA); đây không phải điều kiện khóa.</p></div><div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}><div className="ham-filters">{(['all', 'conflict', 'resolved', 'pending'] as ManagerFilter[]).map(value => <button type="button" className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{value === 'all' ? 'Tất cả' : value === 'conflict' ? 'Xung đột' : value === 'resolved' ? 'Đã chốt' : 'Chờ chấm'}</button>)}</div>{reviewersInDetail.length >= 1 && (<div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Users size={14} style={{ color: '#6366f1', flexShrink: 0 }} /><select value={filterReviewerId} onChange={e => setFilterReviewerId(e.target.value)} style={{ fontSize: '0.82rem', padding: '4px 10px', borderRadius: '8px', border: '1px solid #c7d2fe', background: filterReviewerId !== 'all' ? '#eef2ff' : '#ffffff', color: filterReviewerId !== 'all' ? '#4338ca' : '#475569', fontWeight: filterReviewerId !== 'all' ? 700 : 400, cursor: 'pointer' }}><option value="all">Tất cả Staff</option>{reviewersInDetail.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>{filterReviewerId !== 'all' && (<span style={{ fontSize: '0.72rem', padding: '2px 8px', borderRadius: '10px', background: '#fee2e2', color: '#b91c1c', fontWeight: 700 }}>Đang lọc 1 Staff</span>)}</div>)}</div></header>
-        <div className="ham-table-wrap"><table><thead><tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr></thead><tbody>{visibleItems.map((item: any) => {
-          const allUniqueReviews = deduplicateReviews(item.reviews || []);
-          const uniqueReviews = filterReviewerId === 'all'
-            ? allUniqueReviews
-            : allUniqueReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-          const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
-          const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
-          const rawReviews = item.adjudication?.finalScores
-            ? [
-                { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
-                { humanScores: item.adjudication.finalScores, targetModel: 'base' }
-              ]
-            : (item.reviews || []);
-          const reviewsToUse = filterReviewerId === 'all'
-            ? rawReviews
-            : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
-          const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
-          const ftCount = breakdown.ft.count;
-          const baseCount = breakdown.base.count;
+        <div className="ham-table-wrap">
+          <table>
+            <thead>
+              <tr><th>Replay</th><th>Số bản chấm</th><th>Chênh lệch lớn nhất</th><th>Tiêu chí xung đột</th><th>Trạng thái</th><th /></tr>
+            </thead>
+            <tbody>
+              {loadingDetail ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '36px 0', color: '#6366f1', fontWeight: 600 }}>
+                    <RefreshCw className="spin" size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} />
+                    Đang đối chiếu dữ liệu Human Audit...
+                  </td>
+                </tr>
+              ) : (
+                visibleItems.map((item: any) => {
+                  const allUniqueReviews = deduplicateReviews(item.reviews || []);
+                  const uniqueReviews = filterReviewerId === 'all'
+                    ? allUniqueReviews
+                    : allUniqueReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
+                  const baseAi = item.baseItem?.criteria_scores || item.base_item?.criteria_scores || item.baseItem?.ai_scores || item.base_item?.ai_scores || item.ai_base_scores || item.base_ai_scores || item.ai_scores;
+                  const ftAi = item.criteria_scores || item.ai_scores || item.ai_ft_scores || item.ft_ai_scores;
+                  const rawReviews = item.adjudication?.finalScores
+                    ? [
+                        { humanScores: item.adjudication.finalScores, targetModel: 'ft' },
+                        { humanScores: item.adjudication.finalScores, targetModel: 'base' }
+                      ]
+                    : (item.reviews || []);
+                  const reviewsToUse = filterReviewerId === 'all'
+                    ? rawReviews
+                    : rawReviews.filter((r: any) => extractReviewerId(r) === filterReviewerId);
+                  const breakdown = computeModelConflictBreakdown(reviewsToUse, ftAi, baseAi);
+                  const ftCount = breakdown.ft.count;
+                  const baseCount = breakdown.base.count;
 
-          return (
-            <tr key={item.conv_index}>
-              <td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td>
-              <td>
-                <strong>{uniqueReviews.length}</strong>
-                {Boolean(uniqueReviews.length) && (
-                  <div style={{ fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
-                    {ftCount > 0 && <span style={{ color: '#4f46e5', marginRight: '4px' }}>{ftCount} FT</span>}
-                    {baseCount > 0 && <span style={{ color: '#b45309' }}>{baseCount} Base</span>}
-                  </div>
-                )}
-              </td>
-              <td>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.8rem' }}>
-                  {ftCount > 0 && (
-                    <span style={{ color: breakdown.ft.maxDelta >= 2 ? '#dc2626' : breakdown.ft.maxDelta >= 1 ? '#d97706' : '#059669', fontWeight: 600 }}>
-                      🎯 FT: Δ {breakdown.ft.maxDelta.toFixed(1)}
-                    </span>
-                  )}
-                  {baseCount > 0 && (
-                    <span style={{ color: breakdown.base.maxDelta >= 2 ? '#dc2626' : breakdown.base.maxDelta >= 1 ? '#d97706' : '#059669', fontWeight: 600 }}>
-                      🔲 Base: Δ {breakdown.base.maxDelta.toFixed(1)}
-                    </span>
-                  )}
-                  {!ftCount && !baseCount && <span>{(item.inter_rater.max_delta || 0).toFixed(1)}</span>}
-                </div>
-              </td>
-              <td>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.78rem' }}>
-                  {ftCount > 0 && (
-                    <span>🎯 FT: <b>{breakdown.ft.conflicts.join(', ') || 'Không'}</b></span>
-                  )}
-                  {baseCount > 0 && (
-                    <span>🔲 Base: <b>{breakdown.base.conflicts.join(', ') || 'Không'}</b></span>
-                  )}
-                  {!ftCount && !baseCount && <span>{item.inter_rater.conflict_criteria.join(', ') || '—'}</span>}
-                </div>
-              </td>
-              <td>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {item.inter_rater.status === 'resolved' ? (
-                    <span className="ham-status resolved">Đã chốt</span>
-                  ) : (
-                    <>
-                      {ftCount > 0 && (
-                        <span className={`ham-status ${breakdown.ft.maxDelta >= 2 ? 'conflict' : 'agreement'}`} style={{ fontSize: '0.7rem' }}>
-                          🎯 FT: {breakdown.ft.maxDelta >= 2 ? 'Critical Conflict' : breakdown.ft.maxDelta >= 1 ? 'Minor Conflict' : 'Đồng thuận'}
-                        </span>
-                      )}
-                      {baseCount > 0 && (
-                        <span className={`ham-status ${breakdown.base.maxDelta >= 2 ? 'conflict' : 'agreement'}`} style={{ fontSize: '0.7rem', background: breakdown.base.maxDelta >= 2 ? '#fff7ed' : undefined, color: breakdown.base.maxDelta >= 2 ? '#c2410c' : undefined }}>
-                          🔲 Base: {breakdown.base.maxDelta >= 2 ? 'Critical Conflict' : breakdown.base.maxDelta >= 1 ? 'Minor Conflict' : 'Đồng thuận'}
-                        </span>
-                      )}
-                      {!ftCount && !baseCount && (
-                        <span className={`ham-status ${item.inter_rater.status} ${item.inter_rater.severity}`}>
-                          {item.inter_rater.status === 'conflict' ? `${item.inter_rater.severity} conflict` : 'Chưa có bản chấm'}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </div>
-              </td>
-              <td><button type="button" onClick={() => openResolution(item)}><Scale size={14} /> Xem & xử lý</button></td>
-            </tr>
-          );
-        })}</tbody></table>{!visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}</div>
+                  return (
+                    <tr key={item.conv_index}>
+                      <td><strong>{item.item_id || `Conv ${item.conv_index}`}</strong><small>{item.question}</small></td>
+                      <td>
+                        <strong>{uniqueReviews.length}</strong>
+                        {Boolean(uniqueReviews.length) && (
+                          <div style={{ fontSize: '0.72rem', fontWeight: 600, marginTop: '2px' }}>
+                            {ftCount > 0 && <span style={{ color: '#4f46e5', marginRight: '4px' }}>{ftCount} FT</span>}
+                            {baseCount > 0 && <span style={{ color: '#b45309' }}>{baseCount} Base</span>}
+                          </div>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.8rem' }}>
+                          {ftCount > 0 && (
+                            <span style={{ color: breakdown.ft.maxDelta >= 2 ? '#dc2626' : breakdown.ft.maxDelta >= 1 ? '#d97706' : '#059669', fontWeight: 600 }}>
+                              🎯 FT: Δ {breakdown.ft.maxDelta.toFixed(1)}
+                            </span>
+                          )}
+                          {baseCount > 0 && (
+                            <span style={{ color: breakdown.base.maxDelta >= 2 ? '#dc2626' : breakdown.base.maxDelta >= 1 ? '#d97706' : '#059669', fontWeight: 600 }}>
+                              🔲 Base: Δ {breakdown.base.maxDelta.toFixed(1)}
+                            </span>
+                          )}
+                          {!ftCount && !baseCount && <span>{(item.inter_rater.max_delta || 0).toFixed(1)}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', fontSize: '0.78rem' }}>
+                          {ftCount > 0 && (
+                            <span>🎯 FT: <b>{breakdown.ft.conflicts.join(', ') || 'Không'}</b></span>
+                          )}
+                          {baseCount > 0 && (
+                            <span>🔲 Base: <b>{breakdown.base.conflicts.join(', ') || 'Không'}</b></span>
+                          )}
+                          {!ftCount && !baseCount && <span>{item.inter_rater.conflict_criteria.join(', ') || '—'}</span>}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          {item.inter_rater.status === 'resolved' ? (
+                            <span className="ham-status resolved">Đã chốt</span>
+                          ) : (
+                            <>
+                              {ftCount > 0 && (
+                                <span className={`ham-status ${breakdown.ft.maxDelta >= 2 ? 'conflict' : 'agreement'}`} style={{ fontSize: '0.7rem' }}>
+                                  🎯 FT: {breakdown.ft.maxDelta >= 2 ? 'Critical Conflict' : breakdown.ft.maxDelta >= 1 ? 'Minor Conflict' : 'Đồng thuận'}
+                                </span>
+                              )}
+                              {baseCount > 0 && (
+                                <span className={`ham-status ${breakdown.base.maxDelta >= 2 ? 'conflict' : 'agreement'}`} style={{ fontSize: '0.7rem', background: breakdown.base.maxDelta >= 2 ? '#fff7ed' : undefined, color: breakdown.base.maxDelta >= 2 ? '#c2410c' : undefined }}>
+                                  🔲 Base: {breakdown.base.maxDelta >= 2 ? 'Critical Conflict' : breakdown.base.maxDelta >= 1 ? 'Minor Conflict' : 'Đồng thuận'}
+                                </span>
+                              )}
+                              {!ftCount && !baseCount && (
+                                <span className={`ham-status ${item.inter_rater.status} ${item.inter_rater.severity}`}>
+                                  {item.inter_rater.status === 'conflict' ? `${item.inter_rater.severity} conflict` : 'Chưa có bản chấm'}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                      <td><button type="button" onClick={() => openResolution(item)}><Scale size={14} /> Xem & xử lý</button></td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          {!loadingDetail && !visibleItems.length && <div className="ham-empty">Chưa có replay phù hợp bộ lọc.</div>}
+        </div>
       </section>
 
       {detail?.inter_rater_summary?.reviewer_count >= 2 && (

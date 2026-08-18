@@ -37,8 +37,12 @@ function reviewableEvaluationFilter(req: Request) {
   return roleOf(req) === 'supervisor' ? managerOwnerFilter(req) : {};
 }
 
-async function findReviewableEvaluation(req: Request, modelEvalId: string) {
-  const evaluation = await ModelEvaluation.findOne({ modelEvalId, ...reviewableEvaluationFilter(req) });
+async function findReviewableEvaluation(req: Request, modelEvalId: string, selectFields?: string) {
+  let query = ModelEvaluation.findOne({ modelEvalId, ...reviewableEvaluationFilter(req) });
+  if (selectFields) {
+    query = query.select(selectFields);
+  }
+  const evaluation = await query.lean();
   if (!evaluation) return null;
   if (roleOf(req) === 'checker') {
     const checkerId = getAuthUserId(req);
@@ -476,7 +480,11 @@ export const saveMyHumanAuditReview = async (req: Request, res: Response) => {
 };
 
 export const getManagedHumanAuditDetail = async (req: Request, res: Response) => {
-  const evaluation = await findReviewableEvaluation(req, String(req.params.evalId || ''));
+  const evaluation = await findReviewableEvaluation(
+    req,
+    String(req.params.evalId || ''),
+    '-gpuResult -hypothesisDecisions -adaptiveDiagnostic -researchStatistics -extendedReferences -protocolManifest -environmentManifest -loadMetrics -summary -baseSummary -delta'
+  );
   if (!evaluation) return res.status(404).json({ error: 'Evaluation không tồn tại hoặc không thuộc quyền quản lý' });
   const [assignments, reviews, adjudications] = await Promise.all([
     HumanAuditAssignment.find({ modelEvalId: evaluation.modelEvalId })
@@ -538,7 +546,11 @@ export const adjudicateHumanAudit = async (req: Request, res: Response) => {
   if (!adjudicatorId) return res.status(401).json({ error: 'Unauthorized' });
   const modelEvalId = String(req.params.evalId || '');
   const convIndex = Number(req.params.convIndex);
-  const evaluation = await findReviewableEvaluation(req, modelEvalId);
+  const evaluation = await findReviewableEvaluation(
+    req,
+    modelEvalId,
+    'ownerId results.conv_index results.item_id results.criteria_scores results.criteria_reasons results.effective_judge_model baseResults.conv_index baseResults.item_id baseResults.criteria_scores baseResults.criteria_reasons baseResults.effective_judge_model'
+  );
   if (!evaluation) return res.status(404).json({ error: 'Evaluation không thuộc quyền quản lý' });
   const resolution = String(req.body?.resolution || '');
   const note = String(req.body?.note || '').trim();
