@@ -672,7 +672,7 @@ export default function ModelEvalView() {
       console.error('Failed to fetch evaluation details:', err);
       const timedOut = err?.code === 'ECONNABORTED';
       setDetailLoadError(timedOut
-        ? 'Máy chủ không phản hồi trong 30 giây. Kiểm tra backend rồi bấm Thử lại.'
+        ? 'Máy chủ không phản hồi trong 60 giây. Kiểm tra backend rồi bấm Thử lại.'
         : 'Không tải được chi tiết lần đánh giá này. Hãy thử lại; nếu vẫn lỗi, kết quả có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.');
       toast.error('Không thể tải chi tiết kết quả đánh giá');
     } finally {

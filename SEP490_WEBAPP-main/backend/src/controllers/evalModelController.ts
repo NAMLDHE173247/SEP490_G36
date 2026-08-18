@@ -1487,7 +1487,7 @@ export const getEvaluation = async (req: Request, res: Response) => {
     // Tối ưu hóa hiệu năng: loại bỏ các trường trace khổng lồ (megabytes) và systemPrompt khỏi lần load detail ban đầu.
     // Nếu UI cần trace cụ thể, sẽ gọi API riêng biệt (lazy load).
     const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ...ownerFilter })
-      .select('-results.prompt_trace -results.reference_trace -baseResults.prompt_trace -baseResults.reference_trace -systemPrompt')
+      .select('-results.prompt_trace -results.reference_trace -results.judge_router_metadata -baseResults.prompt_trace -baseResults.reference_trace -baseResults.judge_router_metadata -systemPrompt -gpuResult')
       .lean();
     if (!doc) {
       return res.status(404).json({ error: 'Evaluation not found' });
