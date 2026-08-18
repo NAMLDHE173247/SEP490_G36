@@ -259,44 +259,27 @@ export default function ModelEvalView() {
   // Data Fetching
   // ---------------------------------------------------------------------------
 
-  // Stale-while-revalidate cache key for leaderboard
+  // Stale-while-revalidate cache key for leaderboard (versioned to auto-invalidate on data shape changes)
   const LEADERBOARD_CACHE_KEY = 'mev_leaderboard_cache';
-  const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-  const fetchLeaderboard = useCallback(async (showLoadingIfEmpty = false) => {
-    // Step 1: Show cached data immediately (no loading flicker)
-    try {
-      const raw = localStorage.getItem(LEADERBOARD_CACHE_KEY);
-      if (raw) {
-        const { data, ts } = JSON.parse(raw) as { data: LeaderboardItem[]; ts: number };
-        const isStale = Date.now() - ts > LEADERBOARD_CACHE_TTL_MS;
-        if (data?.length) {
-          setLeaderboard(data);
-          if (!isStale) return; // Cache is fresh, skip network call
-        }
-      }
-    } catch { /* ignore corrupt cache */ }
-
-    // Step 2: Fetch from network (show spinner only if leaderboard is still empty)
-    if (showLoadingIfEmpty) setLoadingLeaderboard(true);
-    else setLoadingLeaderboard((prev) => prev); // keep existing loading state
+  const fetchLeaderboard = useCallback(async () => {
     setLoadingLeaderboard(true);
     try {
       const data = await apiService.getEvaluatedModels();
       const fresh = data || [];
       setLeaderboard(fresh);
+      // Write to versioned cache (v2) — cleared on next major data shape change
       try {
-        localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify({ data: fresh, ts: Date.now() }));
+        localStorage.setItem(`${LEADERBOARD_CACHE_KEY}_v2`, JSON.stringify({ data: fresh, ts: Date.now() }));
       } catch { /* storage quota exceeded - ignore */ }
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
-      // Don't toast if we already have cached data shown
       const hasCached = leaderboard.length > 0;
       if (!hasCached) toast.error('Không thể tải danh sách Leaderboard');
     } finally {
       setLoadingLeaderboard(false);
     }
-  }, [leaderboard.length]);
+  }, []);
 
   const fetchGpuStatus = useCallback(async () => {
     setLoadingGpuStatus(true);
@@ -333,12 +316,24 @@ export default function ModelEvalView() {
 
   // Poll active slots and GPU status every 30s (data doesn't change that fast)
   useEffect(() => {
-    // Load cache immediately, then fetch fresh data in background
+    // Cache versioning: bump this when data shape changes to auto-invalidate old entries
+    const CACHE_VERSION = 'v2';
+    const VERSIONED_KEY = `${LEADERBOARD_CACHE_KEY}_${CACHE_VERSION}`;
+
+    // Clear any old-versioned cache entries
     try {
-      const raw = localStorage.getItem(LEADERBOARD_CACHE_KEY);
+      localStorage.removeItem(LEADERBOARD_CACHE_KEY);
+      localStorage.removeItem(`${LEADERBOARD_CACHE_KEY}_v1`);
+    } catch { /* ignore */ }
+
+    // Load versioned cache immediately, then fetch fresh data in background
+    try {
+      const raw = localStorage.getItem(VERSIONED_KEY);
       if (raw) {
         const { data } = JSON.parse(raw) as { data: LeaderboardItem[]; ts: number };
-        if (data?.length) setLeaderboard(data);
+        // Only use cache if it has valid data (not all UNKNOWN status)
+        const hasValidData = data?.length > 0 && data.some(d => d.status !== 'UNKNOWN');
+        if (hasValidData) setLeaderboard(data);
       }
     } catch { /* ignore */ }
 

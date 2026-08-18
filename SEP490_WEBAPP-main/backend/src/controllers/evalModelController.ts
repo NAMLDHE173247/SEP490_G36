@@ -1986,11 +1986,11 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
     const ownerFilter = getOwnerFilter(req);
     const gpuActiveEvals = await getGpuActiveEvaluations();
 
-    // Step 1: Get all jobIds that have at least one eval
+    // Query 1: Get all jobIds that have at least one eval
     const evaluatedJobIds = await ModelEvaluation.distinct('jobId', ownerFilter);
     if (!evaluatedJobIds.length) return res.json([]);
 
-    // Step 2: Get all training histories for those jobs
+    // Query 2: Get training histories for those jobs
     const histories = await TrainingHistory.find({
       ...ownerFilter,
       jobId: { $in: evaluatedJobIds },
@@ -2003,69 +2003,47 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
 
     const jobIds = histories.map((h) => h.jobId);
 
-    // Step 3a: Bulk fetch — latest attempt per job (any status), sort createdAt desc
-    const latestAttemptAgg = await ModelEvaluation.aggregate([
-      { $match: { ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}), jobId: { $in: jobIds } } },
-      { $sort: { jobId: 1, createdAt: -1 } },
-      {
-        $group: {
-          _id: '$jobId',
-          doc: { $first: '$$ROOT' },
-        },
-      },
-    ]);
-    const latestAttemptMap = new Map<string, any>(
-      latestAttemptAgg.map((x) => [x._id, x.doc])
-    );
+    // Query 3: Fetch all evals for these jobs in ONE query.
+    // Exclude the large 'results' array — we only need summary/metadata for the leaderboard.
+    const allEvals = await ModelEvaluation.find({
+      ...ownerFilter,
+      jobId: { $in: jobIds },
+    })
+      .select('-results')
+      .sort({ createdAt: -1 }) // newest first — used for latestAttempt grouping below
+      .lean();
 
-    // Step 3b: Bulk fetch — latest COMPLETED eval per job
-    const latestCompletedAgg = await ModelEvaluation.aggregate([
-      {
-        $match: {
-          ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}),
-          jobId: { $in: jobIds },
-          status: 'COMPLETED',
-        },
-      },
-      { $sort: { jobId: 1, completedAt: -1 } },
-      {
-        $group: {
-          _id: '$jobId',
-          doc: { $first: '$$ROOT' },
-        },
-      },
-    ]);
-    const latestCompletedMap = new Map<string, any>(
-      latestCompletedAgg.map((x) => [x._id, x.doc])
-    );
+    // Build lookup maps in JavaScript (O(n), no extra DB roundtrips)
+    const latestAttemptMap = new Map<string, any>(); // any-status, newest per jobId
+    const latestCompletedMap = new Map<string, any>(); // COMPLETED, newest per jobId
+    const evalByModelEvalId = new Map<string, any>(); // for pinned lookup
 
-    // Step 3c: Bulk fetch — pinned evals (only for histories that have a pinnedEvalId)
-    const pinnedEvalIds = histories
-      .map((h) => h.pinnedEvalId)
-      .filter((id): id is string => !!id);
-    const pinnedMap = new Map<string, any>();
-    if (pinnedEvalIds.length > 0) {
-      const pinnedDocs = await ModelEvaluation.find({
-        ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}),
-        modelEvalId: { $in: pinnedEvalIds },
-        status: 'COMPLETED',
-      })
-        .select('modelEvalId jobId status error failureStage totalConversations judgeModel summary flags progress stage')
-        .lean();
-      for (const doc of pinnedDocs) {
-        pinnedMap.set(doc.modelEvalId, doc);
+    for (const ev of allEvals) {
+      // latestAttempt: keep first seen (array already sorted createdAt -1)
+      if (!latestAttemptMap.has(ev.jobId)) {
+        latestAttemptMap.set(ev.jobId, ev);
+      }
+      // latestCompleted: keep first COMPLETED seen
+      if (ev.status === 'COMPLETED' && !latestCompletedMap.has(ev.jobId)) {
+        latestCompletedMap.set(ev.jobId, ev);
+      }
+      // index by modelEvalId for pinned lookup
+      if (ev.modelEvalId) {
+        evalByModelEvalId.set(ev.modelEvalId, ev);
       }
     }
 
-    // Step 4: Assemble results using the pre-fetched maps
+    // Assemble leaderboard rows
     const result = histories.map((h) => {
       const latestAttempt = latestAttemptMap.get(h.jobId) ?? null;
       const latestEval = latestCompletedMap.get(h.jobId) ?? null;
 
       let displayEval = latestEval || latestAttempt;
+
+      // Override with the pinned (official) eval if it is COMPLETED
       if (h.pinnedEvalId) {
-        const pinned = pinnedMap.get(h.pinnedEvalId);
-        if (pinned) displayEval = pinned;
+        const pinned = evalByModelEvalId.get(h.pinnedEvalId as string);
+        if (pinned && pinned.status === 'COMPLETED') displayEval = pinned;
       }
 
       const modelEvalId = displayEval?.modelEvalId ?? null;
@@ -2076,10 +2054,10 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
       const progress =
         activeGpuJob && typeof activeGpuJob.progress === 'number'
           ? activeGpuJob.progress
-          : typeof displayEval?.progress === 'number'
-          ? displayEval.progress
+          : typeof (displayEval as any)?.progress === 'number'
+          ? (displayEval as any).progress
           : 0;
-      const stageLabel = activeGpuJob?.stage_label || displayEval?.stage || null;
+      const stageLabel = activeGpuJob?.stage_label || (displayEval as any)?.stage || null;
 
       return {
         jobId: h.jobId,
@@ -2121,7 +2099,8 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
           criteria: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.criteria ?? null : null,
           avg_latency_ms:
             displayEval?.status === 'COMPLETED' ? displayEval?.summary?.avg_latency_ms ?? null : null,
-          non_scoring: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
+          non_scoring:
+            displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
         },
       };
     });
