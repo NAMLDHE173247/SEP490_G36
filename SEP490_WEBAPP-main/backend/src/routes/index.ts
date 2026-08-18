@@ -62,6 +62,7 @@ import {
   getLargeLlmReferenceStatus,
   runVersion1SharedReference,
   getVersion1SharedReferenceStatus,
+  getEvaluationConversation,
 } from '../controllers/evalModelController';
 import labelRoutes from './labelRoutes';
 import dataprepRoutes from './dataprepRoutes';
@@ -289,6 +290,7 @@ router.post('/model-eval/:evalId/version1-shared/run', authMiddleware, requireMa
 router.get('/model-eval/:evalId/export', exportEvaluationArtifact);
 router.put('/model-eval/:evalId/extended-references', authMiddleware, requireManager, saveExtendedReferences);
 router.delete('/model-eval/:evalId', deleteEvaluation);        // ⚠️ trước GET /:evalId
+router.get('/model-eval/:evalId/conversation/:convIndex', getEvaluationConversation);
 router.get('/model-eval/:evalId', getEvaluation);              // ⚠️ wildcard — đứng cuối cùng
 
 // Model Registry Routes

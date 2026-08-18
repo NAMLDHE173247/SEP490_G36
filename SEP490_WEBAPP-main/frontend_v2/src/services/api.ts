@@ -773,6 +773,10 @@ export const apiService = {
     const response = await api.get(`/model-eval/${evalId}`, { timeout: 90000 });
     return response.data;
   },
+  getEvaluationConversation: async (evalId: string, convIndex: number): Promise<any> => {
+    const response = await api.get(`/model-eval/${evalId}/conversation/${convIndex}`);
+    return response.data;
+  },
   exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
     const response = await api.get(`/model-eval/${evalId}/export`, { responseType: 'blob' });
     return response.data;

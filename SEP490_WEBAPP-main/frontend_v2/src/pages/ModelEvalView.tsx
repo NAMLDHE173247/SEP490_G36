@@ -144,6 +144,8 @@ export default function ModelEvalView() {
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'breakdown' | 'paired' | 'large-llm' | 'samples'>('paired');
   const [selectedAiConvIndex, setSelectedAiConvIndex] = useState<number | null>(null);
+  const [selectedConvDetail, setSelectedConvDetail] = useState<any>(null);
+  const [loadingConvDetail, setLoadingConvDetail] = useState(false);
   const [detailEvalHistory, setDetailEvalHistory] = useState<any[]>([]);
   const [largeLlmReferences, setLargeLlmReferences] = useState<LargeLlmReference[]>([]);
   const [largeLlmCatalog, setLargeLlmCatalog] = useState<any[]>([]);
@@ -835,8 +837,20 @@ export default function ModelEvalView() {
     window.dispatchEvent(new CustomEvent('lh-navigate-tab', { detail: 'Human Audit Manager' }));
   };
 
-  const openAiJudgeDetail = (convIndex: number) => {
+  const openAiJudgeDetail = async (convIndex: number) => {
     setSelectedAiConvIndex(convIndex);
+    setSelectedConvDetail(null);
+    const evalId = evaluationDetail?.modelEvalId || selectedEvalId;
+    if (!evalId) return;
+    setLoadingConvDetail(true);
+    try {
+      const detail = await apiService.getEvaluationConversation(evalId, convIndex);
+      setSelectedConvDetail(detail);
+    } catch (err) {
+      console.error('Failed to load conversation detail:', err);
+    } finally {
+      setLoadingConvDetail(false);
+    }
   };
 
   // Export Leaderboard CSV
@@ -2967,6 +2981,7 @@ export default function ModelEvalView() {
       {selectedAiConvIndex !== null && evaluationDetail && (() => {
         const item = evaluationDetail.results?.find((row: any) => row.conv_index === selectedAiConvIndex);
         if (!item) return null;
+        const displayItem = selectedConvDetail || item;
         const position = evaluationDetail.results.findIndex((row: any) => row.conv_index === selectedAiConvIndex);
         const knowledge = Number(item.criteria_scores?.B1);
         const socratic = cappedSocraticScore(item.criteria_scores);
@@ -2980,8 +2995,8 @@ export default function ModelEvalView() {
                   <p className="text-xs text-muted">Câu {position + 1}/{evaluationDetail.results.length} · Judge {item.effective_judge_model || evaluationDetail.judgeModel}</p>
                 </div>
                 <div className="audit-header-actions">
-                  <button type="button" disabled={position <= 0} onClick={() => setSelectedAiConvIndex(evaluationDetail.results[position - 1]?.conv_index)}>← Trước</button>
-                  <button type="button" disabled={position >= evaluationDetail.results.length - 1} onClick={() => setSelectedAiConvIndex(evaluationDetail.results[position + 1]?.conv_index)}>Sau →</button>
+                  <button type="button" disabled={position <= 0} onClick={() => openAiJudgeDetail(evaluationDetail.results[position - 1]?.conv_index)}>← Trước</button>
+                  <button type="button" disabled={position >= evaluationDetail.results.length - 1} onClick={() => openAiJudgeDetail(evaluationDetail.results[position + 1]?.conv_index)}>Sau →</button>
                   <button type="button" className="btn-close-audit" onClick={() => setSelectedAiConvIndex(null)} title="Đóng"><X size={20} /></button>
                 </div>
               </header>
@@ -2993,10 +3008,16 @@ export default function ModelEvalView() {
                   <div><span>Độ trễ trung bình</span><strong>{(Number(item.avg_latency_ms || 0) / 1000).toFixed(2)} giây</strong><small>{item.total_tokens ?? 0} tokens</small></div>
                 </div>
 
+                {loadingConvDetail && (
+                  <div className="text-xs text-primary font-semibold flex items-center gap-2 mb-3">
+                    <RefreshCw className="animate-spin" size={14} /> Đang tải đầy đủ lượt thoại & lý giải AI Judge...
+                  </div>
+                )}
+
                 <div className="chat-replay-container">
                   <h4>Hội thoại mà AI Judge đã chấm</h4>
                   <div className="chat-bubbles-list">
-                    {(item.replay_turns || []).map((turn: any, turnIndex: number) => (
+                    {(displayItem.replay_turns || []).map((turn: any, turnIndex: number) => (
                       <div key={turnIndex} className="chat-turn-group">
                         <div className="bubble student shadow-sm"><span className="bubble-role">Học sinh</span><p>{turn.user}</p></div>
                         <div className="bubble assistant font-normal shadow-sm">
@@ -3005,13 +3026,16 @@ export default function ModelEvalView() {
                         </div>
                       </div>
                     ))}
+                    {!loadingConvDetail && (!displayItem.replay_turns || displayItem.replay_turns.length === 0) && (
+                      <div className="text-xs text-muted py-2">Không có dữ liệu lượt thoại.</div>
+                    )}
                   </div>
                 </div>
 
                 <details className="audit-reference-box" open>
                   <summary>Bằng chứng tham chiếu dùng khi kiểm tra</summary>
-                  <p><strong>Đáp án tham chiếu:</strong> {item.reference_answer || 'Không có văn bản tham chiếu.'}</p>
-                  {Array.isArray(item.gold_key_points) && item.gold_key_points.length > 0 && <ul>{item.gold_key_points.map((point: string, index: number) => <li key={index}>{point}</li>)}</ul>}
+                  <p><strong>Đáp án tham chiếu:</strong> {displayItem.reference_answer || item.reference_answer || 'Không có văn bản tham chiếu.'}</p>
+                  {Array.isArray(displayItem.gold_key_points || item.gold_key_points) && (displayItem.gold_key_points || item.gold_key_points).length > 0 && <ul>{(displayItem.gold_key_points || item.gold_key_points).map((point: string, index: number) => <li key={index}>{point}</li>)}</ul>}
                 </details>
 
                 <div className="judge-scoring-details">
@@ -3019,10 +3043,11 @@ export default function ModelEvalView() {
                   <div className="criteria-reasons-list ai-detail-criteria-grid">
                     {HUMAN_AUDIT_RUBRIC.map(({ key, title }) => {
                       const score = Number(item.criteria_scores?.[key]);
+                      const reasonText = displayItem.criteria_reasons?.[key];
                       return (
                         <article key={key} className="criteria-reason-item card">
                           <div className="crit-reason-header"><span><span className="crit-badge">{key}</span> {title}</span><span className="crit-score-val">{Number.isFinite(score) ? score.toFixed(1) : '—'} / 5</span></div>
-                          <p className="crit-reason-text">{item.criteria_reasons?.[key] || 'AI Judge không trả về lý giải.'}</p>
+                          <p className="crit-reason-text">{reasonText || (loadingConvDetail ? 'Đang tải...' : 'AI Judge không trả về lý giải.')}</p>
                         </article>
                       );
                     })}
