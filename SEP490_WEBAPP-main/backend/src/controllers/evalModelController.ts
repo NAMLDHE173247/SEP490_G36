@@ -1484,7 +1484,11 @@ export const getEvaluation = async (req: Request, res: Response) => {
     const ownerFilter = getOwnerFilter(req);
 
     const { evalId } = req.params;
-    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ...ownerFilter }).lean();
+    // Tối ưu hóa hiệu năng: loại bỏ các trường trace khổng lồ (megabytes) và systemPrompt khỏi lần load detail ban đầu.
+    // Nếu UI cần trace cụ thể, sẽ gọi API riêng biệt (lazy load).
+    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ...ownerFilter })
+      .select('-results.prompt_trace -results.reference_trace -baseResults.prompt_trace -baseResults.reference_trace -systemPrompt')
+      .lean();
     if (!doc) {
       return res.status(404).json({ error: 'Evaluation not found' });
     }
@@ -2011,7 +2015,7 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
         ...ownerFilter,
         jobId: { $in: jobIds },
       })
-        .select('-results')
+        .select('modelEvalId jobId status error failureStage totalConversations judgeModel summary flags progress stage createdAt completedAt')
         .sort({ createdAt: -1 })
         .lean(),
       getGpuActiveEvaluations().catch(() => null), // never let GPU errors block leaderboard
