@@ -375,7 +375,21 @@ export default function HumanAuditManagerView() {
       </header>
 
       <section className="ham-assignment-card">
-        <div className="ham-field"><label>Gói audit theo project</label><select value={selectedEvalId} onChange={event => setSelectedEvalId(event.target.value)}><option value="">Chọn project...</option>{evaluations.map(item => <option value={item.modelEvalId} key={item.modelEvalId}>{item.packageLabel || `${item.projectName} · ${item.totalConversations} câu`}</option>)}</select><small>Mỗi project/evaluation là một gói riêng; 2 project × 100 câu sẽ tạo 2 gói 100 câu, không trộn chung.</small></div>
+        <div className="ham-field">
+          <label>
+            Gói audit theo project
+            {loadingDetail && <RefreshCw className="spin" size={14} style={{ display: 'inline', marginLeft: '8px', verticalAlign: 'middle', color: '#6366f1' }} />}
+          </label>
+          <select value={selectedEvalId} disabled={loadingDetail} onChange={event => setSelectedEvalId(event.target.value)}>
+            <option value="">Chọn project...</option>
+            {evaluations.map(item => (
+              <option value={item.modelEvalId} key={item.modelEvalId}>
+                {item.packageLabel || `${item.projectName} · ${item.totalConversations} câu`}
+              </option>
+            ))}
+          </select>
+          <small>Mỗi project/evaluation là một gói riêng; 2 project × 100 câu sẽ tạo 2 gói 100 câu, không trộn chung.</small>
+        </div>
         {!isChecker && (
           <>
             <div className="ham-staff-picker"><label>Giao độc lập cho Staff</label><div>{staff.map(person => <button type="button" key={person.id} className={selectedStaffIds.includes(person.id) ? 'selected' : ''} onClick={() => toggleStaff(person.id)}><Users size={14} /><span>{person.name}<small>{person.email}</small></span>{selectedStaffIds.includes(person.id) && <CheckCircle2 size={14} />}</button>)}</div></div>
