@@ -2081,11 +2081,22 @@ export default function ModelEvalView() {
               <ArrowLeft size={16} /> Quay lại Leaderboard
             </button>
             <div className="detail-header-actions">
-              <button className="btn-outline-eval" onClick={handleExportArtifact} disabled={!evaluationDetail}>
-                <Download size={14} /> Tải artifact RP5 (JSON)
+              <button
+                className="btn-outline-eval btn-export-artifact"
+                onClick={handleExportArtifact}
+                disabled={!evaluationDetail}
+                title="Tải toàn bộ artifact JSON để nộp RP5"
+              >
+                <Download size={14} />
+                <span>Tải artifact RP5</span>
               </button>
-              <button className="btn-outline-eval" onClick={() => { fetchLeaderboard(); if (selectedEvalId) handleViewDetails(selectedEvalId); }}>
-                <RefreshCw size={14} /> Tải lại dữ liệu
+              <button
+                className="btn-outline-eval btn-reload-detail"
+                onClick={() => { fetchLeaderboard(); if (selectedEvalId) handleViewDetails(selectedEvalId); }}
+                title="Tải lại dữ liệu đánh giá từ server"
+              >
+                <RefreshCw size={14} />
+                <span>Tải lại dữ liệu</span>
               </button>
             </div>
           </div>
@@ -3421,8 +3432,14 @@ export default function ModelEvalView() {
                 {slotsInfo.map((slot: any) => {
                   const isOccupied = slot.status !== 'IDLE';
                   const isCurrentStream = activeEvalId === slot.modelEvalId;
-                  const progressPct = typeof slot.progress === 'number' ? slot.progress : 0;
+                  // Ưu tiên dùng tiến trình từ SSE stream nếu slot này đang được watch
+                  const progressPct = isCurrentStream && typeof activeEvalProgress === 'number'
+                    ? activeEvalProgress
+                    : typeof slot.progress === 'number' ? slot.progress : 0;
+                  const slotStageLabel = isCurrentStream && activeEvalStage ? activeEvalStage : (slot.stage_label || slot.status);
+                  const slotStageDetail = isCurrentStream && activeEvalDetail ? activeEvalDetail : (slot.stage_detail || '');
                   const logsList = Array.isArray(slot.logs) ? slot.logs : [];
+                  const liveLogsList = isCurrentStream && activeEvalLogs.length > 0 ? activeEvalLogs : logsList;
 
                   return (
                     <div key={slot.slotIndex} className={`active-eval-tracker card slot-modal-tracker ${isOccupied ? 'occupied' : 'idle-slot-card'}`}>
@@ -3502,14 +3519,21 @@ export default function ModelEvalView() {
 
                           <div className="tracker-stage-info my-2 flex items-center justify-between text-xs">
                             <div>
-                              <span className="stage-badge mr-2">{slot.stage_label || slot.status}</span>
-                              <span className="stage-detail text-slate-600">{slot.stage_detail || ''}</span>
+                              <span className="stage-badge mr-2">{slotStageLabel}</span>
+                              <span className="stage-detail text-slate-600">{slotStageDetail}</span>
                             </div>
-                            {slot.startedAt && (
-                              <span className="text-slate-400 font-mono text-[11px]">
-                                Khởi chạy: {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-3">
+                              {slot.startedAt && (
+                                <span className="text-slate-400 font-mono text-[11px]">
+                                  Khởi chạy: {new Date(slot.startedAt).toLocaleTimeString('vi-VN')}
+                                </span>
+                              )}
+                              {isCurrentStream && (
+                                <span className="slot-live-indicator">
+                                  <span className="slot-live-dot" /> LIVE
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {/* Current Sample details if available */}
@@ -3530,18 +3554,21 @@ export default function ModelEvalView() {
                           <div className="tracker-console-card mt-2">
                             <div className="console-header">
                               <div className="console-left">
-                                <span className="console-dot-green"></span>
-                                <span className="console-title">GPU Runner Logs (Slot #{slot.slotIndex})</span>
+                                <span className={isCurrentStream ? 'console-dot-green console-dot-live' : 'console-dot-green'}></span>
+                                <span className="console-title">
+                                  GPU Runner Logs (Slot #{slot.slotIndex})
+                                  {isCurrentStream && <span className="console-live-badge">● LIVE STREAM</span>}
+                                </span>
                               </div>
-                              <span className="console-lines-count">{logsList.length} dòng log</span>
+                              <span className="console-lines-count">{liveLogsList.length} dòng log</span>
                             </div>
-                            <div className="logs-console" style={{ maxHeight: '120px' }}>
-                              {logsList.map((log: any, index: number) => (
+                            <div className="logs-console" ref={(el) => { if (el && isCurrentStream) el.scrollTop = el.scrollHeight; }} style={{ maxHeight: '150px' }}>
+                              {liveLogsList.map((log: any, index: number) => (
                                 <div key={index} className="log-line">
                                   <span className="log-timestamp">[{log.timestamp || 'LOG'}]</span> {typeof log === 'string' ? log : log.text}
                                 </div>
                               ))}
-                              {logsList.length === 0 && (
+                              {liveLogsList.length === 0 && (
                                 <div className="log-line text-muted">Đang theo dõi tiến trình thực thi thời gian thực trên GPU Slot #{slot.slotIndex}...</div>
                               )}
                             </div>

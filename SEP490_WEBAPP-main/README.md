@@ -16,8 +16,8 @@
 ### Bước 1 — Clone repo
 
 ```bash
-git clone https://github.com/hoanglam2114/SEP490-PROJECT.git
-cd SEP490-PROJECT
+git https://github.com/NAMLDHE173247/SEP490_G36.git
+cd SEP490_G36
 ```
 
 ### Bước 2 — Tạo file cấu hình
