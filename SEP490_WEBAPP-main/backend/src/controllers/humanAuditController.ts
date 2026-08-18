@@ -37,7 +37,7 @@ function reviewableEvaluationFilter(req: Request) {
   return roleOf(req) === 'supervisor' ? managerOwnerFilter(req) : {};
 }
 
-async function findReviewableEvaluation(req: Request, modelEvalId: string, selectFields?: string) {
+async function findReviewableEvaluation(req: Request, modelEvalId: string, selectFields?: any) {
   let query = ModelEvaluation.findOne({ modelEvalId, ...reviewableEvaluationFilter(req) });
   if (selectFields) {
     query = query.select(selectFields);
@@ -499,7 +499,24 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
   const evaluation = await findReviewableEvaluation(
     req,
     String(req.params.evalId || ''),
-    'modelEvalId jobId ftModelRepo baseModelRepo totalConversations ownerId results.conv_index results.item_id results.criteria_scores results.criteria_reasons results.replay_turns baseResults.conv_index baseResults.item_id baseResults.criteria_scores baseResults.criteria_reasons baseResults.replay_turns'
+    {
+      modelEvalId: 1,
+      jobId: 1,
+      ftModelRepo: 1,
+      baseModelRepo: 1,
+      totalConversations: 1,
+      ownerId: 1,
+      'results.conv_index': 1,
+      'results.item_id': 1,
+      'results.criteria_scores': 1,
+      'results.criteria_reasons': 1,
+      'results.replay_turns': { $slice: 1 },
+      'baseResults.conv_index': 1,
+      'baseResults.item_id': 1,
+      'baseResults.criteria_scores': 1,
+      'baseResults.criteria_reasons': 1,
+      'baseResults.replay_turns': { $slice: 1 },
+    }
   );
   if (!evaluation) return res.status(404).json({ error: 'Evaluation không tồn tại hoặc không thuộc quyền quản lý' });
   const [assignments, reviews, adjudications] = await Promise.all([
@@ -507,7 +524,10 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
       .populate('staffId', 'name email')
       .populate('checkerId', 'name email')
       .lean(),
-    HumanAuditReview.find({ modelEvalId: evaluation.modelEvalId }).sort({ updatedAt: 1 }).lean(),
+    HumanAuditReview.find({ modelEvalId: evaluation.modelEvalId })
+      .select('modelEvalId convIndex verdict targetModel reviewerId reviewerName humanScores aiConflict updatedAt')
+      .sort({ updatedAt: 1 })
+      .lean(),
     HumanAuditAdjudication.find({ modelEvalId: evaluation.modelEvalId }).lean(),
   ]);
   const baseResultsByConv = new Map<number, any>();
