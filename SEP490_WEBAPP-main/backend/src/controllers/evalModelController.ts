@@ -55,6 +55,88 @@ type Version1SharedReferenceJob = {
 
 const version1SharedReferenceJobs = new Map<string, Version1SharedReferenceJob>();
 
+// ---------------------------------------------------------------------------
+// Auto-save extended reference to MongoDB when GPU finishes.
+// This ensures results persist even if the user closes or refreshes the browser
+// before the frontend polling loop can capture and save them.
+// ---------------------------------------------------------------------------
+async function _autoSaveExtendedReference(
+  evalId: string,
+  ownerId: string,
+  comparisonRole: 'large_llm' | 'version1_shared_ft',
+  artifact: Record<string, any>,
+) {
+  try {
+    const results: any[] = Array.isArray(artifact?.perConvResults)
+      ? artifact.perConvResults
+      : Array.isArray(artifact?.results)
+        ? artifact.results
+        : [];
+
+    const median = (values: number[]) => {
+      if (!values.length) return null;
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const mean = (values: number[]) =>
+      values.length ? values.reduce((s, v) => s + v, 0) / values.length : null;
+    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
+
+    const e2e = results.map((r: any) => num(r.telemetry?.e2e_ms ?? r.avg_latency_ms)).filter((v): v is number => v !== null);
+    const throughput = results.map((r: any) => num(r.telemetry?.tokens_per_second)).filter((v): v is number => v !== null);
+    const inputTokens = results.map((r: any) => num(r.telemetry?.input_tokens ?? r.input_tokens)).filter((v): v is number => v !== null);
+    const outputTokens = results.map((r: any) => num(r.telemetry?.output_tokens ?? r.output_tokens)).filter((v): v is number => v !== null);
+    const scored = results.filter((r: any) => r.criteria_scores?.A1 !== undefined);
+    const summary: any = artifact?.summary || {};
+
+    const reference: Record<string, any> = {
+      comparisonRole,
+      model: String(artifact?.requestedModel || artifact?.ftModelRepo || (comparisonRole === 'large_llm' ? 'Large LLM' : 'Version 1 shared FT')),
+      judgeModel: String(artifact?.judgeModel || '—'),
+      total: Number(artifact?.totalConversations || results.length),
+      valid: Number(artifact?.validConversations || scored.length),
+      knowledge: comparisonRole === 'version1_shared_ft'
+        ? num(summary?.knowledge ?? summary?.criteria?.B1)
+        : num(summary?.knowledge_k?.mean),
+      socratic: comparisonRole === 'version1_shared_ft'
+        ? num(summary?.socratic ?? summary?.group_a)
+        : num(summary?.socratic_s?.mean),
+      a1ViolationRate: scored.length
+        ? scored.filter((r: any) => Number(r.criteria_scores.A1) <= 1).length / scored.length
+        : null,
+      e2eMedianMs: median(e2e),
+      throughputMean: mean(throughput),
+      outputLimitRate: comparisonRole === 'version1_shared_ft'
+        ? num(summary?.operational?.output_limit_rate ?? summary?.output_limit_rate)
+        : num(summary?.output_limit_rate),
+      costPer100Usd: comparisonRole === 'version1_shared_ft'
+        ? 0
+        : num(summary?.generation_cost_per_100_items_usd),
+      outputTokensMean: mean(outputTokens),
+      totalInputTokens: inputTokens.reduce((s, v) => s + v, 0),
+      totalOutputTokens: outputTokens.reduce((s, v) => s + v, 0),
+      totalTokens: inputTokens.reduce((s, v) => s + v, 0) + outputTokens.reduce((s, v) => s + v, 0),
+      runValidity: String(artifact?.runValidity || artifact?.status || 'unknown').toLowerCase(),
+      protocolMatch: true,
+      protocolNotes: [] as string[],
+    };
+
+    // Merge: keep existing references of other roles, replace this role
+    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ownerId }).select('extendedReferences').lean();
+    const existing: any[] = Array.isArray((doc as any)?.extendedReferences) ? (doc as any).extendedReferences : [];
+    const merged = [...existing.filter((r: any) => r.comparisonRole !== comparisonRole), reference];
+
+    await ModelEvaluation.updateOne(
+      { modelEvalId: evalId, ownerId },
+      { $set: { extendedReferences: merged } },
+    );
+    console.log(`[Backend] ✅ Auto-saved ${comparisonRole} reference for eval ${evalId} to MongoDB`);
+  } catch (err: any) {
+    console.error(`[Backend] ❌ Failed to auto-save ${comparisonRole} reference for eval ${evalId}:`, err.message);
+  }
+}
+
 type PromptTrace = {
   content: string;
   source: 'test_file' | 'zip_metadata' | 'training_history' | 'service_default';
@@ -1816,6 +1898,8 @@ export const runLargeLlmReference = async (req: Request, res: Response) => {
         job.status = 'COMPLETED';
         job.progress = 100;
         job.detail = 'Đã hoàn tất so sánh LLM lớn';
+        // Auto-save to MongoDB — don't depend on browser polling
+        void _autoSaveExtendedReference(job.evalId, job.ownerId, 'large_llm', job.result!);
       } catch (error: any) {
         job.status = 'FAILED';
         job.error = error.message || 'Large-LLM reference failed';
@@ -1885,6 +1969,8 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
       job.status = 'COMPLETED';
       job.progress = 100;
       job.detail = 'Đã chấm xong mô hình Version 1 fine-tune chung ba môn';
+      // Auto-save to MongoDB — don't depend on browser polling
+      void _autoSaveExtendedReference(job.evalId, job.ownerId, 'version1_shared_ft', job.result!);
       return;
     }
 
