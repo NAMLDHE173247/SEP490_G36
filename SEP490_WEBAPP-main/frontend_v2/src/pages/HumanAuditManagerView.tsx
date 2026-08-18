@@ -579,12 +579,12 @@ export default function HumanAuditManagerView() {
                       >
                         🎯 Fine-tuned ({ftReviews.length} Staff + AI)
                       </button>
-                      {baseReviews.length > 0 && (
+                      {(baseReviews.length > 0 || Boolean(selectedItem?.baseItem || selectedItem?.base_item || selectedItem?.baseAnswer || detail?.evaluation?.baseModelRepo)) && (
                         <button
                           type="button"
                           onClick={() => {
                             setModalTargetFilter('base');
-                            setResolution('accept_staff');
+                            setResolution(baseReviews[0] ? 'accept_staff' : 'accept_ai');
                             if (baseReviews[0]) setSelectedReviewId(baseReviews[0]._id);
                           }}
                           style={{
@@ -599,7 +599,7 @@ export default function HumanAuditManagerView() {
                             boxShadow: modalTargetFilter === 'base' ? '0 2px 6px rgba(180,83,9,0.3)' : 'none',
                           }}
                         >
-                          🔲 Base Model ({baseReviews.length} Staff)
+                          🔲 Base Model ({baseReviews.length} Staff + AI)
                         </button>
                       )}
                     </div>
@@ -685,6 +685,11 @@ export default function HumanAuditManagerView() {
                                 </button>
                               );
                             })}
+                            {!sortedReviews.length && (
+                              <span style={{ fontSize: '0.78rem', color: '#64748b', fontStyle: 'italic' }}>
+                                Chưa có bản chấm Staff cho {isBaseMode ? 'Base Model' : 'Fine-tuned Model'} (hiển thị sẵn điểm AI Judge)
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -796,7 +801,7 @@ export default function HumanAuditManagerView() {
                         <div className="ham-score-strip" style={{ marginTop: '8px' }}>
                           {HUMAN_AUDIT_RUBRIC.map(({ key }) => {
                             const val = modalTargetFilter === 'base'
-                              ? (selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.ai_scores?.[key])
+                              ? (selectedItem.baseItem?.criteria_scores?.[key] ?? selectedItem.base_item?.criteria_scores?.[key] ?? selectedItem.ai_base_scores?.[key] ?? selectedItem.base_ai_scores?.[key] ?? selectedItem.baseItem?.ai_scores?.[key] ?? selectedItem.ai_scores?.[key])
                               : (selectedItem.ai_scores?.[key] ?? selectedItem.ai_ft_scores?.[key]);
                             return <span key={key}>{key}<b>{val ?? '—'}</b></span>;
                           })}

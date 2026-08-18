@@ -496,10 +496,14 @@ export const getManagedHumanAuditDetail = async (req: Request, res: Response) =>
       item_id: result.item_id,
       question: result.replay_turns?.[0]?.user || '',
       answer: result.replay_turns?.[0]?.model || '',
+      baseAnswer: baseResult?.replay_turns?.[0]?.model || '',
       criteria_scores: result.criteria_scores,
       ai_scores: result.criteria_scores,
       ai_reasons: result.criteria_reasons,
       baseItem: baseResult ? {
+        conv_index: baseResult.conv_index,
+        item_id: baseResult.item_id,
+        answer: baseResult.replay_turns?.[0]?.model || '',
         criteria_scores: baseResult.criteria_scores,
         ai_scores: baseResult.criteria_scores,
         criteria_reasons: baseResult.criteria_reasons,
@@ -535,13 +539,19 @@ export const adjudicateHumanAudit = async (req: Request, res: Response) => {
   const resolution = String(req.body?.resolution || '');
   const note = String(req.body?.note || '').trim();
   if (!note) return res.status(400).json({ error: 'Supervisor phải ghi lý do chốt kết quả' });
+  const targetModel = String(req.body?.target_model || req.body?.targetModel || 'ft').toLowerCase() === 'base' ? 'base' : 'ft';
+
   let validated: ReturnType<typeof validateHumanAuditScores>;
   let selectedReviewId: any = null;
   if (resolution === 'accept_ai') {
-    const result: any = evaluation.results.find(item => Number(item.conv_index) === convIndex);
-    if (!result?.criteria_scores) return res.status(400).json({ error: 'AI Judge scores are unavailable' });
+    const baseResult: any = targetModel === 'base'
+      ? (evaluation.baseResults || []).find((item: any) => Number(item.conv_index) === convIndex)
+      : null;
+    const convResult: any = evaluation.results.find(item => Number(item.conv_index) === convIndex);
+    const targetResult = (targetModel === 'base' && baseResult) ? baseResult : convResult;
+    if (!targetResult?.criteria_scores) return res.status(400).json({ error: `AI Judge scores for ${targetModel} model are unavailable` });
     try {
-      validated = validateHumanAuditScores(result.criteria_scores, result.criteria_reasons || {});
+      validated = validateHumanAuditScores(targetResult.criteria_scores, targetResult.criteria_reasons || {});
     } catch (error: any) {
       return res.status(400).json({ error: error.message || 'AI Judge scores are invalid' });
     }
