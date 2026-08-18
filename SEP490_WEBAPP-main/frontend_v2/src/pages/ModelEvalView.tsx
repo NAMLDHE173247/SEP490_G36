@@ -1848,9 +1848,61 @@ export default function ModelEvalView() {
           {/* Table Container */}
           <div className="eval-table-container card">
             {loadingLeaderboard ? (
-              <div className="table-placeholder">
-                <RefreshCw className="animate-spin text-primary" size={24} />
-                <span>Đang tải bảng xếp hạng...</span>
+              <div className="leaderboard-loading-wrap">
+                <div className="leaderboard-loading-banner">
+                  <div className="detail-loading-spinner-wrap" style={{ width: 40, height: 40, borderRadius: 10 }}>
+                    <Sparkles className="animate-spin" size={20} />
+                  </div>
+                  <div className="detail-loading-text-group">
+                    <h4 style={{ fontSize: 14 }}>⚡ Đang nạp danh sách mô hình & chỉ số Leaderboard...</h4>
+                    <p style={{ fontSize: 12 }}>Đang tổng hợp thứ hạng, chỉ số Đúng kiến thức (K) & Gợi mở Socratic (S)...</p>
+                    <div className="detail-loading-bar-track">
+                      <div className="detail-loading-bar-fill" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="leaderboard-skeleton-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 54 }}><div className="skeleton-shimmer h-4 w-4 mx-auto" /></th>
+                        <th style={{ width: 50 }}><div className="skeleton-shimmer h-4 w-6 mx-auto" /></th>
+                        <th><div className="skeleton-shimmer h-4 w-32" /></th>
+                        <th><div className="skeleton-shimmer h-4 w-24" /></th>
+                        <th><div className="skeleton-shimmer h-4 w-28" /></th>
+                        <th className="text-center"><div className="skeleton-shimmer h-4 w-16 mx-auto" /></th>
+                        <th className="text-center"><div className="skeleton-shimmer h-4 w-16 mx-auto" /></th>
+                        <th className="text-center"><div className="skeleton-shimmer h-4 w-20 mx-auto" /></th>
+                        <th className="text-center"><div className="skeleton-shimmer h-4 w-16 mx-auto" /></th>
+                        <th><div className="skeleton-shimmer h-4 w-24" /></th>
+                        <th className="text-right"><div className="skeleton-shimmer h-8 w-20 ml-auto" /></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[1, 2, 3, 4].map((i) => (
+                        <tr key={i}>
+                          <td><div className="skeleton-shimmer h-4 w-4 rounded mx-auto" /></td>
+                          <td><div className="skeleton-shimmer h-7 w-7 rounded-full mx-auto" /></td>
+                          <td>
+                            <div className="space-y-1.5">
+                              <div className="skeleton-shimmer h-4 w-40" />
+                              <div className="skeleton-shimmer h-3 w-28" />
+                            </div>
+                          </td>
+                          <td><div className="skeleton-shimmer h-6 w-24 rounded-full" /></td>
+                          <td><div className="skeleton-shimmer h-4 w-28" /></td>
+                          <td className="text-center"><div className="skeleton-shimmer h-6 w-12 rounded-lg mx-auto" /></td>
+                          <td className="text-center"><div className="skeleton-shimmer h-6 w-12 rounded-lg mx-auto" /></td>
+                          <td className="text-center"><div className="skeleton-shimmer h-4 w-16 mx-auto" /></td>
+                          <td className="text-center"><div className="skeleton-shimmer h-4 w-14 mx-auto" /></td>
+                          <td><div className="skeleton-shimmer h-4 w-20" /></td>
+                          <td className="text-right"><div className="skeleton-shimmer h-8 w-24 rounded-lg ml-auto" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : filteredLeaderboard.length === 0 ? (
               <div className="eval-empty-card py-12 text-center">
