@@ -17,13 +17,8 @@ function App() {
     document.documentElement.setAttribute('data-theme', savedTheme);
     document.body.classList.toggle('compact-mode', isCompact);
 
-    // Warmup backend server on Render (wake up early if container is sleeping)
-    const baseUrl = import.meta.env.VITE_API_URL || '/api';
-    const healthEndpoint = baseUrl.endsWith('/api')
-      ? baseUrl.replace(/\/api$/, '/health')
-      : `${baseUrl}/health`;
-
-    fetch(healthEndpoint, { method: 'GET' }).catch(() => {
+    // Warmup backend server on Render (wake up early via Vercel proxy rewrite)
+    fetch('/api/health', { method: 'GET' }).catch(() => {
       // Ignore background ping errors
     });
   }, []);
