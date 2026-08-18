@@ -660,13 +660,18 @@ export default function ModelEvalView() {
       const data = await apiService.getEvaluationDetail(evalId);
       setEvaluationDetail(data);
       setDetailTab(data?.evalMode === 'paired' ? 'paired' : 'breakdown');
+      // Turn off main loading spinner as soon as main detail data is ready
+      setLoadingDetail(false);
+
+      // Fetch eval history asynchronously in background without blocking UI
       if (data?.jobId) {
-        try {
-          const history = await apiService.getEvalHistory(data.jobId);
-          setDetailEvalHistory(Array.isArray(history?.evals) ? history.evals : []);
-        } catch (historyErr) {
-          console.error('Failed to fetch evaluation history:', historyErr);
-        }
+        apiService.getEvalHistory(data.jobId)
+          .then(history => {
+            setDetailEvalHistory(Array.isArray(history?.evals) ? history.evals : []);
+          })
+          .catch(historyErr => {
+            console.error('Failed to fetch evaluation history:', historyErr);
+          });
       }
     } catch (err: any) {
       console.error('Failed to fetch evaluation details:', err);
@@ -675,7 +680,6 @@ export default function ModelEvalView() {
         ? 'Máy chủ không phản hồi trong 90 giây (Cold start hoặc mạng chậm). Kiểm tra backend rồi bấm Thử lại.'
         : 'Không tải được chi tiết lần đánh giá này. Hãy thử lại; nếu vẫn lỗi, kết quả có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.');
       toast.error('Không thể tải chi tiết kết quả đánh giá');
-    } finally {
       setLoadingDetail(false);
     }
   };
