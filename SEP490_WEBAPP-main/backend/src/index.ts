@@ -155,6 +155,25 @@ app.use((_req, res) => {
 app.listen(Number(PORT), '0.0.0.0', () => {
   console.log(`🚀 Server is running on port ${PORT}`);
   console.log(`📝 API docs available at http://localhost:${PORT}/api`);
+
+  // Keep-alive ping: prevent Render free tier from sleeping (sleeps after 15min idle)
+  // Set RENDER_EXTERNAL_URL env var on Render dashboard to enable (e.g. https://your-app.onrender.com)
+  const selfUrl = process.env.RENDER_EXTERNAL_URL || process.env.SELF_URL;
+  if (selfUrl) {
+    const PING_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+    console.log(`⏰ Keep-alive ping enabled → ${selfUrl}/health every 14 min`);
+    setInterval(async () => {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        const res = await fetch(`${selfUrl}/health`, { signal: controller.signal });
+        clearTimeout(timeout);
+        console.log(`[keep-alive] ping → ${res.status}`);
+      } catch (err: any) {
+        console.warn(`[keep-alive] ping failed:`, err?.message || err);
+      }
+    }, PING_INTERVAL_MS);
+  }
 });
 
 export default app;

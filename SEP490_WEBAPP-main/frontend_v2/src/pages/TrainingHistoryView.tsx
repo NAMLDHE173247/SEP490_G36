@@ -423,6 +423,10 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   const [auditTab, setAuditTab] = useState<'events' | 'logs' | 'config' | 'resources'>('events');
   const [clearingQueue, setClearingQueue] = useState(false);
 
+  // Cache keys for stale-while-revalidate
+  const HISTORY_CACHE_KEY = 'th_history_cache';
+  const HISTORY_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
   // Fetch base models
   const fetchBaseModels = useCallback(async () => {
     try {
@@ -446,8 +450,25 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
     }
   }, []);
 
-  // Fetch training history list
+  // Fetch training history list (stale-while-revalidate)
   const fetchHistories = useCallback(async (modelFilter?: string) => {
+    // Step 1: Show cached data immediately if no filter active
+    if (!modelFilter) {
+      try {
+        const raw = localStorage.getItem(HISTORY_CACHE_KEY);
+        if (raw) {
+          const { data, ts } = JSON.parse(raw) as { data: TrainingHistoryItem[]; ts: number };
+          const isStale = Date.now() - ts > HISTORY_CACHE_TTL_MS;
+          if (data?.length) {
+            setHistories(data);
+            setLoading(false);
+            if (!isStale) return; // Cache fresh — skip network
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Step 2: Network fetch
     setLoading(true);
     try {
       const url = modelFilter
@@ -456,6 +477,12 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
       const res = await api.get(url);
       const data = Array.isArray(res.data) ? res.data : [];
       setHistories(data);
+      // Update cache only for unfiltered list
+      if (!modelFilter) {
+        try {
+          localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify({ data, ts: Date.now() }));
+        } catch { /* quota exceeded */ }
+      }
     } catch (err) {
       console.error('Failed to fetch training history:', err);
       setHistories([]);
@@ -465,6 +492,18 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
   }, []);
 
   useEffect(() => {
+    // Show cache immediately before any network call
+    try {
+      const raw = localStorage.getItem(HISTORY_CACHE_KEY);
+      if (raw) {
+        const { data } = JSON.parse(raw) as { data: TrainingHistoryItem[]; ts: number };
+        if (data?.length) {
+          setHistories(data);
+          setLoading(false);
+        }
+      }
+    } catch { /* ignore */ }
+
     fetchBaseModels();
     fetchHistories();
     fetchRegistries();

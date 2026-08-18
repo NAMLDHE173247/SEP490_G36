@@ -1986,83 +1986,145 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
     const ownerFilter = getOwnerFilter(req);
     const gpuActiveEvals = await getGpuActiveEvaluations();
 
+    // Step 1: Get all jobIds that have at least one eval
     const evaluatedJobIds = await ModelEvaluation.distinct('jobId', ownerFilter);
+    if (!evaluatedJobIds.length) return res.json([]);
+
+    // Step 2: Get all training histories for those jobs
     const histories = await TrainingHistory.find({
       ...ownerFilter,
       jobId: { $in: evaluatedJobIds },
-    }).sort({ completedAt: -1 }).lean();
+    })
+      .select('jobId projectName baseModel completedAt trainingDuration pinnedEvalId')
+      .sort({ completedAt: -1 })
+      .lean();
 
-    const result = await Promise.all(
-      histories.map(async (h) => {
-        const latestAttempt = await ModelEvaluation.findOne({ ...ownerFilter, jobId: h.jobId })
-          .sort({ createdAt: -1 })
-          .lean();
-        const latestEval = await ModelEvaluation.findOne({ ...ownerFilter, jobId: h.jobId, status: 'COMPLETED' })
-          .sort({ completedAt: -1 })
-          .lean();
+    if (!histories.length) return res.json([]);
 
-        let displayEval = latestEval || latestAttempt;
-        if (h.pinnedEvalId) {
-          const pinned = await ModelEvaluation.findOne({
-            ...ownerFilter,
-            jobId: h.jobId,
-            modelEvalId: h.pinnedEvalId,
-            status: 'COMPLETED',
-          }).lean();
-          if (pinned) displayEval = pinned;
-        }
+    const jobIds = histories.map((h) => h.jobId);
 
-        const modelEvalId = displayEval?.modelEvalId ?? null;
+    // Step 3a: Bulk fetch — latest attempt per job (any status), sort createdAt desc
+    const latestAttemptAgg = await ModelEvaluation.aggregate([
+      { $match: { ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}), jobId: { $in: jobIds } } },
+      { $sort: { jobId: 1, createdAt: -1 } },
+      {
+        $group: {
+          _id: '$jobId',
+          doc: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+    const latestAttemptMap = new Map<string, any>(
+      latestAttemptAgg.map((x) => [x._id, x.doc])
+    );
 
-        const activeGpuJob = (gpuActiveEvals || []).find(
-          g => g.eval_job_id === modelEvalId || (g.job_id && g.job_id === h.jobId)
-        );
-        const progress = activeGpuJob && typeof activeGpuJob.progress === 'number'
+    // Step 3b: Bulk fetch — latest COMPLETED eval per job
+    const latestCompletedAgg = await ModelEvaluation.aggregate([
+      {
+        $match: {
+          ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}),
+          jobId: { $in: jobIds },
+          status: 'COMPLETED',
+        },
+      },
+      { $sort: { jobId: 1, completedAt: -1 } },
+      {
+        $group: {
+          _id: '$jobId',
+          doc: { $first: '$$ROOT' },
+        },
+      },
+    ]);
+    const latestCompletedMap = new Map<string, any>(
+      latestCompletedAgg.map((x) => [x._id, x.doc])
+    );
+
+    // Step 3c: Bulk fetch — pinned evals (only for histories that have a pinnedEvalId)
+    const pinnedEvalIds = histories
+      .map((h) => h.pinnedEvalId)
+      .filter((id): id is string => !!id);
+    const pinnedMap = new Map<string, any>();
+    if (pinnedEvalIds.length > 0) {
+      const pinnedDocs = await ModelEvaluation.find({
+        ...(ownerFilter.ownerId ? { ownerId: ownerFilter.ownerId } : {}),
+        modelEvalId: { $in: pinnedEvalIds },
+        status: 'COMPLETED',
+      })
+        .select('modelEvalId jobId status error failureStage totalConversations judgeModel summary flags progress stage')
+        .lean();
+      for (const doc of pinnedDocs) {
+        pinnedMap.set(doc.modelEvalId, doc);
+      }
+    }
+
+    // Step 4: Assemble results using the pre-fetched maps
+    const result = histories.map((h) => {
+      const latestAttempt = latestAttemptMap.get(h.jobId) ?? null;
+      const latestEval = latestCompletedMap.get(h.jobId) ?? null;
+
+      let displayEval = latestEval || latestAttempt;
+      if (h.pinnedEvalId) {
+        const pinned = pinnedMap.get(h.pinnedEvalId);
+        if (pinned) displayEval = pinned;
+      }
+
+      const modelEvalId = displayEval?.modelEvalId ?? null;
+
+      const activeGpuJob = (gpuActiveEvals || []).find(
+        (g) => g.eval_job_id === modelEvalId || (g.job_id && g.job_id === h.jobId)
+      );
+      const progress =
+        activeGpuJob && typeof activeGpuJob.progress === 'number'
           ? activeGpuJob.progress
-          : (typeof (displayEval as any)?.progress === 'number' ? (displayEval as any).progress : 0);
-        const stageLabel = activeGpuJob?.stage_label || (displayEval as any)?.stage || null;
+          : typeof displayEval?.progress === 'number'
+          ? displayEval.progress
+          : 0;
+      const stageLabel = activeGpuJob?.stage_label || displayEval?.stage || null;
 
-        return {
-          jobId: h.jobId,
-          projectName: h.projectName,
-          baseModel: h.baseModel,
-          completedAt: h.completedAt,
-          trainingDuration: h.trainingDuration,
-          modelEvalId,
-          pinnedEvalId: h.pinnedEvalId ?? null,
-          status: displayEval?.status ?? latestAttempt?.status ?? 'UNKNOWN',
-          progress,
-          stageLabel,
-          error: displayEval?.error ?? null,
-          failureStage: displayEval?.failureStage ?? null,
-          latestAttemptId: latestAttempt?.modelEvalId ?? null,
-          latestAttemptStatus: latestAttempt?.status ?? null,
-          latestAttemptError: latestAttempt?.error ?? null,
-          judgeModel: displayEval?.judgeModel ?? null,
-          totalConversations: displayEval?.totalConversations ?? 0,
-          flags: displayEval?.flags ?? [],
-          scores: {
-            knowledge: displayEval?.status === 'COMPLETED'
+      return {
+        jobId: h.jobId,
+        projectName: h.projectName,
+        baseModel: h.baseModel,
+        completedAt: h.completedAt,
+        trainingDuration: h.trainingDuration,
+        modelEvalId,
+        pinnedEvalId: h.pinnedEvalId ?? null,
+        status: displayEval?.status ?? latestAttempt?.status ?? 'UNKNOWN',
+        progress,
+        stageLabel,
+        error: displayEval?.error ?? null,
+        failureStage: displayEval?.failureStage ?? null,
+        latestAttemptId: latestAttempt?.modelEvalId ?? null,
+        latestAttemptStatus: latestAttempt?.status ?? null,
+        latestAttemptError: latestAttempt?.error ?? null,
+        judgeModel: displayEval?.judgeModel ?? null,
+        totalConversations: displayEval?.totalConversations ?? 0,
+        flags: displayEval?.flags ?? [],
+        scores: {
+          knowledge:
+            displayEval?.status === 'COMPLETED'
               ? displayEval?.summary?.knowledge ?? displayEval?.summary?.criteria?.B1 ?? null
               : null,
-            socratic: displayEval?.status === 'COMPLETED'
+          socratic:
+            displayEval?.status === 'COMPLETED'
               ? displayEval?.summary?.socratic ?? displayEval?.summary?.group_a ?? null
               : null,
-            exploratory_overall: displayEval?.status === 'COMPLETED'
+          exploratory_overall:
+            displayEval?.status === 'COMPLETED'
               ? displayEval?.summary?.exploratory_overall ?? displayEval?.summary?.overall ?? null
               : null,
-            overall: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
-            group_a: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
-            group_b: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
-            group_c: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_c ?? null : null,
-            group_d: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_d ?? null : null,
-            criteria: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.criteria ?? null : null,
-            avg_latency_ms: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.avg_latency_ms ?? null : null,
-            non_scoring: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
-          },
-        };
-      })
-    );
+          overall: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.overall ?? null : null,
+          group_a: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_a ?? null : null,
+          group_b: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_b ?? null : null,
+          group_c: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_c ?? null : null,
+          group_d: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.group_d ?? null : null,
+          criteria: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.criteria ?? null : null,
+          avg_latency_ms:
+            displayEval?.status === 'COMPLETED' ? displayEval?.summary?.avg_latency_ms ?? null : null,
+          non_scoring: displayEval?.status === 'COMPLETED' ? displayEval?.summary?.non_scoring ?? null : null,
+        },
+      };
+    });
 
     return res.json(result);
   } catch (err: any) {
