@@ -769,18 +769,23 @@ export default function TrainingHistoryView({ setActiveTab }: TrainingHistoryVie
             <p>Quản lý các đợt fine-tune model, so sánh các run và tải checkpoint</p>
           </div>
         </div>
-        <div className="history-header-actions" style={{ display: 'flex', gap: '8px' }}>
+        <div className="history-header-actions">
           <button
-            className="btn-outline"
+            className="btn-history-clear"
             onClick={handleClearGpuQueue}
             disabled={clearingQueue}
             title="Giải phóng hàng đợi GPU từ xa nếu gặp lỗi treo job"
-            style={{ borderColor: '#fca5a5', color: '#dc2626', background: '#fef2f2' }}
           >
-            <Trash2 size={16} /> {clearingQueue ? 'Đang dọn...' : '🧹 Dọn Queue GPU'}
+            <Trash2 size={14} />
+            <span>{clearingQueue ? 'Đang dọn...' : 'Dọn Queue GPU'}</span>
           </button>
-          <button className="btn-outline" onClick={() => fetchHistories(selectedModel || undefined)}>
-            <RefreshCw size={16} /> Tải lại danh sách
+          <button
+            className="btn-history-reload"
+            onClick={() => fetchHistories(selectedModel || undefined)}
+            title="Tải lại danh sách Training History"
+          >
+            <RefreshCw size={14} />
+            <span>Tải lại danh sách</span>
           </button>
         </div>
       </div>
