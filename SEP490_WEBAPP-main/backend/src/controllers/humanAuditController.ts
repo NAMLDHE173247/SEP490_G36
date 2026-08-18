@@ -301,7 +301,9 @@ export const getMyHumanAuditWork = async (req: Request, res: Response) => {
     .lean();
   if (!assignment) return res.status(403).json({ error: 'Evaluation này chưa được giao cho tài khoản Staff hiện tại' });
   const [evaluation, reviews] = await Promise.all([
-    ModelEvaluation.findOne({ modelEvalId, status: 'COMPLETED' }).lean(),
+    ModelEvaluation.findOne({ modelEvalId, status: 'COMPLETED' })
+      .select('-gpuResult -hypothesisDecisions -adaptiveDiagnostic -researchStatistics -extendedReferences -protocolManifest -environmentManifest -loadMetrics')
+      .lean(),
     HumanAuditReview.find({ modelEvalId, reviewerId: staffId }).lean(),
   ]);
   if (!evaluation) return res.status(404).json({ error: 'Evaluation not found' });

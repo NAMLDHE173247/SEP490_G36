@@ -69,37 +69,49 @@ export default function HumanAuditReplayView() {
   const [scorePanelOpen, setScorePanelOpen] = useState(false);
   const [scoringTarget, setScoringTarget] = useState<'ft' | 'base'>('ft');
 
+  const evalCache = React.useRef<Map<string, any>>(new Map());
+
   const loadEvaluation = useCallback(async (requestedId?: string) => {
     const id = String(requestedId || evaluationId).trim();
     if (!id) {
       toast.error('Nhập Evaluation ID cần thẩm định');
       return;
     }
-    setLoading(true);
-    setLoadError('');
-    try {
-      const detail = await apiService.getMyHumanAuditWork(id);
-      if (!Array.isArray(detail?.results) || detail.results.length === 0) {
-        throw new Error('Evaluation này không có replay để thẩm định');
+
+    const cached = evalCache.current.get(id);
+    let detail = cached;
+
+    if (!detail) {
+      setLoading(true);
+      setLoadError('');
+      try {
+        detail = await apiService.getMyHumanAuditWork(id);
+        if (!Array.isArray(detail?.results) || detail.results.length === 0) {
+          throw new Error('Evaluation này không có replay để thẩm định');
+        }
+        evalCache.current.set(id, detail);
+      } catch (error: any) {
+        const message = error?.response?.data?.error || error?.message || 'Không tải được Evaluation ID';
+        setLoadError(message);
+        setEvaluation(null);
+        toast.error(message);
+        setLoading(false);
+        return;
+      } finally {
+        setLoading(false);
       }
-      setEvaluation(detail);
-      setEvaluationId(id);
-      localStorage.setItem('human_audit_eval_id', id);
-      const storedConv = localStorage.getItem('human_audit_conv_index');
-      const requestedConv = storedConv === null ? null : Number(storedConv);
-      const initial = requestedConv !== null && Number.isInteger(requestedConv)
-        ? detail.results.find((item: any) => item.conv_index === requestedConv)
-        : null;
-      setSelectedConvIndex((initial || detail.results[0]).conv_index);
-      localStorage.removeItem('human_audit_conv_index');
-    } catch (error: any) {
-      const message = error?.response?.data?.error || error?.message || 'Không tải được Evaluation ID';
-      setLoadError(message);
-      setEvaluation(null);
-      toast.error(message);
-    } finally {
-      setLoading(false);
     }
+
+    setEvaluation(detail);
+    setEvaluationId(id);
+    localStorage.setItem('human_audit_eval_id', id);
+    const storedConv = localStorage.getItem('human_audit_conv_index');
+    const requestedConv = storedConv === null ? null : Number(storedConv);
+    const initial = requestedConv !== null && Number.isInteger(requestedConv)
+      ? detail.results.find((item: any) => item.conv_index === requestedConv)
+      : null;
+    setSelectedConvIndex((initial || detail.results[0]).conv_index);
+    localStorage.removeItem('human_audit_conv_index');
   }, [evaluationId]);
 
   useEffect(() => {
@@ -392,8 +404,20 @@ export default function HumanAuditReplayView() {
         </div>
         {recentEvaluations.length > 0 && (
           <div className="ha-recent-select">
-            <label>Assignment Human Audit của tôi</label>
-            <select value={evaluationId} onChange={(event) => { setEvaluationId(event.target.value); void loadEvaluation(event.target.value); }}>
+            <label>
+              Assignment Human Audit của tôi
+              {loading && <RefreshCw className="spin" size={14} style={{ display: 'inline', marginLeft: '8px', verticalAlign: 'middle', color: '#6366f1' }} />}
+            </label>
+            <select
+              value={evaluationId}
+              disabled={loading}
+              onChange={(event) => {
+                const selectedVal = event.target.value;
+                if (!selectedVal) return;
+                setEvaluationId(selectedVal);
+                void loadEvaluation(selectedVal);
+              }}
+            >
               <option value="">Chọn Evaluation ID...</option>
               {recentEvaluations.map((item: any) => (
                 <option key={item.modelEvalId} value={item.modelEvalId}>
