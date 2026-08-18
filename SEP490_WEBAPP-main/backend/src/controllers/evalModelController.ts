@@ -1482,37 +1482,52 @@ export const exportEvaluationArtifact = async (req: Request, res: Response) => {
 export const getEvaluation = async (req: Request, res: Response) => {
   try {
     const ownerFilter = getOwnerFilter(req);
-
     const { evalId } = req.params;
-    // Tối ưu hóa: MongoDB projection trên mảng sâu (-results.prompt_trace) với document lớn cực kỳ chậm.
-    // Thay vào đó, ta chỉ exclude ở level root, sau đó xóa các trường khổng lồ bằng Node.js.
-    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ...ownerFilter })
+
+    // Tối ưu hóa: Tìm theo modelEvalId (indexed unique) trước để đạt tốc độ sub-ms.
+    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId })
       .select('-systemPrompt -gpuResult')
       .lean();
-      
-    if (doc) {
-      if (Array.isArray(doc.results)) {
-        doc.results.forEach((r: any) => {
-          delete r.prompt_trace;
-          delete r.reference_trace;
-          delete r.judge_router_metadata;
-        });
-      }
-      if (Array.isArray(doc.baseResults)) {
-        doc.baseResults.forEach((r: any) => {
-          delete r.prompt_trace;
-          delete r.reference_trace;
-          delete r.judge_router_metadata;
-        });
-      }
-    }
+
     if (!doc) {
       return res.status(404).json({ error: 'Evaluation not found' });
     }
+
+    if (ownerFilter.ownerId && String(doc.ownerId) !== String(ownerFilter.ownerId)) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    if (Array.isArray(doc.results)) {
+      doc.results.forEach((r: any) => {
+        delete r.prompt_trace;
+        delete r.reference_trace;
+        delete r.judge_router_metadata;
+        if (r.telemetry && typeof r.telemetry === 'object') {
+          r.telemetry = {
+            e2e_ms: r.telemetry.e2e_ms,
+            tokens_per_second: r.telemetry.tokens_per_second,
+            input_tokens: r.telemetry.input_tokens,
+            output_tokens: r.telemetry.output_tokens,
+          };
+        }
+      });
+    }
+
+    // Tối ưu hóa baseResults: chỉ giữ thông tin tối giản vì FE chỉ dùng length/counts.
+    if (Array.isArray(doc.baseResults)) {
+      doc.baseResults = doc.baseResults.map((r: any) => ({
+        item_id: r.item_id,
+        conv_index: r.conv_index,
+        subject: r.subject,
+        criteria_scores: r.criteria_scores,
+      })) as any[];
+    }
+
     // Kiểm tra xem eval này có đang được pin không
     const history = await TrainingHistory.findOne({ jobId: doc.jobId, ...ownerFilter })
       .select('pinnedEvalId projectName')
       .lean();
+
     return res.json({
       ...doc,
       isPinned: history?.pinnedEvalId === evalId,

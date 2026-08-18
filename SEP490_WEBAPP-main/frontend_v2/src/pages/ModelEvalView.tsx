@@ -670,9 +670,9 @@ export default function ModelEvalView() {
       }
     } catch (err: any) {
       console.error('Failed to fetch evaluation details:', err);
-      const timedOut = err?.code === 'ECONNABORTED';
+      const timedOut = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout');
       setDetailLoadError(timedOut
-        ? 'Máy chủ không phản hồi trong 60 giây. Kiểm tra backend rồi bấm Thử lại.'
+        ? 'Máy chủ không phản hồi trong 90 giây (Cold start hoặc mạng chậm). Kiểm tra backend rồi bấm Thử lại.'
         : 'Không tải được chi tiết lần đánh giá này. Hãy thử lại; nếu vẫn lỗi, kết quả có thể đã bị xóa hoặc phiên đăng nhập đã hết hạn.');
       toast.error('Không thể tải chi tiết kết quả đánh giá');
     } finally {
@@ -2014,7 +2014,7 @@ export default function ModelEvalView() {
               <button className="btn-outline-eval" onClick={handleExportArtifact} disabled={!evaluationDetail}>
                 <Download size={14} /> Tải artifact RP5 (JSON)
               </button>
-              <button className="btn-outline-eval" onClick={fetchLeaderboard}>
+              <button className="btn-outline-eval" onClick={() => { fetchLeaderboard(); if (selectedEvalId) handleViewDetails(selectedEvalId); }}>
                 <RefreshCw size={14} /> Tải lại dữ liệu
               </button>
             </div>

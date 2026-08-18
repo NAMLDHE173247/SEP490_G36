@@ -770,7 +770,7 @@ export const apiService = {
     return response.data;
   },
   getEvaluationDetail: async (evalId: string): Promise<any> => {
-    const response = await api.get(`/model-eval/${evalId}`, { timeout: 60000 });
+    const response = await api.get(`/model-eval/${evalId}`, { timeout: 90000 });
     return response.data;
   },
   exportEvaluationArtifact: async (evalId: string): Promise<Blob> => {
