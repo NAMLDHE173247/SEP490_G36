@@ -1096,26 +1096,30 @@ export default function ModelEvalView() {
         return;
       }
     }
-    // Fallback: localStorage (for backward compatibility with older data)
+    // Fallback: localStorage (for backward compatibility with older data or before DB sync)
     try {
       const saved = localStorage.getItem(`large_llm_references_${selectedEvalId}`);
-      const parsed = saved ? JSON.parse(saved) : [];
-      const rows = Array.isArray(parsed) ? parsed : [];
-      const explicitlyTyped = rows.filter((item: any) => ['large_llm', 'version1_shared_ft'].includes(item?.comparisonRole));
-      // Migration: older UI stored two anonymous Large-LLM columns. Keep only
-      // the first as the contextual LLM; the second placeholder is retired.
-      const migrated = explicitlyTyped.length
-        ? explicitlyTyped
-        : rows.slice(0, 1).map((item: any) => ({ ...item, comparisonRole: 'large_llm' }));
-      setLargeLlmReferences(migrated);
-      // If we loaded from localStorage but DB is empty, persist to DB for cross-machine access
-      if (migrated.length > 0 && dbRefs.length === 0) {
-        apiService.saveExtendedReferences(selectedEvalId, migrated).catch(() => {});
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const rows = Array.isArray(parsed) ? parsed : [];
+        const explicitlyTyped = rows.filter((item: any) => ['large_llm', 'version1_shared_ft'].includes(item?.comparisonRole));
+        if (explicitlyTyped.length > 0) {
+          setLargeLlmReferences(explicitlyTyped);
+          // If we loaded from localStorage but DB is empty, persist to DB for cross-machine access
+          if (dbRefs.length === 0) {
+            apiService.saveExtendedReferences(selectedEvalId, explicitlyTyped).catch(() => {});
+          }
+          return;
+        }
       }
     } catch {
+      // ignore JSON parse error
+    }
+    // Only reset if evaluationDetail is loaded and no references exist
+    if (evaluationDetail) {
       setLargeLlmReferences([]);
     }
-  }, [selectedEvalId, evaluationDetail?.extendedReferences]);
+  }, [selectedEvalId, evaluationDetail]);
 
   const handleImportLargeLlmArtifacts = async (files: FileList | null) => {
     if (!files?.length || !evaluationDetail || !selectedEvalId) return;

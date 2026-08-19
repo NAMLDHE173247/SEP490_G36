@@ -123,15 +123,18 @@ async function _autoSaveExtendedReference(
     };
 
     // Merge: keep existing references of other roles, replace this role
-    const doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ownerId }).select('extendedReferences').lean();
+    let doc = await ModelEvaluation.findOne({ modelEvalId: evalId, ownerId }).select('extendedReferences').lean();
+    if (!doc) {
+      doc = await ModelEvaluation.findOne({ modelEvalId: evalId }).select('extendedReferences').lean();
+    }
     const existing: any[] = Array.isArray((doc as any)?.extendedReferences) ? (doc as any).extendedReferences : [];
     const merged = [...existing.filter((r: any) => r.comparisonRole !== comparisonRole), reference];
 
-    await ModelEvaluation.updateOne(
-      { modelEvalId: evalId, ownerId },
+    const updateRes = await ModelEvaluation.updateOne(
+      { modelEvalId: evalId },
       { $set: { extendedReferences: merged } },
     );
-    console.log(`[Backend] ✅ Auto-saved ${comparisonRole} reference for eval ${evalId} to MongoDB`);
+    console.log(`[Backend] ✅ Auto-saved ${comparisonRole} reference for eval ${evalId} to MongoDB (matched: ${updateRes.matchedCount}, modified: ${updateRes.modifiedCount})`);
   } catch (err: any) {
     console.error(`[Backend] ❌ Failed to auto-save ${comparisonRole} reference for eval ${evalId}:`, err.message);
   }
@@ -1712,10 +1715,16 @@ export const saveExtendedReferences = async (req: Request, res: Response) => {
       protocolMatch: Boolean(ref.protocolMatch),
       protocolNotes: Array.isArray(ref.protocolNotes) ? ref.protocolNotes.map(String) : [],
     }));
-    const result = await ModelEvaluation.updateOne(
+    let result = await ModelEvaluation.updateOne(
       { modelEvalId: evalId, ownerId },
       { $set: { extendedReferences: sanitized } },
     );
+    if (result.matchedCount === 0) {
+      result = await ModelEvaluation.updateOne(
+        { modelEvalId: evalId },
+        { $set: { extendedReferences: sanitized } },
+      );
+    }
     if (result.matchedCount === 0) {
       return res.status(404).json({ error: 'Evaluation not found' });
     }
