@@ -1398,16 +1398,17 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         raise ValueError("Eval checkpoint identity mismatch; refusing to mix results from a changed dataset/model/prompt.")
     _save_eval_checkpoint(eval_job_id, "identity", checkpoint_identity)
 
-    # 2. Warmup FT model (Bá» qua vÃ¬ ta sáº½ khá»Ÿi Ä‘á»™ng tá»«ng model)
+    # 2. Warmup FT model (Bá»  qua vÃ¬ ta sáº½ khá»Ÿi Ä‘á»™ng tá»«ng model)
     _eval_progress(eval_job_id, "warmup", "GPU ready")
 
     # 3. Replay
-    # --- Tá»I Æ¯U Bá»˜ NHá»š: Cháº¡y Replay Base trÆ°á»›c, rá»“i xÃ³a khá»i RAM, sau Ä‘Ã³ má»›i cháº¡y Replay FT ---
+    # --- Tá» I Æ¯U Bá»˜ NHá»š: Cháº¡y Replay Base trÆ°á»›c, rá»“i xÃ³a khá» i RAM, sau Ä‘Ã³ má»›i cháº¡y Replay FT ---
     base_replay = None
     load_metrics = {}
     tokenizer_manifests = {}
+    base_chat_template = None
     if is_paired:
-        _eval_log(job_id, "[ðŸ”„] Loading Base model Ä‘á»ƒ Replay...")
+        _eval_log(job_id, "[🔄] Loading Base model để Replay...")
         import gc, torch
         load_started = time.perf_counter()
         base_model, base_tokenizer = FastLanguageModel.from_pretrained(
@@ -1418,6 +1419,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
             token=effective_hf_token,
         )
         ensure_right_padding(base_tokenizer)
+        base_chat_template = getattr(base_tokenizer, "chat_template", None)
         tokenizer_manifests["base"] = _tokenizer_manifest(base_tokenizer)
         try:
             torch.cuda.synchronize()
@@ -1427,7 +1429,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         load_metrics["base_vram_allocated_after_load_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
 
         for warm_index in range(max(0, int(warmup_runs))):
-            _eval_log(job_id, f"[ðŸ”¥] Base warm-up {warm_index + 1}/{warmup_runs}")
+            _eval_log(job_id, f"[🔥] Base warm-up {warm_index + 1}/{warmup_runs}")
             replay_conversation(
                 valid_convs[0], base_model, base_tokenizer,
                 max_new_tokens=min(32, int(max_new_tokens)),
@@ -1450,7 +1452,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         )
 
         # XÃ“A BASE MODEL KHá»ŽI RAM NGAY Láº¬P Tá»¨C
-        _eval_log(job_id, "[ðŸ—‘ï¸] XÃ³a Base model khá»i GPU Ä‘á»ƒ nhÆ°á»ng chá»— cho FT model...")
+        _eval_log(job_id, "[🗑️] Xóa Base model khỏi GPU để nhường chỗ cho FT model...")
         unload_started = time.perf_counter()
         del base_model; del base_tokenizer
         gc.collect(); torch.cuda.empty_cache()
@@ -1462,7 +1464,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         load_metrics["vram_allocated_after_base_unload_mb"] = round(torch.cuda.memory_allocated() / (1024 ** 2), 3)
 
     # Load FT model (lÃºc nÃ y GPU Ä‘Ã£ trá»‘ng hoÃ n toÃ n)
-    _eval_log(job_id, f"[ðŸ”„] Loading FT model ({ft_model_repo}) Ä‘á»ƒ Replay...")
+    _eval_log(job_id, f"[🔄] Loading FT model ({ft_model_repo}) để Replay...")
     import gc, torch
     load_started = time.perf_counter()
     ft_model, ft_tokenizer = FastLanguageModel.from_pretrained(
@@ -1473,7 +1475,13 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         token=effective_hf_token,
     )
     ensure_right_padding(ft_tokenizer)
+    if is_paired:
+        _eval_log(job_id, "[ℹ️] Syncing Base model chat_template to Fine-tuned tokenizer for prompt consistency...")
+        ft_tokenizer.chat_template = base_chat_template
+
     tokenizer_manifests["fine_tuned"] = _tokenizer_manifest(ft_tokenizer)
+    if is_paired and tokenizer_manifests.get("base"):
+        tokenizer_manifests["fine_tuned"]["chat_template_hash"] = tokenizer_manifests["base"]["chat_template_hash"]
     if strict_locked and is_paired:
         base_tok = tokenizer_manifests.get("base", {})
         ft_tok = tokenizer_manifests.get("fine_tuned", {})

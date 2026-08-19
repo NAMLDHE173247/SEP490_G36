@@ -14,34 +14,43 @@ export class OpenRouterProvider implements ILlmProvider {
 
     async generateContent(prompt: string, modelOverride?: string, systemPrompt?: string): Promise<string> {
         this.lastUsage = null;
-        // Fallback to a sensible default if no model is provided
         const model = modelOverride || process.env.OPENROUTER_MODEL || RESEARCH_MODEL_CATALOG.gemini;
-        
+
         const messages: any[] = [];
         if (systemPrompt) {
             messages.push({ role: 'system', content: systemPrompt });
         }
         messages.push({ role: 'user', content: prompt });
 
+        const rawBaseUrl = process.env.OPENAI_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://mkp-api.fptcloud.com/v1';
+        const baseUrl = rawBaseUrl.replace(/\/+$/, '');
+        const isOpenRouter = baseUrl.includes('openrouter.ai');
+
+        let effectiveModel = model;
+        if (!isOpenRouter) {
+            if (effectiveModel.includes('deepseek')) effectiveModel = 'DeepSeek-V4-Flash';
+            else if (effectiveModel.includes('gemini')) effectiveModel = 'gemma-3-27b-it';
+            else if (effectiveModel.includes('openai') || effectiveModel.includes('gpt')) effectiveModel = 'Llama-3.3-70B-Instruct';
+        }
+
         const maxRetries = 5;
         let delay = 2000;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                const response = await fetch(`${baseUrl}/chat/completions`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
                         'Content-Type': 'application/json',
-                        'HTTP-Referer': 'http://localhost:3000', // Optional, for OpenRouter rankings
-                        'X-Title': 'SEP490 Web App'
+                        ...(isOpenRouter ? { 'HTTP-Referer': 'http://localhost:3000', 'X-Title': 'SEP490 Web App' } : {})
                     },
                     body: JSON.stringify({
-                        model: model,
+                        model: effectiveModel,
                         messages: messages,
                         temperature: 0.1,
                         max_tokens: 1024,
-                        ...(this.isJson && !model.toLowerCase().includes('gemini') ? { response_format: { type: 'json_object' } } : {})
+                        ...(this.isJson && isOpenRouter && !effectiveModel.toLowerCase().includes('gemini') ? { response_format: { type: 'json_object' } } : {})
                     })
                 });
 

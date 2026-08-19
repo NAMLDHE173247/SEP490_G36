@@ -2385,7 +2385,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
             else:
                 conversations = data if isinstance(data, list) else [data]
     except Exception as e:
-        _eval_log(job_id, f"[Eval] Lá»—i Ä‘á»c file: {e}")
+        _eval_log(job_id, f"[Eval] Lỗi đọc file: {e}")
         return
 
     # Normalize
@@ -2402,7 +2402,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
             valid_convs.append({**c, "messages": cleaned})
 
     if not valid_convs:
-        _eval_log(job_id, "[Eval] KhÃ´ng cÃ³ conversation há»£p lá»‡.")
+        _eval_log(job_id, "[Eval] Không có conversation hợp lệ.")
         return
 
     normalized_subject_override = normalize_subject(subject_override) if subject_override else ""
@@ -2419,20 +2419,20 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
     validation = validate_locked_dataset(valid_convs, strict=strict_locked)
     adaptive_validation = validate_adaptive_dataset(valid_convs)
     for warning in validation["warnings"][:20]:
-        _eval_log(job_id, f"[âš ï¸] Dataset warning: {warning}")
+        _eval_log(job_id, f"[⚠️] Dataset warning: {warning}")
     if not validation["valid"]:
         detail = "; ".join(validation["errors"][:10])
-        raise ValueError(f"Dataset khÃ´ng Ä‘áº¡t locked protocol: {detail}")
+        raise ValueError(f"Dataset không đạt locked protocol: {detail}")
 
     total = len(valid_convs)
     # Models are intentionally loaded sequentially inside this function to
     # avoid CPU/GPU OOM, so paired mode is determined by the locked Base repo.
     is_paired = bool(base_model_repo)
     eval_mode = "paired" if is_paired else "single"
-    _eval_log(job_id, f"[ðŸ“Š] Mode: {eval_mode} | {total} conversations")
+    _eval_log(job_id, f"[📊] Mode: {eval_mode} | {total} conversations")
     _eval_log(
         job_id,
-        f"[ðŸ”’] Protocol={protocol_mode} | Prompt={prompt_variant.upper()}:{system_prompt_version or 'UNVERSIONED'} "
+        f"[🔒] Protocol={protocol_mode} | Prompt={prompt_variant.upper()}:{system_prompt_version or 'UNVERSIONED'} "
         f"| max_new_tokens={max_new_tokens} | bootstrap={bootstrap_resamples}",
     )
     effective_hf_token = hf_token or _read_secret("HF_TOKEN") or None
@@ -2464,16 +2464,17 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         raise ValueError("Eval checkpoint identity mismatch; refusing to mix results from a changed dataset/model/prompt.")
     _save_eval_checkpoint(eval_job_id, "identity", checkpoint_identity)
 
-    # 2. Warmup FT model (Bá» qua vÃ¬ ta sáº½ khá»Ÿi Ä‘á»™ng tá»«ng model)
+    # 2. Warmup FT model (Bỏ qua vì ta sẽ khởi động từng model)
     _eval_progress(eval_job_id, "warmup", "GPU ready")
 
     # 3. Replay
-    # --- Tá»I Æ¯U Bá»˜ NHá»š: Cháº¡y Replay Base trÆ°á»›c, rá»“i xÃ³a khá»i RAM, sau Ä‘Ã³ má»›i cháº¡y Replay FT ---
+    # --- TỐI ƯU BỘ NHỚ: Chạy Replay Base trước, rồi xóa khỏi RAM, sau đó mới chạy Replay FT ---
     base_replay = None
     load_metrics = {}
     tokenizer_manifests = {}
+    base_chat_template = None
     if is_paired:
-        _eval_log(job_id, "[ðŸ”„] Loading Base model Ä‘á»ƒ Replay...")
+        _eval_log(job_id, "[🔄] Loading Base model để Replay...")
         import gc, torch
         load_started = time.perf_counter()
         base_model, base_tokenizer = FastLanguageModel.from_pretrained(
@@ -2486,6 +2487,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
         if getattr(base_tokenizer, "pad_token", None) is None:
             base_tokenizer.pad_token = base_tokenizer.eos_token
         base_tokenizer.padding_side = "right"
+        base_chat_template = getattr(base_tokenizer, "chat_template", None)
         tokenizer_manifests["base"] = _tokenizer_manifest(base_tokenizer)
         try:
             torch.cuda.synchronize()
@@ -2543,7 +2545,13 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
     if getattr(ft_tokenizer, "pad_token", None) is None:
         ft_tokenizer.pad_token = ft_tokenizer.eos_token
     ft_tokenizer.padding_side = "right"
+    if is_paired:
+        _eval_log(job_id, "[ℹ️] Syncing Base model chat_template to Fine-tuned tokenizer for prompt consistency...")
+        ft_tokenizer.chat_template = base_chat_template
+
     tokenizer_manifests["fine_tuned"] = _tokenizer_manifest(ft_tokenizer)
+    if is_paired and tokenizer_manifests.get("base"):
+        tokenizer_manifests["fine_tuned"]["chat_template_hash"] = tokenizer_manifests["base"]["chat_template_hash"]
     if strict_locked and is_paired:
         base_tok = tokenizer_manifests.get("base", {})
         ft_tok = tokenizer_manifests.get("fine_tuned", {})

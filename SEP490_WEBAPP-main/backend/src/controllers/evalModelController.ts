@@ -883,8 +883,10 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
+  res.write(`: keep-alive\n\n`);
   res.write(`data: ${JSON.stringify({
     status: 'RUNNING',
     progress: 0,
@@ -897,8 +899,12 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
   let consecutiveGpuStatusErrors = 0;
   const intervalId = setInterval(async () => {
     try {
+      // Periodically send SSE keep-alive comment so proxy/browser connections remain open
+      res.write(`: keep-alive\n\n`);
+
       const response = await fetch(`${configService.getGpuUrl()}/api/eval/status/${evalJobId}`, {
         headers: GPU_TUNNEL_HEADERS,
+        signal: AbortSignal.timeout(15000),
       });
       const text = await response.text();
       if (!response.ok) {
@@ -909,7 +915,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
         let errorPayload: any = null;
         try { errorPayload = JSON.parse(text); } catch { errorPayload = null; }
         const missingGpuJob = response.status === 404 && errorPayload?.status === 'NOT_FOUND';
-        const terminalGpuError = consecutiveGpuStatusErrors >= 3;
+        const terminalGpuError = consecutiveGpuStatusErrors >= 5;
         const terminalStatus = missingGpuJob ? 'LOST' : 'DISCONNECTED';
         const statusPayload = {
           status: terminalGpuError ? terminalStatus : 'GPU_STATUS_ERROR',
@@ -921,7 +927,7 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
             ? (missingGpuJob
               ? 'GPU xác nhận không có job và không có checkpoint có thể Resume.'
               : 'Chưa thể xác nhận job hoặc checkpoint vì GPU không phản hồi. Không tự chạy lại evaluation.')
-            : `GPU status endpoint trả về HTTP ${response.status} (${consecutiveGpuStatusErrors}/3). Đang thử lại; không chạy lại evaluation lúc này.`,
+            : `GPU status endpoint trả về HTTP ${response.status} (${consecutiveGpuStatusErrors}/5). Đang thử lại; không chạy lại evaluation lúc này.`,
           error: text?.slice(0, 300),
           resumable: false,
         };
@@ -1025,9 +1031,37 @@ export const streamEvalStatus = async (req: Request, res: Response) => {
         res.end();
       }
     } catch (err: any) {
-      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
-      clearInterval(intervalId);
-      res.end();
+      consecutiveGpuStatusErrors += 1;
+      const isTerminal = consecutiveGpuStatusErrors >= 5;
+      console.warn(`[Backend SSE] GPU status poll exception (${consecutiveGpuStatusErrors}/5):`, err?.message || err);
+      
+      const statusPayload = {
+        status: isTerminal ? 'DISCONNECTED' : 'GPU_STATUS_ERROR',
+        progress: 0,
+        stage_label: isTerminal ? 'Mất kết nối GPU' : 'Đang kết nối lại GPU worker',
+        stage_detail: isTerminal
+          ? 'Không thể kết nối GPU worker sau 5 lần thử. Không tự chạy lại evaluation.'
+          : `Không phản hồi từ GPU status endpoint (${consecutiveGpuStatusErrors}/5). Đang tiếp tục thử lại...`,
+        error: err?.message || String(err),
+        resumable: false,
+      };
+
+      res.write(`data: ${JSON.stringify(statusPayload)}\n\n`);
+
+      if (isTerminal) {
+        clearInterval(intervalId);
+        await ModelEvaluation.updateOne(
+          { modelEvalId: evalJobId, ownerId },
+          {
+            status: 'DISCONNECTED',
+            error: statusPayload.error || statusPayload.stage_detail,
+            failureStage: 'gpu_status_unreachable',
+            gpuResult: statusPayload,
+          },
+        );
+        res.write(`event: end\ndata: ${JSON.stringify(statusPayload)}\n\n`);
+        res.end();
+      }
     }
   }, 2000);
 
@@ -1370,10 +1404,16 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
     const gpuStatus = await getGpuStatus();
     const gpuEvaluations = await getGpuActiveEvaluations();
 
-    const activeStatuses = ['PENDING', 'RUNNING', 'EVALUATING', 'INTERRUPTED'];
+    const gpuEvalList = gpuEvaluations || [];
+    const gpuEvalIds = gpuEvalList.map(job => job.eval_job_id);
+
+    const activeStatuses = ['PENDING', 'RUNNING', 'EVALUATING', 'INTERRUPTED', 'DISCONNECTED'];
     const myActiveEvals = await ModelEvaluation.find({
       ownerId,
-      status: { $in: activeStatuses },
+      $or: [
+        { modelEvalId: { $in: gpuEvalIds } },
+        { status: { $in: activeStatuses } },
+      ],
     })
       .sort({ startedAt: -1 })
       .lean();
@@ -1384,7 +1424,6 @@ export const getActiveSlotsEndpoint = async (req: Request, res: Response) => {
       .lean();
     const historyMap = new Map(histories.map(h => [h.jobId, h]));
 
-    const gpuEvalList = gpuEvaluations || [];
     const maxSlots = gpuStatus?.max_evals || 3;
 
     // Fetch detailed status (progress, stage) for each GPU job in parallel
@@ -1985,8 +2024,9 @@ async function pollVersion1SharedReference(referenceJobId: string, gpuEvalId: st
 
     if (['FAILED', 'INTERRUPTED', 'LOST'].includes(status)) {
       job.status = 'FAILED';
-      job.error = String(payload?.error || payload?.stage_detail || `GPU ${status}`);
-      job.detail = 'Đánh giá Version 1 thất bại';
+      const errMsg = String(payload?.error || payload?.stage_detail || `GPU ${status}`);
+      job.error = errMsg;
+      job.detail = `Thất bại: ${errMsg}`;
       return;
     }
 
@@ -2245,8 +2285,8 @@ export const getEvaluatedModels = async (req: Request, res: Response) => {
         activeGpuJob && typeof activeGpuJob.progress === 'number'
           ? activeGpuJob.progress
           : typeof (displayEval as any)?.progress === 'number'
-          ? (displayEval as any).progress
-          : 0;
+            ? (displayEval as any).progress
+            : 0;
       const stageLabel = activeGpuJob?.stage_label || (displayEval as any)?.stage || null;
 
       return {

@@ -71,6 +71,7 @@ Respond ONLY with valid JSON in this exact format (no markdown, no explanation):
 }
 
 async function callDeepseek(prompt: string): Promise<any> {
+  const apiKey = process.env.DEEPSEEK_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
   const response = await axios.post(
     'https://api.deepseek.com/v1/chat/completions',
     {
@@ -82,7 +83,7 @@ async function callDeepseek(prompt: string): Promise<any> {
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       timeout: 30000,
     }
@@ -92,6 +93,7 @@ async function callDeepseek(prompt: string): Promise<any> {
 }
 
 async function callOpenAI(prompt: string): Promise<any> {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
   const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   const response = await axios.post(
@@ -105,7 +107,7 @@ async function callOpenAI(prompt: string): Promise<any> {
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       timeout: 30000,
     }
@@ -115,7 +117,7 @@ async function callOpenAI(prompt: string): Promise<any> {
 }
 
 async function callGemini(prompt: string): Promise<any> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
   const response = await axios.post(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`,
     {

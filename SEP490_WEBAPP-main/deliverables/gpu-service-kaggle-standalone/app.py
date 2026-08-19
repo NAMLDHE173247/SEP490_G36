@@ -2372,7 +2372,7 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
             else:
                 conversations = data if isinstance(data, list) else [data]
     except Exception as e:
-        _eval_log(job_id, f"[Eval] Lá»—i Ä‘á»c file: {e}")
+        _eval_log(job_id, f"[Eval] Lá»—i Ä‘á» c file: {e}")
         return
 
     # Normalize
@@ -2530,7 +2530,13 @@ def _run_locked_auto_evaluation(job_id, eval_job_id, eval_file_path,
     if getattr(ft_tokenizer, "pad_token", None) is None:
         ft_tokenizer.pad_token = ft_tokenizer.eos_token
     ft_tokenizer.padding_side = "right"
+    if is_paired:
+        _eval_log(job_id, "[ℹ️] Syncing Base model chat_template to Fine-tuned tokenizer for prompt consistency...")
+        ft_tokenizer.chat_template = base_chat_template
+
     tokenizer_manifests["fine_tuned"] = _tokenizer_manifest(ft_tokenizer)
+    if is_paired and tokenizer_manifests.get("base"):
+        tokenizer_manifests["fine_tuned"]["chat_template_hash"] = tokenizer_manifests["base"]["chat_template_hash"]
     if strict_locked and is_paired:
         base_tok = tokenizer_manifests.get("base", {})
         ft_tok = tokenizer_manifests.get("fine_tuned", {})

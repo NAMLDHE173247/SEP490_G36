@@ -14,13 +14,14 @@ export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'gr
 
 class ApiKeyService {
   private getEnvKey(provider: ProviderType): string {
+    const masterKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY || '';
     switch (provider) {
-      case 'openai': return process.env.OPENAI_API_KEY || '';
-      case 'gemini': return process.env.GEMINI_API_KEY || '';
-      case 'deepseek': return process.env.DEEPSEEK_API_KEY || '';
-      case 'openrouter': return process.env.OPENROUTER_API_KEY || '';
-      case 'groq': return process.env.GROQ_API_KEY || '';
-      default: return '';
+      case 'openai': return process.env.OPENAI_API_KEY || masterKey;
+      case 'gemini': return process.env.GEMINI_API_KEY || masterKey;
+      case 'deepseek': return process.env.DEEPSEEK_API_KEY || masterKey;
+      case 'openrouter': return process.env.OPENROUTER_API_KEY || masterKey;
+      case 'groq': return process.env.GROQ_API_KEY || masterKey;
+      default: return masterKey;
     }
   }
 

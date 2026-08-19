@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { 
-  Play, 
-  Download, 
-  Filter, 
-  Eye, 
-  Calendar, 
-  X, 
-  Pin, 
-  RefreshCw, 
-  Trash2, 
-  ArrowLeft, 
-  Check, 
-  AlertCircle, 
-  Clock, 
-  BookOpen, 
-  ChevronRight, 
+import {
+  Play,
+  Download,
+  Filter,
+  Eye,
+  Calendar,
+  X,
+  Pin,
+  RefreshCw,
+  Trash2,
+  ArrowLeft,
+  Check,
+  AlertCircle,
+  Clock,
+  BookOpen,
+  ChevronRight,
   Star,
   Activity,
   Maximize2,
@@ -133,11 +133,11 @@ export default function ModelEvalView() {
   const [viewMode, setViewMode] = useState<'leaderboard' | 'detail' | 'compare'>('leaderboard');
   const [selectedEvalId, setSelectedEvalId] = useState<string | null>(null);
   const [selectedCompareIds, setSelectedCompareIds] = useState<string[]>([]);
-  
+
   // Data lists
   const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
   const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
-  
+
   // Detail views state
   const [evaluationDetail, setEvaluationDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -169,6 +169,8 @@ export default function ModelEvalView() {
   // Run form fields
   const [selectedJobId, setSelectedJobId] = useState('');
   const [judgeModel, setJudgeModel] = useState('openai/gpt-5.6-luna');
+  const [isCustomJudge, setIsCustomJudge] = useState(false);
+  const [customJudgeInput, setCustomJudgeInput] = useState('');
   const [baseModelHfRepo, setBaseModelHfRepo] = useState('');
   const [datasetSource, setDatasetSource] = useState<'version' | 'file'>('version');
   const [selectedVersionId, setSelectedVersionId] = useState('');
@@ -408,7 +410,7 @@ export default function ModelEvalView() {
     const token = getAuthToken() || localStorage.getItem('token') || '';
     const apiBase = import.meta.env.VITE_API_URL || '/api';
     const sseUrl = `${apiBase}/model-eval/stream/${evalJobId}?token=${encodeURIComponent(token)}`;
-    
+
     console.log('[SSE] Connecting to:', sseUrl);
     const source = new EventSource(sseUrl);
     sseRef.current = source;
@@ -431,7 +433,7 @@ export default function ModelEvalView() {
         if (data.stage_label) setActiveEvalStage(data.stage_label);
         if (data.stage_detail) setActiveEvalDetail(data.stage_detail);
         if (data.current_sample) setActiveEvalSample(data.current_sample);
-        
+
         if (data.logs && Array.isArray(data.logs)) {
           setActiveEvalLogs(prev => data.logs.map((log: unknown, index: number) => {
             const text = String(log ?? '');
@@ -562,7 +564,7 @@ export default function ModelEvalView() {
   // ---------------------------------------------------------------------------
   // Action Handlers
   // ---------------------------------------------------------------------------
-  
+
   const handleStartEvaluation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedJobId) {
@@ -603,7 +605,7 @@ export default function ModelEvalView() {
         if (!exportRes.data || exportRes.data.length === 0) {
           throw new Error('Dataset version không có mẫu dữ liệu nào để đánh giá.');
         }
-        
+
         const blob = new Blob([JSON.stringify(exportRes.data, null, 2)], { type: 'application/json' });
         fileToUpload = new File([blob], `version_${selectedVersionId}.json`, { type: 'application/json' });
       }
@@ -619,18 +621,18 @@ export default function ModelEvalView() {
       // this browser session. Older evaluations may still require selecting it once.
       setLargeLlmTestFile(fileToUpload);
 
-      toast.loading('Đang nạp file và gửi yêu cầu lên GPU...', { id: loadingToastId });
+      const effectiveJudgeModel = isCustomJudge ? (customJudgeInput.trim() || 'openai/gpt-5.6-luna') : judgeModel;
 
       const options = {
-        judgeModel,
+        judgeModel: effectiveJudgeModel,
         baseModelHfRepo
       };
 
       const res = await apiService.runEvaluation(selectedJobId, fileToUpload, options);
-      
+
       toast.success('Khởi chạy đánh giá thành công!', { id: loadingToastId });
       setIsModalOpen(false);
-      
+
       // Start streaming progress
       if (res.eval_job_id) {
         startProgressStream(res.eval_job_id);
@@ -877,7 +879,7 @@ export default function ModelEvalView() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `model_eval_leaderboard_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute('download', `model_eval_leaderboard_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1107,7 +1109,7 @@ export default function ModelEvalView() {
           setLargeLlmReferences(explicitlyTyped);
           // If we loaded from localStorage but DB is empty, persist to DB for cross-machine access
           if (dbRefs.length === 0) {
-            apiService.saveExtendedReferences(selectedEvalId, explicitlyTyped).catch(() => {});
+            apiService.saveExtendedReferences(selectedEvalId, explicitlyTyped).catch(() => { });
           }
           return;
         }
@@ -1196,6 +1198,61 @@ export default function ModelEvalView() {
       });
       toast.success(`Đã nhập ${imported.length} kết quả LLM lớn`);
     }
+  };
+
+  const handleLoadMockReferences = () => {
+    if (!selectedEvalId) {
+      toast.error('Chưa chọn bài đánh giá');
+      return;
+    }
+    const mockRefs: LargeLlmReference[] = [
+      {
+        comparisonRole: 'large_llm',
+        model: 'qwen/qwen-2.5-72b-instruct',
+        judgeModel: evaluationDetail?.judgeModel || 'google/gemini-2.5-flash',
+        total: 50,
+        valid: 50,
+        knowledge: 4.35,
+        socratic: 4.12,
+        a1ViolationRate: 0.02,
+        e2eMedianMs: 1450,
+        throughputMean: 38.5,
+        outputLimitRate: 0.0,
+        costPer100Usd: 0.12,
+        outputTokensMean: 320.5,
+        totalInputTokens: 12500,
+        totalOutputTokens: 16025,
+        totalTokens: 28525,
+        runValidity: 'valid',
+        protocolMatch: true,
+        protocolNotes: [],
+      },
+      {
+        comparisonRole: 'version1_shared_ft',
+        model: 'Version 1 Shared Fine-Tuned (3 môn)',
+        judgeModel: evaluationDetail?.judgeModel || 'google/gemini-2.5-flash',
+        total: 50,
+        valid: 50,
+        knowledge: 4.10,
+        socratic: 3.85,
+        a1ViolationRate: 0.04,
+        e2eMedianMs: 980,
+        throughputMean: 52.0,
+        outputLimitRate: 0.0,
+        costPer100Usd: 0,
+        outputTokensMean: 280.0,
+        totalInputTokens: 12500,
+        totalOutputTokens: 14000,
+        totalTokens: 26500,
+        runValidity: 'completed',
+        protocolMatch: true,
+        protocolNotes: [],
+      },
+    ];
+
+    saveLargeLlmReference(mockRefs[0]);
+    saveLargeLlmReference(mockRefs[1]);
+    toast.success('Đã nạp dữ liệu mock đối chứng (Qwen 72B & V1 Shared FT) vào MongoDB & UI!');
   };
 
   const normalizeServerLargeLlmResult = (
@@ -1306,7 +1363,7 @@ export default function ModelEvalView() {
       const next = [...previous.filter(item => item.comparisonRole !== reference.comparisonRole), reference];
       localStorage.setItem(`large_llm_references_${selectedEvalId}`, JSON.stringify(next));
       // Persist to backend DB for cross-machine access
-      apiService.saveExtendedReferences(selectedEvalId, next).catch(() => {});
+      apiService.saveExtendedReferences(selectedEvalId, next).catch(() => { });
       return next;
     });
   };
@@ -1322,7 +1379,7 @@ export default function ModelEvalView() {
       const isCompleted = String(status.status).toUpperCase() === 'COMPLETED';
       const isFailed = String(status.status).toUpperCase() === 'FAILED';
       const resultPayload = status.result || status.artifact || status.data;
-      
+
       if (isCompleted && resultPayload) {
         saveLargeLlmReference(normalizeServerLargeLlmResult(resultPayload, comparisonRole));
         toast.success(`Đã so sánh xong ${model}`);
@@ -1808,14 +1865,14 @@ export default function ModelEvalView() {
               <div className="filter-label">
                 <Filter size={16} /> Lọc kết quả:
               </div>
-              <input 
-                type="text" 
-                placeholder="Tên dự án..." 
-                className="filter-text-input" 
+              <input
+                type="text"
+                placeholder="Tên dự án..."
+                className="filter-text-input"
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
               />
-              <select 
+              <select
                 className="filter-select"
                 value={filterJudge}
                 onChange={(e) => setFilterJudge(e.target.value)}
@@ -1825,8 +1882,8 @@ export default function ModelEvalView() {
                 <option value="luna">GPT 5.6 Luna</option>
                 <option value="gemini">Gemini Judge</option>
               </select>
-              <button 
-                className="btn-outline-eval" 
+              <button
+                className="btn-outline-eval"
                 onClick={fetchLeaderboard}
                 title="Tải lại bảng xếp hạng"
               >
@@ -1923,153 +1980,153 @@ export default function ModelEvalView() {
               </div>
             ) : (
               <>
-              <div className="leaderboard-score-guide">
-                <strong>Đọc điểm:</strong>
-                <span><b>K</b> = chính xác kiến thức</span>
-                <span><b>S</b> = hành vi Socratic (A1–A3)</span>
-                <span><b>A1–D1</b> = hồ sơ chất lượng đầy đủ</span>
-                <span><b>D2</b> và latency = vận hành, báo cáo riêng</span>
-              </div>
-              <table className="eval-table">
-                <thead>
-                  <tr>
-                    <th className="checkbox-cell">So sánh</th>
-                    <th title="Chỉ là số thứ tự; điểm kiến thức và khả năng gợi mở không được gộp thành một hạng duy nhất">STT</th>
-                    <th>Dự án (Project)</th>
-                    <th>Trạng thái eval</th>
-                    <th>Mô hình gốc (Base)</th>
-                    <th className="text-center" title="B1: độ chính xác kiến thức, thang 0–5">Đúng kiến thức (K)</th>
-                    <th className="text-center" title="Trung bình A1, A2, A3; thang 0–5">Gợi mở Socratic (S)</th>
-                    <th className="text-center" title="Mở chi tiết để xem Base, Fine-tuned, delta và CI cho A1–D2">A1–D2</th>
-                    <th className="text-center">Trễ trung bình</th>
-                    <th>Judge Model</th>
-                    <th>Thời điểm</th>
-                    <th className="text-right">Hành động</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLeaderboard.map((row, index) => {
-                    const isPinned = row.modelEvalId === row.pinnedEvalId;
-                    const isCompleted = row.status === 'COMPLETED';
-                    const isFailed = row.status === 'FAILED';
-                    const isRunning = ['PENDING', 'RUNNING', 'EVALUATING'].includes(row.status);
-                    const isChecked = selectedCompareIds.includes(row.modelEvalId || '');
-                    const failureMessage = row.error || row.latestAttemptError || 'GPU worker báo evaluation thất bại nhưng lần chạy cũ chưa lưu chi tiết lỗi.';
-                    const newestAttemptFailed = row.latestAttemptStatus === 'FAILED' && row.latestAttemptId !== row.modelEvalId;
-                    return (
-                      <tr
-                        key={row.modelEvalId || index}
-                        className={`${isPinned ? 'pinned-row' : ''} ${isCompleted && row.modelEvalId ? 'detail-openable-row' : ''}`}
-                        onClick={() => isCompleted && row.modelEvalId && handleViewDetails(row.modelEvalId)}
-                      >
-                        <td className="checkbox-cell" onClick={(e) => isCompleted && row.modelEvalId && handleSelectCompare(e, row.modelEvalId)}>
-                          <div className={`styled-checkbox ${isChecked ? 'checked' : ''} ${!isCompleted || !row.modelEvalId ? 'disabled' : ''}`}>
-                            {isChecked && <Check size={10} strokeWidth={3} />}
-                          </div>
-                        </td>
-                        <td className="col-rank">
-                          <span className="rank-number">{index + 1}</span>
-                        </td>
-                        <td className="col-model">
-                          <div className="model-name-wrapper">
-                            <span className="model-name">{row.projectName}</span>
-                            {isPinned && <span className="pinned-badge" title="Mô hình chính thức"><Star size={10} fill="currentColor" /> Official</span>}
-                          </div>
-                          <div className="model-meta">
-                            <span className="version-tag">{row.modelEvalId?.slice(0, 12)}</span>
+                <div className="leaderboard-score-guide">
+                  <strong>Đọc điểm:</strong>
+                  <span><b>K</b> = chính xác kiến thức</span>
+                  <span><b>S</b> = hành vi Socratic (A1–A3)</span>
+                  <span><b>A1–D1</b> = hồ sơ chất lượng đầy đủ</span>
+                  <span><b>D2</b> và latency = vận hành, báo cáo riêng</span>
+                </div>
+                <table className="eval-table">
+                  <thead>
+                    <tr>
+                      <th className="checkbox-cell">So sánh</th>
+                      <th title="Chỉ là số thứ tự; điểm kiến thức và khả năng gợi mở không được gộp thành một hạng duy nhất">STT</th>
+                      <th>Dự án (Project)</th>
+                      <th>Trạng thái eval</th>
+                      <th>Mô hình gốc (Base)</th>
+                      <th className="text-center" title="B1: độ chính xác kiến thức, thang 0–5">Đúng kiến thức (K)</th>
+                      <th className="text-center" title="Trung bình A1, A2, A3; thang 0–5">Gợi mở Socratic (S)</th>
+                      <th className="text-center" title="Mở chi tiết để xem Base, Fine-tuned, delta và CI cho A1–D2">A1–D2</th>
+                      <th className="text-center">Trễ trung bình</th>
+                      <th>Judge Model</th>
+                      <th>Thời điểm</th>
+                      <th className="text-right">Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeaderboard.map((row, index) => {
+                      const isPinned = row.modelEvalId === row.pinnedEvalId;
+                      const isCompleted = row.status === 'COMPLETED';
+                      const isFailed = row.status === 'FAILED';
+                      const isRunning = ['PENDING', 'RUNNING', 'EVALUATING'].includes(row.status);
+                      const isChecked = selectedCompareIds.includes(row.modelEvalId || '');
+                      const failureMessage = row.error || row.latestAttemptError || 'GPU worker báo evaluation thất bại nhưng lần chạy cũ chưa lưu chi tiết lỗi.';
+                      const newestAttemptFailed = row.latestAttemptStatus === 'FAILED' && row.latestAttemptId !== row.modelEvalId;
+                      return (
+                        <tr
+                          key={row.modelEvalId || index}
+                          className={`${isPinned ? 'pinned-row' : ''} ${isCompleted && row.modelEvalId ? 'detail-openable-row' : ''}`}
+                          onClick={() => isCompleted && row.modelEvalId && handleViewDetails(row.modelEvalId)}
+                        >
+                          <td className="checkbox-cell" onClick={(e) => isCompleted && row.modelEvalId && handleSelectCompare(e, row.modelEvalId)}>
+                            <div className={`styled-checkbox ${isChecked ? 'checked' : ''} ${!isCompleted || !row.modelEvalId ? 'disabled' : ''}`}>
+                              {isChecked && <Check size={10} strokeWidth={3} />}
+                            </div>
+                          </td>
+                          <td className="col-rank">
+                            <span className="rank-number">{index + 1}</span>
+                          </td>
+                          <td className="col-model">
+                            <div className="model-name-wrapper">
+                              <span className="model-name">{row.projectName}</span>
+                              {isPinned && <span className="pinned-badge" title="Mô hình chính thức"><Star size={10} fill="currentColor" /> Official</span>}
+                            </div>
+                            <div className="model-meta">
+                              <span className="version-tag">{row.modelEvalId?.slice(0, 12)}</span>
 
-                            {newestAttemptFailed && (
-                              <span className="flag-tag danger" title={row.latestAttemptError || 'Lần eval mới nhất thất bại'}>Lần mới nhất FAILED</span>
-                            )}
-                           </div>
-                           {isFailed && <div className="text-danger text-xs" title={failureMessage}>{failureMessage}</div>}
-                           {isRunning && (() => {
-                             const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
-                             const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
-                             return (
-                               <div
-                                 className="text-primary text-xs font-semibold cursor-pointer hover:underline flex items-center gap-1 mt-1"
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   if (row.modelEvalId) startProgressStream(row.modelEvalId);
-                                 }}
-                                 title="Bấm để mở luồng Live Log"
-                               >
-                                 <Activity size={12} className="animate-pulse text-emerald" />
-                                 Evaluation đang chạy {pct !== null ? `(${pct}%)` : ''} — Bấm mở Live Log
-                               </div>
-                             );
-                           })()}
-                         </td>
-                        <td>
-                          {isRunning ? (() => {
-                            const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
-                            const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
-                            return (
-                              <span className="flag-tag success font-bold" title="Evaluation đang chạy thời gian thực">
-                                ⚡ RUNNING {pct !== null ? `${pct}%` : ''}
-                              </span>
-                            );
-                          })() : (
-                            <span
-                              className={`flag-tag ${isFailed ? 'danger' : ''}`}
-                              title={isCompleted ? 'Đã hoàn thành' : failureMessage}
-                            >
-                              {row.status}
-                            </span>
-                          )}
-                        </td>
-                        <td className="text-muted text-sm">{row.baseModel}</td>
-                        <td className="text-center font-bold text-primary">{row.scores.knowledge?.toFixed(2) ?? '—'}</td>
-                        <td className="text-center font-bold text-main">{row.scores.socratic?.toFixed(2) ?? '—'}</td>
-                        <td className="text-center font-medium" title="Không gộp bằng trọng số; xem từng tiêu chí trong chi tiết">Xem chi tiết</td>
-                        <td className="text-center font-medium text-muted">
-                          {row.scores.avg_latency_ms ? `${(row.scores.avg_latency_ms / 1000).toFixed(1)}s` : '-'}
-                        </td>
-                        <td className="text-sm font-mono">{row.judgeModel || 'claude-3-5'}</td>
-                        <td className="text-muted text-sm flex-center gap-1">
-                          <Calendar size={14}/> {row.completedAt ? new Date(row.completedAt).toLocaleDateString('vi-VN') : '-'}
-                        </td>
-                        <td className="col-actions text-right">
-                          {row.modelEvalId && (
-                            <>
-                              {isCompleted && (
-                                <>
-                                  <button
-                                    className="btn-icon"
-                                    title="Xem chi tiết kết quả"
-                                    onClick={(event) => {
-                                      event.preventDefault();
-                                      event.stopPropagation();
-                                      handleViewDetails(row.modelEvalId!);
-                                    }}
-                                  >
-                                    <Eye size={16} />
-                                  </button>
-                                  <button
-                                    className={`btn-icon ${isPinned ? 'active' : ''}`}
-                                    title={isPinned ? 'Bỏ ghim kết quả chính thức' : 'Ghim làm kết quả chính thức của dự án'}
-                                    onClick={(e) => handlePin(e, row.modelEvalId!, isPinned)}
-                                  >
-                                    <Pin size={16} />
-                                  </button>
-                                </>
+                              {newestAttemptFailed && (
+                                <span className="flag-tag danger" title={row.latestAttemptError || 'Lần eval mới nhất thất bại'}>Lần mới nhất FAILED</span>
                               )}
-                              <button 
-                                className="btn-icon text-danger" 
-                                title="Xóa bản đánh giá"
-                                onClick={(e) => handleDelete(e, row.modelEvalId!)}
+                            </div>
+                            {isFailed && <div className="text-danger text-xs" title={failureMessage}>{failureMessage}</div>}
+                            {isRunning && (() => {
+                              const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
+                              const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
+                              return (
+                                <div
+                                  className="text-primary text-xs font-semibold cursor-pointer hover:underline flex items-center gap-1 mt-1"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (row.modelEvalId) startProgressStream(row.modelEvalId);
+                                  }}
+                                  title="Bấm để mở luồng Live Log"
+                                >
+                                  <Activity size={12} className="animate-pulse text-emerald" />
+                                  Evaluation đang chạy {pct !== null ? `(${pct}%)` : ''} — Bấm mở Live Log
+                                </div>
+                              );
+                            })()}
+                          </td>
+                          <td>
+                            {isRunning ? (() => {
+                              const slot = slotsInfo.find(s => s.modelEvalId === row.modelEvalId || (s.jobId && s.jobId === row.jobId));
+                              const pct = (slot && typeof slot.progress === 'number' ? slot.progress : null) ?? (typeof row.progress === 'number' ? row.progress : null);
+                              return (
+                                <span className="flag-tag success font-bold" title="Evaluation đang chạy thời gian thực">
+                                  ⚡ RUNNING {pct !== null ? `${pct}%` : ''}
+                                </span>
+                              );
+                            })() : (
+                              <span
+                                className={`flag-tag ${isFailed ? 'danger' : ''}`}
+                                title={isCompleted ? 'Đã hoàn thành' : failureMessage}
                               >
-                                <Trash2 size={16} />
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                                {row.status}
+                              </span>
+                            )}
+                          </td>
+                          <td className="text-muted text-sm">{row.baseModel}</td>
+                          <td className="text-center font-bold text-primary">{row.scores.knowledge?.toFixed(2) ?? '—'}</td>
+                          <td className="text-center font-bold text-main">{row.scores.socratic?.toFixed(2) ?? '—'}</td>
+                          <td className="text-center font-medium" title="Không gộp bằng trọng số; xem từng tiêu chí trong chi tiết">Xem chi tiết</td>
+                          <td className="text-center font-medium text-muted">
+                            {row.scores.avg_latency_ms ? `${(row.scores.avg_latency_ms / 1000).toFixed(1)}s` : '-'}
+                          </td>
+                          <td className="text-sm font-mono">{row.judgeModel || 'claude-3-5'}</td>
+                          <td className="text-muted text-sm flex-center gap-1">
+                            <Calendar size={14} /> {row.completedAt ? new Date(row.completedAt).toLocaleDateString('vi-VN') : '-'}
+                          </td>
+                          <td className="col-actions text-right">
+                            {row.modelEvalId && (
+                              <>
+                                {isCompleted && (
+                                  <>
+                                    <button
+                                      className="btn-icon"
+                                      title="Xem chi tiết kết quả"
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        handleViewDetails(row.modelEvalId!);
+                                      }}
+                                    >
+                                      <Eye size={16} />
+                                    </button>
+                                    <button
+                                      className={`btn-icon ${isPinned ? 'active' : ''}`}
+                                      title={isPinned ? 'Bỏ ghim kết quả chính thức' : 'Ghim làm kết quả chính thức của dự án'}
+                                      onClick={(e) => handlePin(e, row.modelEvalId!, isPinned)}
+                                    >
+                                      <Pin size={16} />
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  className="btn-icon text-danger"
+                                  title="Xóa bản đánh giá"
+                                  onClick={(e) => handleDelete(e, row.modelEvalId!)}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </>
             )}
           </div>
@@ -2466,7 +2523,7 @@ export default function ModelEvalView() {
                             Lần đánh giá này sử dụng tập kiểm thử chuẩn 10 tiêu chí (<b>A1–D2</b>). Điểm chính <b>K</b> (Kiến thức) và <b>S</b> (Gợi mở Socratic) đã được thống kê đầy đủ ở bảng chính trên.
                           </span>
                           <div style={{ marginTop: '8px', color: '#4338ca', fontSize: '13px', fontWeight: 600 }}>
-                            📌 <b>Lưu ý về P1 / O1 / E1</b>: Đây là bộ <i>Chẩn đoán cá nhân hóa Nâng cao (Adaptive Protocol)</i>. 
+                            📌 <b>Lưu ý về P1 / O1 / E1</b>: Đây là bộ <i>Chẩn đoán cá nhân hóa Nâng cao (Adaptive Protocol)</i>.
                             {evaluationDetail.adaptiveDiagnostic?.status === 'invalid'
                               ? ` Trạng thái: ${(evaluationDetail.adaptiveDiagnostic?.dataset_validation?.errors || []).join(' · ')}`
                               : evaluationDetail.adaptiveDiagnostic?.status === 'failed'
@@ -2506,7 +2563,7 @@ export default function ModelEvalView() {
               {/* Tabs selector */}
               <div className="detail-tabs-bar">
                 {evaluationDetail.evalMode === 'paired' && (
-                  <button 
+                  <button
                     className={`detail-tab-btn ${detailTab === 'paired' ? 'active' : ''}`}
                     onClick={() => setDetailTab('paired')}
                   >
@@ -2525,7 +2582,7 @@ export default function ModelEvalView() {
                 >
                   Đối chứng mở rộng
                 </button>
-                <button 
+                <button
                   className={`detail-tab-btn ${detailTab === 'samples' ? 'active' : ''}`}
                   onClick={() => setDetailTab('samples')}
                 >
@@ -2534,7 +2591,7 @@ export default function ModelEvalView() {
               </div>
 
               {/* Tab views contents */}
-              
+
               {/* TAB 1: BREAKDOWN */}
               {detailTab === 'breakdown' && (
                 <div className="tab-content-breakdown">
@@ -2867,11 +2924,21 @@ export default function ModelEvalView() {
                   </div>
 
                   <details className="large-llm-advanced-import">
-                    <summary>Đã có artifact JSON từ trước?</summary>
-                    <label className="large-llm-upload-btn">
-                      <Upload size={16} /> Nhập artifact có sẵn
-                      <input type="file" accept="application/json,.json" multiple onChange={(event) => handleImportLargeLlmArtifacts(event.target.files)} />
-                    </label>
+                    <summary>Nạp dữ liệu thử nghiệm hoặc nhập artifact JSON</summary>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleLoadMockReferences}
+                        style={{ padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <Sparkles size={16} /> Nạp dữ liệu mock đối chứng (Qwen 72B & V1 Shared FT) để test bảng & reload
+                      </button>
+                      <label className="large-llm-upload-btn" style={{ margin: 0 }}>
+                        <Upload size={16} /> Nhập artifact JSON có sẵn
+                        <input type="file" accept="application/json,.json" multiple onChange={(event) => handleImportLargeLlmArtifacts(event.target.files)} />
+                      </label>
+                    </div>
                   </details>
                 </div>
               )}
@@ -2913,8 +2980,8 @@ export default function ModelEvalView() {
                         {evaluationDetail.results?.map((row: any, idx: number) => {
                           const isReviewed = !!row.human_review;
                           return (
-                            <tr 
-                              key={row.conv_index || idx} 
+                            <tr
+                              key={row.conv_index || idx}
                               className={`sample-row-item ${isReviewed ? 'reviewed' : ''}`}
                               onClick={() => openAiJudgeDetail(row.conv_index)}
                             >
@@ -3190,7 +3257,7 @@ export default function ModelEvalView() {
                 <p>Thiết lập và chạy job chấm điểm Socratic bằng AI Judge</p>
               </div>
             </div>
-            
+
             <div className="modal-body">
               {loadingModalData ? (
                 <div className="text-center py-8 text-muted">
@@ -3202,7 +3269,7 @@ export default function ModelEvalView() {
                   {/* Select fine-tuned model (completed jobs) */}
                   <div className="form-group">
                     <label>Chọn đợt huấn luyện cần đánh giá (FT Model)</label>
-                    <select 
+                    <select
                       className="form-input font-mono text-sm"
                       value={selectedJobId}
                       onChange={(e) => selectTrainingJob(e.target.value)}
@@ -3232,14 +3299,44 @@ export default function ModelEvalView() {
                   {/* Select AI Judge Model */}
                   <div className="form-group">
                     <label>Hệ thống mô hình AI chấm điểm (AI Judge)</label>
-                    <select 
+                    <select
                       className="form-input"
-                      value={judgeModel}
-                      onChange={(e) => setJudgeModel(e.target.value)}
+                      value={isCustomJudge ? 'CUSTOM' : judgeModel}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'CUSTOM') {
+                          setIsCustomJudge(true);
+                        } else {
+                          setIsCustomJudge(false);
+                          setJudgeModel(val);
+                        }
+                      }}
                     >
                       <option value="openai/gpt-5.6-luna">GPT 5.6 Luna · OpenRouter (Default Judge)</option>
                       <option value="google/gemini-2.5-flash-lite">Gemini 2.5 Flash Lite · OpenRouter</option>
+                      <option value="DeepSeek-V4-Flash">DeepSeek-V4-Flash (Provider API)</option>
+                      <option value="Llama-3.3-70B-Instruct">Llama-3.3-70B-Instruct (Provider API)</option>
+                      <option value="gemma-3-27b-it">Gemma 3 27B IT (Provider API)</option>
+                      <option value="gpt-oss-120b">GPT OSS 120B (Provider API)</option>
+                      <option value="Qwen3.6-27B">Qwen 3.6 27B (Provider API)</option>
+                      <option value="Qwen3.8-27B">Qwen 3.8 27B (Provider API)</option>
+                      <option value="CUSTOM">✍️ Nhập Model ID tùy chỉnh...</option>
                     </select>
+
+                    {isCustomJudge && (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Ví dụ: DeepSeek-V4-Flash, Llama-3.3-70B-Instruct, v.v."
+                          value={customJudgeInput}
+                          onChange={(e) => setCustomJudgeInput(e.target.value)}
+                        />
+                        <div className="text-xs text-muted mt-1">
+                          Điền chính xác Model ID được hỗ trợ bởi API Key trong file <code>.env</code> của bạn.
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-group">
@@ -3282,15 +3379,15 @@ export default function ModelEvalView() {
                       </div>
                     )}
                     <div className="dataset-source-toggle mt-1 mb-2">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className={`source-btn ${datasetSource === 'version' ? 'active' : ''}`}
                         onClick={() => setDatasetSource('version')}
                       >
                         Dataset Registry
                       </button>
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className={`source-btn ${datasetSource === 'file' ? 'active' : ''}`}
                         onClick={() => setDatasetSource('file')}
                       >
@@ -3316,7 +3413,7 @@ export default function ModelEvalView() {
                         )}
                       </select>
                     ) : (
-                      <div 
+                      <div
                         className={`eval-dropzone ${dragActive ? 'active' : ''} ${uploadedFile ? 'has-file' : ''}`}
                         onDragEnter={handleDrag}
                         onDragOver={handleDrag}
@@ -3324,9 +3421,9 @@ export default function ModelEvalView() {
                         onDrop={handleDrop}
                         onClick={() => document.getElementById('file-upload-input')?.click()}
                       >
-                        <input 
+                        <input
                           id="file-upload-input"
-                          type="file" 
+                          type="file"
                           accept=".json,.jsonl,.zip"
                           style={{ display: 'none' }}
                           onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
@@ -3338,9 +3435,9 @@ export default function ModelEvalView() {
                               <div className="file-name">{uploadedFile.name}</div>
                               <div className="file-size">{(uploadedFile.size / 1024).toFixed(1)} KB</div>
                             </div>
-                            <button 
-                              type="button" 
-                              className="btn-clear-file" 
+                            <button
+                              type="button"
+                              className="btn-clear-file"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setUploadedFile(null);
@@ -3366,9 +3463,9 @@ export default function ModelEvalView() {
 
             <div className="modal-footer">
               <button type="button" className="btn-outline-modal" onClick={() => setIsModalOpen(false)}>Hủy</button>
-              <button 
-                type="submit" 
-                className="btn-primary-modal" 
+              <button
+                type="submit"
+                className="btn-primary-modal"
                 disabled={submittingEval || evaluableJobs.length === 0 || !selectedJobId || (datasetSource === 'version' && datasetVersions.length === 0)}
               >
                 <Play size={16} /> {submittingEval ? 'Đang khởi chạy...' : 'Bắt đầu Đánh giá'}
