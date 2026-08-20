@@ -14,14 +14,13 @@ export type ProviderType = 'openai' | 'gemini' | 'deepseek' | 'openrouter' | 'gr
 
 class ApiKeyService {
   private getEnvKey(provider: ProviderType): string {
-    const masterKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY || '';
     switch (provider) {
-      case 'openai': return process.env.OPENAI_API_KEY || masterKey;
-      case 'gemini': return process.env.GEMINI_API_KEY || masterKey;
-      case 'deepseek': return process.env.DEEPSEEK_API_KEY || masterKey;
+      case 'openai': return process.env.OPENAI_API_KEY || '';
+      case 'gemini': return process.env.GEMINI_API_KEY || '';
+      case 'deepseek': return process.env.DEEPSEEK_API_KEY || '';
       case 'openrouter': return process.env.OPENROUTER_API_KEY || '';
-      case 'groq': return process.env.GROQ_API_KEY || masterKey;
-      default: return masterKey;
+      case 'groq': return process.env.GROQ_API_KEY || '';
+      default: return '';
     }
   }
 
@@ -146,6 +145,20 @@ class ApiKeyService {
       return new GeminiProvider(isJson, key);
     } else if (norm.includes('deepseek')) {
       const key = await this.getApiKeyForUser(userId, 'deepseek');
+      if (key && !key.startsWith('sk-or-')) {
+        return new DeepseekProvider(key);
+      }
+
+      // Fallback: If DeepSeek key is missing, check if OpenRouter key is available
+      const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
+      if (openRouterKey) {
+        console.log('[ApiKeyService] DeepSeek key is missing. Falling back to OpenRouter.');
+        return new FixedModelProvider(
+          new OpenRouterProvider(openRouterKey, isJson),
+          model || RESEARCH_MODEL_CATALOG.deepseek,
+        );
+      }
+
       return new DeepseekProvider(key);
     } else if (norm.includes('groq')) {
       const key = await this.getApiKeyForUser(userId, 'groq');

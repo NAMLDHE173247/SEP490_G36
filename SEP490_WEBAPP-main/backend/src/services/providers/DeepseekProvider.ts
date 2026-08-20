@@ -10,7 +10,7 @@ export class DeepseekProvider implements ILlmProvider {
 
   constructor(customApiKey?: string) {
     this.apiKey = customApiKey || process.env.DEEPSEEK_API_KEY || '';
-    this.baseUrl = 'https://api.deepseek.com';
+    this.baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
 
     if (!this.apiKey) {
       console.warn('DEEPSEEK_API_KEY is missing. Evaluation using Deepseek will fail.');
