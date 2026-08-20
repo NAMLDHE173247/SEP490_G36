@@ -149,10 +149,15 @@ class ApiKeyService {
         return new DeepseekProvider(key);
       }
 
-      // Fallback: If DeepSeek key is missing, check if OpenRouter key is available
+      const openAIKey = await this.getApiKeyForUser(userId, 'openai').catch(() => '');
+      if (openAIKey && !openAIKey.startsWith('sk-or-')) {
+        return new OpenAIProvider(openAIKey);
+      }
+
+      // Fallback: If DeepSeek and OpenAI keys are missing, check if OpenRouter key is available
       const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
-      if (openRouterKey) {
-        console.log('[ApiKeyService] DeepSeek key is missing. Falling back to OpenRouter.');
+      if (openRouterKey && openRouterKey.startsWith('sk-or-')) {
+        console.log('[ApiKeyService] DeepSeek and OpenAI keys missing. Falling back to OpenRouter.');
         return new FixedModelProvider(
           new OpenRouterProvider(openRouterKey, isJson),
           model || RESEARCH_MODEL_CATALOG.deepseek,

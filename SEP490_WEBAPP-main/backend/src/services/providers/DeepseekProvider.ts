@@ -9,11 +9,11 @@ export class DeepseekProvider implements ILlmProvider {
   private readonly baseUrl: string;
 
   constructor(customApiKey?: string) {
-    this.apiKey = customApiKey || process.env.DEEPSEEK_API_KEY || '';
-    this.baseUrl = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+    this.apiKey = customApiKey || process.env.DEEPSEEK_API_KEY || process.env.OPENAI_API_KEY || '';
+    this.baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.OPENAI_BASE_URL || 'https://mkp-api.fptcloud.com/v1';
 
     if (!this.apiKey) {
-      console.warn('DEEPSEEK_API_KEY is missing. Evaluation using Deepseek will fail.');
+      console.warn('DEEPSEEK_API_KEY and OPENAI_API_KEY are missing.');
     }
   }
 
@@ -22,7 +22,7 @@ export class DeepseekProvider implements ILlmProvider {
     const response = await axios.post(
       `${this.baseUrl}/chat/completions`,
       {
-        model: modelOverride || 'deepseek-v4-flash',
+        model: modelOverride || process.env.DEEPSEEK_MODEL || process.env.OPENAI_MODEL || 'DeepSeek-V4-Flash',
         messages: [
           {
             role: 'system',
@@ -34,7 +34,7 @@ export class DeepseekProvider implements ILlmProvider {
           },
         ],
         temperature: 0.1,
-        response_format: { type: 'json_object' }
+        max_tokens: 8192,
       },
       {
         headers: {
