@@ -8,6 +8,19 @@ import pynvml
 import datetime
 import threading
 import traceback
+
+# Compatibility patch for missing register_constant & dtypes in older PyTorch (torchao < PyTorch 2.4/2.5)
+try:
+    import torch
+    import torch.utils._pytree
+    if not hasattr(torch.utils._pytree, "register_constant"):
+        torch.utils._pytree.register_constant = lambda cls: cls
+    for _dtype in ["float4_e2m1fn_x2", "float8_e4m3fn", "float8_e5m2", "float8_e4m3fnuz", "float8_e5m2fnuz"]:
+        if not hasattr(torch, _dtype):
+            setattr(torch, _dtype, getattr(torch, "float16", object()))
+except Exception:
+    pass
+
 from unsloth import FastLanguageModel
 
 # Compatibility patch for peft / torchao LinearActivationQuantizedTensor mismatch
@@ -363,13 +376,20 @@ def get_train_queue_status():
     }), 200
     
 @app.route('/api/system/resources')
+@app.route('/api/system-eval/resources')
 def get_system_resources():
-    """Trả về thông số VRAM và GPU Utilization hiện tại cho giao diện AutoTrain."""
+    """Trả về thông số VRAM, GPU Utilization và Eval Slots."""
     vram_used, vram_total, gpu_util = get_gpu_stats()
+    vram_free = max(0, vram_total - vram_used)
     return jsonify({
         "vram_used_mb": vram_used,
         "vram_total_mb": vram_total,
-        "gpu_util": gpu_util
+        "vram_free_mb": vram_free,
+        "gpu_util": gpu_util,
+        "can_create_eval": True,
+        "active_evals": gpu_state._active_eval_count,
+        "max_evals": GPU_EVAL_SLOTS,
+        "eval_checkpoint_protocol": 1,
     }), 200
 
 

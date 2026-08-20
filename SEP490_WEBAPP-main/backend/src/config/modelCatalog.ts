@@ -3,5 +3,5 @@ export const RESEARCH_MODEL_CATALOG = {
   deepseek: 'DeepSeek-V4-Flash',
   gemini: 'google/gemini-2.5-flash',
   openai: 'DeepSeek-V4-Flash',
-  judge: 'google/gemini-2.5-flash',
+  judge: 'DeepSeek-V4-Flash',
 } as const;

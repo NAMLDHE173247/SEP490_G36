@@ -576,14 +576,16 @@ export const runEvaluation = async (req: Request, res: Response) => {
     console.log(`[Backend] base_model_hf_repo from req.body: '${req.body.base_model_hf_repo}'`);
     console.log(`[Backend] req.body keys:`, Object.keys(req.body));
 
-    const openrouterKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
     const openaiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openai');
-    const judgeApiKey = openrouterKey || openaiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
+    const openrouterKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    const deepseekKey = await apiKeyService.getApiKeyForUser(ownerId, 'deepseek');
+    const geminiKey = await apiKeyService.getApiKeyForUser(ownerId, 'gemini');
+    const judgeApiKey = openaiKey || openrouterKey || deepseekKey || geminiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY || '';
     if (!judgeApiKey) {
       fs.unlink(evalFile.path, () => { });
       return res.status(400).json({
         error: 'missing_judge_key',
-        message: 'Hãy cấu hình OpenRouter hoặc OpenAI/FPT Cloud API key trước khi chạy AI Judge.',
+        message: 'Hãy cấu hình API key (DeepSeek, OpenRouter, OpenAI hoặc Gemini) trước khi chạy AI Judge.',
       });
     }
 
@@ -1228,12 +1230,16 @@ export const resumeEvaluation = async (req: Request, res: Response) => {
     return res.status(409).json({ error: 'Evaluation is already completed.' });
   }
 
-  const [judgeApiKey, history] = await Promise.all([
+  const [openaiKey, openrouterKey, deepseekKey, geminiKey, history] = await Promise.all([
+    apiKeyService.getApiKeyForUser(ownerId, 'openai'),
     apiKeyService.getApiKeyForUser(ownerId, 'openrouter'),
+    apiKeyService.getApiKeyForUser(ownerId, 'deepseek'),
+    apiKeyService.getApiKeyForUser(ownerId, 'gemini'),
     TrainingHistory.findOne({ jobId: evaluation.jobId, ownerId }).select('hfToken').lean(),
   ]);
+  const judgeApiKey = openaiKey || openrouterKey || deepseekKey || geminiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.GEMINI_API_KEY || '';
   if (!judgeApiKey) {
-    return res.status(400).json({ error: 'missing_openrouter_key', message: 'OpenRouter API key is required to resume Judge.' });
+    return res.status(400).json({ error: 'missing_judge_key', message: 'Hãy cấu hình API key (DeepSeek, OpenRouter, OpenAI hoặc Gemini) để Resume Judge.' });
   }
 
   const gpuResponse = await fetch(`${configService.getGpuUrl()}/api/eval/resume/${encodeURIComponent(evalJobId)}`, {

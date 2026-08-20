@@ -239,4 +239,4 @@ BACKEND_URL = _get_backend_url()
 print(f"[Config] BACKEND_URL = {BACKEND_URL}")
 
 def _get_api_key():
-    return getattr(_judge_context, "api_key", "") or _read_secret("OPENROUTER_API_KEY") or _read_secret("OPENAI_API_KEY") or _read_secret("DEEPSEEK_API_KEY")
+    return getattr(_judge_context, "api_key", "") or _read_secret("OPENROUTER_API_KEY") or _read_secret("DEEPSEEK_API_KEY") or _read_secret("OPENAI_API_KEY") or _read_secret("GEMINI_API_KEY")

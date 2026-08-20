@@ -70,9 +70,9 @@ from core.gpu_state import (
 
 
 def _openrouter_chat(payload: bytes, api_key: str, x_title: str,
-                     extra_headers: dict | None = None, timeout: int = 120) -> dict:
-    """Build + gui 1 request toi LLM chat/completions (OpenRouter hoac OPENAI_BASE_URL FPT Cloud)."""
-    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+                     extra_headers: dict | None = None, timeout: int = 180) -> dict:
+    """Build + gui 1 request toi LLM chat/completions (FPT Cloud, OpenRouter, hoac OpenAI)."""
+    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://mkp-api.fptcloud.com/v1"
     base_url = raw_base_url.rstrip("/")
     target_url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
 
@@ -461,6 +461,10 @@ class _JudgeRateLimitError(RuntimeError):
         self.retry_after = retry_after
 
 
+class _JudgeServerError(RuntimeError):
+    """The provider backend returned HTTP 5xx or Cloudflare 524 gateway timeout."""
+
+
 def _parse_judge_reply(reply: str, expected_count: int) -> list:
     """Extract and strictly validate the first JSON array in a Judge reply."""
     if not isinstance(reply, str) or not reply.strip():
@@ -554,17 +558,14 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
             "và xuống dòng bên trong reason; không markdown, không chú thích, không cắt ngắn."
         )
 
-    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://mkp-api.fptcloud.com/v1"
     is_openrouter = "openrouter.ai" in raw_base_url.lower()
 
     effective_judge_model = judge_model
     if not is_openrouter:
-        if "deepseek" in effective_judge_model.lower():
-            effective_judge_model = "DeepSeek-V4-Flash"
-        elif "gemini" in effective_judge_model.lower():
-            effective_judge_model = "gemma-3-27b-it"
-        elif "openai" in effective_judge_model.lower() or "gpt" in effective_judge_model.lower():
-            effective_judge_model = "Llama-3.3-70B-Instruct"
+        effective_judge_model = "DeepSeek-V4-Flash"
+    elif effective_judge_model in ("DeepSeek-V4-Flash", "", None):
+        effective_judge_model = "google/gemini-2.5-flash"
 
     payload_dict = {
         "model": effective_judge_model,
@@ -576,7 +577,7 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
         ],
     }
     if is_openrouter:
-        payload_dict["provider"] = {"allow_fallbacks": False}
+        payload_dict["provider"] = {"allow_fallbacks": True}
 
     payload = json.dumps(payload_dict).encode("utf-8")
     try:
@@ -598,6 +599,8 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
                 f"OpenRouter Judge HTTP {exc.code} (API Key hết hạn ngạch/limit): {body}. "
                 "Vui lòng nạp thêm credit / cập nhật OPENROUTER_API_KEY mới để Resume tiếp tục từ checkpoint mà không mất token."
             ) from exc
+        if exc.code >= 500 or exc.code in (500, 502, 503, 504, 524):
+            raise _JudgeServerError(f"OpenRouter Judge HTTP {exc.code} (Server/Gateway Timeout): {body}") from exc
         raise RuntimeError(f"OpenRouter Judge HTTP {exc.code}: {body}") from exc
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"OpenRouter trả về response envelope sai JSON: {exc}") from exc
@@ -631,6 +634,41 @@ def _judge_batch_resilient(batch_replays: list, judge_model: str,
                 print(
                     f"[~] Judge 429 rate limit; giữ checkpoint và thử lại sau "
                     f"{delay:.0f}s ({rate_attempt + 1}/6)."
+                )
+                time.sleep(delay)
+            except _JudgeServerError as exc:
+                err_str = str(exc)
+                if rate_attempt >= 2:
+                    parse_errors.append(f"Judge HTTP server/gateway error after retries: {err_str}")
+                    print(f"[!] Judge HTTP server error (2/2 retries): {err_str}")
+                    break
+                delay = 3.0 * (rate_attempt + 1)
+                print(
+                    f"[~] Judge 5xx/524 server timeout ({err_str}); "
+                    f"thử lại sau {delay:.0f}s ({rate_attempt + 1}/2)..."
+                )
+                time.sleep(delay)
+            except Exception as exc:
+                err_str = str(exc)
+                is_timeout = (
+                    isinstance(exc, (TimeoutError, urllib.error.URLError, _JudgeServerError))
+                    or "timed out" in err_str.lower()
+                    or "timeout" in err_str.lower()
+                    or "524" in err_str
+                    or "504" in err_str
+                    or "502" in err_str
+                    or "503" in err_str
+                )
+                if not is_timeout:
+                    raise
+                if rate_attempt == 5:
+                    parse_errors.append(f"Judge HTTP timeout after 6 attempts: {err_str}")
+                    print(f"[!] Judge HTTP request timeout (6/6 attempts): {err_str}")
+                    break
+                delay = min(60.0, 5.0 * (2 ** rate_attempt))
+                print(
+                    f"[~] Judge HTTP request timed out ({err_str}); "
+                    f"thử lại sau {delay:.0f}s ({rate_attempt + 1}/6)..."
                 )
                 time.sleep(delay)
         try:

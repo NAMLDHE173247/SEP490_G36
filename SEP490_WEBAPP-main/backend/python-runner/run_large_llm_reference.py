@@ -136,6 +136,71 @@ def build_judge_text(local_index: int, result: dict) -> str:
     return text
 
 
+def score_batch_resilient(batch: list[dict], api_key: str, judge_model: str, judge_prompt: str) -> None:
+    text = "\n\n".join(build_judge_text(index, result) for index, result in enumerate(batch))
+    effective_judge = "google/gemini-2.5-flash" if judge_model in ("DeepSeek-V4-Flash", "", None) else judge_model
+    try:
+        reply, retries, first_failed = openrouter_call(
+            api_key,
+            {
+                "model": effective_judge,
+                "messages": [
+                    {"role": "system", "content": judge_prompt},
+                    {"role": "user", "content": text},
+                ],
+                "temperature": 0,
+                "max_tokens": 8192,
+                "provider": {"allow_fallbacks": True},
+            },
+        )
+        content = reply["choices"][0]["message"]["content"]
+        left, right = content.find("["), content.rfind("]") + 1
+        parsed = json.loads(content[left:right])
+        by_index = {int(row["conv_index"]): row for row in parsed}
+        for index, result in enumerate(batch):
+            row = by_index.get(index)
+            if row is None:
+                result.update({"judge_status": "failed", "judge_error": "parse_miss"})
+                continue
+            criteria = {}
+            reasons = {}
+            for short, full in CRITERIA_KEYS.items():
+                criteria[short] = float(row[full]["score"])
+                reasons[short] = str(row[full].get("reason", ""))
+            result.update(
+                {
+                    "criteria_scores": criteria,
+                    "criteria_reasons": reasons,
+                    "group_scores": {
+                        "knowledge_k": criteria["B1"],
+                        "socratic_s_raw": round((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 6),
+                        "socratic_s": round(
+                            min((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 1.0)
+                            if criteria["A1"] <= 1
+                            else (criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3,
+                            6,
+                        ),
+                        "a1_cap_applied": criteria["A1"] <= 1,
+                    },
+                    "judge_status": "success",
+                    "judge_response_id": reply.get("id"),
+                    "effective_judge_model": reply.get("model"),
+                    "judge_retry_count": retries,
+                    "judge_first_attempt_failed": first_failed,
+                }
+            )
+    except Exception as exc:
+        err_str = str(exc)
+        if len(batch) > 1:
+            mid = len(batch) // 2
+            print(f"[~] Judge call failed ({err_str[:100]}); splitting batch {len(batch)} -> {mid}+{len(batch)-mid}...")
+            score_batch_resilient(batch[:mid], api_key, judge_model, judge_prompt)
+            score_batch_resilient(batch[mid:], api_key, judge_model, judge_prompt)
+        else:
+            for result in batch:
+                result.update({"judge_status": "failed", "judge_error": err_str[:500]})
+
+
 def score_batches(results: list[dict], api_key: str, judge_model: str, judge_prompt: str) -> None:
     for result in results:
         if result.get("generation_status") == "success":
@@ -153,62 +218,9 @@ def score_batches(results: list[dict], api_key: str, judge_model: str, judge_pro
             }
         )
     eligible = [result for result in results if result.get("generation_status") == "success"]
-    for start in range(0, len(eligible), 5):
-        batch = eligible[start : start + 5]
-        text = "\n\n".join(build_judge_text(index, result) for index, result in enumerate(batch))
-        try:
-            reply, retries, first_failed = openrouter_call(
-                api_key,
-                {
-                    "model": judge_model,
-                    "messages": [
-                        {"role": "system", "content": judge_prompt},
-                        {"role": "user", "content": text},
-                    ],
-                    "temperature": 0,
-                    "max_tokens": 8192,
-                    "provider": {"allow_fallbacks": False},
-                },
-            )
-            content = reply["choices"][0]["message"]["content"]
-            left, right = content.find("["), content.rfind("]") + 1
-            parsed = json.loads(content[left:right])
-            by_index = {int(row["conv_index"]): row for row in parsed}
-            for index, result in enumerate(batch):
-                row = by_index.get(index)
-                if row is None:
-                    result.update({"judge_status": "failed", "judge_error": "parse_miss"})
-                    continue
-                criteria = {}
-                reasons = {}
-                for short, full in CRITERIA_KEYS.items():
-                    criteria[short] = float(row[full]["score"])
-                    reasons[short] = str(row[full].get("reason", ""))
-                result.update(
-                    {
-                        "criteria_scores": criteria,
-                        "criteria_reasons": reasons,
-                        "group_scores": {
-                            "knowledge_k": criteria["B1"],
-                            "socratic_s_raw": round((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 6),
-                            "socratic_s": round(
-                                min((criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3, 1.0)
-                                if criteria["A1"] <= 1
-                                else (criteria["A1"] + criteria["A2"] + criteria["A3"]) / 3,
-                                6,
-                            ),
-                            "a1_cap_applied": criteria["A1"] <= 1,
-                        },
-                        "judge_status": "success",
-                        "judge_response_id": reply.get("id"),
-                        "effective_judge_model": reply.get("model"),
-                        "judge_retry_count": retries,
-                        "judge_first_attempt_failed": first_failed,
-                    }
-                )
-        except Exception as exc:
-            for result in batch:
-                result.update({"judge_status": "failed", "judge_error": str(exc)[:500]})
+    for start in range(0, len(eligible), 2):
+        batch = eligible[start : start + 2]
+        score_batch_resilient(batch, api_key, judge_model, judge_prompt)
 
 
 def main() -> int:

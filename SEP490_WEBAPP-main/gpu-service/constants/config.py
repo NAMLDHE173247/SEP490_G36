@@ -11,7 +11,7 @@ GPU_EVAL_SLOTS = 3
 
 BATCH_SIZE = 5  # số conversation mỗi lần gọi API
 
-DEFAULT_JUDGE_MODEL = "openai/gpt-5.6-luna"
+DEFAULT_JUDGE_MODEL = "DeepSeek-V4-Flash"
 
 _CRITERIA_KEYS = [
     "A1_answer_withholding", "A2_scaffolding_quality", "A3_adaptive_response",
