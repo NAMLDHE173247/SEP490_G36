@@ -739,7 +739,15 @@ BACKEND_URL = _get_backend_url()
 print(f"[Config] BACKEND_URL = {BACKEND_URL}")
 
 def _get_api_key():
-    return getattr(_judge_context, "api_key", "") or _read_secret("OPENROUTER_API_KEY")
+    return (
+        getattr(_judge_context, "api_key", "")
+        or _read_secret("OPENROUTER_API_KEY")
+        or _read_secret("DEEPSEEK_API_KEY")
+        or _read_secret("OPENAI_API_KEY")
+        or _read_secret("GEMINI_API_KEY")
+        or os.environ.get("OPENAI_API_KEY", "")
+        or os.environ.get("OPENROUTER_API_KEY", "")
+    )
 
 def _compute_confidence(criteria: dict) -> dict:
     """
@@ -1670,7 +1678,13 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
         if isinstance(provider_error, dict) and int(provider_error.get("code") or 0) == 429:
             raise _JudgeRateLimitError(f"OpenRouter Judge rate limited: {provider_error}")
         raise RuntimeError(f"OpenRouter Judge không có kết quả: {provider_error}")
-    return choices[0].get("message", {}).get("content", "") or "", response_data
+    msg = choices[0].get("message") or {}
+    content = msg.get("content")
+    if content is None or (isinstance(content, str) and not content.strip()):
+        content = msg.get("reasoning_content")
+    if content is None or (isinstance(content, str) and not content.strip()):
+        content = choices[0].get("text", "")
+    return str(content or "").strip(), response_data
 
 
 def _judge_batch_resilient(batch_replays: list, judge_model: str,
