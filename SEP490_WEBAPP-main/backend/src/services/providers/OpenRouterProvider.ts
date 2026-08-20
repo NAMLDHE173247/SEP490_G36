@@ -22,7 +22,7 @@ export class OpenRouterProvider implements ILlmProvider {
         }
         messages.push({ role: 'user', content: prompt });
 
-        const rawBaseUrl = process.env.OPENAI_BASE_URL || process.env.OPENROUTER_BASE_URL || 'https://mkp-api.fptcloud.com/v1';
+        const rawBaseUrl = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
         const baseUrl = rawBaseUrl.replace(/\/+$/, '');
         const isOpenRouter = baseUrl.includes('openrouter.ai');
 

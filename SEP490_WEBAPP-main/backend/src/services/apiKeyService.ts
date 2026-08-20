@@ -115,15 +115,9 @@ class ApiKeyService {
   async createProvider(userId: string | undefined | null, providerName: string, isJson: boolean = true, model?: string): Promise<ILlmProvider> {
     const norm = providerName.toLowerCase();
 
-    // Research modes use one OpenRouter account and fixed model IDs so repeated
-    // experiments cannot silently switch provider/model versions.
-    const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
-    if (openRouterKey && (norm.includes('gemini') || norm.includes('deepseek') || norm.includes('openai'))) {
-      const mode = norm.includes('deepseek') ? 'deepseek' : norm.includes('openai') ? 'openai' : 'gemini';
-      return new FixedModelProvider(
-        new OpenRouterProvider(openRouterKey, isJson),
-        model || RESEARCH_MODEL_CATALOG[mode],
-      );
+    if (norm.includes('openrouter')) {
+      const key = await this.getApiKeyForUser(userId, 'openrouter');
+      return new FixedModelProvider(new OpenRouterProvider(key, isJson), model || RESEARCH_MODEL_CATALOG.gemini);
     }
 
     if (norm.includes('gemini')) {
@@ -132,12 +126,13 @@ class ApiKeyService {
         return new GeminiProvider(isJson, key);
       }
 
-      // Fallback: If the Gemini key is invalid/missing but we have OpenRouter key, use OpenRouter
-      if (openRouterKey || process.env.OPENROUTER_API_KEY) {
+      // Fallback: If Gemini key is invalid/missing but OpenRouter key is configured, fallback to OpenRouter
+      const openRouterKey = await this.getApiKeyForUser(userId, 'openrouter').catch(() => '');
+      if (openRouterKey && openRouterKey.startsWith('sk-or-')) {
         console.log('[ApiKeyService] Gemini key is invalid. Falling back to OpenRouter.');
         return new FixedModelProvider(
-          new OpenRouterProvider(openRouterKey || process.env.OPENROUTER_API_KEY, isJson),
-          RESEARCH_MODEL_CATALOG.gemini,
+          new OpenRouterProvider(openRouterKey, isJson),
+          model || RESEARCH_MODEL_CATALOG.gemini,
         );
       }
 
@@ -155,9 +150,6 @@ class ApiKeyService {
     } else if (norm.includes('groq')) {
       const key = await this.getApiKeyForUser(userId, 'groq');
       return new GroqProvider(key);
-    } else if (norm.includes('openrouter')) {
-      const key = await this.getApiKeyForUser(userId, 'openrouter');
-      return new FixedModelProvider(new OpenRouterProvider(key, isJson), model || RESEARCH_MODEL_CATALOG.gemini);
     } else {
       const key = await this.getApiKeyForUser(userId, 'openai');
       return new OpenAIProvider(key);
