@@ -593,6 +593,11 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
             except (TypeError, ValueError):
                 retry_after = None
             raise _JudgeRateLimitError(f"OpenRouter Judge HTTP 429: {body}", retry_after) from exc
+        if exc.code in (401, 403):
+            raise RuntimeError(
+                f"OpenRouter Judge HTTP {exc.code} (API Key hết hạn ngạch/limit): {body}. "
+                "Vui lòng nạp thêm credit / cập nhật OPENROUTER_API_KEY mới để Resume tiếp tục từ checkpoint mà không mất token."
+            ) from exc
         raise RuntimeError(f"OpenRouter Judge HTTP {exc.code}: {body}") from exc
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"OpenRouter trả về response envelope sai JSON: {exc}") from exc
