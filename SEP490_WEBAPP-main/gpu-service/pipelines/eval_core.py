@@ -473,25 +473,51 @@ def _parse_judge_reply(reply: str, expected_count: int) -> list:
     decoder = json.JSONDecoder()
     parsed = None
     last_error = None
-    # Do not assume the first '[' and last ']' belong to the same JSON value.
-    # raw_decode also tolerates harmless text/markdown after the array.
-    for match in re.finditer(r"\[", reply):
+
+    clean_reply = reply.strip()
+    if "```" in clean_reply:
+        match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", clean_reply, re.IGNORECASE)
+        if match:
+            clean_reply = match.group(1).strip()
+
+    # 1. Look for JSON Array '['
+    for match in re.finditer(r"\[", clean_reply):
         try:
-            candidate, _ = decoder.raw_decode(reply[match.start():])
+            candidate, _ = decoder.raw_decode(clean_reply[match.start():])
             if isinstance(candidate, list):
                 parsed = candidate
                 break
         except json.JSONDecodeError as exc:
             last_error = exc
 
+    # 2. If no list found, look for JSON Object '{'
+    if parsed is None:
+        for match in re.finditer(r"\{", clean_reply):
+            try:
+                candidate, _ = decoder.raw_decode(clean_reply[match.start():])
+                if isinstance(candidate, dict):
+                    for key in ("evaluations", "results", "conversations", "data", "items", "scores", "suggestions"):
+                        if isinstance(candidate.get(key), list):
+                            parsed = candidate[key]
+                            break
+                    if parsed is not None:
+                        break
+                    if expected_count == 1:
+                        if "conv_index" not in candidate:
+                            candidate["conv_index"] = 0
+                        parsed = [candidate]
+                        break
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
     if parsed is None:
         if last_error is not None:
             raise _JudgeResponseError(
                 "JSON Judge sai cú pháp "
                 f"(line {last_error.lineno}, column {last_error.colno}, "
-                f"char {last_error.pos}; response_chars={len(reply)})"
+                f"char {last_error.pos}; response_chars={len(reply)}). Snippet: '{clean_reply[:200]}'"
             ) from last_error
-        raise _JudgeResponseError("Judge không trả về JSON array")
+        raise _JudgeResponseError(f"Judge không trả về JSON array/object. Snippet: '{clean_reply[:200]}'")
 
     if len(parsed) != expected_count:
         raise _JudgeResponseError(
@@ -504,7 +530,10 @@ def _parse_judge_reply(reply: str, expected_count: int) -> list:
             raise _JudgeResponseError("Một phần tử Judge không phải JSON object")
         idx = item.get("conv_index")
         if isinstance(idx, bool) or not isinstance(idx, int) or not 0 <= idx < expected_count:
-            raise _JudgeResponseError(f"conv_index không hợp lệ: {idx!r}")
+            if expected_count == 1:
+                idx = 0
+            else:
+                raise _JudgeResponseError(f"conv_index không hợp lệ: {idx!r}")
         if result[idx] is not None:
             raise _JudgeResponseError(f"conv_index bị lặp: {idx}")
 
