@@ -1,7 +1,7 @@
 /** Fixed judge model IDs. Keep these synchronized with the Stage 3/4/5 labels. */
 export const RESEARCH_MODEL_CATALOG = {
-  deepseek: 'deepseek/deepseek-v4-flash',
+  deepseek: 'DeepSeek-V4-Flash',
   gemini: 'google/gemini-2.5-flash',
-  openai: 'openai/gpt-5.6-luna',
-  judge: 'openai/gpt-5.6-luna',
+  openai: 'DeepSeek-V4-Flash',
+  judge: 'google/gemini-2.5-flash',
 } as const;

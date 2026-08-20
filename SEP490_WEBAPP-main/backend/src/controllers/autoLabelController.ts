@@ -94,8 +94,8 @@ async function callDeepseek(prompt: string): Promise<any> {
 
 async function callOpenAI(prompt: string): Promise<any> {
   const apiKey = process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY;
-  const baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const baseUrl = process.env.OPENAI_BASE_URL || 'https://mkp-api.fptcloud.com/v1';
+  const model = process.env.OPENAI_MODEL || 'DeepSeek-V4-Flash';
   const response = await axios.post(
     `${baseUrl}/chat/completions`,
     {

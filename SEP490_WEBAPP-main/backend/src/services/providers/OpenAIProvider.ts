@@ -10,7 +10,7 @@ export class OpenAIProvider implements ILlmProvider {
   private readonly baseUrl: string;
 
   constructor(customApiKey?: string) {
-    this.model = process.env.OPENAI_MODEL || 'openai/gpt-5.6-luna';
+    this.model = process.env.OPENAI_MODEL || 'DeepSeek-V4-Flash';
     this.baseUrl = process.env.OPENAI_BASE_URL || 'https://mkp-api.fptcloud.com/v1';
     this.apiKey = customApiKey || this.resolveApiKey();
 
