@@ -39,6 +39,9 @@ const ApiKeySettingsPage: React.FC = () => {
         const data = await getPersonalApiKeys();
         setPersonalConfigured(data.configured || {});
         setPersonalKeys({});
+        if (isAdmin) {
+          getGlobalApiKeys().then(gData => setGlobalConfigured(gData.configured || {})).catch(() => {});
+        }
       } else if (activeTab === 'global' && isAdmin) {
         const data = await getGlobalApiKeys();
         setGlobalConfigured(data.configured || {});
@@ -49,6 +52,36 @@ const ApiKeySettingsPage: React.FC = () => {
       setError(err.response?.data?.error || 'Failed to load API keys');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearKey = async (providerId: string, providerLabel: string) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn XÓA vĩnh viễn ${providerLabel} API key khỏi hệ thống?`)) {
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      if (activeTab === 'personal') {
+        await updatePersonalApiKeys({ [providerId]: '' });
+        setPersonalConfigured(prev => ({ ...prev, [providerId]: false }));
+        setPersonalKeys(prev => ({ ...prev, [providerId]: '' }));
+      } else if (activeTab === 'global' && isAdmin) {
+        await updateGlobalApiKeys({ [providerId]: '' });
+        setGlobalConfigured(prev => ({ ...prev, [providerId]: false }));
+        setGlobalKeys(prev => ({ ...prev, [providerId]: '' }));
+      }
+      setDirtyProviders(prev => {
+        const next = new Set(prev);
+        next.delete(providerId);
+        return next;
+      });
+      setSuccessMsg(`Đã xóa vĩnh viễn ${providerLabel} API key thành công!`);
+    } catch (err: any) {
+      setError(err.response?.data?.error || `Không thể xóa ${providerLabel} API key`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -140,7 +173,7 @@ const ApiKeySettingsPage: React.FC = () => {
             <Info size={20} className="api-settings-alert-icon" />
             <div>
               {activeTab === 'personal'
-                ? 'Key cá nhân sẽ ghi đè key hệ thống. Nếu để trống, hệ thống sẽ sử dụng key mặc định.'
+                ? 'Key cá nhân sẽ ghi đè key hệ thống. Nếu để trống, hệ thống sẽ sử dụng key mặc định hoặc key hệ thống.'
                 : 'Key hệ thống sẽ được sử dụng cho tất cả người dùng không cấu hình key cá nhân.'}
             </div>
           </div>
@@ -162,7 +195,9 @@ const ApiKeySettingsPage: React.FC = () => {
 
                 return (
                   <div key={provider.id} className="api-key-group">
-                    <label className="api-key-label">{provider.label} API Key {configured && <span className={`api-key-configured ${pendingClear ? 'pending-clear' : ''}`}>{pendingClear ? 'Sẽ xóa khi lưu' : 'Đã cấu hình'}</span>}</label>
+                    <label className="api-key-label">
+                      {provider.label} API Key {configured && <span className={`api-key-configured ${pendingClear ? 'pending-clear' : ''}`}>{pendingClear ? 'Sẽ xóa khi lưu' : 'Đã cấu hình'}</span>}
+                    </label>
                     <div className="api-key-input-wrapper">
                       <Key size={18} className="api-key-input-icon" />
                       <input
@@ -172,7 +207,16 @@ const ApiKeySettingsPage: React.FC = () => {
                         onChange={(e) => handleKeyChange(provider.id, e.target.value)}
                         className="api-key-input"
                       />
-                      {configured && <button type="button" className="api-key-clear" onClick={() => { if (window.confirm(`Xóa ${provider.label} API key khi lưu thay đổi?`)) handleKeyChange(provider.id, ''); }}>Xóa key</button>}
+                      {configured && (
+                        <button
+                          type="button"
+                          className="api-key-clear"
+                          disabled={saving}
+                          onClick={() => handleClearKey(provider.id, provider.label)}
+                        >
+                          Xóa key
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
