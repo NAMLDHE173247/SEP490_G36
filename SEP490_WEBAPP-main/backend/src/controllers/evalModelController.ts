@@ -576,12 +576,14 @@ export const runEvaluation = async (req: Request, res: Response) => {
     console.log(`[Backend] base_model_hf_repo from req.body: '${req.body.base_model_hf_repo}'`);
     console.log(`[Backend] req.body keys:`, Object.keys(req.body));
 
-    const judgeApiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    const openrouterKey = await apiKeyService.getApiKeyForUser(ownerId, 'openrouter');
+    const openaiKey = await apiKeyService.getApiKeyForUser(ownerId, 'openai');
+    const judgeApiKey = openrouterKey || openaiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || '';
     if (!judgeApiKey) {
       fs.unlink(evalFile.path, () => { });
       return res.status(400).json({
-        error: 'missing_openrouter_key',
-        message: 'Hãy cấu hình OpenRouter API key trước khi chạy Gemini Judge.',
+        error: 'missing_judge_key',
+        message: 'Hãy cấu hình OpenRouter hoặc OpenAI/FPT Cloud API key trước khi chạy AI Judge.',
       });
     }
 

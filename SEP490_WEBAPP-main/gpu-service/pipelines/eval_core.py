@@ -71,11 +71,11 @@ from core.gpu_state import (
 
 def _openrouter_chat(payload: bytes, api_key: str, x_title: str,
                      extra_headers: dict | None = None, timeout: int = 120) -> dict:
-    """Build + gui 1 request toi OpenRouter chat/completions, tra ve envelope JSON.
+    """Build + gui 1 request toi LLM chat/completions (OpenRouter hoac OPENAI_BASE_URL FPT Cloud)."""
+    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+    base_url = raw_base_url.rstrip("/")
+    target_url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
 
-    Gom phan dung chung cua cac judge (Socratic batch & Adaptive). Loi HTTP/JSON
-    de nguyen cho caller xu ly de giu nguyen hanh vi cu.
-    """
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -85,7 +85,7 @@ def _openrouter_chat(payload: bytes, api_key: str, x_title: str,
     if extra_headers:
         headers.update(extra_headers)
     req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
+        target_url,
         data=payload,
         method="POST",
         headers=headers,
@@ -554,20 +554,35 @@ def _request_judge_reply(batch_replays: list, judge_model: str, api_key: str,
             "và xuống dòng bên trong reason; không markdown, không chú thích, không cắt ngắn."
         )
 
-    payload = json.dumps({
-        "model": judge_model,
+    raw_base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
+    is_openrouter = "openrouter.ai" in raw_base_url.lower()
+
+    effective_judge_model = judge_model
+    if not is_openrouter:
+        if "deepseek" in effective_judge_model.lower():
+            effective_judge_model = "DeepSeek-V4-Flash"
+        elif "gemini" in effective_judge_model.lower():
+            effective_judge_model = "gemma-3-27b-it"
+        elif "openai" in effective_judge_model.lower() or "gpt" in effective_judge_model.lower():
+            effective_judge_model = "Llama-3.3-70B-Instruct"
+
+    payload_dict = {
+        "model": effective_judge_model,
         "max_tokens": 1500 * len(batch_replays),
         "temperature": 0,
         "messages": [
             {"role": "system", "content": SOCRATIC_JUDGE_SYSTEM_BATCH + JUDGE_REFERENCE_POLICY + retry_contract},
             {"role": "user", "content": batch_text},
         ],
-        "provider": {"allow_fallbacks": False},
-    }).encode("utf-8")
+    }
+    if is_openrouter:
+        payload_dict["provider"] = {"allow_fallbacks": False}
+
+    payload = json.dumps(payload_dict).encode("utf-8")
     try:
         response_data = _openrouter_chat(
             payload, api_key, "SEP490 AIFC Evaluation",
-            {"X-OpenRouter-Metadata": "enabled"},
+            {"X-OpenRouter-Metadata": "enabled"} if is_openrouter else None,
         )
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:1000]
