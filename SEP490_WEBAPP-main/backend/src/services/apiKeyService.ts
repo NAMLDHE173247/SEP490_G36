@@ -19,7 +19,7 @@ class ApiKeyService {
       case 'openai': return process.env.OPENAI_API_KEY || masterKey;
       case 'gemini': return process.env.GEMINI_API_KEY || masterKey;
       case 'deepseek': return process.env.DEEPSEEK_API_KEY || masterKey;
-      case 'openrouter': return process.env.OPENROUTER_API_KEY || masterKey;
+      case 'openrouter': return process.env.OPENROUTER_API_KEY || '';
       case 'groq': return process.env.GROQ_API_KEY || masterKey;
       default: return masterKey;
     }
