@@ -1,2 +1,18 @@
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 graft/
+
+# Dependencies & Environments
+node_modules/
+venv/
+.venv/
+env/
+*.zip
+*.log
+all_objs.txt
+.env
+.env.local
+.DS_Store
+Thumbs.db
+__pycache__/
+dist/
+build/
